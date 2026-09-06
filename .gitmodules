@@ -1,0 +1,9 @@
+[submodule "deps/OpenArm-Combined"]
+	path = deps/OpenArm-Combined
+	url = https://github.gatech.edu/rkothari40/OpenArm-Combined.git
+[submodule "deps/openarm_mujoco"]
+	path = deps/openarm_mujoco
+	url = https://github.com/enactic/openarm_mujoco.git
+[submodule "deps/AgileX_Tracer"]
+	path = deps/AgileX_Tracer
+	url = https://github.com/mkeehn211/AgileX_Tracer.git

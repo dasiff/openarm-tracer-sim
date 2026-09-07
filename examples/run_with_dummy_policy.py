@@ -29,12 +29,11 @@ def run_simulation():
     
     # Launch viewer
     with mujoco.viewer.launch_passive(sim.model, sim.data) as viewer:
-        # Set camera angle
-        viewer.cam.distance = 2.0        # Zoom out
-        viewer.cam.azimuth = 45          # Rotate 45 degrees
-        viewer.cam.elevation = 30        # Tilt up 30 degrees
-        viewer.cam.lookat = [0.5, 0, 0.5]  # Look at the block area
-        
+        # Set camera angle - above and in front
+        viewer.cam.distance = 2.5        # Farther back
+        viewer.cam.azimuth = 45         # In front of the robot
+        viewer.cam.elevation = -45        # High angle, looking down
+        viewer.cam.lookat = [0.3, 0, 0.6]  # Look at the work area
         duration = 3.0
         t = 0.0
         step = 0

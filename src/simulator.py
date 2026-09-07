@@ -1,39 +1,52 @@
 """Main simulation environment."""
 
 from pathlib import Path
-from src.materials_lab_env import MaterialsLabEnvironment
+import mujoco
+from src import robot_specs
 
 
-class MaterialsLabSimulator:
-    """Simulation environment for materials lab tasks."""
+class RobotSimulator:
+    """simulation environment."""
     
     def __init__(self, model_path: str = None):
         """
         Initialize simulator.
         
         Args:
-            model_path: Path to MJCF robot model
+            model_path: Path to MJCF model/scene file
         """
         if model_path is None:
-            model_path = "deps/OpenArm-Combined/Tracer_Pedestal.xml"
+            project_root = Path(__file__).parent.parent
+            model_path = project_root / "deps/OpenArm-Combined/combined_robot.xml"
         
-        self.env = MaterialsLabEnvironment(model_path)
-        print(f"✓ Loaded environment: {Path(model_path).name}")
-        print(f"  Bodies: {self.env.model.nbody}")
-        print(f"  Joints: {self.env.model.njnt}")
-        print(f"  Actuators: {self.env.model.nu}")
+        model_path = Path(model_path)
+        if not model_path.exists():
+            raise FileNotFoundError(f"Model not found: {model_path}")
+        
+        self.model = mujoco.MjModel.from_xml_path(str(model_path))
+        self.data = mujoco.MjData(self.model)
+        
+        print(f"✓ Loaded model: {model_path.name}")
+        print(f"  Bodies: {self.model.nbody}")
+        print(f"  Joints: {self.model.njnt}")
+        print(f"  Actuators: {self.model.nu}")
     
     def step(self):
         """Step simulation forward."""
-        self.env.step()
+        mujoco.mj_step(self.model, self.data)
     
     def get_state(self):
         """Get current robot state."""
-        return self.env.get_observation()
+        return {
+            "time": self.data.time,
+            "joint_angles": self.data.qpos.copy(),
+            "joint_velocities": self.data.qvel.copy(),
+            "joint_torques": self.data.ctrl.copy(),
+        }
     
     def reset(self):
         """Reset to initial state."""
-        self.env.reset()
+        mujoco.mj_resetData(self.model, self.data)
     
     def close(self):
         """Clean up."""

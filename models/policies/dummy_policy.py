@@ -5,9 +5,9 @@ from src.actuator_mapping import ACTUATOR_NAMES, NAME_TO_IDX
 
 
 class DummyPolicy:
-    """Hardcoded sequence to demonstrate end-to-end pipeline.
+    """Hardcoded sequence to push block to the side.
     
-    Task: Move right arm down to grasp block, close gripper, lift up.
+    Task: Move right arm forward to push block sideways.
     """
     
     def __init__(self):
@@ -28,24 +28,12 @@ class DummyPolicy:
         # Default: stay at current position
         action = np.zeros(self.n_actuators)
         
-        # Hardcoded sequence
-        if t < 1.0:
-            # Move right arm down to grasp height
-            action[NAME_TO_IDX["right_joint1"]] = -0.5
-            action[NAME_TO_IDX["right_joint2"]] = -1.0
+        # Simple push sequence
+        if t < 2.0:
+            # Move right arm forward to push block
+            action[NAME_TO_IDX["right_joint1"]] = 1.5   # Shoulder forward
+            action[NAME_TO_IDX["right_joint2"]] = 1.0   # Elbow neutral
             
-        elif t < 1.5:
-            # Close gripper (fingers)
-            action[NAME_TO_IDX["right_joint1"]] = -0.5
-            action[NAME_TO_IDX["right_joint2"]] = -1.0
-            action[NAME_TO_IDX["right_finger1"]] = 0.04
-            action[NAME_TO_IDX["right_finger2"]] = 0.04
-            
-        elif t < 2.5:
-            # Lift arm up
-            action[NAME_TO_IDX["right_joint1"]] = 0.0
-            action[NAME_TO_IDX["right_joint2"]] = -0.5
-            action[NAME_TO_IDX["right_finger1"]] = 0.04
-            action[NAME_TO_IDX["right_finger2"]] = 0.04
+        # After 2 seconds, keep pushing
         
         return action

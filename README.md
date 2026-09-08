@@ -4,100 +4,64 @@ Simulation environment for Agilex Tracer mobile base + OpenArm bimanual robot in
 
 ## Quick Start
 
-### Prerequisites
-- Python 3.12
-- Conda (Anaconda or Miniconda)
-
-### Setup
-
 ```bash
-# Clone repository with submodules
-git clone --recurse-submodules https://github.com/YOUR_USERNAME/Robotics_Sim.git
-cd Robotics_Sim
-
-# Create conda environment
-conda create -n matsim python=3.12 -y
+conda create -n matsim python=3.12
 conda activate matsim
-
-# Install dependencies
 pip install -r requirements.txt
+python examples/run_with_dummy_policy.py
 ```
-
-### Run Simulation
-
-From command line:
-```bash
-python examples/run_basic_sim.py
-```
-
-From VS Code:
-- Open `examples/run_basic_sim.py`
-- Click the Run button (play icon)
 
 ## Project Structure
 
 Robotics_Sim/
 ├── src/
-│ ├── environment.py # Base environment template
-│ ├── materials_lab_env.py # Materials lab implementation
-│ ├── simulator.py # Main simulator class
-│ ├── controller.py # (TODO) Control interface
+│ ├── simulator.py # Generic MuJoCo simulator
+│ ├── controller.py # PD controller (20 actuators)
+│ ├── actuator_mapping.py # Actuator name → index mapping
 │ ├── logger.py # (TODO) Data logging
-│ └── utils.py # (TODO) Utilities
+│ └── utils.py
+├── models/
+│ ├── scenes/ # Scene definitions
+│ │ ├── single_block.xml # Robot + block on workbench
+│ │ ├── single_block_env.py
+│ │ └── dummy_policy.py # Hardcoded push sequence
+│ └── policies/
+│ └── dummy_policy.py # Policy implementations
 ├── examples/
-│ └── run_basic_sim.py # Basic test script
-├── deps/ # Git submodules
-│ ├── OpenArm-Combined/ # Robot models
-│ ├── openarm_mujoco/ # Example teleoperation
-│ └── AgileX_Tracer/ # Tracer ROS 2 driver
-├── docs/ # Documentation
-├── data/ # Simulation outputs
-├── models/ # (TODO) Custom models
-├── requirements.txt
-├── README.md
-└── .gitignore
+│ ├── run_basic_sim.py # Minimal test
+│ └── run_with_dummy_policy.py # End-to-end with viewer
+├── docs/
+│ ├── TODO.md # Complete roadmap
+│ └── DECISIONS.md
+└── README.md
 
+## Features
+
+- **MuJoCo Physics**: Fast, accurate simulation
+- **PD Control**: Proper actuator mapping (20 controlled joints)
+- **User-friendly naming**: `right_joint1`, `left_finger2` instead of magic indices
+- **3D Visualization**: Built-in MuJoCo viewer with camera control
+- **Generic simulator**: Works with any scene XML
 
 ## Status
 
-- [x] Project structure
-- [x] Git submodules setup
-- [x] Basic simulator skeleton
-- [x] Environment base class
-- [x] Materials lab environment
-- [x] Test script
-- [ ] Control interface
-- [ ] Data logging
-- [ ] Materials physics
+- [x] Project infrastructure
+- [x] Simulator skeleton (Phase 8)
+- [x] PD controller with actuator mapping (Phase 9)
+- [x] End-to-end pipeline with visualization (Phase 10)
 - [ ] Learned policy integration
-- [ ] Validation & testing
+- [ ] Data logging
+- [ ] Sim-to-real validation
+
+## Next Steps
+
+1. Fix dummy policy to reach and push block
+2. Implement learned imitation learning policy
+3. Add data logging for trajectory validation
+4. Validate against real robot trajectories (when hardware arrives)
 
 ## References
 
-- [OpenArm-Combined](https://github.gatech.edu/rkothari40/OpenArm-Combined) — Robot models
-- [Robot Danger Lab Wiki](https://github.gatech.edu/pages/Robot-Danger-Lab-GT/robot-danger-lab-wiki/)
 - [MuJoCo Documentation](https://mujoco.org/)
-- [Agilex Tracer](https://www.agilex.ai/)
-
-## Development
-
-### Running Tests
-
-```bash
-python examples/run_basic_sim.py
-```
-
-### Adding Features
-
-1. Create a new file in `src/`
-2. Test with a script in `examples/`
-3. Commit with a clear message
-4. Push to GitHub
-
-## Team
-
-- Georgia Tech Hands On Robotics Safety lab
-
-## License
-
-MIT License - see LICENSE file for details
+- [Robot Danger Lab Wiki](https://github.gatech.edu/pages/Robot-Danger-Lab-GT/robot-danger-lab-wiki/)
+- [OpenArm Repository](https://github.gatech.edu/rkothari40/OpenArm-Combined)

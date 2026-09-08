@@ -51,3 +51,22 @@ class RobotSimulator:
     def close(self):
         """Clean up."""
         pass
+
+    def get_block_position(self):
+        """Get block position in world frame."""
+        return self.data.body('block').xpos.copy()
+
+    def get_block_velocity(self):
+        """Get block velocity."""
+        return self.data.body('block').cvel.copy()
+
+    def get_observation(self):
+        """Get full observation (robot + environment)."""
+        return {
+            "time": self.data.time,
+            "joint_angles": self.data.qpos.copy(),
+            "joint_velocities": self.data.qvel.copy(),
+            "joint_torques": self.data.ctrl.copy(),
+            "block_position": self.get_block_position(),
+            "block_velocity": self.get_block_velocity(),
+        }

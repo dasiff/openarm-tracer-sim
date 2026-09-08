@@ -5,35 +5,25 @@ from src.actuator_mapping import ACTUATOR_NAMES, NAME_TO_IDX
 
 
 class DummyPolicy:
-    """Hardcoded sequence to push block to the side.
-    
-    Task: Move right arm forward to push block sideways.
-    """
+    """Hardcoded sequence with smooth trajectories."""
     
     def __init__(self):
         self.n_actuators = len(ACTUATOR_NAMES)
     
     def __call__(self, state, t=None):
-        """
-        Generate action based on time.
+        """Generate smooth action trajectory."""
         
-        Args:
-            state: Current robot state (dict with joint_angles, etc.)
-            t: Time since task started (seconds)
-        
-        Returns:
-            action: 20-dim joint angle targets
-        """
-        
-        # Default: stay at current position
         action = np.zeros(self.n_actuators)
         
-        # Simple push sequence
+        # Smooth ramp up over first 2 seconds
         if t < 2.0:
-            # Move right arm forward to push block
-            action[NAME_TO_IDX["right_joint1"]] = 1.5   # Shoulder forward
-            action[NAME_TO_IDX["right_joint2"]] = 1.0   # Elbow neutral
-            
-        # After 2 seconds, keep pushing
+            ramp = t / 2.0
+            action[NAME_TO_IDX["right_joint1"]] = 0.1 * ramp  # Was 0.5
+            action[NAME_TO_IDX["right_joint2"]] = -0.3 * ramp  # Was 0.3
+        
+        # Hold position
+        elif t < 3.0:
+            action[NAME_TO_IDX["right_joint1"]] = 0.5
+            action[NAME_TO_IDX["right_joint2"]] = 0.3
         
         return action

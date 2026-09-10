@@ -9,7 +9,7 @@ project_root = current_file.parent.parent
 sys.path.insert(0, str(project_root))
 
 from src.controller import RobotController
-from src.simulator import MaterialsLabSimulator
+from src.simulator import RobotSimulator
 from src.actuator_mapping import ACTUATOR_INDICES
 
 def test_controller():
@@ -17,7 +17,7 @@ def test_controller():
     print(f"Number of actuators: {len(ACTUATOR_INDICES)}")
     
     # Initialize
-    sim = MaterialsLabSimulator()
+    sim = RobotSimulator()
     controller = RobotController()
     
     # Test state

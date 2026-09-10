@@ -27,7 +27,7 @@ Robotics_Sim/
 │ │ └── dummy_policy.py # Hardcoded push sequence
 │ └── policies/
 │ └── dummy_policy.py # Policy implementations
-├── examples/
+├── experiments/
 │ ├── run_basic_sim.py # Minimal test
 │ └── run_with_dummy_policy.py # End-to-end with viewer
 ├── docs/

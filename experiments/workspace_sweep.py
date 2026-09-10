@@ -1,0 +1,115 @@
+"""Sweep arm joint angles to map workspace."""
+
+import sys
+from pathlib import Path
+import numpy as np
+import csv
+
+# Auto-detect project root
+current_file = Path(__file__).resolve()
+project_root = current_file.parent.parent
+sys.path.insert(0, str(project_root))
+
+from src.simulator import RobotSimulator
+from src.actuator_mapping import NAME_TO_IDX
+
+
+def get_right_gripper_position(sim):
+    """Get right gripper (hand) position."""
+    # The right gripper is at the end of the right arm
+    # Get the position of the right hand link
+    try:
+        pos = sim.data.body('openarm_right_hand').xpos.copy()
+    except:
+        # Fallback: use last link if hand doesn't exist
+        pos = sim.data.body('openarm_right_link7').xpos.copy()
+    return pos
+
+
+def sweep_workspace():
+    """Sweep right arm through joint angle space."""
+    print("=" * 60)
+    print("Right Arm Workspace Sweep")
+    print("=" * 60)
+    
+    # Initialize simulator
+    sim = RobotSimulator(
+        model_path=str(project_root / "models/scenes/single_block.xml")
+    )
+    
+    # Joint indices for right arm (7 joints)
+    right_joints = [
+        "right_joint1",
+        "right_joint2", 
+        "right_joint3",
+        "right_joint4",
+        "right_joint5",
+        "right_joint6",
+        "right_joint7",
+    ]
+    
+    # Angle sweep range (radians)
+    angles = np.linspace(-1.0, 1.0, 5)  # Adjust range as needed
+    
+    # Output CSV
+    csv_path = project_root / "data" / "workspace_right_arm.csv"
+    csv_path.parent.mkdir(exist_ok=True)
+    
+    with open(csv_path, 'w', newline='') as f:
+        writer = csv.writer(f)
+        
+        # Write header
+        header = right_joints + ["tcp_x", "tcp_y", "tcp_z"]
+        writer.writerow(header)
+        
+        # Sweep through angles
+        total_combinations = len(angles) ** 7
+        count = 0
+        
+        for a1 in angles:
+            for a2 in angles:
+                for a3 in angles:
+                    for a4 in angles:
+                        for a5 in angles:
+                            for a6 in angles:
+                                for a7 in angles:
+                                    # Set joint targets
+                                    action = np.zeros(20)
+                                    action[NAME_TO_IDX["right_joint1"]] = a1
+                                    action[NAME_TO_IDX["right_joint2"]] = a2
+                                    action[NAME_TO_IDX["right_joint3"]] = a3
+                                    action[NAME_TO_IDX["right_joint4"]] = a4
+                                    action[NAME_TO_IDX["right_joint5"]] = a5
+                                    action[NAME_TO_IDX["right_joint6"]] = a6
+                                    action[NAME_TO_IDX["right_joint7"]] = a7
+                                    
+                                    # Get current state and apply
+                                    state = sim.get_observation()
+                                    from src.controller import RobotController
+                                    controller = RobotController()
+                                    torques = controller.step(action, state)
+                                    sim.data.ctrl[:] = torques
+                                    
+                                    # Step physics a few times to settle
+                                    for _ in range(10):
+                                        sim.step()
+                                    
+                                    # Get end-effector position
+                                    tcp_pos = get_right_gripper_position(sim)
+                                    
+                                    # Record
+                                    row = [a1, a2, a3, a4, a5, a6, a7] + tcp_pos.tolist()
+                                    writer.writerow(row)
+                                    
+                                    count += 1
+                                    if count % 100 == 0:
+                                        pct = 100 * count / total_combinations
+                                        print(f"Progress: {count}/{total_combinations} ({pct:.1f}%)")
+    
+    print(f"\n✓ Workspace sweep complete!")
+    print(f"✓ Saved to: {csv_path}")
+    print(f"✓ Total poses: {count}")
+
+
+if __name__ == "__main__":
+    sweep_workspace()

@@ -1,0 +1,83 @@
+<mujoco model="tracer">
+  <!-- ==========================================================
+       Tracer 1.0 - minimal differential-drive base for MuJoCo
+
+       DIMENSIONS ARE APPROXIMATE. Replace WHEEL_RADIUS, TRACK
+       (half-track = wheel y offset), chassis size and mass with
+       the real numbers from tracer_description/urdf or the
+       product manual before you trust anything quantitative.
+       ========================================================== -->
+
+  <compiler angle="radian" autolimits="true"/>
+  <option timestep="0.002" integrator="implicitfast"/>
+
+  <visual>
+    <quality offsamples="0"/>
+    <headlight diffuse="0.6 0.6 0.6" ambient="0.3 0.3 0.3"/>
+    <global azimuth="130" elevation="-25"/>
+  </visual>
+
+  <default>
+    <default class="wheel">
+      <!-- friction = sliding, torsional, rolling -->
+      <geom type="cylinder" size="0.08" rgba="0.15 0.15 0.15 1"
+            friction="1.5 0.005 0.0001"/>
+      <joint type="hinge" axis="0 1 0" damping="0.05" armature="0.01"/>
+    </default>
+    <default class="caster">
+      <!-- Real swivelling casters chatter badly in MuJoCo. These are
+           near-frictionless spheres: same support, no jitter, and the
+           base still cannot strafe because the driven wheels grip. -->
+      <geom type="sphere" size="0.035" rgba="0.55 0.55 0.55 1"
+            friction="0.0005 0.0005 0.00001"/>
+    </default>
+  </default>
+
+  <worldbody>
+    <light pos="0 0 3" dir="0 0 -1" diffuse="0.8 0.8 0.8"/>
+
+    <geom name="floor" type="plane" size="25 25 0.1"
+          rgba="0.28 0.30 0.34 1" friction="1.0 0.005 0.0001"/>
+
+    <!-- a couple of landmarks so motion is visible in the viewer -->
+    <geom name="post_a" type="cylinder" pos="3 0 0.4" size="0.08 0.4" rgba="0.8 0.3 0.2 1"/>
+    <geom name="post_b" type="cylinder" pos="0 3 0.4" size="0.08 0.4" rgba="0.2 0.6 0.8 1"/>
+    <geom name="post_c" type="cylinder" pos="-3 -2 0.4" size="0.08 0.4" rgba="0.3 0.7 0.4 1"/>
+
+    <!-- base sits at z = wheel radius so the wheels touch the floor -->
+    <body name="base_link" pos="0 0 0.08">
+      <freejoint name="base_free"/>
+      <inertial pos="0 0 0.02" mass="30" diaginertia="0.9 1.2 1.6"/>
+
+      <geom name="chassis" type="box" pos="0 0 0.0175"
+            size="0.3425 0.285 0.0775" rgba="0.85 0.45 0.10 1"/>
+      <!-- small nose marker so you can tell which way is forward -->
+      <geom name="nose" type="box" pos="0.33 0 0.0175"
+            size="0.02 0.06 0.03" rgba="0.95 0.95 0.95 1"/>
+
+      <body name="left_wheel_link" pos="0 0.20 0">
+        <joint name="left_wheel" class="wheel"/>
+        <geom class="wheel" fromto="0 -0.025 0 0 0.025 0"/>
+      </body>
+
+      <body name="right_wheel_link" pos="0 -0.20 0">
+        <joint name="right_wheel" class="wheel"/>
+        <geom class="wheel" fromto="0 -0.025 0 0 0.025 0"/>
+      </body>
+
+      <geom name="caster_fl" class="caster" pos=" 0.26  0.20 -0.045"/>
+      <geom name="caster_fr" class="caster" pos=" 0.26 -0.20 -0.045"/>
+      <geom name="caster_rl" class="caster" pos="-0.26  0.20 -0.045"/>
+      <geom name="caster_rr" class="caster" pos="-0.26 -0.20 -0.045"/>
+    </body>
+  </worldbody>
+
+  <actuator>
+    <!-- Velocity servos: ctrl is a target wheel speed in rad/s.
+         Applied torque = kv * (ctrl - joint velocity).
+         Raise kv if the base feels sluggish or sags under command;
+         lower it if the wheels buzz or the base hops. -->
+    <velocity name="left_wheel_vel"  joint="left_wheel"  kv="25" ctrlrange="-40 40"/>
+    <velocity name="right_wheel_vel" joint="right_wheel" kv="25" ctrlrange="-40 40"/>
+  </actuator>
+</mujoco>

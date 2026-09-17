@@ -44,8 +44,8 @@ OPENARM_SPECS = {
         "shoulder_elbow": {
             "model": "DM8009",
             "torque_nm": 40,
-            "kp": 10,  # PD controller gain--was kp=100 and kd=10
-            "kd": 2,
+            "kp": 100,  # Restored from 10 — at Kp=10, shoulder needs 4 rad
+            "kd": 10,   # error to reach max torque, can't overcome gravity
             "damping": 0.4,
         },
         "wrist": {

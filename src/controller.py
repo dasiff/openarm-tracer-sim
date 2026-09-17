@@ -47,6 +47,32 @@ class RobotController:
         self.qvel_indices = addr["qvel_indices"]       # correct, not range(20)
         self.is_position_actuator = addr["is_position_actuator"]
 
+        # Build per-actuator gain arrays.  Motor type is derived from the
+        # actuator's forcerange (set by the motor_DM* default classes):
+        #   DM8009 (±40 N·m) → shoulder_elbow gains
+        #   DM4340 (±27 N·m) → wrist gains
+        #   DM4310 (±7 N·m)  → wrist_fine gains
+        # Actuators without forcelimited (e.g. wheel motors) get shoulder
+        # gains as a safe default — their ctrl is typically overwritten by
+        # the drive controller anyway.
+        n = len(self.qpos_indices)
+        self.kp = np.zeros(n)
+        self.kd = np.zeros(n)
+        for i in range(n):
+            if self.is_position_actuator[i]:
+                continue  # position actuators pass target through, no PD
+            fmax = abs(model.actuator_forcerange[i, 1])
+            if fmax >= 35:       # DM8009
+                g = self.gains["shoulder_elbow"]
+            elif fmax >= 20:     # DM4340
+                g = self.gains["wrist"]
+            elif fmax >= 1:      # DM4310
+                g = self.gains["wrist_fine"]
+            else:                # no forcerange (e.g. wheel motors)
+                g = self.gains["shoulder_elbow"]
+            self.kp[i] = g["kp"]
+            self.kd[i] = g["kd"]
+
     def step(self, target_angles, current_state):
         """
         Compute actuator ctrl commands from target joint angles.
@@ -81,13 +107,7 @@ class RobotController:
         position_error = target_angles - current_angles_actuated
         velocity_error = -current_velocities_actuated
 
-        # NOTE: still using a single flat gain set for every joint, same as
-        # the original controller.py (documented there as a simplification,
-        # not something this audit changes). Worth revisiting separately.
-        kp = self.gains["shoulder_elbow"]["kp"]
-        kd = self.gains["shoulder_elbow"]["kd"]
-
-        torque = kp * position_error + kd * velocity_error
+        torque = self.kp * position_error + self.kd * velocity_error
 
         ctrl = np.where(self.is_position_actuator, target_angles, torque)
         return ctrl

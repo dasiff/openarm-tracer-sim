@@ -10,9 +10,18 @@ out of memory and crashed. The second (from 18:56) resumed the work.
   (uv, Python 3.12), separate from the earlier test environment. It uses the
   versions locked by `openarm_teleop`, exported with
   `uv export --frozen --no-hashes --no-emit-project --no-emit-local --extra test`.
-  The teleop tested lock is not to be changed.
-- **Upgrade to MuJoCo 3.13.0** (from 3.3.4), on condition that we confirm
-  everything still works on it (see the comparison below).
+  The teleop tested lock is not to be changed ("keep in mind im not changing
+  the tele-op tested lock").
+- **Python 3.12.** The VM's system Python is 3.14, but the teleop lock pins
+  numpy 2.2.6 and scipy 1.15.3, which only have packages up to Python 3.13.
+  With the lock fixed, that rules out 3.14. Within 3.10–3.13, 3.12 was picked
+  as a conservative default, not for a technical reason; 3.13 would also
+  work. (The pre-crash session said the README uses 3.12. It doesn't.)
+- **Upgrade to MuJoCo 3.13.0** (from 3.3.4), because the teleop lock pins
+  3.13.0 and both projects share one environment. This was on condition that
+  we confirm everything still works on it (see the comparison below).
+- **The 3.3.4 comparison environment pins numpy 2.2.6** to match the project,
+  so MuJoCo is the only thing that differs between versions.
 - **geo_kin is installed directly from the wheel**, because the provisioner
   rejects the openarm product (see Problems).
 - **Keep commits separate:** environment, `.gitignore` and version changes go

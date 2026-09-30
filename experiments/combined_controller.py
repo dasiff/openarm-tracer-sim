@@ -360,8 +360,20 @@ def run(scene: str, spawn_pos, groups: list[dict], policy):
                 ds["angular"] = max(-1.0, min(ds["angular"], 1.0))
 
                 if any(held(k) for k in dk.get("stop", [])):
-                    ds["linear"]  = 0.0
-                    ds["angular"] = 0.0
+                    # Ramp back to zero at the same rate as the accel
+                    # ramp (incr/step) instead of snapping instantly —
+                    # avoids a velocity discontinuity at stop, the same
+                    # kind of instant-stop artifact investigated for the
+                    # scripted test scenario (see
+                    # data/arm_swing_diagnostics/rampstop_*).
+                    if ds["linear"] > 0:
+                        ds["linear"] = max(0.0, ds["linear"] - incr)
+                    else:
+                        ds["linear"] = min(0.0, ds["linear"] + incr)
+                    if ds["angular"] > 0:
+                        ds["angular"] = max(0.0, ds["angular"] - incr)
+                    else:
+                        ds["angular"] = min(0.0, ds["angular"] + incr)
 
                 # Convert normalized commands to velocities
                 lin_vel = ds["linear"] * max_lin_vel

@@ -35,3 +35,4 @@ Thumbs.db
 # Licensed geo_kin artifacts (never commit)
 *.whl
 *license*.toml
+snapshots/

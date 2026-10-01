@@ -81,11 +81,9 @@ class CameraRig:
         self.model = model
         self.context = context
         self.specs = list(camera_specs)
+        self.shadows = shadows
         self.option = mujoco.MjvOption()
         self.scene = mujoco.MjvScene(model, maxgeom=10_000)
-        if not shadows:
-            self.scene.flags[mujoco.mjtRndFlag.mjRND_SHADOW] = 0
-            self.scene.flags[mujoco.mjtRndFlag.mjRND_REFLECTION] = 0
         self.cameras = {}
         self.images = {}
         for cs in self.specs:
@@ -100,13 +98,20 @@ class CameraRig:
             w, h = cs["resolution"]
             self.images[cs["name"]] = np.zeros((h, w, 3), dtype=np.uint8)
 
-    def render(self, data):
-        """Render all cameras from the current `data` state."""
+    def render(self, data, names=None):
+        """Render the cameras in `names` (default all) from the current `data` state."""
         mujoco.mjr_setBuffer(mujoco.mjtFramebuffer.mjFB_OFFSCREEN, self.context)
         for cs in self.specs:
             name = cs["name"]
+            if names is not None and name not in names:
+                continue
             w, h = cs["resolution"]
             viewport = mujoco.MjrRect(0, 0, w, h)
+            # A spec may set "shadows" to override the rig default (the
+            # shadow pass is most of the render cost on software GL).
+            on = int(cs.get("shadows", self.shadows))
+            self.scene.flags[mujoco.mjtRndFlag.mjRND_SHADOW] = on
+            self.scene.flags[mujoco.mjtRndFlag.mjRND_REFLECTION] = on
             mujoco.mjv_updateScene(
                 self.model, data, self.option, None, self.cameras[name],
                 mujoco.mjtCatBit.mjCAT_ALL, self.scene)

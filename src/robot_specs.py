@@ -104,6 +104,9 @@ CAMERA_SPECS = [
         "up": [0.0, 0.0, 1.0],
         "fovy": ORBBEC_FOVY_DEG,
         "resolution": ORBBEC_RESOLUTION,
+        # Shadows make no visible difference in this view but cost ~10x the
+        # render time on the VM; the wrist cams need them for finger contrast.
+        "shadows": False,
     },
     {
         "name": "right_wrist_cam",

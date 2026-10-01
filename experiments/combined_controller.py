@@ -39,8 +39,10 @@ BASE DRIVE NOTE — velocity control, not wheel torques:
 RATES NOTE:
     Physics runs at robot_specs.PHYSICS_HZ (750 Hz, the OpenArm ros2_control
     loop); the PD controller runs at PD_HZ (750 Hz, i.e. every physics step);
-    the simulated cameras render at CAMERA_HZ (30 fps, every 25 physics
-    steps); the viewer redraws at VIEWER_HZ (60, 12 physics steps per frame).
+    the simulated cameras tick at CAMERA_HZ (30 Hz, every 25 physics
+    steps) and render ONE camera per tick, round-robin, so each updates at
+    CAMERA_HZ / 3 (software GL makes a 3-camera render the dominant cost);
+    the viewer redraws at VIEWER_HZ (60, 12 physics steps per frame).
     Keys, policy and teleop targets are read once per viewer frame and held
     between frames; the PD loop recomputes torques from the LIVE state on each
     PD tick using those held targets. Teleop targets are not clocked at
@@ -62,6 +64,7 @@ Usage:
 
 import argparse
 import math
+import os
 import sys
 from pathlib import Path
 
@@ -164,6 +167,43 @@ def _key(name: str) -> int:
 # run()
 # ===================================================================
 
+def _perf_settings():
+    """Viewer / camera performance settings, overridable with CC_* env vars.
+
+    Defaults are the fastest combination measured on the VirtualBox VM
+    (about 130 ms/frame, was ~600-1000): viewer shadows/reflections off,
+    one camera rendered per camera tick, vsync off paced to VIEWER_HZ.
+    Resolution, shadow map size and window size made no measurable difference.
+
+    CC_VIEW_SHADOWS=1  viewer shadows+reflections on   CC_ROUNDROBIN=0  all cameras per tick
+    CC_CAM_SHADOWS=0   camera shadows off (washes out wrist cams)
+    CC_VSYNC=1         vsync on (frames stall ~1 s if the window is hidden)
+    CC_CAM_RES=WxH  CC_CAM_HZ=N  CC_SHADOWSIZE=N  CC_WIN=WxH  CC_HUD=0  CC_INSETS=0
+    CC_FINISH=1        glFinish after each swap
+    CC_BENCH_FRAMES=N  run N frames, print per-phase timings, then exit
+    CC_BENCH_SNAP=dir  save main view + camera images at frame 15
+    """
+    e = os.environ.get
+    def wh(v):
+        return tuple(int(x) for x in v.lower().split("x")) if v else None
+    return {
+        "frames": int(e("CC_BENCH_FRAMES", "0")),
+        "cam_res": wh(e("CC_CAM_RES")),
+        "cam_hz": float(e("CC_CAM_HZ")) if e("CC_CAM_HZ") else None,
+        "roundrobin": e("CC_ROUNDROBIN") != "0",
+        "cam_shadows": None if e("CC_CAM_SHADOWS") is None
+                       else e("CC_CAM_SHADOWS") == "1",
+        "view_shadows": e("CC_VIEW_SHADOWS") == "1",
+        "shadowsize": int(e("CC_SHADOWSIZE")) if e("CC_SHADOWSIZE") else None,
+        "win": wh(e("CC_WIN")) or (1280, 960),
+        "vsync": int(e("CC_VSYNC", "0")),
+        "snap_dir": e("CC_BENCH_SNAP"),
+        "finish": e("CC_FINISH") == "1",
+        "hud": e("CC_HUD") != "0",
+        "insets": e("CC_INSETS") != "0",
+    }
+
+
 def run(scene: str, spawn_pos, groups: list[dict], policy,
         mode: str = "manual", camera: int = 0, preview: bool = True,
         snapshot_every: float = 0.0, snapshot_dir: str | None = None):
@@ -182,6 +222,18 @@ def run(scene: str, spawn_pos, groups: list[dict], policy,
     if mode == "teleop":
         # Arms are driven by the solver, not the keyboard arm-test keys.
         groups = [g for g in groups if g["name"] != "right_arm_test"]
+
+    bench = _perf_settings()
+    global CAMERA_SHADOWS, SHOW_HUD, SHOW_CAMERA_INSETS
+    SHOW_HUD = SHOW_HUD and bench["hud"]
+    SHOW_CAMERA_INSETS = SHOW_CAMERA_INSETS and bench["insets"]
+    if bench["cam_res"]:
+        for cs in robot_specs.CAMERA_SPECS:
+            cs["resolution"] = bench["cam_res"]
+    if bench["cam_hz"]:
+        robot_specs.CAMERA_HZ = bench["cam_hz"]
+    if bench["cam_shadows"] is not None:
+        CAMERA_SHADOWS = bench["cam_shadows"]
 
     # --- Load scene ---
     sim   = RobotSimulator(model_path=str(PROJECT_ROOT / scene),
@@ -404,7 +456,7 @@ def run(scene: str, spawn_pos, groups: list[dict], policy,
     import time as _time
     snap_dir = Path(snapshot_dir) if snapshot_dir else PROJECT_ROOT / "snapshots"
     snap_state = {"last": _time.time(), "p_down": False}
-    hud_state = {"last": _time.time(), "fps": 0.0}
+    hud_state = {"last": _time.time(), "ms": 0.0}
 
     def save_snapshot(rgb):
         snap_dir.mkdir(parents=True, exist_ok=True)
@@ -422,7 +474,7 @@ def run(scene: str, spawn_pos, groups: list[dict], policy,
         lambda err, desc: print(f"GLFW error {err}: {desc}"))
     if not glfw.init():
         raise RuntimeError("Could not initialise GLFW")
-    window = glfw.create_window(1280, 960, "Combined Controller", None, None)
+    window = glfw.create_window(*bench["win"], "Combined Controller", None, None)
     if not window:
         glfw.terminate()
         raise RuntimeError("GLFW window creation failed")
@@ -434,7 +486,7 @@ def run(scene: str, spawn_pos, groups: list[dict], policy,
                              vm.size.height - 80)
         glfw.set_window_pos(window, x0, 30)
     glfw.make_context_current(window)
-    glfw.swap_interval(1)
+    glfw.swap_interval(bench["vsync"])
 
     model.vis.global_.fovy = FOVY_DEG
     cam = mujoco.MjvCamera()
@@ -446,11 +498,13 @@ def run(scene: str, spawn_pos, groups: list[dict], policy,
     cam.azimuth   = 90
 
     scene_vis = mujoco.MjvScene(model, maxgeom=10_000)
-    if mode == "teleop":
+    if mode == "teleop" or not bench["view_shadows"]:
         # The VM GPU renders this scene at ~5 fps with shadows/reflections,
         # too slow for the arms to track the operator.
         scene_vis.flags[mujoco.mjtRndFlag.mjRND_SHADOW] = 0
         scene_vis.flags[mujoco.mjtRndFlag.mjRND_REFLECTION] = 0
+    if bench["shadowsize"]:
+        model.vis.quality.shadowsize = bench["shadowsize"]
     context   = mujoco.MjrContext(model, mujoco.mjtFontScale.mjFONTSCALE_150)
 
     # Cameras share this GL context (offscreen buffer was sized in
@@ -459,6 +513,22 @@ def run(scene: str, spawn_pos, groups: list[dict], policy,
                     shadows=CAMERA_SHADOWS)
     rig.render(data)
     cam_dir = PROJECT_ROOT / CAMERA_SNAPSHOT_DIR
+
+    tm = {"phys": 0.0, "cam": 0.0, "render": 0.0, "hud_insets": 0.0,
+          "swap_poll": 0.0}
+    pc = _time.perf_counter
+    cam_names = [cs["name"] for cs in robot_specs.CAMERA_SPECS]
+    cam_tick = 0
+    t_bench0 = None
+    rows = []  # per-frame (had_cam_tick, ms total, cam, render, swap)
+    tick_prev = 0.0
+    r_prev = 0.0
+    if bench["frames"]:
+        try:
+            from OpenGL.GL import glGetString, GL_RENDERER
+            print("BENCH GL renderer:", glGetString(GL_RENDERER))
+        except Exception as ex:
+            print("BENCH GL renderer unknown:", ex)
 
     logging_active = False
     prev_l = False
@@ -477,6 +547,7 @@ def run(scene: str, spawn_pos, groups: list[dict], policy,
     # ---------------------------------------------------------------
     while not glfw.window_should_close(window):
       try:
+        t_f0 = pc()
         obs = sim.get_observation()
         t   = sim.get_time()
 
@@ -613,6 +684,7 @@ def run(scene: str, spawn_pos, groups: list[dict], policy,
         # contact friction opposes the forced linear velocity and creates
         # a pitching torque that tips the robot over.  Z velocity is left
         # to physics (gravity, settling).
+        t_p0 = pc()
         for _ in range(steps_per_frame):
             # PD tick: torques from the LIVE state, held targets
             if step_count % pd_every == 0:
@@ -630,7 +702,14 @@ def run(scene: str, spawn_pos, groups: list[dict], policy,
             mujoco.mj_step(model, data)
             step_count += 1
             if step_count % cam_every == 0:
-                rig.render(data)
+                t_c0 = pc()
+                if bench["roundrobin"]:
+                    rig.render(data, [cam_names[cam_tick % len(cam_names)]])
+                    cam_tick += 1
+                else:
+                    rig.render(data)
+                tm["cam"] += pc() - t_c0
+        tm["phys"] += pc() - t_p0
 
         # Logging
         if logging_active:
@@ -662,52 +741,81 @@ def run(scene: str, spawn_pos, groups: list[dict], policy,
         # Render
         width, height = glfw.get_framebuffer_size(window)
         viewport = mujoco.MjrRect(0, 0, width, height)
+        t_r0 = pc()
         mujoco.mjv_updateScene(
             model, data, opt, None, cam,
             mujoco.mjtCatBit.mjCAT_ALL, scene_vis)
         mujoco.mjr_render(viewport, scene_vis, context)
-        # The HUD is drawn before the insets on purpose: the first
-        # mjr_drawPixels right after mjr_render was silently dropped (eagle
-        # inset blank), and drawing an overlay first fixes it.
+        t_r1 = pc()
+        tm["render"] += t_r1 - t_r0
+        # Text is drawn into small RGB bitmaps with OpenCV and blitted with
+        # one mjr_drawPixels each. mjr_overlay draws one glyph per GL call,
+        # and on this VM's vmwgfx driver every such call leaks a resource id:
+        # a ~200 glyph HUD aborted the process at frame ~250 ("Illegal
+        # COTable id"). One single-space overlay is kept per frame because the
+        # first mjr_drawPixels right after mjr_render is otherwise dropped
+        # (eagle inset blank); a few glyphs/frame is far below the limit.
+        def blit(img, left, bottom):
+            # drawPixels wants a FLAT contiguous uint8 array, bottom-up rows
+            h, w = img.shape[:2]
+            flat = np.ascontiguousarray(np.flipud(img)).ravel()
+            mujoco.mjr_drawPixels(
+                flat, None, mujoco.MjrRect(left, bottom, w, h), context)
+
+        def text_bitmap(rows, w, label_w):
+            line_h = 20
+            bmp = np.full((line_h * len(rows) + 8, w, 3), 45, np.uint8)
+            for i, (lab, val) in enumerate(rows):
+                y = line_h * (i + 1) - 3
+                cv2.putText(bmp, lab, (6, y), cv2.FONT_HERSHEY_SIMPLEX,
+                            0.45, (190, 190, 190), 1, cv2.LINE_AA)
+                cv2.putText(bmp, val, (label_w, y), cv2.FONT_HERSHEY_SIMPLEX,
+                            0.45, (255, 255, 255), 1, cv2.LINE_AA)
+            return bmp
+
+        if SHOW_HUD or SHOW_CAMERA_INSETS:
+            mujoco.mjr_overlay(
+                mujoco.mjtFont.mjFONT_NORMAL,
+                mujoco.mjtGridPos.mjGRID_TOPLEFT, viewport, " ", None, context)
         if SHOW_HUD:
             now = _time.time()
             dt_wall = now - hud_state["last"]
             hud_state["last"] = now
-            if dt_wall > 0:  # smoothed, a single frame is too jittery to read
-                hud_state["fps"] += 0.1 * (1.0 / dt_wall - hud_state["fps"])
+            # Smooth frame TIME, not fps: averaging 1/dt is dominated by the
+            # fast frames between camera ticks and overstates the rate.
+            hud_state["ms"] += 0.1 * (1000.0 * dt_wall - hud_state["ms"])
             ds = drive_state.get("base", {})
             speed = math.hypot(base_vx, base_vy)
-            mujoco.mjr_overlay(
-                mujoco.mjtFont.mjFONT_NORMAL,
-                mujoco.mjtGridPos.mjGRID_TOPLEFT, viewport,
-                "sim time\nbase speed (m/s)\nbase vx, vy (m/s)\n"
-                "yaw rate (rad/s)\nyaw (deg)\nposition x, y, z (m)\n"
-                "viewer fps\ncmd lin, ang",
-                f"{t:.2f} s\n{speed:.2f}\n{base_vx:+.2f}, {base_vy:+.2f}\n"
-                f"{base_wz:+.2f}\n{yaw_deg:+.1f}\n"
-                f"{data.qpos[0]:.2f}, {data.qpos[1]:.2f}, {data.qpos[2]:.3f}\n"
-                f"{hud_state['fps']:.1f}\n"
-                f"{ds.get('linear', 0):+.2f}, {ds.get('angular', 0):+.2f}",
-                context)
+            hud = text_bitmap([
+                ("sim time", f"{t:.2f} s"),
+                ("base speed (m/s)", f"{speed:.2f}"),
+                ("base vx, vy (m/s)", f"{base_vx:+.2f}, {base_vy:+.2f}"),
+                ("yaw rate (rad/s)", f"{base_wz:+.2f}"),
+                ("yaw (deg)", f"{yaw_deg:+.1f}"),
+                ("position x, y, z (m)", f"{data.qpos[0]:.2f}, "
+                 f"{data.qpos[1]:.2f}, {data.qpos[2]:.3f}"),
+                ("frame (ms, fps)", f"{hud_state['ms']:.0f}, "
+                 f"{1000.0 / max(hud_state['ms'], 1e-6):.1f}"),
+                ("cmd lin, ang", f"{ds.get('linear', 0):+.2f}, "
+                 f"{ds.get('angular', 0):+.2f}"),
+            ], 330, 190)
+            blit(hud, 8, height - hud.shape[0] - 8)
         if SHOW_CAMERA_INSETS:
-            # Half-size insets along the bottom. drawPixels wants a FLAT
-            # contiguous uint8 array in bottom-up row order (OpenGL), while
-            # rig.images are top-down, hence the flip.
+            # Half-size insets along the bottom, camera name burned into the
+            # top-left corner. rig.images are top-down, blit flips them.
             gap, x = 8, 8
             for cname, img in rig.images.items():
-                small = img[::2, ::2]
+                small = img[::2, ::2].copy()
                 sh, sw = small.shape[:2]
                 if x + sw > width:
                     break  # window too narrow for the rest
-                flat = np.ascontiguousarray(np.flipud(small)).ravel()
-                mujoco.mjr_drawPixels(
-                    flat, None, mujoco.MjrRect(x, gap, sw, sh), context)
-                mujoco.mjr_overlay(
-                    mujoco.mjtFont.mjFONT_NORMAL,
-                    mujoco.mjtGridPos.mjGRID_BOTTOMLEFT,
-                    mujoco.MjrRect(x, gap + sh + 2, sw, 24),
-                    cname, None, context)
+                cv2.rectangle(small, (0, 0), (len(cname) * 9 + 10, 20),
+                              (45, 45, 45), -1)
+                cv2.putText(small, cname, (5, 15), cv2.FONT_HERSHEY_SIMPLEX,
+                            0.5, (255, 255, 255), 1, cv2.LINE_AA)
+                blit(small, x, gap)
                 x += sw + gap
+        tm["hud_insets"] += pc() - t_r1
         p_now = glfw.get_key(window, glfw.KEY_P) == glfw.PRESS
         due = snapshot_every > 0 and \
             _time.time() - snap_state["last"] >= snapshot_every
@@ -717,10 +825,52 @@ def run(scene: str, spawn_pos, groups: list[dict], policy,
             mujoco.mjr_readPixels(rgb, None, viewport, context)
             save_snapshot(rgb)
         snap_state["p_down"] = p_now
+        if bench["snap_dir"] and frame == 15:
+            sd = Path(bench["snap_dir"]); sd.mkdir(parents=True, exist_ok=True)
+            rgb = np.zeros((height, width, 3), dtype=np.uint8)
+            mujoco.mjr_readPixels(rgb, None, viewport, context)
+            cv2.imwrite(str(sd / "main.png"),
+                        cv2.cvtColor(np.flipud(rgb), cv2.COLOR_RGB2BGR))
+            for cname, img in rig.images.items():
+                cv2.imwrite(str(sd / f"{cname}.png"),
+                            cv2.cvtColor(img, cv2.COLOR_RGB2BGR))
+        t_s0 = pc()
         glfw.swap_buffers(window)
         glfw.poll_events()
+        if bench["finish"]:
+            mujoco.mjr_finish()
+        tm["swap_poll"] += pc() - t_s0
+        if bench["frames"]:
+            rows.append((tm['cam'] > tick_prev, 1000 * (pc() - t_p0),
+                         1000 * (tm['render'] - r_prev), 1000 * (pc() - t_s0)))
+            tick_prev = tm['cam']; r_prev = tm['render']
+
+        if bench["vsync"] == 0:
+            # No vsync pacing: hold the viewer to VIEWER_HZ so sim time
+            # never runs faster than wall time.
+            slack = 1.0 / VIEWER_HZ - (pc() - t_f0)
+            if slack > 0:
+                _time.sleep(slack)
 
         frame += 1
+        if bench["frames"]:
+            if frame == 10:  # discard warm-up
+                tm = dict.fromkeys(tm, 0.0)
+                t_bench0 = pc()
+            elif frame >= 10 + bench["frames"]:
+                n = bench["frames"]
+                wall = pc() - t_bench0
+                print(f"BENCH {n} frames: {1000 * wall / n:.0f} ms/frame "
+                      f"({n / wall:.1f} fps) | " + " ".join(
+                          f"{k}={1000 * v / n:.0f}ms" for k, v in tm.items()))
+                for lab, sel in (("tick", True), ("no-tick", False)):
+                    rr = [r for r in rows[10:] if r[0] == sel]
+                    if rr:
+                        m = lambda i: sum(r[i] for r in rr) / len(rr)
+                        print(f"BENCH {lab}: {len(rr)} frames, "
+                              f"total={m(1):.0f}ms render={m(2):.0f}ms "
+                              f"swap_poll={m(3):.0f}ms")
+                break
 
         # --- DEBUG ---
         verbose = (frame <= 10) or (frame % 60 == 0)

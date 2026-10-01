@@ -3,7 +3,8 @@
   <!-- Full robot (Tracer + pedestal + OpenArm bimanual arms) -->
   <include file="../../deps/OpenArm-Combined/combined_robot.xml"/>
 
-  <option timestep="0.002" gravity="0 0 -9.81" integrator="implicit"/>
+  <!-- 1/750 s; src/robot_specs.py (PHYSICS_HZ) overrides this at load anyway -->
+  <option timestep="0.0013333333333333333" gravity="0 0 -9.81" integrator="implicit"/>
   <size njmax="4000" nconmax="2000"/>
   <visual>
     <headlight ambient="0.35 0.35 0.35" diffuse="0.6 0.6 0.6" specular="0.2 0.2 0.2"/>

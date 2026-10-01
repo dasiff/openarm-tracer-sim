@@ -36,6 +36,23 @@ BASE DRIVE NOTE — velocity control, not wheel torques:
     contacts roll correctly in MuJoCo) and switch this back to the
     "drive_torque" handler.
 
+RATES NOTE:
+    Physics runs at robot_specs.PHYSICS_HZ (750 Hz, the OpenArm ros2_control
+    loop); the PD controller runs at PD_HZ (750 Hz, i.e. every physics step);
+    the simulated cameras render at CAMERA_HZ (30 fps, every 25 physics
+    steps); the viewer redraws at VIEWER_HZ (60, 12 physics steps per frame).
+    Keys, policy and teleop targets are read once per viewer frame and held
+    between frames; the PD loop recomputes torques from the LIVE state on each
+    PD tick using those held targets. Teleop targets are not clocked at
+    hardware solver rates because the 750 Hz loop is the hardware ceiling.
+
+CAMERAS NOTE:
+    robot_specs.CAMERA_SPECS (eagle + two wrist cams, Orbbec placeholders)
+    are injected into the model at load time and rendered offscreen by
+    src.cameras.CameraRig into rig.images. When SHOW_CAMERA_INSETS is on they
+    are drawn at half size along the bottom of the viewer. Press C to save
+    the latest frames as PNGs to data/camera_snapshots/.
+
 Usage:
     python experiments/combined_controller.py
     python experiments/combined_controller.py --scene models/scenes/other.xml
@@ -56,6 +73,8 @@ sys.path.insert(0, str(PROJECT_ROOT))
 import glfw
 import mujoco
 
+from src import robot_specs
+from src.cameras import CameraRig
 from src.controller import RobotController
 from src.logger import TrajectoryLogger
 from src.simulator import RobotSimulator
@@ -68,7 +87,17 @@ from src.simulator import RobotSimulator
 DEFAULT_SCENE  = "models/scenes/chemistry_lab_combined.xml"
 DEFAULT_SPAWN  = [-1.0, 3.5, 0.22]
 DEFAULT_POLICY = None
-WARMUP_STEPS   = 500
+# Settle durations in seconds, converted to steps from the physics rate.
+# Same real-time durations as the old 500 / 200 steps at 500 Hz.
+WARMUP_SEC     = 1.0
+RESETTLE_SEC   = 0.4
+VIEWER_HZ      = 60
+SHOW_CAMERA_INSETS = True
+# Camera renders with shadows/reflections. Turning this off is ~8x faster on
+# software GL (VM without a GPU: ~90 ms vs ~700 ms per camera tick), but the
+# images come out blown out white and the main viewer washes out too.
+CAMERA_SHADOWS = True
+CAMERA_SNAPSHOT_DIR = "data/camera_snapshots"
 
 # Teleop: per-frame cap on how fast the arm PD targets may move toward the
 # solver's goal, so the first engaged frame (drooped rest pose -> tracked
@@ -154,9 +183,33 @@ def run(scene: str, spawn_pos, groups: list[dict], policy,
         groups = [g for g in groups if g["name"] != "right_arm_test"]
 
     # --- Load scene ---
-    sim   = RobotSimulator(model_path=str(PROJECT_ROOT / scene))
+    sim   = RobotSimulator(model_path=str(PROJECT_ROOT / scene),
+                           cameras=robot_specs.CAMERA_SPECS)
     model = sim.model
     data  = sim.data
+
+    # --- Multi-rate schedule (all derived from the model timestep) ---
+    physics_hz = 1.0 / model.opt.timestep
+
+    def _every(hz, what):
+        n = physics_hz / hz
+        if abs(n - round(n)) > 1e-6:
+            raise ValueError(f"physics {physics_hz:.1f} Hz is not an integer "
+                             f"multiple of {what} {hz} Hz")
+        return int(round(n))
+
+    pd_every  = _every(robot_specs.PD_HZ, "PD")
+    cam_every = _every(robot_specs.CAMERA_HZ, "camera")
+    # Sim choice: the viewer rate need not divide physics evenly (750/60 =
+    # 12.5), so round; the step counter below is global, so camera ticks
+    # stay exactly every cam_every physics steps regardless.
+    steps_per_frame = max(1, round(physics_hz / VIEWER_HZ))
+    warmup_steps  = round(WARMUP_SEC * physics_hz)
+    resettle_steps = round(RESETTLE_SEC * physics_hz)
+    print(f"Rates: physics {physics_hz:.0f} Hz | PD every {pd_every} step(s) "
+          f"({physics_hz / pd_every:.0f} Hz) | cameras every {cam_every} steps "
+          f"({physics_hz / cam_every:.0f} Hz) | viewer {steps_per_frame} steps/frame "
+          f"(~{physics_hz / steps_per_frame:.0f} Hz)")
 
     # --- Resolve actuator IDs per group ---
     claimed = set()
@@ -262,15 +315,16 @@ def run(scene: str, spawn_pos, groups: list[dict], policy,
     # PD control instead of drooping limp and then oscillating when the
     # main loop starts.
     hold_qpos_targets = np.zeros(model.nu)
-    for _ in range(WARMUP_STEPS):
-        warmup_ctrl = controller.step(hold_qpos_targets,
-            {"joint_angles": data.qpos, "joint_velocities": data.qvel})
-        # Only apply hold ctrl for unclaimed actuators; zero the rest
-        for aid in range(model.nu):
-            if aid in unclaimed_ids:
-                data.ctrl[aid] = warmup_ctrl[aid]
-            else:
-                data.ctrl[aid] = 0.0
+    for i in range(warmup_steps):
+        if i % pd_every == 0:
+            warmup_ctrl = controller.step(hold_qpos_targets,
+                {"joint_angles": data.qpos, "joint_velocities": data.qvel})
+            # Only apply hold ctrl for unclaimed actuators; zero the rest
+            for aid in range(model.nu):
+                if aid in unclaimed_ids:
+                    data.ctrl[aid] = warmup_ctrl[aid]
+                else:
+                    data.ctrl[aid] = 0.0
         mujoco.mj_step(model, data)
     print(f"Settled at z={data.qpos[2]:.4f}")
 
@@ -288,11 +342,12 @@ def run(scene: str, spawn_pos, groups: list[dict], policy,
     mujoco.mj_forward(model, data)
 
     # Brief re-settle with PD active so everything stabilizes
-    for _ in range(200):
-        hold_ctrl = controller.step(hold_qpos_targets,
-            {"joint_angles": data.qpos, "joint_velocities": data.qvel})
-        for aid in unclaimed_ids:
-            data.ctrl[aid] = hold_ctrl[aid]
+    for i in range(resettle_steps):
+        if i % pd_every == 0:
+            hold_ctrl = controller.step(hold_qpos_targets,
+                {"joint_angles": data.qpos, "joint_velocities": data.qvel})
+            for aid in unclaimed_ids:
+                data.ctrl[aid] = hold_ctrl[aid]
         mujoco.mj_step(model, data)
     print(f"Arms locked at resting pose, re-settled at z={data.qpos[2]:.4f}")
 
@@ -396,10 +451,17 @@ def run(scene: str, spawn_pos, groups: list[dict], policy,
         scene_vis.flags[mujoco.mjtRndFlag.mjRND_REFLECTION] = 0
     context   = mujoco.MjrContext(model, mujoco.mjtFontScale.mjFONTSCALE_150)
 
-    SUBSTEPS = max(1, round((1.0 / 60.0) / model.opt.timestep))
+    # Cameras share this GL context (offscreen buffer was sized in
+    # RobotSimulator). Render once so frames exist before the first camera tick.
+    rig = CameraRig(model, robot_specs.CAMERA_SPECS, context,
+                    shadows=CAMERA_SHADOWS)
+    rig.render(data)
+    cam_dir = PROJECT_ROOT / CAMERA_SNAPSHOT_DIR
 
     logging_active = False
     prev_l = False
+    prev_c = False
+    step_count = 0
     frame  = 0
 
     def held(key):
@@ -407,7 +469,7 @@ def run(scene: str, spawn_pos, groups: list[dict], policy,
 
     print(f"\nBase:  W/UP=fwd  S/DOWN=back  A/LEFT=left  D/RIGHT=right  SPACE=stop")
     print(f"Arm:   1/2=right_joint1 up/down   3/4=right_joint2 up/down")
-    print(f"L=log  Esc=quit   substeps={SUBSTEPS}")
+    print(f"L=log  C=save camera images  Esc=quit")
     print(f"--- entering loop ---")
 
     # ---------------------------------------------------------------
@@ -416,13 +478,12 @@ def run(scene: str, spawn_pos, groups: list[dict], policy,
         obs = sim.get_observation()
         t   = sim.get_time()
 
-        # Policy + PD (only if policy provided)
-        full_ctrl = None
-        if policy is not None:
-            policy_targets = policy(obs, t)
-            full_ctrl = controller.step(policy_targets, obs)
+        # Per-frame targets for the PD loop; the PD itself runs in the
+        # substep loop below on live state. Actuators without PD get zero ctrl.
+        targets = np.zeros(model.nu)
+        pd_mask = np.zeros(model.nu, dtype=bool)
 
-        ctrl = np.zeros(model.nu)
+        policy_targets = policy(obs, t) if policy is not None else None
 
         # --- Compute velocity command for base (before substep loop) ---
         base_vx = 0.0
@@ -432,9 +493,10 @@ def run(scene: str, spawn_pos, groups: list[dict], policy,
         for g, ids in zip(groups, resolved):
 
             if g["mode"] == "auto":
-                if full_ctrl is not None:
+                if policy_targets is not None:
                     for aid in ids:
-                        ctrl[aid] = full_ctrl[aid]
+                        targets[aid] = policy_targets[aid]
+                        pd_mask[aid] = True
 
             elif g["mode"] == "manual" and g.get("type") == "drive":
                 ds = drive_state[g["name"]]
@@ -494,12 +556,9 @@ def run(scene: str, spawn_pos, groups: list[dict], policy,
                     if any(held(k) for k in jk[aid]["down"]):
                         js[i] -= step
 
-                manual_targets = np.zeros(model.nu)
                 for i, aid in enumerate(ids):
-                    manual_targets[aid] = js[i]
-                manual_ctrl = controller.step(manual_targets, obs)
-                for aid in ids:
-                    ctrl[aid] = manual_ctrl[aid]
+                    targets[aid] = js[i]
+                    pd_mask[aid] = True
 
         # --- Teleop: arm PD targets from session.solve() ---
         if teleop is not None:
@@ -542,12 +601,9 @@ def run(scene: str, spawn_pos, groups: list[dict], policy,
 
         # Hold position on unclaimed actuators (gravity compensation —
         # prevents limp arms from toppling the robot)
-        if unclaimed_ids:
-            hold_ctrl = controller.step(hold_qpos_targets, obs)
-            for aid in unclaimed_ids:
-                ctrl[aid] = hold_ctrl[aid]
-
-        data.ctrl[:] = ctrl
+        for aid in unclaimed_ids:
+            targets[aid] = hold_qpos_targets[aid]
+            pd_mask[aid] = True
 
         # --- Step physics with velocity drive ---
         # Set base XY velocity and yaw rate each substep.  Also zero out
@@ -555,7 +611,13 @@ def run(scene: str, spawn_pos, groups: list[dict], policy,
         # contact friction opposes the forced linear velocity and creates
         # a pitching torque that tips the robot over.  Z velocity is left
         # to physics (gravity, settling).
-        for _ in range(SUBSTEPS):
+        for _ in range(steps_per_frame):
+            # PD tick: torques from the LIVE state, held targets
+            if step_count % pd_every == 0:
+                pd = controller.step(targets, {
+                    "joint_angles": data.qpos,
+                    "joint_velocities": data.qvel})
+                data.ctrl[:] = np.where(pd_mask, pd, 0.0)
             if base_dof is not None:
                 data.qvel[base_dof + 0] = base_vx
                 data.qvel[base_dof + 1] = base_vy
@@ -564,6 +626,9 @@ def run(scene: str, spawn_pos, groups: list[dict], policy,
                 data.qvel[base_dof + 4] = 0.0  # no pitch
                 data.qvel[base_dof + 5] = base_wz
             mujoco.mj_step(model, data)
+            step_count += 1
+            if step_count % cam_every == 0:
+                rig.render(data)
 
         # Logging
         if logging_active:
@@ -573,6 +638,16 @@ def run(scene: str, spawn_pos, groups: list[dict], policy,
             logging_active = not logging_active
             print(f"Logging: {'ON' if logging_active else 'OFF'}")
         prev_l = cur_l
+
+        cur_c = held(glfw.KEY_C)
+        if cur_c and not prev_c:
+            cam_dir.mkdir(parents=True, exist_ok=True)
+            stamp = _time.strftime("%H%M%S")
+            for cname, img in rig.images.items():
+                cv2.imwrite(str(cam_dir / f"{cname}_{stamp}.png"),
+                            cv2.cvtColor(img, cv2.COLOR_RGB2BGR))
+            print(f"Camera images saved: {cam_dir}/*_{stamp}.png")
+        prev_c = cur_c
 
         # Camera follow
         cam.lookat[:] = data.xpos[base_body_id]
@@ -589,6 +664,25 @@ def run(scene: str, spawn_pos, groups: list[dict], policy,
             model, data, opt, None, cam,
             mujoco.mjtCatBit.mjCAT_ALL, scene_vis)
         mujoco.mjr_render(viewport, scene_vis, context)
+        if SHOW_CAMERA_INSETS:
+            # Half-size insets along the bottom. drawPixels wants a FLAT
+            # contiguous uint8 array in bottom-up row order (OpenGL), while
+            # rig.images are top-down, hence the flip.
+            gap, x = 8, 8
+            for cname, img in rig.images.items():
+                small = img[::2, ::2]
+                sh, sw = small.shape[:2]
+                if x + sw > width:
+                    break  # window too narrow for the rest
+                flat = np.ascontiguousarray(np.flipud(small)).ravel()
+                mujoco.mjr_drawPixels(
+                    flat, None, mujoco.MjrRect(x, gap, sw, sh), context)
+                mujoco.mjr_overlay(
+                    mujoco.mjtFont.mjFONT_NORMAL,
+                    mujoco.mjtGridPos.mjGRID_BOTTOMLEFT,
+                    mujoco.MjrRect(x, gap + sh + 2, sw, 24),
+                    cname, None, context)
+                x += sw + gap
         p_now = glfw.get_key(window, glfw.KEY_P) == glfw.PRESS
         due = snapshot_every > 0 and \
             _time.time() - snap_state["last"] >= snapshot_every

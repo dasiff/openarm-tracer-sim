@@ -93,6 +93,7 @@ WARMUP_SEC     = 1.0
 RESETTLE_SEC   = 0.4
 VIEWER_HZ      = 60
 SHOW_CAMERA_INSETS = True
+SHOW_HUD = True  # sim time, base velocity, pose and viewer fps, top left
 # Camera renders with shadows/reflections. Turning this off is ~8x faster on
 # software GL (VM without a GPU: ~90 ms vs ~700 ms per camera tick), but the
 # images come out blown out white and the main viewer washes out too.
@@ -403,6 +404,7 @@ def run(scene: str, spawn_pos, groups: list[dict], policy,
     import time as _time
     snap_dir = Path(snapshot_dir) if snapshot_dir else PROJECT_ROOT / "snapshots"
     snap_state = {"last": _time.time(), "p_down": False}
+    hud_state = {"last": _time.time(), "fps": 0.0}
 
     def save_snapshot(rgb):
         snap_dir.mkdir(parents=True, exist_ok=True)
@@ -664,6 +666,29 @@ def run(scene: str, spawn_pos, groups: list[dict], policy,
             model, data, opt, None, cam,
             mujoco.mjtCatBit.mjCAT_ALL, scene_vis)
         mujoco.mjr_render(viewport, scene_vis, context)
+        # The HUD is drawn before the insets on purpose: the first
+        # mjr_drawPixels right after mjr_render was silently dropped (eagle
+        # inset blank), and drawing an overlay first fixes it.
+        if SHOW_HUD:
+            now = _time.time()
+            dt_wall = now - hud_state["last"]
+            hud_state["last"] = now
+            if dt_wall > 0:  # smoothed, a single frame is too jittery to read
+                hud_state["fps"] += 0.1 * (1.0 / dt_wall - hud_state["fps"])
+            ds = drive_state.get("base", {})
+            speed = math.hypot(base_vx, base_vy)
+            mujoco.mjr_overlay(
+                mujoco.mjtFont.mjFONT_NORMAL,
+                mujoco.mjtGridPos.mjGRID_TOPLEFT, viewport,
+                "sim time\nbase speed (m/s)\nbase vx, vy (m/s)\n"
+                "yaw rate (rad/s)\nyaw (deg)\nposition x, y, z (m)\n"
+                "viewer fps\ncmd lin, ang",
+                f"{t:.2f} s\n{speed:.2f}\n{base_vx:+.2f}, {base_vy:+.2f}\n"
+                f"{base_wz:+.2f}\n{yaw_deg:+.1f}\n"
+                f"{data.qpos[0]:.2f}, {data.qpos[1]:.2f}, {data.qpos[2]:.3f}\n"
+                f"{hud_state['fps']:.1f}\n"
+                f"{ds.get('linear', 0):+.2f}, {ds.get('angular', 0):+.2f}",
+                context)
         if SHOW_CAMERA_INSETS:
             # Half-size insets along the bottom. drawPixels wants a FLAT
             # contiguous uint8 array in bottom-up row order (OpenGL), while

@@ -100,7 +100,7 @@ CAMERA_SPECS = [
         "name": "eagle_cam",
         "parent": "openarm_body_link0",
         "pos": [0.05, 0.0, 0.45],
-        "look_at": [0.60, 0.0, -0.40],
+        "look_at": [1.0, 0.0, 0.45],
         "up": [0.0, 0.0, 1.0],
         "fovy": ORBBEC_FOVY_DEG,
         "resolution": ORBBEC_RESOLUTION,

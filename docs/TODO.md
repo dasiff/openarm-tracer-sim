@@ -1,5 +1,32 @@
 # Project TODO List
 
+## Current open items (updated 2026-10-02)
+
+The phases below are the original roadmap and are partly out of date: the controller, simulator,
+logger, chemistry lab scene, cameras and webcam teleop all exist now (see `git log`).
+
+- [ ] **Test webcam teleop on a real camera.** Only the scripted fake operator
+  (`CC_FAKE_TELEOP=1`) has been tried; the VM has no camera. Check the preview colours, the
+  engage gesture and how the arms behave when the operator leaves view.
+- [ ] **Drive the grippers in teleop.** The solver outputs only the 7 arm joints per side, so the
+  grippers stay on the keyboard in teleop.
+- [ ] **Arm swings when the base moves** (`combined_controller.py`). Re-test now that the PD loop
+  runs at 750 Hz every physics step; the old once-per-frame control update was one suspect.
+  Other leads: mixed actuator gain/bias settings, and the 3.5 mm finger overlap at the zero pose.
+- [ ] **Real camera parameters.** Eagle and wrist camera poses, field of view and resolution are
+  placeholders; replace them when the Orbbec model and mounting are known.
+- [ ] **Camera image realism.** The floor and lighting wash out to white; consider lower floor
+  reflectance and lighting for the camera views.
+- [ ] **Viewer speed on the VM** is about 8-13 fps. The remaining cost is the wrist-camera shadow
+  passes; try the VM's 3D acceleration and video memory settings. Recording demos with
+  `CC_ROUNDROBIN=0` is slower still.
+- [ ] **Do not draw per-frame text with `mjr_overlay`** on this VM: its driver leaks a resource per
+  glyph and aborts the process after about 250 frames. Use bitmap text (see the viewer HUD).
+- [ ] Report the provisioner problem upstream (it rejects the openarm product).
+- [ ] Finish checking for Windows-side commits that never reached GitHub.
+
+---
+
 ## Phase 9: Control Layer (Next - Week 2)
 
 - [ ] Create `src/controller.py`

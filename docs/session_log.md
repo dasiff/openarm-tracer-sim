@@ -110,3 +110,41 @@ out of memory and crashed. The second (from 18:56) resumed the work.
 - The check for Windows-side commits that never reached GitHub wasn't
   finished. A fetch showed nothing new on origin, and `combined_controller.py`
   is in 088104b.
+
+## 2026-10-01 to 10-02 — Viewer speed, webcam teleop in the viewer, key layout
+
+### Decisions
+- **Speed settings on by default** (they only matter on this VM's virtual GPU): viewer shadows and
+  reflections off, one camera rendered per camera tick (each updates at 10 Hz), the eagle camera
+  without shadows, vsync off paced to 60 Hz. Camera resolution, shadow map size and window size
+  made no measurable difference. `CAMERA_HZ` stays 30; `CC_ROUNDROBIN=0` renders all three cameras
+  every tick for demo recordings. The viewer went from about 600-1000 ms per frame to about 80-130.
+- **The operator webcam is a fourth inset in the viewer**, not a second window. The window manager
+  (mutter) ignores window moves, so the second window overlapped the viewer. The camera library
+  quits if its window disappears, so `cv2.imshow` and `cv2.getWindowProperty` are replaced.
+- **Teleop mode starts with the arms on the keyboard.** `F2` switches to the webcam operator and
+  back; the base keys work in both. If the operator leaves view the arms hold their last pose.
+  Teleop and manual jogging write the same per-joint targets, so switching needs no syncing.
+- **Dedicated keys for every joint**, laid out like the robot (left arm on the top two rows, right
+  arm on the home and bottom rows). The base is on the arrow keys only and the commands moved to
+  F2-F5. This replaced a select-a-joint-by-number scheme.
+- Teleop and manual mode open the same viewer window; the teleop-only window code is gone.
+- The eagle camera looks level (it looked 57 degrees down and saw only the white floor).
+
+### Problems found
+1. **`mjr_overlay` text crashes the viewer on this VM.** It draws one glyph per GL call and the
+   vmwgfx driver leaks a resource id per call; a roughly 200 glyph HUD aborted the process at
+   frame about 250 (`Illegal COTable id`, exit 134, no Python exception). The HUD and inset labels
+   are now OpenCV bitmaps drawn with `mjr_drawPixels`. Related: the first `mjr_drawPixels` after
+   `mjr_render` is dropped unless some overlay call happens first, so one single-space overlay is
+   kept per frame.
+2. **Vsync-on timings are misleading when nobody is watching.** `swap_buffers` took about 1.0 s
+   every frame, probably a hidden-window throttle. The on-screen fps readout also overstated the
+   rate (it averaged 1/dt); it now smooths frame time.
+3. A hard reset earlier left NUL bytes in the memory index file; cleaned up.
+
+### Still open
+Supersedes the previous "Still open" list: connecting `q_goal_right/left` from
+`session.solve()` to the arm PD is done (webcam teleop in `combined_controller.py`), but has been
+tried only with a scripted operator. See `docs/TODO.md` for the current list.
+

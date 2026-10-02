@@ -4,61 +4,102 @@ Simulation environment for Agilex Tracer mobile base + OpenArm bimanual robot in
 
 ## Quick Start
 
+The project has its own virtual environment (uv, Python 3.12, MuJoCo 3.13.0), set up to share the
+locked versions of `openarm_teleop`. See `docs/session_log.md` for how it was built.
+
 ```bash
-conda create -n matsim python=3.12
-conda activate matsim
-pip install -r requirements.txt
-python examples/run_with_dummy_policy.py
+source .venv/bin/activate        # also sets the geo_kin license variable
+python experiments/combined_controller.py                 # drive the robot with the keyboard
+python experiments/combined_controller.py --mode teleop   # same, plus webcam teleoperation of the arms
 ```
+
+`--mode teleop` additionally needs the `openarm_teleop`, `geo_kin_core` and `XRT_devices` packages
+(editable installs in the venv) and a webcam. `CC_FAKE_TELEOP=1` swaps in a scripted operator so
+the teleop path can be tried without a camera.
+
+## Controls (`experiments/combined_controller.py`)
+
+| Keys | Action |
+|---|---|
+| Arrow keys, Space | drive / turn the base, stop |
+| `1`-`8` / `Q`-`I` | left arm joints 1-7 and gripper: upper key increases, lower decreases |
+| `A`-`K` / `Z`-`,` | right arm joints 1-7 and gripper: same layout |
+| `F2` | (teleop mode) switch the arms between the keyboard and the webcam operator |
+| `F3` | save the simulated camera images to `data/camera_snapshots/` |
+| `F4` | save a snapshot of the viewer |
+| `F5` | toggle trajectory logging |
+| `Esc` | quit |
+
+Columns run shoulder (joint 1) to wrist (joint 7), then the gripper; the gripper's upper key opens
+it. The arm keys are held to jog. In teleop the webcam operator owns the arm joints, so only the
+grippers respond to the keys then. If the operator leaves the camera's view the arms hold their
+last pose. The same legend is shown in the viewer's status panel.
+
+The viewer shows the three simulated cameras (eagle and both wrists) along the bottom, plus the
+operator webcam in teleop mode. Camera poses, field of view and resolution are placeholders until
+the real mounting and Orbbec model are known (`src/robot_specs.py`).
+
+### Performance on the VM
+
+The development VM has only a virtual GPU, so the viewer defaults to settings that keep it
+responsive: viewer shadows off, one simulated camera rendered per tick (each updates at 10 Hz,
+not the full 30 Hz), the eagle camera without shadows, and vsync off paced to 60 Hz. For recording
+demos run with `CC_ROUNDROBIN=0` so every camera updates at 30 Hz (slower on the VM). All the
+switches (`CC_*` environment variables, including `CC_BENCH_FRAMES=N` for per-phase timings) are
+documented in `_perf_settings` in `experiments/combined_controller.py`.
 
 ## Project Structure
 
-Robotics_Sim/
+```
+openarm-tracer-sim/
 ├── src/
-│ ├── simulator.py # Generic MuJoCo simulator
-│ ├── controller.py # PD controller (20 actuators)
-│ ├── actuator_mapping.py # Actuator name → index mapping
-│ ├── logger.py # (TODO) Data logging
-│ └── utils.py
+│   ├── simulator.py         # Generic MuJoCo simulator (injects the cameras at load)
+│   ├── controller.py        # PD controller (20 actuators)
+│   ├── cameras.py           # Simulated Orbbec cameras, offscreen rendering
+│   ├── robot_specs.py       # Rates, motor gains, camera specs, calibration status
+│   ├── actuator_mapping.py  # Actuator name -> index mapping
+│   ├── joint_addressing.py
+│   ├── environment.py
+│   ├── logger.py            # Trajectory logging
+│   └── utils.py
 ├── models/
-│ ├── scenes/ # Scene definitions
-│ │ ├── single_block.xml # Robot + block on workbench
-│ │ ├── single_block_env.py
-│ │ └── dummy_policy.py # Hardcoded push sequence
-│ └── policies/
-│ └── dummy_policy.py # Policy implementations
+│   ├── scenes/              # chemistry_lab*.xml, single_block.xml, ...
+│   └── policies/            # Policy implementations
+├── deps/OpenArm-Combined/   # Robot model (submodule)
 ├── experiments/
-│ ├── run_basic_sim.py # Minimal test
-│ └── run_with_dummy_policy.py # End-to-end with viewer
+│   ├── combined_controller.py     # Main interactive sim: keyboard, webcam teleop, cameras
+│   ├── camera_snapshot.py         # Render the simulated cameras once to PNGs
+│   ├── chemistry_lab_tracer_teleop.py
+│   ├── run_basic_sim.py, run_with_dummy_policy.py, test_controller.py
+│   └── workspace_sweep.py, visualize_workspace.py, empty_room_joint_test.py, ...
+├── data/                    # Logged trajectories, camera snapshots, diagnostics
 ├── docs/
-│ ├── TODO.md # Complete roadmap
-│ └── DECISIONS.md
+│   ├── TODO.md              # Roadmap and open items
+│   └── session_log.md       # Decisions, findings and problems, by session
 └── README.md
+```
 
 ## Features
 
-- **MuJoCo Physics**: Fast, accurate simulation
-- **PD Control**: Proper actuator mapping (20 controlled joints)
-- **User-friendly naming**: `right_joint1`, `left_finger2` instead of magic indices
-- **3D Visualization**: Built-in MuJoCo viewer with camera control
-- **Generic simulator**: Works with any scene XML
+- **MuJoCo physics**: 750 Hz physics and PD control, matching the OpenArm ros2_control loop.
+- **PD control**: proper actuator mapping (20 controlled joints, `right_joint1`, `left_finger2`, ...).
+- **Mobile base**: velocity-driven Tracer base (see the note in `combined_controller.py` for why).
+- **Simulated cameras**: eagle and wrist cameras rendered offscreen at 30 Hz.
+- **Webcam teleoperation**: MediaPipe pose to SEW-Mimic retargeting through geo_kin.
+- **Generic simulator**: works with any scene XML.
 
 ## Status
 
-- [x] Project infrastructure
-- [x] Simulator skeleton (Phase 8)
-- [x] PD controller with actuator mapping (Phase 9)
-- [x] End-to-end pipeline with visualization (Phase 10)
+- [x] Project infrastructure, generic simulator, PD controller with actuator mapping
+- [x] Chemistry lab scene with the mobile manipulator
+- [x] Keyboard control of base and both arms and grippers
+- [x] Simulated cameras (placeholder poses)
+- [x] Webcam teleop wired into the controller (tested with a scripted operator only)
+- [ ] Teleop tested with a real camera
 - [ ] Learned policy integration
-- [ ] Data logging
 - [ ] Sim-to-real validation
 
-## Next Steps
-
-1. Fix dummy policy to reach and push block
-2. Implement learned imitation learning policy
-3. Add data logging for trajectory validation
-4. Validate against real robot trajectories (when hardware arrives)
+See `docs/TODO.md` for the open items.
 
 ## References
 

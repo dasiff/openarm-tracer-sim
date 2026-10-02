@@ -60,6 +60,16 @@ CAMERAS NOTE:
     are drawn at half size along the bottom of the viewer. Press C to save
     the latest frames as PNGs to data/camera_snapshots/.
 
+TELEOP NOTE:
+    --mode teleop starts with the arms in MANUAL (keys 1-4 move right joints
+    1-2, the rest hold) and the base on WASD in every state. T switches the
+    arms to the webcam operator (and back); each switch starts from the other
+    side's current targets, so nothing jumps. In TELEOP, if the operator
+    leaves view the arms hold their last pose; they follow again when the
+    engage gesture is made. The webcam feed (with pose overlay) is drawn as a
+    fourth inset beside the simulated cameras; there is no second window.
+    CC_FAKE_TELEOP=1 swaps in a scripted operator for testing without a webcam.
+
 Usage:
     python experiments/combined_controller.py
     python experiments/combined_controller.py --scene models/scenes/other.xml
@@ -70,6 +80,7 @@ Usage:
 import argparse
 import math
 import os
+import time
 import sys
 from pathlib import Path
 
@@ -113,7 +124,6 @@ CAMERA_SNAPSHOT_DIR = "data/camera_snapshots"
 # pose) ramps instead of snapping.
 TELEOP_MAX_JOINT_VEL = 3.0   # rad/s
 PREVIEW_WINDOW = "MediaPipe Pose Estimation"   # title set by xrt_devices
-PREVIEW_W, PREVIEW_H = 420, 315
 ARM_ACTUATOR_NAMES = [
     f"{side}_joint{i}_ctrl" for side in ("right", "left") for i in range(1, 8)
 ]
@@ -172,6 +182,77 @@ def _key(name: str) -> int:
 # run()
 # ===================================================================
 
+def install_preview_capture(store):
+    """Route the MediaPipe preview into `store` instead of an OpenCV window.
+
+    The camera library draws its pose-overlay frame with cv2.imshow and quits
+    the whole device if its window stops being visible. Replacing both
+    functions lets the viewer draw the frame itself, as one more inset next to
+    the simulated cameras: no second window to place on a small VM screen
+    (mutter ignores window moves), and the frame is stored in
+    store["preview_frame"] (BGR) for snapshots.
+    """
+    import cv2
+    orig_get_prop = cv2.getWindowProperty
+
+    def imshow(name, img):
+        store["preview_frame"] = img.copy()
+
+    def get_window_property(name, prop):
+        if name == PREVIEW_WINDOW:
+            return 1.0  # "visible"; there is deliberately no window
+        return orig_get_prop(name, prop)
+
+    cv2.imshow = imshow
+    cv2.getWindowProperty = get_window_property
+
+
+class _FakeSource:
+    """Scripted operator for testing without a webcam (CC_FAKE_TELEOP=1).
+
+    In view for 4 s, out of view for 4 s, repeating. Draws a synthetic
+    preview frame through cv2.imshow like the real camera thread does.
+    """
+
+    def __init__(self):
+        self.t0 = time.monotonic()
+
+    def get_frame(self):
+        import cv2
+        ph = (time.monotonic() - self.t0) % 8.0
+        in_view = ph < 4.0
+        img = np.full((480, 640, 3), 70 if in_view else 25, np.uint8)
+        cv2.circle(img, (int(100 + 440 * (ph / 8.0)), 240), 40,
+                   (0, 200, 255) if in_view else (80, 80, 80), -1)
+        cv2.putText(img, "FAKE OPERATOR " + ("in view" if in_view else "out of view"),
+                    (30, 60), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (255, 255, 255), 2)
+        cv2.imshow(PREVIEW_WINDOW, img)
+        return object() if in_view else None  # any non-None = engaged
+
+    def cleanup(self):
+        pass
+
+
+class _FakeSession:
+    """Stand-in solver for _FakeSource: swings every arm joint gently."""
+
+    def __init__(self, lo, hi):
+        self.lo, self.hi = lo, hi
+        self.t0 = time.monotonic()
+
+    def reset(self, *args):
+        pass
+
+    def solve(self, frame, engaged, q_current_right, q_current_left):
+        from types import SimpleNamespace
+        ph = time.monotonic() - self.t0
+        out = {}
+        for sd in ("right", "left"):
+            goal = 0.4 * np.sin(ph + np.arange(7))
+            out[f"q_goal_{sd}"] = np.clip(goal, self.lo[sd], self.hi[sd])
+        return SimpleNamespace(**out)
+
+
 def _perf_settings():
     """Viewer / camera performance settings, overridable with CC_* env vars.
 
@@ -186,6 +267,8 @@ def _perf_settings():
     CC_CAM_SHADOWS=0   camera shadows off (washes out wrist cams)
     CC_VSYNC=1         vsync on (frames stall ~1 s if the window is hidden)
     CC_CAM_RES=WxH  CC_CAM_HZ=N  CC_SHADOWSIZE=N  CC_WIN=WxH  CC_HUD=0  CC_INSETS=0
+    CC_FAKE_TELEOP=1   scripted fake operator + solver (no webcam needed)
+    CC_BENCH_TOGGLE=n,n  press T at these frames (testing)   CC_BENCH_SNAP_FRAME=n
     CC_FINISH=1        glFinish after each swap
     CC_BENCH_FRAMES=N  run N frames, print per-phase timings, then exit
     CC_BENCH_SNAP=dir  save main view + camera images at frame 15
@@ -206,6 +289,10 @@ def _perf_settings():
         "vsync": int(e("CC_VSYNC", "0")),
         "snap_dir": e("CC_BENCH_SNAP"),
         "finish": e("CC_FINISH") == "1",
+        "fake_teleop": e("CC_FAKE_TELEOP") == "1",
+        "toggle_frames": {int(x) for x in e("CC_BENCH_TOGGLE", "").split(",")
+                          if x},
+        "snap_frame": int(e("CC_BENCH_SNAP_FRAME", "15")),
         "hud": e("CC_HUD") != "0",
         "insets": e("CC_INSETS") != "0",
     }
@@ -225,10 +312,6 @@ def run(scene: str, spawn_pos, groups: list[dict], policy,
                     When None, auto groups are skipped (zero ctrl) and only
                     manual groups respond — i.e. pure keyboard teleop.
     """
-
-    if mode == "teleop":
-        # Arms are driven by the solver, not the keyboard arm-test keys.
-        groups = [g for g in groups if g["name"] != "right_arm_test"]
 
     bench = _perf_settings()
     global CAMERA_SHADOWS, SHOW_HUD, SHOW_CAMERA_INSETS
@@ -419,8 +502,6 @@ def run(scene: str, spawn_pos, groups: list[dict], policy,
     if mode == "teleop":
         import atexit
         from geo_kin_core.types import RetargetFrame
-        from openarm_teleop.session import make_session
-        from xrt_devices.integrations.geo_kin import MediaPipeDeviceAdapter
 
         arm_ids = {}
         arm_qadr = {}
@@ -435,30 +516,30 @@ def run(scene: str, spawn_pos, groups: list[dict], policy,
             arm_lo[side] = np.array([model.jnt_range[j, 0] for j in jids])
             arm_hi[side] = np.array([model.jnt_range[j, 1] for j in jids])
 
-        # Solver first, so a licence problem can't leave a camera running.
-        teleop = {"warned": set(), "engaged": False}
-        session = make_session()
-        session.reset(data.qpos[arm_qadr["right"]].copy(),
-                      data.qpos[arm_qadr["left"]].copy())
-        # display=True shows the live camera feed (with pose overlay) so the
-        # operator can adjust framing.
-        source = MediaPipeDeviceAdapter(camera_id=camera, display=preview)
-        atexit.register(source.cleanup)
+        # The arms start in MANUAL (keyboard); T switches them to the webcam
+        # operator and back, so the base can be driven into place first.
+        teleop = {"warned": set(), "engaged": False, "on": False}
+        if bench["fake_teleop"]:
+            session = _FakeSession(arm_lo, arm_hi)
+            source = _FakeSource()
+            print("Teleop: FAKE scripted operator (CC_FAKE_TELEOP=1), no webcam")
+        else:
+            from openarm_teleop.session import make_session
+            from xrt_devices.integrations.geo_kin import MediaPipeDeviceAdapter
+            # Solver first, so a licence problem can't leave a camera running.
+            session = make_session()
+            session.reset(data.qpos[arm_qadr["right"]].copy(),
+                          data.qpos[arm_qadr["left"]].copy())
+            # display=True makes the library draw the pose overlay on the
+            # camera feed; install_preview_capture hands that frame to the
+            # viewer instead of opening a window.
+            source = MediaPipeDeviceAdapter(camera_id=camera, display=preview)
+            atexit.register(source.cleanup)
         if preview:
-            # Keep the latest preview frame (with pose overlay) for snapshots.
-            import cv2
-            _imshow = cv2.imshow
-            def _imshow_keep(name, img, _orig=_imshow):
-                teleop["preview_frame"] = img.copy()
-                _orig(name, img)
-            cv2.imshow = _imshow_keep
-            # Pre-create the preview window small and top-left so it sits
-            # beside (not under) the MuJoCo window on a small VM screen.
-            cv2.namedWindow(PREVIEW_WINDOW, cv2.WINDOW_NORMAL)
-            cv2.resizeWindow(PREVIEW_WINDOW, PREVIEW_W, PREVIEW_H)
-            cv2.moveWindow(PREVIEW_WINDOW, 0, 0)
+            install_preview_capture(teleop)
         print(f"Teleop: camera {camera}, preview={'on' if preview else 'off'}. "
-              f"Raise both arms to shoulder height to engage.")
+              f"Arms start MANUAL; press T for teleop, then raise both arms "
+              f"to shoulder height to engage.")
 
     # --- Snapshots (press P in the MuJoCo window, or --snapshot-every N) ---
     import cv2
@@ -466,6 +547,7 @@ def run(scene: str, spawn_pos, groups: list[dict], policy,
     snap_dir = Path(snapshot_dir) if snapshot_dir else PROJECT_ROOT / "snapshots"
     snap_state = {"last": _time.time(), "p_down": False}
     hud_state = {"last": _time.time(), "ms": 0.0}
+    inset_cache = {}
 
     def save_snapshot(rgb):
         snap_dir.mkdir(parents=True, exist_ok=True)
@@ -483,17 +565,24 @@ def run(scene: str, spawn_pos, groups: list[dict], policy,
         lambda err, desc: print(f"GLFW error {err}: {desc}"))
     if not glfw.init():
         raise RuntimeError("Could not initialise GLFW")
-    window = glfw.create_window(*bench["win"], "Combined Controller", None, None)
+    win_w, win_h = bench["win"]
+    if mode == "teleop":
+        # Use the whole screen width so the four insets (3 simulated cameras
+        # plus the operator webcam) fit. The window must be created at its
+        # final size, hidden, and positioned BEFORE it is shown: mutter
+        # auto-maximizes a window bigger than the screen and then ignores
+        # later move/resize requests.
+        vm = glfw.get_video_mode(glfw.get_primary_monitor())
+        x0 = 0
+        win_w, win_h = vm.size.width, vm.size.height - 80
+        glfw.window_hint(glfw.VISIBLE, glfw.FALSE)
+    window = glfw.create_window(win_w, win_h, "Combined Controller", None, None)
     if not window:
         glfw.terminate()
         raise RuntimeError("GLFW window creation failed")
     if mode == "teleop":
-        # Fill the space to the right of the camera preview.
-        vm = glfw.get_video_mode(glfw.get_primary_monitor())
-        x0 = PREVIEW_W + 10
-        glfw.set_window_size(window, max(vm.size.width - x0, 400),
-                             vm.size.height - 80)
         glfw.set_window_pos(window, x0, 30)
+        glfw.show_window(window)
     glfw.make_context_current(window)
     glfw.swap_interval(bench["vsync"])
 
@@ -542,15 +631,49 @@ def run(scene: str, spawn_pos, groups: list[dict], policy,
     logging_active = False
     prev_l = False
     prev_c = False
+    prev_t = False
     step_count = 0
     frame  = 0
 
     def held(key):
         return glfw.get_key(window, key) == glfw.PRESS
 
+    def set_teleop(on):
+        """Switch the arms between MANUAL keys and the TELEOP webcam operator.
+
+        Each side starts from the other's current targets, so nothing jumps.
+        In MANUAL only the keyed joints (right 1-2) move; the other arm joints
+        keep their last targets.
+        """
+        if on == teleop["on"]:
+            return
+        for g, ids in zip(groups, resolved):
+            if g["mode"] == "manual" and g.get("type") == "joint":
+                if on:
+                    hold_qpos_targets[ids] = joint_state[g["name"]]
+                else:
+                    joint_state[g["name"]][:] = hold_qpos_targets[ids]
+        if on:
+            session.reset(data.qpos[arm_qadr["right"]].copy(),
+                          data.qpos[arm_qadr["left"]].copy())
+            teleop["engaged"] = False
+        teleop["on"] = on
+        keyed = [a for g, ids in zip(groups, resolved)
+                 if g.get("type") == "joint" for a in ids]
+        print(("Arms: TELEOP (webcam operator; raise both arms to engage)"
+               if on else "Arms: MANUAL (keys 1-4); other arm joints hold")
+              + f" | keyed joint targets {hold_qpos_targets[keyed].round(3)}")
+
+    # (keycap, label) pairs for the HUD legend; kept short, flowed in rows.
+    hud_keys = [("WASD", "drive"), ("Spc", "stop"), ("1-4", "R arm")] + \
+        ([("T", "man/tele")] if teleop is not None else []) + \
+        [("C", "cam imgs"), ("P", "snap"), ("L", "log"), ("Esc", "quit")]
+
     print(f"\nBase:  W/UP=fwd  S/DOWN=back  A/LEFT=left  D/RIGHT=right  SPACE=stop")
     print(f"Arm:   1/2=right_joint1 up/down   3/4=right_joint2 up/down")
     print(f"L=log  C=save camera images  Esc=quit")
+    if teleop is not None:
+        print(f"T=toggle arms MANUAL (keys 1-4) / TELEOP (webcam); base keys work in both")
     print(f"--- entering loop ---")
 
     # ---------------------------------------------------------------
@@ -566,6 +689,12 @@ def run(scene: str, spawn_pos, groups: list[dict], policy,
         pd_mask = np.zeros(model.nu, dtype=bool)
 
         policy_targets = policy(obs, t) if policy is not None else None
+
+        if teleop is not None:
+            cur_t_key = held(glfw.KEY_T) or frame in bench["toggle_frames"]
+            if cur_t_key and not prev_t:
+                set_teleop(not teleop["on"])
+            prev_t = cur_t_key
 
         # --- Compute velocity command for base (before substep loop) ---
         base_vx = 0.0
@@ -632,6 +761,13 @@ def run(scene: str, spawn_pos, groups: list[dict], policy,
                 jk   = joint_keys[g["name"]]
                 step = g.get("step_size", 0.05)
 
+                if teleop is not None and teleop["on"]:
+                    # Teleop owns these joints: track its targets, ignore keys.
+                    for aid in ids:
+                        targets[aid] = hold_qpos_targets[aid]
+                        pd_mask[aid] = True
+                    continue
+
                 for i, aid in enumerate(ids):
                     if any(held(k) for k in jk[aid]["up"]):
                         js[i] += step
@@ -644,42 +780,43 @@ def run(scene: str, spawn_pos, groups: list[dict], policy,
 
         # --- Teleop: arm PD targets from session.solve() ---
         if teleop is not None:
-            tframe = source.get_frame()
-            q_cur = {sd: data.qpos[arm_qadr[sd]].copy() for sd in arm_ids}
-            out = session.solve(
-                tframe if tframe is not None else RetargetFrame(),
-                engaged=tframe is not None,
-                q_current_right=q_cur["right"], q_current_left=q_cur["left"])
-            if (tframe is not None) != teleop["engaged"]:
-                teleop["engaged"] = tframe is not None
-                print("Teleop: " + ("ENGAGED" if teleop["engaged"]
-                                    else "tracking lost — holding last pose"))
-            if tframe is not None:
-                for sd in ("right", "left"):
-                    goal = getattr(out, f"q_goal_{sd}", None)
-                    if goal is None:
-                        if (sd, "none") not in teleop["warned"]:
-                            teleop["warned"].add((sd, "none"))
-                            print(f"Teleop WARNING: solve() gave no q_goal_{sd}")
-                        continue
-                    goal = np.asarray(goal, dtype=float)
-                    if goal.shape != (7,) or not np.isfinite(goal).all() \
-                            or np.abs(goal).max() > math.pi:
-                        if (sd, "range") not in teleop["warned"]:
-                            teleop["warned"].add((sd, "range"))
-                            print(f"Teleop WARNING: q_goal_{sd} invalid or "
-                                  f"outside ±pi, frame ignored: {goal.round(2)}")
-                        continue
-                    clipped = np.clip(goal, arm_lo[sd], arm_hi[sd])
-                    if (sd, "clip") not in teleop["warned"] and \
-                            not np.allclose(clipped, goal):
-                        teleop["warned"].add((sd, "clip"))
-                        print(f"Teleop: q_goal_{sd} clipped to joint limits "
-                              f"(first seen: {goal.round(2)})")
-                    cur_t = hold_qpos_targets[arm_ids[sd]]
-                    max_d = TELEOP_MAX_JOINT_VEL / 60.0
-                    hold_qpos_targets[arm_ids[sd]] = cur_t + np.clip(
-                        clipped - cur_t, -max_d, max_d)
+            tframe = source.get_frame()  # also keeps the preview fresh
+            if teleop["on"]:
+                q_cur = {sd: data.qpos[arm_qadr[sd]].copy() for sd in arm_ids}
+                out = session.solve(
+                    tframe if tframe is not None else RetargetFrame(),
+                    engaged=tframe is not None,
+                    q_current_right=q_cur["right"], q_current_left=q_cur["left"])
+                if (tframe is not None) != teleop["engaged"]:
+                    teleop["engaged"] = tframe is not None
+                    print("Teleop: " + ("ENGAGED" if teleop["engaged"]
+                                        else "tracking lost — holding last pose"))
+                if tframe is not None:
+                    for sd in ("right", "left"):
+                        goal = getattr(out, f"q_goal_{sd}", None)
+                        if goal is None:
+                            if (sd, "none") not in teleop["warned"]:
+                                teleop["warned"].add((sd, "none"))
+                                print(f"Teleop WARNING: solve() gave no q_goal_{sd}")
+                            continue
+                        goal = np.asarray(goal, dtype=float)
+                        if goal.shape != (7,) or not np.isfinite(goal).all() \
+                                or np.abs(goal).max() > math.pi:
+                            if (sd, "range") not in teleop["warned"]:
+                                teleop["warned"].add((sd, "range"))
+                                print(f"Teleop WARNING: q_goal_{sd} invalid or "
+                                      f"outside ±pi, frame ignored: {goal.round(2)}")
+                            continue
+                        clipped = np.clip(goal, arm_lo[sd], arm_hi[sd])
+                        if (sd, "clip") not in teleop["warned"] and \
+                                not np.allclose(clipped, goal):
+                            teleop["warned"].add((sd, "clip"))
+                            print(f"Teleop: q_goal_{sd} clipped to joint limits "
+                                  f"(first seen: {goal.round(2)})")
+                        cur_t = hold_qpos_targets[arm_ids[sd]]
+                        max_d = TELEOP_MAX_JOINT_VEL / 60.0
+                        hold_qpos_targets[arm_ids[sd]] = cur_t + np.clip(
+                            clipped - cur_t, -max_d, max_d)
 
         # Hold position on unclaimed actuators (gravity compensation —
         # prevents limp arms from toppling the robot)
@@ -771,15 +908,39 @@ def run(scene: str, spawn_pos, groups: list[dict], policy,
             mujoco.mjr_drawPixels(
                 flat, None, mujoco.MjrRect(left, bottom, w, h), context)
 
-        def text_bitmap(rows, w, label_w):
-            line_h = 20
-            bmp = np.full((line_h * len(rows) + 8, w, 3), 45, np.uint8)
+        def text_bitmap(rows, w, label_w, keys=()):
+            line_h, key_h, font = 20, 24, cv2.FONT_HERSHEY_SIMPLEX
+            # Key legend: keycap icon + short label, flowed left to right and
+            # wrapped to the panel width, to use as little height as possible.
+            layout, x, line = [], 6, 0
+            for key, label in keys:
+                kw = cv2.getTextSize(key, font, 0.4, 1)[0][0] + 8
+                lw = cv2.getTextSize(label, font, 0.4, 1)[0][0]
+                if x + kw + 4 + lw > w - 6 and x > 6:
+                    x, line = 6, line + 1
+                layout.append((key, label, x, line, kw))
+                x += kw + 4 + lw + 12
+            top = line_h * len(rows) + 8
+            h = top + (key_h * (line + 1) + 6 if keys else 0)
+            bmp = np.full((h, w, 3), 45, np.uint8)
             for i, (lab, val) in enumerate(rows):
                 y = line_h * (i + 1) - 3
                 cv2.putText(bmp, lab, (6, y), cv2.FONT_HERSHEY_SIMPLEX,
                             0.45, (190, 190, 190), 1, cv2.LINE_AA)
                 cv2.putText(bmp, val, (label_w, y), cv2.FONT_HERSHEY_SIMPLEX,
                             0.45, (255, 255, 255), 1, cv2.LINE_AA)
+            if keys:
+                cv2.line(bmp, (6, top - 2), (w - 6, top - 2), (110, 110, 110), 1)
+            for key, label, kx, ln, kw in layout:
+                y = top + key_h * ln + 17
+                cv2.rectangle(bmp, (kx, y - 14), (kx + kw, y + 4),
+                              (80, 80, 80), -1)
+                cv2.rectangle(bmp, (kx, y - 14), (kx + kw, y + 4),
+                              (200, 200, 200), 1)
+                cv2.putText(bmp, key, (kx + 4, y), font, 0.4,
+                            (255, 255, 255), 1, cv2.LINE_AA)
+                cv2.putText(bmp, label, (kx + kw + 4, y), font, 0.4,
+                            (150, 220, 150), 1, cv2.LINE_AA)
             return bmp
 
         if SHOW_HUD or SHOW_CAMERA_INSETS:
@@ -807,23 +968,47 @@ def run(scene: str, spawn_pos, groups: list[dict], policy,
                  f"{1000.0 / max(hud_state['ms'], 1e-6):.1f}"),
                 ("cmd lin, ang", f"{ds.get('linear', 0):+.2f}, "
                  f"{ds.get('angular', 0):+.2f}"),
-            ], 330, 190)
+            ] + ([("arms (T toggles)", (
+                "MANUAL" if not teleop["on"] else
+                "TELEOP tracking" if teleop["engaged"] else
+                "TELEOP no body, holding"))] if teleop is not None else []),
+                400, 180, hud_keys)
             blit(hud, 8, height - hud.shape[0] - 8)
         if SHOW_CAMERA_INSETS:
-            # Half-size insets along the bottom, camera name burned into the
-            # top-left corner. rig.images are top-down, blit flips them.
-            gap, x = 8, 8
-            for cname, img in rig.images.items():
-                small = img[::2, ::2].copy()
-                sh, sw = small.shape[:2]
-                if x + sw > width:
-                    break  # window too narrow for the rest
-                cv2.rectangle(small, (0, 0), (len(cname) * 9 + 10, 20),
-                              (45, 45, 45), -1)
-                cv2.putText(small, cname, (5, 15), cv2.FONT_HERSHEY_SIMPLEX,
-                            0.5, (255, 255, 255), 1, cv2.LINE_AA)
+            # One row of insets along the bottom: the simulated cameras, plus
+            # the operator webcam in teleop runs. Each is scaled to fit the
+            # window width (at most half size), with its name burned into the
+            # top-left corner. Images are top-down; blit flips them.
+            tiles = list(rig.images.items())
+            if teleop is not None and preview:
+                pf = teleop.get("preview_frame")
+                tiles.append(("operator_cam", None if pf is None else
+                              cv2.cvtColor(pf, cv2.COLOR_BGR2RGB)))
+            gap = 8
+            iw = min(320, (width - gap * (len(tiles) + 1)) // len(tiles))
+            ih = iw * 3 // 4
+            x = gap
+            for cname, img in tiles:
+                # The simulated cameras only change on their render ticks, so
+                # keep the scaled, labelled tile until the source array does.
+                cached = inset_cache.get(cname)
+                if img is not None and cached is not None \
+                        and cached[0] is img and cached[1].shape[1] == iw:
+                    small = cached[1]
+                else:
+                    if img is None:  # operator camera: no frame delivered yet
+                        small = np.full((ih, iw, 3), 40, np.uint8)
+                    else:
+                        small = cv2.resize(img, (iw, ih),
+                                           interpolation=cv2.INTER_AREA)
+                    cv2.rectangle(small, (0, 0), (len(cname) * 9 + 10, 20),
+                                  (45, 45, 45), -1)
+                    cv2.putText(small, cname, (5, 15),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.5,
+                                (255, 255, 255), 1, cv2.LINE_AA)
+                    inset_cache[cname] = (img, small)
                 blit(small, x, gap)
-                x += sw + gap
+                x += iw + gap
         tm["hud_insets"] += pc() - t_r1
         p_now = glfw.get_key(window, glfw.KEY_P) == glfw.PRESS
         due = snapshot_every > 0 and \
@@ -834,7 +1019,7 @@ def run(scene: str, spawn_pos, groups: list[dict], policy,
             mujoco.mjr_readPixels(rgb, None, viewport, context)
             save_snapshot(rgb)
         snap_state["p_down"] = p_now
-        if bench["snap_dir"] and frame == 15:
+        if bench["snap_dir"] and frame == bench["snap_frame"]:
             sd = Path(bench["snap_dir"]); sd.mkdir(parents=True, exist_ok=True)
             rgb = np.zeros((height, width, 3), dtype=np.uint8)
             mujoco.mjr_readPixels(rgb, None, viewport, context)
@@ -923,7 +1108,8 @@ def main():
     parser.add_argument("--mode", choices=["manual", "auto", "teleop"],
                         default="manual",
                         help="manual: keyboard (default); auto: future policy "
-                             "(not implemented); teleop: webcam drives the arms")
+                             "(not implemented); teleop: arms start on the "
+                             "keyboard, T switches them to the webcam operator")
     parser.add_argument("--camera", type=int, default=0,
                         help="webcam device index for teleop (0=built-in, "
                              "1+=USB)")

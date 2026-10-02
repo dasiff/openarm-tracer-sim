@@ -15,7 +15,7 @@ They will be calibrated/updated when physical hardware is available.
 # the ceiling, so the sim uses the latest target on each PD step.
 PHYSICS_HZ = 750
 PD_HZ = 750
-CAMERA_HZ = 30
+CAMERA_HZ = 15  # tick rate; the viewer renders one camera per tick, so each updates at 5 Hz (was 30, too slow on the VM GPU)
 SIMULATION_TIMESTEP = 1 / PHYSICS_HZ  # seconds (sim choice: one physics step per PD step)
 SIMULATION_FREQUENCY = PHYSICS_HZ
 

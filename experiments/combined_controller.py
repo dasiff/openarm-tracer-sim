@@ -39,9 +39,9 @@ BASE DRIVE NOTE — velocity control, not wheel torques:
 RATES NOTE:
     Physics runs at robot_specs.PHYSICS_HZ (750 Hz, the OpenArm ros2_control
     loop); the PD controller runs at PD_HZ (750 Hz, i.e. every physics step);
-    the simulated cameras tick at CAMERA_HZ (30 Hz, every 25 physics
+    the simulated cameras tick at CAMERA_HZ (15 Hz, every 50 physics
     steps) and render ONE camera per tick, round-robin, so each updates at
-    CAMERA_HZ / 3 (software GL makes a 3-camera render the dominant cost);
+    CAMERA_HZ / 3 = 5 Hz (software GL makes a 3-camera render the dominant cost);
     the viewer redraws at VIEWER_HZ (60, 12 physics steps per frame).
     Keys, policy and teleop targets are read once per viewer frame and held
     between frames; the PD loop recomputes torques from the LIVE state on each

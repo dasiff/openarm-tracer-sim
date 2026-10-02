@@ -612,24 +612,10 @@ def run(scene: str, spawn_pos, groups: list[dict], policy,
         lambda err, desc: print(f"GLFW error {err}: {desc}"))
     if not glfw.init():
         raise RuntimeError("Could not initialise GLFW")
-    win_w, win_h = bench["win"]
-    if mode == "teleop":
-        # Use the whole screen width so the four insets (3 simulated cameras
-        # plus the operator webcam) fit. The window must be created at its
-        # final size, hidden, and positioned BEFORE it is shown: mutter
-        # auto-maximizes a window bigger than the screen and then ignores
-        # later move/resize requests.
-        vm = glfw.get_video_mode(glfw.get_primary_monitor())
-        x0 = 0
-        win_w, win_h = vm.size.width, vm.size.height - 80
-        glfw.window_hint(glfw.VISIBLE, glfw.FALSE)
-    window = glfw.create_window(win_w, win_h, "Combined Controller", None, None)
+    window = glfw.create_window(*bench["win"], "Combined Controller", None, None)
     if not window:
         glfw.terminate()
         raise RuntimeError("GLFW window creation failed")
-    if mode == "teleop":
-        glfw.set_window_pos(window, x0, 30)
-        glfw.show_window(window)
     glfw.make_context_current(window)
     glfw.swap_interval(bench["vsync"])
 
@@ -643,9 +629,9 @@ def run(scene: str, spawn_pos, groups: list[dict], policy,
     cam.azimuth   = 90
 
     scene_vis = mujoco.MjvScene(model, maxgeom=10_000)
-    if mode == "teleop" or not bench["view_shadows"]:
+    if not bench["view_shadows"]:
         # The VM GPU renders this scene at ~5 fps with shadows/reflections,
-        # too slow for the arms to track the operator.
+        # too slow to drive or teleoperate the robot.
         scene_vis.flags[mujoco.mjtRndFlag.mjRND_SHADOW] = 0
         scene_vis.flags[mujoco.mjtRndFlag.mjRND_REFLECTION] = 0
     if bench["shadowsize"]:

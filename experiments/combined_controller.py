@@ -61,10 +61,12 @@ CAMERAS NOTE:
     the latest frames as PNGs to data/camera_snapshots/.
 
 TELEOP NOTE:
-    --mode teleop starts with the arms in MANUAL (keys 1-4 move right joints
-    1-2, the rest hold) and the base on WASD in every state. T switches the
-    arms to the webcam operator (and back); each switch starts from the other
-    side's current targets, so nothing jumps. In TELEOP, if the operator
+    --mode teleop starts with the arms in MANUAL (Tab picks the left or right
+    arm, 1-7 a joint, 8 the gripper, Q/E jog it -/+) and the base on WASD in
+    every state. T switches the
+    arms to the webcam operator (and back); manual keys and teleop write the
+    same per-joint targets, so nothing jumps. The grippers stay on the keys
+    in both states (the teleop solver only outputs arm joints). In TELEOP, if the operator
     leaves view the arms hold their last pose; they follow again when the
     engage gesture is made. The webcam feed (with pose overlay) is drawn as a
     fourth inset beside the simulated cameras; there is no second window.
@@ -153,17 +155,6 @@ CONTROL_GROUPS = [
                                        # base from arm inertia
         },
     },
-    {
-        "name": "right_arm_test",
-        "mode": "manual",
-        "type": "joint",
-        "actuators": ["right_joint1_ctrl", "right_joint2_ctrl"],
-        "keys": {
-            "right_joint1_ctrl": {"up": ["1"], "down": ["2"]},
-            "right_joint2_ctrl": {"up": ["3"], "down": ["4"]},
-        },
-        "step_size": 0.02,
-    },
 ]
 
 
@@ -181,6 +172,51 @@ def _key(name: str) -> int:
 # ===================================================================
 # run()
 # ===================================================================
+
+JOG_JOINT_STEP = 0.05   # rad per viewer frame while Q / E is held
+JOG_GRIP_STEP = 0.003   # m per viewer frame (finger travel is 0 closed .. 0.044 open)
+GRIP_IDX = 7            # selection index 0-6 = joints 1-7, 7 = gripper (key 8)
+
+
+def build_jog_tables(model):
+    """Per side, 8 selectable items: (actuator ids, (lo, hi), step).
+
+    Items 0-6 are arm joints 1-7; item 7 is the gripper, whose two fingers
+    move together (0 = closed, 0.044 m = open on both hands).
+    """
+    def aid(name):
+        a = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_ACTUATOR, name)
+        if a < 0:
+            raise RuntimeError(f"Actuator '{name}' not in model.")
+        return a
+
+    def jrange(a):
+        return tuple(model.jnt_range[model.actuator_trnid[a, 0]])
+
+    tables = {}
+    for side in ("left", "right"):
+        items = []
+        for i in range(1, 8):
+            a = aid(f"{side}_joint{i}_ctrl")
+            items.append(([a], jrange(a), JOG_JOINT_STEP))
+        f = [aid(f"{side}_finger1_ctrl"), aid(f"{side}_finger2_ctrl")]
+        items.append((f, jrange(f[0]), JOG_GRIP_STEP))
+        tables[side] = items
+    return tables
+
+
+def jog_step(sel, direction, targets, tables, teleop_on):
+    """Move the selected arm joint / gripper one step (direction -1, 0 or +1).
+
+    Writes into `targets` (the per-actuator hold targets, the same array
+    teleop writes), clamped to the joint's range. While teleop is on it owns
+    the arm joints, so only the gripper responds then.
+    """
+    if direction == 0 or (teleop_on and sel["idx"] != GRIP_IDX):
+        return
+    ids, (lo, hi), step = tables[sel["side"]][sel["idx"]]
+    targets[ids] = np.clip(targets[ids[0]] + direction * step, lo, hi)
+
 
 def install_preview_capture(store):
     """Route the MediaPipe preview into `store` instead of an OpenCV window.
@@ -268,7 +304,7 @@ def _perf_settings():
     CC_VSYNC=1         vsync on (frames stall ~1 s if the window is hidden)
     CC_CAM_RES=WxH  CC_CAM_HZ=N  CC_SHADOWSIZE=N  CC_WIN=WxH  CC_HUD=0  CC_INSETS=0
     CC_FAKE_TELEOP=1   scripted fake operator + solver (no webcam needed)
-    CC_BENCH_TOGGLE=n,n  press T at these frames (testing)   CC_BENCH_SNAP_FRAME=n
+    CC_BENCH_KEYS=10-20:E,30:T  hold keys on those frames (testing)   CC_BENCH_SNAP_FRAME=n
     CC_FINISH=1        glFinish after each swap
     CC_BENCH_FRAMES=N  run N frames, print per-phase timings, then exit
     CC_BENCH_SNAP=dir  save main view + camera images at frame 15
@@ -290,8 +326,7 @@ def _perf_settings():
         "snap_dir": e("CC_BENCH_SNAP"),
         "finish": e("CC_FINISH") == "1",
         "fake_teleop": e("CC_FAKE_TELEOP") == "1",
-        "toggle_frames": {int(x) for x in e("CC_BENCH_TOGGLE", "").split(",")
-                          if x},
+        "inject": e("CC_BENCH_KEYS", ""),
         "snap_frame": int(e("CC_BENCH_SNAP_FRAME", "15")),
         "hud": e("CC_HUD") != "0",
         "insets": e("CC_INSETS") != "0",
@@ -635,45 +670,53 @@ def run(scene: str, spawn_pos, groups: list[dict], policy,
     step_count = 0
     frame  = 0
 
+    # Test hook: CC_BENCH_KEYS="10-20:E,30:T" holds those keys on those frames.
+    injected = set()
+    for tok in bench["inject"].split(","):
+        if ":" in tok:
+            fr, kname = tok.split(":", 1)
+            lo_f, _, hi_f = fr.partition("-")
+            for f_ in range(int(lo_f), int(hi_f or lo_f) + 1):
+                injected.add((f_, _key(kname)))
+
     def held(key):
-        return glfw.get_key(window, key) == glfw.PRESS
+        return glfw.get_key(window, key) == glfw.PRESS \
+            or (frame, key) in injected
+
+    jog_tables = build_jog_tables(model)
+    jog_sel = {"side": "right", "idx": 0}   # selected arm side and item
+    digit_keys = [_key(str(n)) for n in range(1, 9)]
+    prev_tab = False
+    prev_digits = [False] * 8
 
     def set_teleop(on):
         """Switch the arms between MANUAL keys and the TELEOP webcam operator.
 
-        Each side starts from the other's current targets, so nothing jumps.
-        In MANUAL only the keyed joints (right 1-2) move; the other arm joints
-        keep their last targets.
+        Manual jogging and teleop write the same per-actuator hold targets,
+        so neither side needs syncing: each continues from the current target.
+        In MANUAL the keys can move any arm joint and gripper.
         """
         if on == teleop["on"]:
             return
-        for g, ids in zip(groups, resolved):
-            if g["mode"] == "manual" and g.get("type") == "joint":
-                if on:
-                    hold_qpos_targets[ids] = joint_state[g["name"]]
-                else:
-                    joint_state[g["name"]][:] = hold_qpos_targets[ids]
         if on:
             session.reset(data.qpos[arm_qadr["right"]].copy(),
                           data.qpos[arm_qadr["left"]].copy())
             teleop["engaged"] = False
         teleop["on"] = on
-        keyed = [a for g, ids in zip(groups, resolved)
-                 if g.get("type") == "joint" for a in ids]
-        print(("Arms: TELEOP (webcam operator; raise both arms to engage)"
-               if on else "Arms: MANUAL (keys 1-4); other arm joints hold")
-              + f" | keyed joint targets {hold_qpos_targets[keyed].round(3)}")
+        print("Arms: TELEOP (webcam operator; raise both arms to engage; "
+              "grippers stay on keys)" if on else
+              "Arms: MANUAL (keys: Tab arm, 1-7 joint, 8 gripper, Q/E jog)")
 
-    # (keycap, label) pairs for the HUD legend; kept short, flowed in rows.
-    hud_keys = [("WASD", "drive"), ("Spc", "stop"), ("1-4", "R arm")] + \
+    hud_keys = [("WASD", "drive"), ("Spc", "stop"), ("Tab", "L/R arm"),
+                ("1-7", "joint"), ("8", "grip"), ("Q E", "jog -/+")] + \
         ([("T", "man/tele")] if teleop is not None else []) + \
         [("C", "cam imgs"), ("P", "snap"), ("L", "log"), ("Esc", "quit")]
 
     print(f"\nBase:  W/UP=fwd  S/DOWN=back  A/LEFT=left  D/RIGHT=right  SPACE=stop")
-    print(f"Arm:   1/2=right_joint1 up/down   3/4=right_joint2 up/down")
+    print(f"Arms:  Tab=left/right  1-7=joint  8=gripper  Q/E=jog -/+ (E opens gripper)")
     print(f"L=log  C=save camera images  Esc=quit")
     if teleop is not None:
-        print(f"T=toggle arms MANUAL (keys 1-4) / TELEOP (webcam); base keys work in both")
+        print(f"T=toggle arms MANUAL / TELEOP (webcam); base keys work in both")
     print(f"--- entering loop ---")
 
     # ---------------------------------------------------------------
@@ -691,10 +734,24 @@ def run(scene: str, spawn_pos, groups: list[dict], policy,
         policy_targets = policy(obs, t) if policy is not None else None
 
         if teleop is not None:
-            cur_t_key = held(glfw.KEY_T) or frame in bench["toggle_frames"]
+            cur_t_key = held(glfw.KEY_T)
             if cur_t_key and not prev_t:
                 set_teleop(not teleop["on"])
             prev_t = cur_t_key
+
+        # Manual arm / gripper jogging: Tab side, 1-8 item, Q/E move.
+        cur_tab = held(glfw.KEY_TAB)
+        if cur_tab and not prev_tab:
+            jog_sel["side"] = "left" if jog_sel["side"] == "right" else "right"
+        prev_tab = cur_tab
+        for n, k in enumerate(digit_keys):
+            cur_d = held(k)
+            if cur_d and not prev_digits[n]:
+                jog_sel["idx"] = n
+            prev_digits[n] = cur_d
+        jog_step(jog_sel, int(held(glfw.KEY_E)) - int(held(glfw.KEY_Q)),
+                 hold_qpos_targets, jog_tables,
+                 teleop is not None and teleop["on"])
 
         # --- Compute velocity command for base (before substep loop) ---
         base_vx = 0.0
@@ -968,6 +1025,12 @@ def run(scene: str, spawn_pos, groups: list[dict], policy,
                  f"{1000.0 / max(hud_state['ms'], 1e-6):.1f}"),
                 ("cmd lin, ang", f"{ds.get('linear', 0):+.2f}, "
                  f"{ds.get('angular', 0):+.2f}"),
+                ("selected (Tab,1-8)", (
+                    f"{jog_sel['side'][0].upper()} "
+                    + (f"grip = {hold_qpos_targets[jog_tables[jog_sel['side']][GRIP_IDX][0][0]]:.3f} m"
+                       if jog_sel["idx"] == GRIP_IDX else
+                       f"joint {jog_sel['idx'] + 1} = "
+                       f"{hold_qpos_targets[jog_tables[jog_sel['side']][jog_sel['idx']][0][0]]:+.2f} rad"))),
             ] + ([("arms (T toggles)", (
                 "MANUAL" if not teleop["on"] else
                 "TELEOP tracking" if teleop["engaged"] else
@@ -1074,6 +1137,8 @@ def run(scene: str, spawn_pos, groups: list[dict], policy,
                   f"lin={ds.get('linear',0):+.2f} ang={ds.get('angular',0):+.2f}  "
                   f"vel=[{base_vx:+.2f},{base_vy:+.2f}]  wz={base_wz:+.2f}  "
                   f"yaw={yaw_deg:+.1f}°  "
+                  f"sel={jog_sel['side'][0].upper()}{jog_sel['idx'] + 1} "
+                  f"tgt={hold_qpos_targets[jog_tables[jog_sel['side']][jog_sel['idx']][0][0]]:+.3f}  "
                   f"pos={data.qpos[0:3].round(3)}")
 
         if held(glfw.KEY_ESCAPE):

@@ -39,10 +39,15 @@ BASE DRIVE NOTE — velocity control, not wheel torques:
 RATES NOTE:
     Physics runs at robot_specs.PHYSICS_HZ (750 Hz, the OpenArm ros2_control
     loop); the PD controller runs at PD_HZ (750 Hz, i.e. every physics step);
-    the simulated cameras tick at CAMERA_HZ (15 Hz, every 50 physics
-    steps) and render ONE camera per tick, round-robin, so each updates at
-    CAMERA_HZ / 3 = 5 Hz (software GL makes a 3-camera render the dominant cost);
-    the viewer redraws at VIEWER_HZ (60, 12 physics steps per frame).
+    the simulated cameras tick at CAMERA_HZ (30 Hz, every 25 physics
+    steps). By default ONE camera is rendered per tick, taking turns, so each
+    updates at CAMERA_HZ / 3 = 10 Hz. That take-turns mode is a VM
+    PERFORMANCE setting (a 3-camera render dominates the frame time on the
+    VM's virtual GPU), not a model of the real cameras. For recording demos
+    run with CC_ROUNDROBIN=0 to render all three cameras on every tick, so
+    each updates at the full CAMERA_HZ in sim time (the viewer then runs
+    slower than real time on the VM).
+    The viewer redraws at VIEWER_HZ (60, 12 physics steps per frame).
     Keys, policy and teleop targets are read once per viewer frame and held
     between frames; the PD loop recomputes torques from the LIVE state on each
     PD tick using those held targets. Teleop targets are not clocked at
@@ -172,10 +177,12 @@ def _perf_settings():
 
     Defaults are the fastest combination measured on the VirtualBox VM
     (about 130 ms/frame, was ~600-1000): viewer shadows/reflections off,
-    one camera rendered per camera tick, vsync off paced to VIEWER_HZ.
+    one camera rendered per camera tick (take-turns, a VM performance
+    setting; use CC_ROUNDROBIN=0 to record demos with every camera updating
+    at CAMERA_HZ), vsync off paced to VIEWER_HZ.
     Resolution, shadow map size and window size made no measurable difference.
 
-    CC_VIEW_SHADOWS=1  viewer shadows+reflections on   CC_ROUNDROBIN=0  all cameras per tick
+    CC_VIEW_SHADOWS=1  viewer shadows+reflections on   CC_ROUNDROBIN=0  render all cameras on every tick (demo recording)
     CC_CAM_SHADOWS=0   camera shadows off (washes out wrist cams)
     CC_VSYNC=1         vsync on (frames stall ~1 s if the window is hidden)
     CC_CAM_RES=WxH  CC_CAM_HZ=N  CC_SHADOWSIZE=N  CC_WIN=WxH  CC_HUD=0  CC_INSETS=0
@@ -261,7 +268,9 @@ def run(scene: str, spawn_pos, groups: list[dict], policy,
     resettle_steps = round(RESETTLE_SEC * physics_hz)
     print(f"Rates: physics {physics_hz:.0f} Hz | PD every {pd_every} step(s) "
           f"({physics_hz / pd_every:.0f} Hz) | cameras every {cam_every} steps "
-          f"({physics_hz / cam_every:.0f} Hz) | viewer {steps_per_frame} steps/frame "
+          f"({physics_hz / cam_every:.0f} Hz, "
+          f"{'one camera per tick' if bench['roundrobin'] else 'all cameras per tick'}) "
+          f"| viewer {steps_per_frame} steps/frame "
           f"(~{physics_hz / steps_per_frame:.0f} Hz)")
 
     # --- Resolve actuator IDs per group ---

@@ -43,6 +43,39 @@ TRACER_SPECS = {
     },
 }
 
+# Pedestal lift actuator -- PLACEHOLDER
+# The real lift hardware is unconfirmed (waiting on Dan's answer), and the pedestal model
+# itself is marked "estimated" in the OpenArm-Combined README (Telescoping_Pedestal.xml).
+# Until then the sim gets one stand-in position actuator, added at load time by
+# src/pedestal.add_pedestal_lift(): the two sliding stages are coupled (TopMiddle follows
+# MiddleBottom) and a single height command drives MiddleBottom, like a single lift motor.
+# Every number here is a guess to be replaced when the hardware is known.
+PEDESTAL_SPECS = {
+    "actuator_name": "pedestal_lift",
+    "joints": ("MiddleBottom", "TopMiddle"),      # lower stage, upper stage
+    # Per-stage slide, m, from the XML joint range: 0 = fully raised, -0.25 = XML limit. The
+    # stages stack, so the top of the pedestal moves twice this.
+    "stage_range": (-0.25, 0.0),
+    # Lowest command (also the Page Down clamp). The robot's torso collision mesh first touches
+    # pedestal_Bottom at -0.2290 per stage (458 mm of total drop; measured with mj_geomDistance),
+    # and that contact is kept as the lower stop. -0.228 leaves room for the ~1 mm the stage sags
+    # under load (kp below), so the actuator settles at the touch point and never pushes into it.
+    # The real minimum height is pending Dan.
+    "lowest_command": -0.228,
+    "target_height": 0.0,                         # default command: fully raised
+    # Bodies whose collision hulls are excluded from each other, see src/pedestal.py.
+    "nested_bodies": ("pedestal_Bottom", "pedestal_Top"),
+    # Stand-in position servo on MiddleBottom. Load it must hold (from the body masses,
+    # see src/pedestal.pedestal_load): 56.0 kg above MiddleBottom + 45.0 kg above TopMiddle;
+    # with the stages coupled both loads act on the one actuator, 991 N. kp = 1e6 N/m
+    # sags ~1 mm under that. forcerange is ~5x the hold force: the XML joint damping (800 and
+    # 50000 N s/m on the two stages, not ours to change) makes the lift speed ~ force / 51 kN s/m.
+    "kp": 1.0e6,                                  # N/m
+    "kv": 0.0,                                    # N s/m (joint damping already dominates)
+    "force_limit": 5000.0,                        # N
+    "jog_speed": 0.05,                            # m/s of stage travel while a key is held
+}
+
 # OpenArm Bimanual Manipulator
 OPENARM_SPECS = {
     "name": "OpenArm Bimanual",

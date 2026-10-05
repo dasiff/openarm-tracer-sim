@@ -8,6 +8,7 @@ import mujoco
 import numpy as np
 from src import robot_specs
 from src.cameras import add_cameras, make_offscreen_big_enough
+from src.pedestal import add_pedestal_lift
 
 
 class RobotSimulator:
@@ -21,7 +22,7 @@ class RobotSimulator:
     """
 
     def __init__(self, model_path: str = None, track_bodies: list[str] = None,
-                 cameras: list[dict] = None):
+                 cameras: list[dict] = None, pedestal_lift: dict = None):
         """
         Initialize simulator.
 
@@ -38,6 +39,10 @@ class RobotSimulator:
             cameras: Optional list of camera spec dicts (robot_specs.CAMERA_SPECS).
                 If given, the cameras are injected into the model via MjSpec
                 before compiling, and the offscreen buffer is sized to fit them.
+            pedestal_lift: Optional robot_specs.PEDESTAL_SPECS. If given, the
+                placeholder pedestal lift (stage coupling + one position
+                actuator, appended as the last actuator) is added via MjSpec.
+                Off by default: it changes the actuator count from 20 to 21.
         """
         if model_path is None:
             project_root = Path(__file__).parent.parent
@@ -49,19 +54,23 @@ class RobotSimulator:
         if not model_path.exists():
             raise FileNotFoundError(f"Model not found: {model_path}")
 
-        if cameras:
-            # Sim choice: cameras are added programmatically so the scene XMLs
-            # stay camera-free and camera poses live in robot_specs.
+        if cameras or pedestal_lift:
+            # Sim choice: cameras and the pedestal lift are added programmatically
+            # so the scene XMLs stay free of them and their numbers live in robot_specs.
             spec = mujoco.MjSpec.from_file(str(model_path))
-            add_cameras(spec, cameras)
+            if cameras:
+                add_cameras(spec, cameras)
+            if pedestal_lift:
+                add_pedestal_lift(spec, pedestal_lift)
             self.model = spec.compile()
+        else:
+            self.model = mujoco.MjModel.from_xml_path(str(model_path))
+        if cameras:
             make_offscreen_big_enough(self.model, cameras)
             # Sim choice: MuJoCo's near clip plane is znear * scene extent, and
             # this scene's extent is ~24 m (-> ~0.24 m near plane), which clips
             # the fingertips ~0.1 m from the wrist cams. Pull it in to ~1 cm.
             self.model.vis.map.znear = 0.0005
-        else:
-            self.model = mujoco.MjModel.from_xml_path(str(model_path))
 
         # Sim choice: robot_specs is the single source of truth for the physics
         # rate, whatever the XML says.

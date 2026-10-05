@@ -199,6 +199,18 @@ JOG_KEYS = {
 }
 
 
+# Pedestal lift (placeholder actuator, robot_specs.PEDESTAL_SPECS): Page Up raises, Page Down
+# lowers while held. The command moves at jog_speed per second of SIM time, not per viewer
+# frame, so it does not depend on the viewer's fps.
+PEDESTAL_KEYS = {"up": "PAGE_UP", "down": "PAGE_DOWN"}
+
+
+def pedestal_jog_step(direction, targets, aid, lo, hi, step):
+    """Raise (+1) or lower (-1) the pedestal command by `step` m, clamped to [lo, hi]."""
+    if direction:
+        targets[aid] = np.clip(targets[aid] + direction * step, lo, hi)
+
+
 def build_jog_tables(model):
     """Per side, 8 selectable items: (actuator ids, (lo, hi), step).
 
@@ -450,7 +462,8 @@ def run(scene: str, spawn_pos, groups: list[dict], policy,
 
     # --- Load scene ---
     sim   = RobotSimulator(model_path=str(PROJECT_ROOT / scene),
-                           cameras=robot_specs.CAMERA_SPECS)
+                           cameras=robot_specs.CAMERA_SPECS,
+                           pedestal_lift=robot_specs.PEDESTAL_SPECS)
     model = sim.model
     data  = sim.data
 
@@ -582,7 +595,11 @@ def run(scene: str, spawn_pos, groups: list[dict], policy,
     # Hold arm joints at home (zero) during warmup so they settle under
     # PD control instead of drooping limp and then oscillating when the
     # main loop starts.
+    ped_aid = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_ACTUATOR,
+                                robot_specs.PEDESTAL_SPECS["actuator_name"])
+    ped_lo, ped_hi = model.actuator_ctrlrange[ped_aid]
     hold_qpos_targets = np.zeros(model.nu)
+    hold_qpos_targets[ped_aid] = robot_specs.PEDESTAL_SPECS["target_height"]
     for i in range(warmup_steps):
         if i % pd_every == 0:
             warmup_ctrl = controller.step(hold_qpos_targets,
@@ -607,6 +624,7 @@ def run(scene: str, spawn_pos, groups: list[dict], policy,
         hold_qpos_targets[aid] = data.qpos[qadr]  # actual drooped angle
         vadr = model.jnt_dofadr[model.actuator_trnid[aid, 0]]
         data.qvel[vadr] = 0.0  # kill any residual swing
+    hold_qpos_targets[ped_aid] = robot_specs.PEDESTAL_SPECS["target_height"]
     mujoco.mj_forward(model, data)
 
     # Brief re-settle with PD active so everything stabilizes
@@ -769,6 +787,9 @@ def run(scene: str, spawn_pos, groups: list[dict], policy,
                                  [_key(k) for k in kk["minus"]]))
                   for side, kk in JOG_KEYS.items()}
 
+    ped_keys = {d: _key(k) for d, k in PEDESTAL_KEYS.items()}
+    ped_step = robot_specs.PEDESTAL_SPECS["jog_speed"] * steps_per_frame * model.opt.timestep
+
     def set_teleop(on):
         """Switch the arms between MANUAL keys and the TELEOP webcam operator.
 
@@ -804,7 +825,8 @@ def run(scene: str, spawn_pos, groups: list[dict], policy,
 
     hud_keys = [("Arrows", "drive"), ("Spc", "stop"),
                 ("1-8", "L arm +"), ("Q-I", "L arm -"),
-                ("A-K", "R arm +"), ("Z-,", "R arm -")] + \
+                ("A-K", "R arm +"), ("Z-,", "R arm -"),
+                ("PgUp/Dn", "pedestal")] + \
         ([("F2", "man/tele")] if teleop is not None else []) + \
         [("F3", "cam imgs"), ("F4", "snap"), ("F5", "log"),
          ("F6", "rec video"), ("Esc", "quit")]
@@ -813,6 +835,7 @@ def run(scene: str, spawn_pos, groups: list[dict], policy,
     print(f"Arms:  left arm  + 1 2 3 4 5 6 7 8 / - Q W E R T Y U I")
     print(f"       right arm + A S D F G H J K / - Z X C V B N M ,")
     print(f"       (columns = joints 1-7 then gripper; upper key +, gripper + opens)")
+    print(f"Pedestal (placeholder lift):  Page Up = raise   Page Down = lower")
     print(f"F3=save camera images  F4=snapshot  F5=trajectory log  "
           f"F6=record video + joint CSV  Esc=quit")
     if teleop is not None:
@@ -845,6 +868,10 @@ def run(scene: str, spawn_pos, groups: list[dict], policy,
             for idx, (k_plus, k_minus) in enumerate(pairs):
                 jog_step(side, idx, int(held(k_plus)) - int(held(k_minus)),
                          hold_qpos_targets, jog_tables, tele_on)
+
+        # Pedestal lift: Page Up raises, Page Down lowers (both modes).
+        pedestal_jog_step(int(held(ped_keys["up"])) - int(held(ped_keys["down"])),
+                          hold_qpos_targets, ped_aid, ped_lo, ped_hi, ped_step)
 
         # --- Compute velocity command for base (before substep loop) ---
         base_vx = 0.0

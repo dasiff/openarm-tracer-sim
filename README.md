@@ -24,6 +24,7 @@ the teleop path can be tried without a camera.
 | Arrow keys, Space | drive / turn the base, stop |
 | `1`-`8` / `Q`-`I` | left arm joints 1-7 and gripper: upper key increases, lower decreases |
 | `A`-`K` / `Z`-`,` | right arm joints 1-7 and gripper: same layout |
+| `Page Up` / `Page Down` | raise / lower the pedestal (placeholder lift actuator; the real hardware is unconfirmed) |
 | `F2` | (teleop mode) switch the arms between the keyboard and the webcam operator |
 | `F3` | save the simulated camera images to `data/camera_snapshots/` |
 | `F4` | save a snapshot of the viewer |

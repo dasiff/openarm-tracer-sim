@@ -569,12 +569,16 @@ def run(scene: str, spawn_pos, groups: list[dict], policy,
         if bench["fake_teleop"]:
             session = _FakeSession(arm_lo, arm_hi)
             source = _FakeSource()
-            print("Teleop: FAKE scripted operator (CC_FAKE_TELEOP=1), no webcam")
+            print("Teleop: FAKE scripted operator (CC_FAKE_TELEOP=1), no webcam; "
+                  "no safety filter (the fake solver has none)")
         else:
             from openarm_teleop.session import make_session
             from xrt_devices.integrations.geo_kin import MediaPipeDeviceAdapter
             # Solver first, so a licence problem can't leave a camera running.
-            session = make_session()
+            # geo_kin's RetargetSession defaults to collision_avoidance=True
+            # (checked in its signature). Passed explicitly, as Kong's demo
+            # does, and deliberately not switchable: the safety filter stays on.
+            session = make_session(collision_avoidance=True)
             session.reset(data.qpos[arm_qadr["right"]].copy(),
                           data.qpos[arm_qadr["left"]].copy())
             # display=True makes the library draw the pose overlay on the
@@ -660,6 +664,8 @@ def run(scene: str, spawn_pos, groups: list[dict], policy,
             print("BENCH GL renderer:", glGetString(GL_RENDERER))
         except Exception as ex:
             print("BENCH GL renderer unknown:", ex)
+        if not bench["fake_teleop"]:
+            print("Teleop safety filter (collision avoidance): ON")
 
     logging_active = False
     prev_l = False

@@ -38,7 +38,8 @@ BASE DRIVE NOTE — velocity control, not wheel torques:
 
 RATES NOTE:
     Physics runs at robot_specs.PHYSICS_HZ (750 Hz, the OpenArm ros2_control
-    loop); the PD controller runs at PD_HZ (750 Hz, i.e. every physics step);
+    loop); the arm and finger PD runs inside MuJoCo (position actuators, see
+    src/arm_actuators.py), so it is evaluated on every physics step;
     the simulated cameras tick at CAMERA_HZ (30 Hz, every 25 physics
     steps). By default ONE camera is rendered per tick, taking turns, so each
     updates at CAMERA_HZ / 3 = 10 Hz. That take-turns mode is a VM
@@ -49,8 +50,8 @@ RATES NOTE:
     slower than real time on the VM).
     The viewer redraws at VIEWER_HZ (60, 12 physics steps per frame).
     Keys, policy and teleop targets are read once per viewer frame and held
-    between frames; the PD loop recomputes torques from the LIVE state on each
-    PD tick using those held targets. Teleop targets are not clocked at
+    between frames and written to data.ctrl as joint angles; the MuJoCo position
+    servos track them from the LIVE state on every physics step. Teleop targets are not clocked at
     hardware solver rates because the 750 Hz loop is the hardware ceiling.
 
 CAMERAS NOTE:
@@ -106,7 +107,6 @@ import mujoco
 
 from src import robot_specs
 from src.cameras import CameraRig
-from src.controller import RobotController
 from src.logger import TrajectoryLogger
 from src.simulator import RobotSimulator
 
@@ -477,7 +477,6 @@ def run(scene: str, spawn_pos, groups: list[dict], policy,
                              f"multiple of {what} {hz} Hz")
         return int(round(n))
 
-    pd_every  = _every(robot_specs.PD_HZ, "PD")
     cam_every = _every(robot_specs.CAMERA_HZ, "camera")
     # Sim choice: the viewer rate need not divide physics evenly (750/60 =
     # 12.5), so round; the step counter below is global, so camera ticks
@@ -485,8 +484,7 @@ def run(scene: str, spawn_pos, groups: list[dict], policy,
     steps_per_frame = max(1, round(physics_hz / VIEWER_HZ))
     warmup_steps  = round(WARMUP_SEC * physics_hz)
     resettle_steps = round(RESETTLE_SEC * physics_hz)
-    print(f"Rates: physics {physics_hz:.0f} Hz | PD every {pd_every} step(s) "
-          f"({physics_hz / pd_every:.0f} Hz) | cameras every {cam_every} steps "
+    print(f"Rates: physics {physics_hz:.0f} Hz (arm/finger servos every step) | cameras every {cam_every} steps "
           f"({physics_hz / cam_every:.0f} Hz, "
           f"{'one camera per tick' if bench['roundrobin'] else 'all cameras per tick'}) "
           f"| viewer {steps_per_frame} steps/frame "
@@ -544,8 +542,11 @@ def run(scene: str, spawn_pos, groups: list[dict], policy,
         base_dof = None
         print("  WARNING: no free joint found — velocity drive disabled")
 
-    # --- PD controller ---
-    controller = RobotController(model)
+    # --- Actuators: arms, fingers and the pedestal lift are MuJoCo position actuators (ctrl = target
+    # angle / height); only the wheel motors are torque actuators and they get ctrl 0 (the base is
+    # velocity-driven). A masked-out position actuator therefore holds its last hold target, since
+    # ctrl 0 would mean "go to angle 0", not "limp".
+    is_pos = model.actuator_biastype == mujoco.mjtBias.mjBIAS_AFFINE
     logger     = TrajectoryLogger()
 
     # --- Per-group state ---
@@ -601,15 +602,9 @@ def run(scene: str, spawn_pos, groups: list[dict], policy,
     hold_qpos_targets = np.zeros(model.nu)
     hold_qpos_targets[ped_aid] = robot_specs.PEDESTAL_SPECS["target_height"]
     for i in range(warmup_steps):
-        if i % pd_every == 0:
-            warmup_ctrl = controller.step(hold_qpos_targets,
-                {"joint_angles": data.qpos, "joint_velocities": data.qvel})
-            # Only apply hold ctrl for unclaimed actuators; zero the rest
-            for aid in range(model.nu):
-                if aid in unclaimed_ids:
-                    data.ctrl[aid] = warmup_ctrl[aid]
-                else:
-                    data.ctrl[aid] = 0.0
+        # Only apply hold targets for unclaimed position actuators; zero the rest
+        for aid in range(model.nu):
+            data.ctrl[aid] = hold_qpos_targets[aid] if (aid in unclaimed_ids and is_pos[aid]) else 0.0
         mujoco.mj_step(model, data)
     print(f"Settled at z={data.qpos[2]:.4f}")
 
@@ -629,11 +624,9 @@ def run(scene: str, spawn_pos, groups: list[dict], policy,
 
     # Brief re-settle with PD active so everything stabilizes
     for i in range(resettle_steps):
-        if i % pd_every == 0:
-            hold_ctrl = controller.step(hold_qpos_targets,
-                {"joint_angles": data.qpos, "joint_velocities": data.qvel})
-            for aid in unclaimed_ids:
-                data.ctrl[aid] = hold_ctrl[aid]
+        for aid in unclaimed_ids:
+            if is_pos[aid]:
+                data.ctrl[aid] = hold_qpos_targets[aid]
         mujoco.mj_step(model, data)
     print(f"Arms locked at resting pose, re-settled at z={data.qpos[2]:.4f}")
 
@@ -1008,13 +1001,10 @@ def run(scene: str, spawn_pos, groups: list[dict], policy,
         # a pitching torque that tips the robot over.  Z velocity is left
         # to physics (gravity, settling).
         t_p0 = pc()
+        # Targets are held for the whole frame: write them once as position commands; the MuJoCo
+        # servos track them from the live state on every physics step.
+        data.ctrl[:] = np.where(is_pos, np.where(pd_mask, targets, hold_qpos_targets), 0.0)
         for _ in range(steps_per_frame):
-            # PD tick: torques from the LIVE state, held targets
-            if step_count % pd_every == 0:
-                pd = controller.step(targets, {
-                    "joint_angles": data.qpos,
-                    "joint_velocities": data.qvel})
-                data.ctrl[:] = np.where(pd_mask, pd, 0.0)
             if base_dof is not None:
                 data.qvel[base_dof + 0] = base_vx
                 data.qvel[base_dof + 1] = base_vy

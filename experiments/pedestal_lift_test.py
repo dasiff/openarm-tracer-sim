@@ -33,6 +33,7 @@ sys.path.insert(0, str(PROJECT_ROOT))
 
 from src import robot_specs  # noqa: E402
 from src.controller import RobotController  # noqa: E402
+from src.arm_actuators import add_arm_actuators  # noqa: E402
 from src.pedestal import add_pedestal_lift, pedestal_load  # noqa: E402
 
 SCENE = PROJECT_ROOT / "models" / "scenes" / "chemistry_lab_combined.xml"
@@ -45,6 +46,7 @@ SETPOINTS = [("fully raised", 0.0), ("mid", LOWEST / 2), ("fully lowered", LOWES
 
 def load(with_lift):
     spec = mujoco.MjSpec.from_file(str(SCENE))
+    add_arm_actuators(spec)                        # always on, as in RobotSimulator
     if with_lift:
         add_pedestal_lift(spec, PS)
     m = spec.compile()

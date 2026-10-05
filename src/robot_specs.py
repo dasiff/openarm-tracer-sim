@@ -77,43 +77,60 @@ PEDESTAL_SPECS = {
 }
 
 # OpenArm Bimanual Manipulator
+# The per-joint motor, gains, armature and torque limits live in ARM_ACTUATOR_SPECS below.
 OPENARM_SPECS = {
     "name": "OpenArm Bimanual",
     "arms": 2,  # Left and right
     "dof_per_arm": 7,  # Joints
-    
-    # Motors by joint type
-    "motors": {
-        "shoulder_elbow": {
-            "model": "DM8009",
-            "torque_nm": 40,
-            "kp": 100,  # Restored from 10 — at Kp=10, shoulder needs 4 rad
-            "kd": 10,   # error to reach max torque, can't overcome gravity
-            "damping": 0.4,
-        },
-        "wrist": {
-            "model": "DM4340",
-            "torque_nm": 27,
-            "kp": 80,
-            "kd": 8,
-            "damping": 0.4,
-        },
-        "wrist_fine": {
-            "model": "DM4310",
-            "torque_nm": 7,
-            "kp": 50,
-            "kd": 5,
-            "damping": 0.4,
-        },
-    },
-    
+
     # Gripper
     "gripper": {
         "model": "DM4310",
-        "motor_type": "position_control",  # Right arm
-        "motor_type_left": "motor_control",  # Left arm (asymmetry)
+        "motor_type": "position_control",  # all 4 fingers (src/arm_actuators.py makes them position actuators)
         "max_opening": 0.044,  # meters
     },
+}
+
+# Arm and finger actuators. src/arm_actuators.py reads ONLY from this section; the same numbers apply to
+# the left and right arm. Joint numbers are 1-based (openarm_<side>_joint<i>).
+ARM_ACTUATOR_SPECS = {
+    # Per joint:
+    #   motor      Standard OpenArm v2 configuration (DM8009 j1-j2, DM4340 j3-j4, DM4310 j5-j7); matches the
+    #              motor_DM* classes in deps/OpenArm-Combined/combined_robot.xml.
+    #   armature   Rotor inertia of the motor, kg m^2. Standard OpenArm v2 configuration; armature values
+    #              from the upstream openarm_mujoco v2 model, which the combined model had dropped
+    #              (deps/openarm_mujoco/v2/openarm_bimanual.xml). Not measured on our hardware.
+    #   kp, kv     Position gain (N m/rad) and velocity gain (N m s/rad) of the joint servo.
+    #              Placeholder; to be fine-tuned on the real hardware.
+    #   torque_nm  Torque limit (+- N m) of the joint's force range. From the motor_DM8009 / motor_DM4340 /
+    #              motor_DM4310 classes' forcerange in deps/OpenArm-Combined/combined_robot.xml
+    #              (lines 26-36), the motor's peak torque.
+    "joints": {
+        1: {"motor": "DM8009", "armature": 0.0081, "kp": 100.0, "kv": 10.0, "torque_nm": 40.0},
+        2: {"motor": "DM8009", "armature": 0.0081, "kp": 100.0, "kv": 10.0, "torque_nm": 40.0},
+        3: {"motor": "DM4340", "armature": 0.16, "kp": 80.0, "kv": 8.0, "torque_nm": 27.0},
+        4: {"motor": "DM4340", "armature": 0.16, "kp": 80.0, "kv": 8.0, "torque_nm": 27.0},
+        5: {"motor": "DM4310", "armature": 0.0100, "kp": 50.0, "kv": 5.0, "torque_nm": 7.0},
+        6: {"motor": "DM4310", "armature": 0.0100, "kp": 50.0, "kv": 5.0, "torque_nm": 7.0},
+        7: {"motor": "DM4310", "armature": 0.0100, "kp": 50.0, "kv": 5.0, "torque_nm": 7.0},
+    },
+
+    # Gravity compensation: on, for these bodies of both arms (link1 through the hand and fingers; link0, the
+    # fixed arm mount, is left out). Assumes the real controller compensates for gravity.
+    "gravcomp_bodies": ("link1", "link2", "link3", "link4", "link5", "link6", "link7", "link8",
+                        "hand", "hand_tcp", "right_finger", "left_finger"),
+
+    # Fingers (all 4, position actuators; the travel is the joint range, 0-0.044 m). PLACEHOLDER gains.
+    # The XML had the right fingers as position servos (kp 100 N/m, +-333 N, combined_robot.xml line 40) and
+    # the left fingers as torque motors with no force limit, driven by the Python PD at kp 100, kd 10.
+    #   kp 100 N/m   unchanged from both of those, so existing grasps are unchanged: closing on an object
+    #                that stops the finger 20 mm short of the command gives 2 N per finger (4.4 N at the
+    #                full 44 mm), enough to hold ~0.4 kg of glassware at a friction coefficient of 1.
+    #   kv 2 N s/m   with the joint's own 2 N s/m damping the total is ~4 N s/m, about critical for a 36 g
+    #                finger on a 100 N/m servo (2*sqrt(kp*m) = 3.8). The old left kd of 10 was overdamped.
+    #   force 10 N   above the 4.4 N the servo can ask for at full travel, so it only clips contact spikes
+    #                (the XML's +-333 N was no limit at all). A choice of ours, not a motor datasheet value.
+    "fingers": {"kp": 100.0, "kv": 2.0, "force_limit": 10.0},
 }
 
 # Cameras

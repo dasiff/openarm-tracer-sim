@@ -55,6 +55,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
 from models.policies.branch_jump_policy import SOLVER_DEFAULT_Q, BranchJumpPolicy  # noqa: E402
+from src import robot_specs  # noqa: E402
 from src.safety_filter import SafetyFilter  # noqa: E402
 
 RATE_HZ = 750.0                           # policy / solver steps per sim second
@@ -257,35 +258,32 @@ def save_plot(path, t, cmd, out, events, policy, title, seed_mode):
 
 
 # ---------------------------------------------------------------- physics model
-# Bodies that get MuJoCo gravcomp = 1 (demo only; the robot XML is untouched): both arms,
-# joint 1 through the hand and fingers. link0 (the fixed arm mount) is left out.
-GRAVCOMP_BODIES = [f"openarm_{side}_{name}" for side in ("left", "right") for name in
-                   ("link1", "link2", "link3", "link4", "link5", "link6", "link7", "link8",
-                    "hand", "hand_tcp", "right_finger", "left_finger")]
+# Bodies that get MuJoCo gravcomp = 1: both arms, joint 1 through the hand and fingers. link0 (the fixed
+# arm mount) is left out. Applied by src/arm_actuators.py (robot_specs.ARM_ACTUATOR_SPECS["gravcomp_bodies"]).
+GRAVCOMP_BODIES = [f"openarm_{side}_{name}" for side in ("left", "right")
+                   for name in robot_specs.ARM_ACTUATOR_SPECS["gravcomp_bodies"]]
 
 
-def load_model(gravcomp="bodies"):
+def load_model():
     """The chemistry-lab scene at the controller's 750 Hz timestep.
 
-    gravcomp "bodies": built through MjSpec with gravcomp = 1 on GRAVCOMP_BODIES (ngravcomp
-    is fixed at compile time, so it cannot be set on a compiled model).
+    Built through MjSpec with src/arm_actuators.py applied, as in RobotSimulator: the arm and finger
+    position actuators (RobotController.step passes the targets straight through for them) and
+    gravcomp = 1 on GRAVCOMP_BODIES (ngravcomp is fixed at compile time, so it cannot be set on a
+    compiled model).
     """
     import mujoco
-    from src import robot_specs
+    from src.arm_actuators import add_arm_actuators
     scene = PROJECT_ROOT / "models" / "scenes" / "chemistry_lab_combined.xml"
-    if gravcomp != "bodies":
-        m = mujoco.MjModel.from_xml_path(str(scene))
-    else:
-        spec = mujoco.MjSpec.from_file(str(scene))
-        for name in GRAVCOMP_BODIES:
-            spec.body(name).gravcomp = 1.0
-        m = spec.compile()
+    spec = mujoco.MjSpec.from_file(str(scene))
+    add_arm_actuators(spec)
+    m = spec.compile()
     m.opt.timestep = robot_specs.SIMULATION_TIMESTEP
     return m
 
 
 # ---------------------------------------------------------------- hold check
-def hold_check(policy, poses, gravcomp="bodies", settle=0.5, hold=2.0, verbose=True):
+def hold_check(policy, poses, settle=0.5, hold=2.0, verbose=True):
     """Hold poses with the PD (torque limits on, base stationary) and measure the hand's sag.
 
     poses: [(label, joints the PD tracks, commanded joints)]. The arm starts exactly at the
@@ -298,7 +296,7 @@ def hold_check(policy, poses, gravcomp="bodies", settle=0.5, hold=2.0, verbose=T
     from src.controller import RobotController
     log = print if verbose else (lambda *args, **kwargs: None)
 
-    m = load_model(gravcomp)
+    m = load_model()
     d, d2 = mujoco.MjData(m), mujoco.MjData(m)
     aid = lambda n: mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_ACTUATOR, n)
     qadr = lambda a: m.jnt_qposadr[m.actuator_trnid[a, 0]]
@@ -312,13 +310,12 @@ def hold_check(policy, poses, gravcomp="bodies", settle=0.5, hold=2.0, verbose=T
     base_dof = m.jnt_dofadr[[j for j in range(m.njnt) if m.jnt_type[j] == 0][0]]
     tcp_id = m.body(f"openarm_{arm}_hand_tcp").id
     arm_lim = np.array([max(abs(lo[a]), abs(hi[a])) for a in arm_ids[arm]])
-    log(f"\nHold check ({policy.arm} arm; gravcomp {gravcomp}; PD at {RATE_HZ:g} Hz, torque limits on, "
+    log(f"\nHold check ({policy.arm} arm; PD at {RATE_HZ:g} Hz, torque limits on, "
           f"base velocity zeroed; {settle:g} s settle, then {hold:g} s measured):")
-    if gravcomp == "bodies":
-        gc = [m.body(i).name for i in range(m.nbody) if m.body_gravcomp[i] > 0]
-        log(f"  gravcomp = 1 on {len(gc)} bodies (mass {sum(m.body_mass[m.body(n).id] for n in gc):.2f} kg): "
-              f"{gc[0]} .. {gc[len(gc) // 2 - 1]} and {gc[len(gc) // 2]} .. {gc[-1]}; "
-              f"all other bodies 0 (openarm_*_link0 and the base included)")
+    gc = [m.body(i).name for i in range(m.nbody) if m.body_gravcomp[i] > 0]
+    log(f"  gravcomp = 1 on {len(gc)} bodies (mass {sum(m.body_mass[m.body(n).id] for n in gc):.2f} kg): "
+        f"{gc[0]} .. {gc[len(gc) // 2 - 1]} and {gc[len(gc) // 2]} .. {gc[-1]}; "
+        f"all other bodies 0 (openarm_*_link0 and the base included)")
     results = []
     for label, q_pd, q_cmd in poses:
         mujoco.mj_resetData(m, d)
@@ -369,7 +366,7 @@ def hold_check(policy, poses, gravcomp="bodies", settle=0.5, hold=2.0, verbose=T
 
 # ---------------------------------------------------------------- video
 def render_video(path, t, cmd, out_on, policy, events, rich=False, still_dir=None,
-                 slowmo=0.25, slow_window=0.5, fps=30, gravcomp="bodies", still_prefix="reach"):
+                 slowmo=0.25, slow_window=0.5, fps=30, still_prefix="reach"):
     """Physics with the PD tracking the filtered output; render the arm offscreen.
 
     rich=False: the plain 640x480 video (failure scenario). rich=True: a 1280x720 side
@@ -378,17 +375,16 @@ def render_video(path, t, cmd, out_on, policy, events, rich=False, still_dir=Non
     s around the first snap) and, if `still_dir` is given, stills just before and just
     after the snap. Returns a dict of facts measured in the physics run.
 
-    gravcomp: "bodies" (default) compiles the model with MuJoCo's gravity compensation on
-    every arm link, so gravity is cancelled outside the motors; "off" is PD only. The motor
-    torque limits (forcerange) apply to the PD torque in both modes. Why: with torque
-    limits on, the 7 N m wrist motors cannot hold this wrist posture at full reach, so with
-    "off" the hand droops ~0.1-0.2 m before the snap and hides it.
+    Gravity compensation is on every arm link (src/arm_actuators.py), so gravity is cancelled
+    outside the motors. Why: with torque limits on, the 7 N m wrist motors cannot hold this
+    wrist posture at full reach, so without it the hand droops ~0.1-0.2 m before the snap and
+    hides it.
     """
     import cv2
     import mujoco
     from src.controller import RobotController
 
-    m = load_model(gravcomp)
+    m = load_model()
     w, h = (1280, 720) if rich else (640, 480)
     m.vis.global_.offwidth = max(m.vis.global_.offwidth, w)
     m.vis.global_.offheight = max(m.vis.global_.offheight, h)
@@ -465,8 +461,7 @@ def render_video(path, t, cmd, out_on, policy, events, rich=False, still_dir=Non
     want = {"before": None if snap_t is None else snap_t - 0.05,
             "after": None if snap_t is None else snap_t + 0.35}
     best = {k: (9.9, None) for k in want}
-    info = dict(gap_max_mm=0.0, gap_after_mm=None, gap_before_mm=None, frames=0, slow_frames=0,
-                gravcomp=gravcomp)
+    info = dict(gap_max_mm=0.0, gap_after_mm=None, gap_before_mm=None, frames=0, slow_frames=0)
     sim_t, idx, frame_i = 0.0, 0, 0
     n = len(t)
     while idx < n - 1 or frame_i == 0:
@@ -573,9 +568,6 @@ def main():
                     help="seed the solver with its previous output or with the command")
     ap.add_argument("--jump-threshold", type=float, default=0.1,
                     help="rad of output change in one 750 Hz step that counts as a jump")
-    ap.add_argument("--gravcomp", choices=("bodies", "off"), default="bodies",
-                    help="video physics: gravity cancelled on the arm links (default), or "
-                         "off (PD only; the hand droops 0.1-0.2 m)")
     ap.add_argument("--check-sag", action="store_true",
                     help="reach scenario: only run the 2 s hold check (start and extended pose) and exit")
     ap.add_argument("--sag-limit-mm", type=float, default=5.0,
@@ -653,8 +645,7 @@ def main():
     print(f"\nSaved {out_dir / (prefix + 'trajectory.csv')}\nSaved {out_dir / (prefix + 'trajectory.png')}")
     if reach and (args.video or args.check_sag):
         sag = hold_check(policy, [("start pose", out["on"][0], cmd[0]),
-                                  ("fully extended pose", out["on"][-1], cmd[-1])],
-                         gravcomp=args.gravcomp)
+                                  ("fully extended pose", out["on"][-1], cmd[-1])])
         worst = max(r["final_mm"] for r in sag)
         if worst > args.sag_limit_mm:
             print(f"\nSTOP: the hand sags {worst:.1f} mm (limit {args.sag_limit_mm:g} mm); nothing rendered.")
@@ -667,13 +658,11 @@ def main():
         video_events = events["on"] if reach else events["off"] + events["on"]
         info = render_video(mp4, t, cmd, out["on"], policy, video_events, rich=reach,
                             still_dir=out_dir if reach else None,
-                            slowmo=args.slowmo, slow_window=args.slow_window,
-                            gravcomp=args.gravcomp)
+                            slowmo=args.slowmo, slow_window=args.slow_window)
         print(f"Saved {mp4}")
         if reach:
             print(f"  video: {info['frames']} frames, {info['duration_s']:.1f} s at 30 fps "
-                  f"({info['slow_frames']} slow-motion frames; gravity compensation: "
-                  f"{info['gravcomp']}); hand gap (commanded vs actual): "
+                  f"({info['slow_frames']} slow-motion frames); hand gap (commanded vs actual): "
                   f"{info['gap_before_mm']:.0f} mm in the 'before' still, {info['gap_after_mm']:.0f} mm in the "
                   f"'after' still, max {info['gap_max_mm']:.0f} mm\n"
                   f"  stills: {out_dir / 'reach_before.png'}, {out_dir / 'reach_after.png'}\n"

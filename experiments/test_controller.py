@@ -32,11 +32,12 @@ def test_controller():
     # Target: move only the actuators (20 dims)
     target = np.ones(len(ACTUATOR_INDICES)) * 0.1  # Small perturbation
     
-    # Compute torques
+    # Compute ctrl: torques for torque actuators (the wheel motors); the arm, finger and pedestal
+    # position actuators get their target passed through (src/arm_actuators.py)
     torques = controller.step(target, state)
-    print(f"\nComputed {len(torques)} torques")
-    print(f"Torque range: [{torques.min():.2f}, {torques.max():.2f}]")
-    print(f"Torques shape: {torques.shape}")
+    print(f"\nComputed {len(torques)} ctrl values (torque for torque actuators, target for position actuators)")
+    print(f"Range: [{torques.min():.2f}, {torques.max():.2f}]")
+    print(f"Shape: {torques.shape}")
     
     print("\n✓ Controller test passed!")
 

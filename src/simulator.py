@@ -7,6 +7,7 @@ from pathlib import Path
 import mujoco
 import numpy as np
 from src import robot_specs
+from src.arm_actuators import add_arm_actuators
 from src.cameras import add_cameras, make_offscreen_big_enough
 from src.pedestal import add_pedestal_lift
 
@@ -54,17 +55,16 @@ class RobotSimulator:
         if not model_path.exists():
             raise FileNotFoundError(f"Model not found: {model_path}")
 
-        if cameras or pedestal_lift:
-            # Sim choice: cameras and the pedestal lift are added programmatically
-            # so the scene XMLs stay free of them and their numbers live in robot_specs.
-            spec = mujoco.MjSpec.from_file(str(model_path))
-            if cameras:
-                add_cameras(spec, cameras)
-            if pedestal_lift:
-                add_pedestal_lift(spec, pedestal_lift)
-            self.model = spec.compile()
-        else:
-            self.model = mujoco.MjModel.from_xml_path(str(model_path))
+        # Sim choice: the arm/finger position actuators (always), cameras and the pedestal lift
+        # are added programmatically so the scene XMLs stay free of them and their numbers live
+        # in robot_specs.
+        spec = mujoco.MjSpec.from_file(str(model_path))
+        add_arm_actuators(spec)
+        if cameras:
+            add_cameras(spec, cameras)
+        if pedestal_lift:
+            add_pedestal_lift(spec, pedestal_lift)
+        self.model = spec.compile()
         if cameras:
             make_offscreen_big_enough(self.model, cameras)
             # Sim choice: MuJoCo's near clip plane is znear * scene extent, and
@@ -136,7 +136,11 @@ class RobotSimulator:
             "time": self.data.time,
             "joint_angles": self.data.qpos.copy(),
             "joint_velocities": self.data.qvel.copy(),
-            "joint_torques": self.data.ctrl.copy(),
+            # actual actuator force (N m for rotary joints, N for slides and the pedestal lift), as
+            # the servo applied it; "ctrl" is what was commanded (target angles/heights for position
+            # actuators, wheel torque commands for the motors)
+            "joint_torques": self.data.actuator_force.copy(),
+            "ctrl": self.data.ctrl.copy(),
         }
         for name in self.track_bodies:
             state = self.get_body_state(name)

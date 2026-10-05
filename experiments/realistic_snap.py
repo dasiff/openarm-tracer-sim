@@ -99,7 +99,7 @@ def evaluate(c, arm):
     t, cmd, out, _ = run_trajectory(policy, "previous", HOLD)
     on = out["on"]
     events = find_jumps(t, on, cmd, JUMP_THRESHOLD)
-    m = load_model("bodies")
+    m = load_model()
     d = mujoco.MjData(m)
     herr = 1000.0 * np.linalg.norm(hand_positions(m, d, arm, on) - hand_positions(m, d, arm, cmd), axis=1)
     big = max(events, key=lambda e: e["size"], default=None)

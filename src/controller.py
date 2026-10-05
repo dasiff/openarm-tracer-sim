@@ -12,8 +12,13 @@ class RobotController:
     """PD controller for robot joints.
 
     Converts target joint angles to motor torques using proportional-derivative
-    control, for the 20 actuated joints. The floating base (free joint) and the
-    2 unactuated telescoping-pedestal joints are not controlled here.
+    control, for the TORQUE (motor) actuators. Since src/arm_actuators.py (applied by
+    RobotSimulator) the arm and finger joints are MuJoCo position actuators, so step()
+    passes their targets through and MuJoCo runs the servo; the only torque actuators left
+    are the two wheel motors, which the velocity-driven base does not use. The floating base
+    (free joint) is not controlled here. Kept for the wheel motors and for scripts that
+    call it to build a full ctrl vector; its kp/kd table is no longer the arm's source of
+    truth (robot_specs.ARM_ACTUATOR_SPECS is, via src/arm_actuators.py).
 
     FIX vs. original: addressing into data.qpos / data.qvel is now computed
     from the compiled model (see joint_addressing.py) instead of assumed to
@@ -29,19 +34,11 @@ class RobotController:
             model: the mujoco.MjModel for combined_robot.xml (needed to
                    derive correct addressing; pass simulator.model).
         """
+        # one entry per motor class, from the first joint with that motor (robot_specs.ARM_ACTUATOR_SPECS)
+        joints = robot_specs.ARM_ACTUATOR_SPECS["joints"]
         self.gains = {
-            "shoulder_elbow": {
-                "kp": robot_specs.OPENARM_SPECS["motors"]["shoulder_elbow"]["kp"],
-                "kd": robot_specs.OPENARM_SPECS["motors"]["shoulder_elbow"]["kd"],
-            },
-            "wrist": {
-                "kp": robot_specs.OPENARM_SPECS["motors"]["wrist"]["kp"],
-                "kd": robot_specs.OPENARM_SPECS["motors"]["wrist"]["kd"],
-            },
-            "wrist_fine": {
-                "kp": robot_specs.OPENARM_SPECS["motors"]["wrist_fine"]["kp"],
-                "kd": robot_specs.OPENARM_SPECS["motors"]["wrist_fine"]["kd"],
-            },
+            name: {"kp": joints[i]["kp"], "kd": joints[i]["kv"]}
+            for name, i in (("shoulder_elbow", 1), ("wrist", 3), ("wrist_fine", 5))
         }
 
         addr = build_actuator_addressing(model)

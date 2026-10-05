@@ -285,17 +285,18 @@ def load_model(gravcomp="bodies"):
 
 
 # ---------------------------------------------------------------- hold check
-def hold_check(policy, poses, gravcomp="bodies", settle=0.5, hold=2.0):
+def hold_check(policy, poses, gravcomp="bodies", settle=0.5, hold=2.0, verbose=True):
     """Hold poses with the PD (torque limits on, base stationary) and measure the hand's sag.
 
     poses: [(label, joints the PD tracks, commanded joints)]. The arm starts exactly at the
     tracked joints; after `settle` s (the base lands on its wheels, as in the video) the
     hand is measured for `hold` s. Sag = distance from the hand (tcp) to where the tracked
     joints put it kinematically, at the same base pose, so base motion does not count.
-    Returns a list of dicts, one per pose.
+    Returns a list of dicts, one per pose. verbose=False prints nothing.
     """
     import mujoco
     from src.controller import RobotController
+    log = print if verbose else (lambda *args, **kwargs: None)
 
     m = load_model(gravcomp)
     d, d2 = mujoco.MjData(m), mujoco.MjData(m)
@@ -311,11 +312,11 @@ def hold_check(policy, poses, gravcomp="bodies", settle=0.5, hold=2.0):
     base_dof = m.jnt_dofadr[[j for j in range(m.njnt) if m.jnt_type[j] == 0][0]]
     tcp_id = m.body(f"openarm_{arm}_hand_tcp").id
     arm_lim = np.array([max(abs(lo[a]), abs(hi[a])) for a in arm_ids[arm]])
-    print(f"\nHold check ({policy.arm} arm; gravcomp {gravcomp}; PD at {RATE_HZ:g} Hz, torque limits on, "
+    log(f"\nHold check ({policy.arm} arm; gravcomp {gravcomp}; PD at {RATE_HZ:g} Hz, torque limits on, "
           f"base velocity zeroed; {settle:g} s settle, then {hold:g} s measured):")
     if gravcomp == "bodies":
         gc = [m.body(i).name for i in range(m.nbody) if m.body_gravcomp[i] > 0]
-        print(f"  gravcomp = 1 on {len(gc)} bodies (mass {sum(m.body_mass[m.body(n).id] for n in gc):.2f} kg): "
+        log(f"  gravcomp = 1 on {len(gc)} bodies (mass {sum(m.body_mass[m.body(n).id] for n in gc):.2f} kg): "
               f"{gc[0]} .. {gc[len(gc) // 2 - 1]} and {gc[len(gc) // 2]} .. {gc[-1]}; "
               f"all other bodies 0 (openarm_*_link0 and the base included)")
     results = []
@@ -359,7 +360,7 @@ def hold_check(policy, poses, gravcomp="bodies", settle=0.5, hold=2.0):
                  torque_frac=float(torque.max()), torque_joint=int(torque.argmax()) + 1,
                  joint_err=float(jerr.max()), joint_err_j=int(jerr.argmax()) + 1, cmd_gap_mm=moved)
         results.append(r)
-        print(f"  {label}: hand sag {r['final_mm']:.2f} mm after {hold:g} s (peak {r['max_mm']:.2f} mm; "
+        log(f"  {label}: hand sag {r['final_mm']:.2f} mm after {hold:g} s (peak {r['max_mm']:.2f} mm; "
               f"vertical {r['final_z_mm']:+.2f} mm); worst joint error {r['joint_err']:.4f} rad "
               f"(j{r['joint_err_j']}); highest torque {100 * r['torque_frac']:.0f}% of the limit "
               f"(j{r['torque_joint']}); filter output vs command at this pose: {moved:.1f} mm apart")
@@ -368,7 +369,7 @@ def hold_check(policy, poses, gravcomp="bodies", settle=0.5, hold=2.0):
 
 # ---------------------------------------------------------------- video
 def render_video(path, t, cmd, out_on, policy, events, rich=False, still_dir=None,
-                 slowmo=0.25, slow_window=0.5, fps=30, gravcomp="bodies"):
+                 slowmo=0.25, slow_window=0.5, fps=30, gravcomp="bodies", still_prefix="reach"):
     """Physics with the PD tracking the filtered output; render the arm offscreen.
 
     rich=False: the plain 640x480 video (failure scenario). rich=True: a 1280x720 side
@@ -546,7 +547,7 @@ def render_video(path, t, cmd, out_on, policy, events, rich=False, still_dir=Non
     if still_dir is not None:
         for k, (_, im) in best.items():
             if im is not None:
-                cv2.imwrite(str(Path(still_dir) / f"reach_{k}.png"), im)
+                cv2.imwrite(str(Path(still_dir) / f"{still_prefix}_{k}.png"), im)
     info["contacts"] = contacts_seen
     info["duration_s"] = info["frames"] / fps
     return info

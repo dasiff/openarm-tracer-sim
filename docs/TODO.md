@@ -13,6 +13,8 @@ logger, chemistry lab scene, cameras and webcam teleop all exist now (see `git l
 - [ ] **Arm swings when the base moves** (`combined_controller.py`). Re-test now that the PD loop
   runs at 750 Hz every physics step; the old once-per-frame control update was one suspect.
   Other leads: mixed actuator gain/bias settings, and the 3.5 mm finger overlap at the zero pose.
+- [ ] **PD fails to hold some arm poses** (81-262 mm sag, torque at 100% of limit) but holds
+  others to under 0.1 mm; cause unknown. See `data/branch_jump/realistic_candidates.txt`.
 - [ ] **Real camera parameters.** Eagle and wrist camera poses, field of view and resolution are
   placeholders; replace them when the Orbbec model and mounting are known.
 - [ ] **Camera image realism.** The floor and lighting wash out to white; consider lower floor

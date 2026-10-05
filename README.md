@@ -28,12 +28,19 @@ the teleop path can be tried without a camera.
 | `F3` | save the simulated camera images to `data/camera_snapshots/` |
 | `F4` | save a snapshot of the viewer |
 | `F5` | toggle trajectory logging |
+| `F6` | start / stop recording the viewer image to `data/recordings/viewer_<time>.mp4`, with a matching `_joints.csv` |
 | `Esc` | quit |
 
 Columns run shoulder (joint 1) to wrist (joint 7), then the gripper; the gripper's upper key opens
 it. The arm keys are held to jog. In teleop the webcam operator owns the arm joints, so only the
 grippers respond to the keys then. If the operator leaves the camera's view the arms hold their
 last pose. The same legend is shown in the viewer's status panel.
+
+**Recording (`F6`, or `--record` to start at launch; off by default).** The video is the viewer image (status panel and camera insets included). It plays
+at the simulated rate (62.5 frames per second of sim time), however slowly the VM ran. The CSV has one
+row per video frame, written as it goes: `video_frame`, `sim_time_s`, `wall_s`, the base pose, then
+every arm joint and finger as `<joint>_pos` (actual) and `<joint>_target` (PD target). Run with
+`CC_ROUNDROBIN=0` so the camera insets update at the full rate in the video.
 
 The viewer shows the three simulated cameras (eagle and both wrists) along the bottom, plus the
 operator webcam in teleop mode. Camera poses, field of view and resolution are placeholders until

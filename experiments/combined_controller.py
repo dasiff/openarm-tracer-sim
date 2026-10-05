@@ -73,6 +73,14 @@ TELEOP NOTE:
     fourth inset beside the simulated cameras; there is no second window.
     CC_FAKE_TELEOP=1 swaps in a scripted operator for testing without a webcam.
 
+RECORDING NOTE:
+    F6 (or the --record argument, which starts it on the first frame) starts / stops recording the viewer image to data/recordings/viewer_<time>.mp4
+    and writes viewer_<time>_joints.csv beside it: one row per video frame, flushed as
+    it goes, with sim time, the base pose and every arm joint / finger as <joint>_pos
+    (actual) and <joint>_target (PD target). The MP4 frame rate is sim time (physics
+    rate / physics steps per viewer frame), so playback runs at real simulated speed.
+    Use CC_ROUNDROBIN=0 for full-rate camera insets in the video.
+
 Usage:
     python experiments/combined_controller.py
     python experiments/combined_controller.py --scene models/scenes/other.xml
@@ -81,6 +89,7 @@ Usage:
 """
 
 import argparse
+import csv
 import math
 import os
 import time
@@ -230,6 +239,72 @@ def jog_step(side, idx, direction, targets, tables, teleop_on):
     targets[ids] = np.clip(targets[ids[0]] + direction * step, lo, hi)
 
 
+class ViewerRecorder:
+    """Records the viewer image to an MP4 and writes a CSV row per video frame.
+
+    One CSV row is written for every video frame (column `video_frame` is the
+    frame index), as the recording goes, and flushed every 30 rows, so the
+    joint trajectory can be compared across frames and survives a crash. The
+    MP4 plays at `fps` = frames per second of SIM time (physics rate / physics
+    steps per viewer frame), so playback runs at real simulated speed however
+    slowly the viewer ran on the VM.
+    """
+
+    def __init__(self, directory, fps, columns):
+        self.directory = Path(directory)
+        self.fps = float(fps)
+        self.columns = list(columns)
+        self.writer = None
+        self.csv_file = None
+        self.csv = None
+        self.frames = 0
+        self.size = None
+        self.paths = None
+
+    @property
+    def active(self):
+        return self.writer is not None
+
+    def start(self, width, height):
+        import cv2
+        self.directory.mkdir(parents=True, exist_ok=True)
+        stamp = time.strftime("%Y%m%d_%H%M%S")
+        self.paths = (self.directory / f"viewer_{stamp}.mp4",
+                      self.directory / f"viewer_{stamp}_joints.csv")
+        # mp4v wants even dimensions
+        self.size = (width & ~1, height & ~1)
+        self.writer = cv2.VideoWriter(
+            str(self.paths[0]), cv2.VideoWriter_fourcc(*"mp4v"), self.fps, self.size)
+        if not self.writer.isOpened():
+            self.writer = None
+            raise RuntimeError(f"could not open video writer for {self.paths[0]}")
+        self.csv_file = open(self.paths[1], "w", newline="")
+        self.csv = csv.writer(self.csv_file)
+        self.csv.writerow(["video_frame"] + self.columns)
+        self.frames = 0
+
+    def write(self, rgb_bottom_up, values):
+        """Add one video frame (RGB, OpenGL bottom-up rows) and one CSV row."""
+        import cv2
+        img = cv2.cvtColor(np.flipud(rgb_bottom_up), cv2.COLOR_RGB2BGR)
+        if (img.shape[1], img.shape[0]) != self.size:  # window resized mid-recording
+            img = cv2.resize(img, self.size, interpolation=cv2.INTER_AREA)
+        self.writer.write(img[:self.size[1], :self.size[0]])
+        self.csv.writerow([self.frames] + [f"{v:.6f}" for v in values])
+        self.frames += 1
+        if self.frames % 30 == 0:
+            self.csv_file.flush()
+
+    def stop(self):
+        """Finish the files; returns (mp4 path, csv path, frames)."""
+        if not self.active:
+            return None
+        self.writer.release()
+        self.csv_file.close()
+        self.writer = self.csv_file = self.csv = None
+        return (*self.paths, self.frames)
+
+
 def install_preview_capture(store):
     """Route the MediaPipe preview into `store` instead of an OpenCV window.
 
@@ -347,7 +422,8 @@ def _perf_settings():
 
 def run(scene: str, spawn_pos, groups: list[dict], policy,
         mode: str = "manual", camera: int = 0, preview: bool = True,
-        snapshot_every: float = 0.0, snapshot_dir: str | None = None):
+        snapshot_every: float = 0.0, snapshot_dir: str | None = None,
+        record: bool = False):
     """
     Main entry point.
 
@@ -588,6 +664,8 @@ def run(scene: str, spawn_pos, groups: list[dict], policy,
             atexit.register(source.cleanup)
         if preview:
             install_preview_capture(teleop)
+        if not bench["fake_teleop"]:
+            print("Teleop safety filter (collision avoidance): ON")
         print(f"Teleop: camera {camera}, preview={'on' if preview else 'off'}. "
               f"Arms start MANUAL; press F2 for teleop, then raise both arms "
               f"to shoulder height to engage.")
@@ -664,13 +742,12 @@ def run(scene: str, spawn_pos, groups: list[dict], policy,
             print("BENCH GL renderer:", glGetString(GL_RENDERER))
         except Exception as ex:
             print("BENCH GL renderer unknown:", ex)
-        if not bench["fake_teleop"]:
-            print("Teleop safety filter (collision avoidance): ON")
 
     logging_active = False
     prev_l = False
     prev_c = False
     prev_t = False
+    prev_r = False
     step_count = 0
     frame  = 0
 
@@ -710,17 +787,34 @@ def run(scene: str, spawn_pos, groups: list[dict], policy,
               "grippers stay on keys)" if on else
               "Arms: MANUAL (jog keys: left arm 1-8 / Q-I, right arm A-K / Z-,)")
 
+    # Joint columns for the recording: every arm joint and finger, actual
+    # position and the PD target, plus the base pose.
+    rec_joints = []
+    for aid in range(model.nu):
+        aname = model.actuator(aid).name
+        if "_joint" in aname or "_finger" in aname:
+            qa = model.jnt_qposadr[model.actuator_trnid[aid, 0]]
+            rec_joints.append((aname.removesuffix("_ctrl"), qa, aid))
+    recorder = ViewerRecorder(
+        PROJECT_ROOT / "data" / "recordings", physics_hz / steps_per_frame,
+        ["sim_time_s", "wall_s", "base_x", "base_y", "base_yaw_deg"]
+        + [f"{n}_pos" for n, _, _ in rec_joints]
+        + [f"{n}_target" for n, _, _ in rec_joints])
+    rec_t0 = [0.0]
+
     hud_keys = [("Arrows", "drive"), ("Spc", "stop"),
                 ("1-8", "L arm +"), ("Q-I", "L arm -"),
                 ("A-K", "R arm +"), ("Z-,", "R arm -")] + \
         ([("F2", "man/tele")] if teleop is not None else []) + \
-        [("F3", "cam imgs"), ("F4", "snap"), ("F5", "log"), ("Esc", "quit")]
+        [("F3", "cam imgs"), ("F4", "snap"), ("F5", "log"),
+         ("F6", "rec video"), ("Esc", "quit")]
 
     print(f"\nBase:  arrow keys = drive/turn   SPACE = stop")
     print(f"Arms:  left arm  + 1 2 3 4 5 6 7 8 / - Q W E R T Y U I")
     print(f"       right arm + A S D F G H J K / - Z X C V B N M ,")
     print(f"       (columns = joints 1-7 then gripper; upper key +, gripper + opens)")
-    print(f"F3=save camera images  F4=snapshot  F5=trajectory log  Esc=quit")
+    print(f"F3=save camera images  F4=snapshot  F5=trajectory log  "
+          f"F6=record video + joint CSV  Esc=quit")
     if teleop is not None:
         print(f"F2=toggle arms MANUAL / TELEOP (webcam); base keys work in both")
     print(f"--- entering loop ---")
@@ -922,6 +1016,22 @@ def run(scene: str, spawn_pos, groups: list[dict], policy,
             print(f"Logging: {'ON' if logging_active else 'OFF'}")
         prev_l = cur_l
 
+        cur_r = held(glfw.KEY_F6)
+        if (cur_r and not prev_r) or (record and frame == 0):  # --record starts on frame 0
+            if recorder.active:
+                mp4, csv_path, n = recorder.stop()
+                print(f"Recording stopped: {n} frames ({n / recorder.fps:.1f} s sim time)\n"
+                      f"  video:  {mp4}\n  joints: {csv_path}")
+            else:
+                fb_w, fb_h = glfw.get_framebuffer_size(window)
+                recorder.start(fb_w, fb_h)
+                rec_t0[0] = _time.time()
+                print(f"Recording started: {recorder.paths[0]}  ({recorder.fps:g} fps sim time)")
+                if bench["roundrobin"]:
+                    print("  note: cameras take turns (each updates at CAMERA_HZ/3); "
+                          "run with CC_ROUNDROBIN=0 for full-rate camera insets in the video")
+        prev_r = cur_r
+
         cur_c = held(glfw.KEY_F3)
         if cur_c and not prev_c:
             cam_dir.mkdir(parents=True, exist_ok=True)
@@ -1024,6 +1134,8 @@ def run(scene: str, spawn_pos, groups: list[dict], policy,
                  f"{1000.0 / max(hud_state['ms'], 1e-6):.1f}"),
                 ("cmd lin, ang", f"{ds.get('linear', 0):+.2f}, "
                  f"{ds.get('angular', 0):+.2f}"),
+                ("recording (F6)", "off" if not recorder.active else
+                 f"REC {recorder.frames} frames, {recorder.frames / recorder.fps:.1f} s"),
             ] + ([("arms (F2 toggles)", (
                 "MANUAL" if not teleop["on"] else
                 "TELEOP tracking" if teleop["engaged"] else
@@ -1084,6 +1196,14 @@ def run(scene: str, spawn_pos, groups: list[dict], policy,
             for cname, img in rig.images.items():
                 cv2.imwrite(str(sd / f"{cname}.png"),
                             cv2.cvtColor(img, cv2.COLOR_RGB2BGR))
+        if recorder.active:
+            rgb = np.zeros((height, width, 3), dtype=np.uint8)
+            mujoco.mjr_readPixels(rgb, None, viewport, context)
+            recorder.write(rgb, [
+                data.time, _time.time() - rec_t0[0],
+                data.qpos[0], data.qpos[1], yaw_deg]
+                + [data.qpos[qa] for _, qa, _ in rec_joints]
+                + [hold_qpos_targets[aid] for _, _, aid in rec_joints])
         t_s0 = pc()
         glfw.swap_buffers(window)
         glfw.poll_events()
@@ -1146,6 +1266,10 @@ def run(scene: str, spawn_pos, groups: list[dict], policy,
             break
 
     # ---------------------------------------------------------------
+    if recorder.active:
+        mp4, csv_path, n = recorder.stop()
+        print(f"Recording stopped: {n} frames ({n / recorder.fps:.1f} s sim time)\n"
+              f"  video:  {mp4}\n  joints: {csv_path}")
     print(f"\nLoop exited after {frame} frames.")
     if logging_active and len(logger.trajectory) > 0:
         logger.save()
@@ -1178,6 +1302,9 @@ def main():
                              "(also: press F4 in the sim window)")
     parser.add_argument("--snapshot-dir", default=None,
                         help="where snapshots go (default: ./snapshots)")
+    parser.add_argument("--record", action="store_true",
+                        help="start recording the viewer (MP4 + joint CSV) on the "
+                             "first frame; F6 stops / restarts it")
     parser.add_argument("--no-preview", action="store_true",
                         help="teleop: don't show the live camera window")
     args = parser.parse_args()
@@ -1195,6 +1322,7 @@ def main():
         preview=not args.no_preview,
         snapshot_every=args.snapshot_every,
         snapshot_dir=args.snapshot_dir,
+        record=args.record,
     )
 
 

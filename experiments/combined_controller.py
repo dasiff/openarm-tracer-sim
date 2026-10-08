@@ -349,12 +349,13 @@ class _FakeSource:
     preview frame through cv2.imshow like the real camera thread does.
     """
 
-    def __init__(self):
-        self.t0 = time.monotonic()
+    def __init__(self, clock=time.monotonic):
+        self.clock = clock
+        self.t0 = clock()
 
     def get_frame(self):
         import cv2
-        ph = (time.monotonic() - self.t0) % 8.0
+        ph = (self.clock() - self.t0) % 8.0
         in_view = ph < 4.0
         img = np.full((480, 640, 3), 70 if in_view else 25, np.uint8)
         cv2.circle(img, (int(100 + 440 * (ph / 8.0)), 240), 40,
@@ -371,16 +372,17 @@ class _FakeSource:
 class _FakeSession:
     """Stand-in solver for _FakeSource: swings every arm joint gently."""
 
-    def __init__(self, lo, hi):
+    def __init__(self, lo, hi, clock=time.monotonic):
         self.lo, self.hi = lo, hi
-        self.t0 = time.monotonic()
+        self.clock = clock
+        self.t0 = clock()
 
     def reset(self, *args):
         pass
 
     def solve(self, frame, engaged, q_current_right, q_current_left):
         from types import SimpleNamespace
-        ph = time.monotonic() - self.t0
+        ph = self.clock() - self.t0
         out = {}
         for sd in ("right", "left"):
             goal = 0.4 * np.sin(ph + np.arange(7))
@@ -407,6 +409,9 @@ def _perf_settings():
     CC_FINISH=1        glFinish after each swap
     CC_BENCH_FRAMES=N  run N frames, print per-phase timings, then exit
     CC_BENCH_SNAP=dir  save main view + camera images at frame 15
+    CC_BENCH_LOG=file.csv  write base pose, pedestal height and every arm joint / finger to a CSV every 75 physics
+                       steps (10 Hz of sim time), for before/after comparisons of the control loop
+    CC_FAKE_TELEOP_SIMCLOCK=1  the fake operator and solver run on sim time instead of wall time (reproducible)
     """
     e = os.environ.get
     def wh(v):
@@ -425,6 +430,8 @@ def _perf_settings():
         "snap_dir": e("CC_BENCH_SNAP"),
         "finish": e("CC_FINISH") == "1",
         "fake_teleop": e("CC_FAKE_TELEOP") == "1",
+        "fake_simclock": e("CC_FAKE_TELEOP_SIMCLOCK") == "1",
+        "log": e("CC_BENCH_LOG"),
         "inject": e("CC_BENCH_KEYS", ""),
         "snap_frame": int(e("CC_BENCH_SNAP_FRAME", "15")),
         "hud": e("CC_HUD") != "0",
@@ -654,8 +661,9 @@ def run(scene: str, spawn_pos, groups: list[dict], policy,
         # operator and back, so the base can be driven into place first.
         teleop = {"warned": set(), "engaged": False, "on": False}
         if bench["fake_teleop"]:
-            session = _FakeSession(arm_lo, arm_hi)
-            source = _FakeSource()
+            clock = (lambda: data.time) if bench["fake_simclock"] else time.monotonic
+            session = _FakeSession(arm_lo, arm_hi, clock)
+            source = _FakeSource(clock)
             print("Teleop: FAKE scripted operator (CC_FAKE_TELEOP=1), no webcam; "
                   "no safety filter (the fake solver has none)")
         else:
@@ -753,6 +761,17 @@ def run(scene: str, spawn_pos, groups: list[dict], policy,
             print("BENCH GL renderer:", glGetString(GL_RENDERER))
         except Exception as ex:
             print("BENCH GL renderer unknown:", ex)
+
+    bench_log = None
+    if bench["log"]:
+        bench_log = open(bench["log"], "w", newline="")
+        bench_csv = csv.writer(bench_log)
+        log_joints = [model.joint(f"openarm_{sd}_joint{i}").qposadr[0] for sd in ("left", "right") for i in range(1, 8)] \
+            + [model.joint(f"openarm_{sd}_finger_joint{k}").qposadr[0] for sd in ("left", "right") for k in (1, 2)]
+        bench_csv.writerow(["sim_time", "base_x", "base_y", "base_yaw_deg", "pedestal_m"]
+                           + [f"{sd}_joint{i}" for sd in ("left", "right") for i in range(1, 8)]
+                           + [f"{sd}_finger{k}" for sd in ("left", "right") for k in (1, 2)])
+        ped_qadr = model.joint(robot_specs.PEDESTAL_SPECS["joints"][0]).qposadr[0]
 
     logging_active = False
     prev_l = False
@@ -1014,6 +1033,11 @@ def run(scene: str, spawn_pos, groups: list[dict], policy,
                 data.qvel[base_dof + 5] = base_wz
             mujoco.mj_step(model, data)
             step_count += 1
+            if bench_log is not None and step_count % 75 == 0:
+                qw_, qx_, qy_, qz_ = data.qpos[3:7]
+                bench_csv.writerow([f"{data.time:.6f}", f"{data.qpos[0]:.9f}", f"{data.qpos[1]:.9f}",
+                                    f"{math.degrees(math.atan2(2.0 * (qw_ * qz_ + qx_ * qy_), 1.0 - 2.0 * (qy_ * qy_ + qz_ * qz_))):.9f}",
+                                    f"{data.qpos[ped_qadr]:.9f}"] + [f"{data.qpos[a]:.9f}" for a in log_joints])
             if step_count % cam_every == 0:
                 t_c0 = pc()
                 if bench["roundrobin"]:
@@ -1287,6 +1311,8 @@ def run(scene: str, spawn_pos, groups: list[dict], policy,
         mp4, csv_path, n = recorder.stop()
         print(f"Recording stopped: {n} frames ({n / recorder.fps:.1f} s sim time)\n"
               f"  video:  {mp4}\n  joints: {csv_path}")
+    if bench_log is not None:
+        bench_log.close()
     print(f"\nLoop exited after {frame} frames.")
     if logging_active and len(logger.trajectory) > 0:
         logger.save()

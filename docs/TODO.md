@@ -17,6 +17,9 @@ logger, chemistry lab scene, cameras and webcam teleop all exist now (see `git l
   data/arm_hold/suite_summary.txt). Remaining: arms swing ~20 cm during fast turns (2 rad/s, 91%
   force on left j1) and end ~2 cm off after stopping. Check sim turn rate/acceleration against
   the real Tracer before tuning.
+- [ ] **Base drift during staging.** In the beaker episodes the base meets the 1 cm / 1 degree arrival tolerance at the end of DRIVE, then drifts
+  about 3 mm / 0.9 degrees during the PEDESTAL move and 6 mm during ARMS, so the pose at HANDOFF is about 8 mm / 1.9 degrees off (and 4 mm / 0.07 degrees
+  more over a 60 s hold). The staging pose search's clearances and reach margins absorb this, but a closed-loop base correction after PEDESTAL would remove it.
 - [ ] **Confirm the camera neck specs.** The SO-101 mount (top of the torso plate, `NECK_SPECS`), which 4 joints are active
   (assumed shoulder pan / lift / elbow / wrist flex), the STS3215 gains and the camera module on its end are placeholders;
   the neck adds 0.655 kg, which already changes the arm-swing transient when the base starts (up to 4.6 degrees of yaw in the manual

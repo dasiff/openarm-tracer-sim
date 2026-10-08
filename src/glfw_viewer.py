@@ -318,7 +318,7 @@ def make_glfw_viewer(model, data, vcfg):
                  f"{ds.get('angular', 0):+.2f}"),
                 ("recording (F6)", "off" if not recorder.active else
                  f"REC {recorder.frames} frames, {recorder.frames / recorder.fps:.1f} s"),
-            ] + ([("neck pan,lift,elb,wrist", ", ".join(f"{v:+.0f}" for v in info["neck_deg"]))] if info.get("neck_deg") else [])
+            ] + ([("episode", info["status"])] if info.get("status") else []) + ([("neck pan,lift,elb,wrist", ", ".join(f"{v:+.0f}" for v in info["neck_deg"]))] if info.get("neck_deg") else [])
               + ([("arms (F2 toggles)", teleop_status)] if teleop_status is not None else []),
                 400, 180, hud_keys)
             blit(hud, 8, height - hud.shape[0] - 8)

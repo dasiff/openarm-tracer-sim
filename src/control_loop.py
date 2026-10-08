@@ -35,6 +35,12 @@ held while the active one moves, then applied (newest replaces an older waiting 
 duration). While holding, a moving base is brought to a stop at cfg["base_stop_*_decel"]. "Settled" thresholds are
 cfg["settle_*"] (provisional).
 
+Supervisor hook (used by src/episode_runner.py; unset = no effect): cfg["on_tick"](obs, loop) is called every tick right after
+the observation is built and before the sources step. It may add keys to `obs` (every source then sees them, e.g.
+obs["episode"]), change routes at run time (loop["routes"] is the live router table), end the run with loop["stop"](reason), and render
+one camera frame with loop["render"](camera_name) (works headless: an offscreen EGL context is created on first use). It may return a short
+status string, shown in the viewer's HUD. cfg["spawn_yaw"] sets the base's yaw at spawn (None = the XML's).
+
 Headless: viewer=None runs without a window. Cameras then render through an offscreen context (set MUJOCO_GL=egl before
 importing mujoco on a machine without a display) or are skipped with cfg["cameras"] = False.
 """
@@ -77,6 +83,8 @@ LOOP_CFG = {
     "bench_frames": 0,             # run this many ticks (after 10 warm-up ticks), print timings, then stop
     "bench_log": None,             # CSV path: base pose, pedestal height, arm joints, fingers every 75 physics steps
     "preview": False,              # teleop: the operator preview inset is shown
+    "on_tick": None,               # supervisor hook, see above
+    "spawn_yaw": None,             # rad, base yaw at spawn (None = leave the XML's)
     "neck_specs": None,            # None = robot_specs.NECK_SPECS (the neck is skipped if the model has none)
     "neck_max_speed": None,        # rad/s; None = NECK_SPECS["max_speed"]
 }
@@ -213,6 +221,8 @@ def run_loop(model, data, sources, cfg, viewer=None, logger=None):
     # --- Spawn and settle ---
     if cfg["spawn_pos"] is not None:
         data.qpos[0:3] = cfg["spawn_pos"]
+        if cfg["spawn_yaw"] is not None:
+            data.qpos[3:7] = [math.cos(cfg["spawn_yaw"] / 2), 0.0, 0.0, math.sin(cfg["spawn_yaw"] / 2)]
         mujoco.mj_forward(model, data)
 
     if neck is not None:                      # start with the neck at its default aim, not in a transient from zero
@@ -379,6 +389,24 @@ def run_loop(model, data, sources, cfg, viewer=None, logger=None):
     teleop = sources.get("teleop")
     jog_ids = {"L3": arm_act["left"][2], "R1": arm_act["right"][0], "Lg": fing_act["left"][0], "Rg": fing_act["right"][0]}
 
+    # --- hook API for cfg["on_tick"] ---
+    stop_req = [None]
+    rig_box = {"rig": rig, "gl": None}
+
+    def render(name):
+        """One frame of camera `name` from the current state (creates a rig on first use if the loop has none)."""
+        if rig_box["rig"] is None:
+            if viewer is not None:
+                ctx = viewer["context"]
+            else:
+                rig_box["gl"], ctx = _headless_context(model)
+            rig_box["rig"] = CameraRig(model, robot_specs.CAMERA_SPECS, ctx, shadows=cfg["camera_shadows"])
+        rig_box["rig"].render(data, [name])
+        return rig_box["rig"].images[name].copy()
+
+    loop_api = {"routes": routes, "stop": lambda reason="stop": stop_req.__setitem__(0, reason), "render": render}
+    status = None
+
     print(f"--- entering loop ---")
     logging_active = False
     prev_l = False
@@ -399,6 +427,10 @@ def run_loop(model, data, sources, cfg, viewer=None, logger=None):
                    base_pose=(float(data.qpos[0]), float(data.qpos[1]), base_yaw(data)),
                    pedestal_height=float(data.qpos[ped_qadr]), applied=applied(),
                    cameras=rig.images if rig else None)
+        if cfg["on_tick"] is not None:
+            status = cfg["on_tick"](obs, loop_api)
+            if stop_req[0] is not None:
+                break
 
         # F2: move the arm joints between the keyboard and the teleop source (the old set_teleop)
         if teleop is not None and hk.get("toggle_route") is not None:
@@ -487,7 +519,7 @@ def run_loop(model, data, sources, cfg, viewer=None, logger=None):
                 "base_vel": (base_vx, base_vy, base_wz), "drive_state": ds_state, "targets": hold_qpos_targets,
                 "teleop_status": teleop["status"]() if teleop is not None else None,
                 "preview_frame": teleop["state"].get("preview_frame") if teleop is not None else None,
-                "preview": cfg["preview"],
+                "preview": cfg["preview"], "status": status,
                 "neck_deg": [math.degrees(float(data.qpos[a])) for a in neck["qadr"]] if neck is not None else None})
             quit_now = res["quit"]
             yaw_deg = res["yaw_deg"]
@@ -548,10 +580,11 @@ def run_loop(model, data, sources, cfg, viewer=None, logger=None):
                 print(f"cleanup of source '{src.get('name')}' failed: {e}")
     if viewer is not None:
         viewer["close"]()
-    if gl_keepalive is not None:
-        try:
-            gl_keepalive.free()                          # avoids an EGL error message at interpreter exit
-        except Exception:
-            pass
+    for gl_ctx in (gl_keepalive, rig_box["gl"]):
+        if gl_ctx is not None:
+            try:
+                gl_ctx.free()                            # avoids an EGL error message at interpreter exit
+            except Exception:
+                pass
     print("Done.")
-    return {"frames": frame, "hold_log": ex["log"], "routes": routes}
+    return {"frames": frame, "hold_log": ex["log"], "routes": routes, "stopped_by": stop_req[0]}

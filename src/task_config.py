@@ -48,7 +48,7 @@ TASK_CFG = {
     "arm": "left",                         # the arm that gets the ready pose
     "ready_q": (-1.00748, -0.70464, 0.47191, 1.24247, -0.77442, -0.08043, 0.61180),   # that arm's 7 joints, rad (margin 40 deg)
     "ready_tcp": (1.0000, 0.7100, 1.1750), # world xyz of the TCP at ready_q when the base is at the staging pose
-    "ready_via_q": (-0.43303, -1.53625, 0.35152, 0.86596, 0.27423, -0.00064, -0.62994),  # waypoint hanging pose -> via -> ready (margin 45 deg); a straight move hits the bench
+    "ready_via_q": (-0.64235, -1.42671, -0.28301, 0.51899, 0.02738, 0.07867, 0.21018),  # waypoint hanging pose -> via -> ready (joint margin 29.7 deg; 16 cm from the bench along the staging path, re-planned with a 12 cm path margin because the arm's servo lag plus base drift used up the earlier 6.5 cm); a straight move hits the bench
     # Left-arm joint solutions of the other task poses (from the layout search; the beaker is held upright for the last two)
     "grasp_q": (-1.07325, -0.36123, 0.79668, 0.53576, -1.02172, 0.19696, 0.19506),        # TCP at beaker mid-height, fingers open (margin 30.7 deg)
     "above_plate_q": (-1.36316, -0.26016, 1.13214, 0.74114, -0.94935, -0.13076, 0.37412), # TCP 10 cm above hotplate_top, beaker held (24.9 deg)
@@ -120,6 +120,59 @@ LAYOUT_CFG = {
     "reach_radius": 0.015,                 # m, samples within this of a target give the screening margin
     "n_screen_keep": 120,                  # candidates (by screening margin) that get the exact IK
     "n_seeds": 100,
+}
+
+# ----------------------------------------------------------------------------------------------------------
+# Scripted staging (src/staging_source.py): spawn -> DRIVE -> PEDESTAL -> ARMS -> NECK -> DONE (= HANDOFF)
+# ----------------------------------------------------------------------------------------------------------
+STAGING_CFG = {
+    # DRIVE: turn in place toward the staging xy, drive straight, turn to the staging yaw (ground-truth base pose).
+    # Gentle starts: the base's yaw drifts when it starts to move (the arms swing), so the acceleration is slow.
+    "drive_max_lin_vel": 0.3,              # m/s
+    "drive_lin_accel": 0.1,                # m/s^2
+    "drive_lin_decel": 0.15,               # m/s^2
+    "drive_max_ang_vel": 0.4,              # rad/s
+    "drive_ang_accel": 0.2,                # rad/s^2
+    "drive_ang_decel": 0.2,                # rad/s^2
+    "drive_pos_tol": 0.01,                 # m, arrival tolerance (never loosened: a miss is reported)
+    "drive_yaw_tol": math.radians(1.0),    # rad
+    "drive_creep_lin": 0.02,               # m/s, lowest speed while still outside the tolerance (so the base converges)
+    "drive_creep_ang": 0.03,               # rad/s
+    "drive_turn_first_tol": math.radians(2.0),   # the turn toward the goal ends within this; the drive steers the rest
+    "drive_steer_gain": 1.0,               # 1/s, heading error -> yaw rate while driving
+    "drive_cross_track_gain": 1.5,         # 1/s: heading aimed at the line, further along it the further off the line (Stanley)
+    "drive_steer_max": 0.1,                # rad/s
+    "drive_settle_s": 0.3,                 # the arrival must hold this long with the base at rest
+    "drive_max_reapproach": 3,             # corrective re-approaches before DRIVE gives up (-> the episode is STAGING_FAILED)
+    "drive_timeout": 120.0,                # s
+    # PEDESTAL
+    "pedestal_speed": 0.05,                # m/s of command change (the lift's jog speed)
+    "pedestal_tol": 0.003,                 # m
+    "pedestal_settle_vel": 0.002,          # m/s
+    "pedestal_settle_s": 0.3,
+    "pedestal_timeout": 30.0,
+    # ARMS: minimum-jerk move along rest -> ready_via_q -> ready_q (joint-space arc length), gripper opening on the way
+    "arms_move_s": 10.0,                   # s; was 6: at 6 s the servos lagged the path by up to 6 deg and the fingers grazed the bench top
+    "arms_tol": 0.03,                      # rad, every joint
+    "arms_settle_vel": 0.02,               # rad/s
+    "arms_settle_s": 0.3,
+    "arms_timeout": 30.0,
+    "finger_open": 0.044,                  # m
+    # NECK: frame_points() on the task points, then hold
+    "neck_tol": 0.01,                      # rad
+    "neck_settle_vel": 0.02,               # rad/s
+    "neck_settle_s": 0.3,
+    "neck_timeout": 15.0,
+}
+
+# ----------------------------------------------------------------------------------------------------------
+# Episode runner (src/episode_runner.py)
+# ----------------------------------------------------------------------------------------------------------
+EPISODE_CFG = {
+    "timeout_after_handoff": 60.0,         # s of sim time after HANDOFF with no success -> outcome TIMEOUT
+    "log_hz": 10.0,                        # state / command log, written on the first tick of every 1/log_hz s of sim time
+    "exclusive": True,                     # one subsystem moves at a time (the neck is exempt); off by default elsewhere
+    "spawn_z": 0.22,                       # m, height the base is dropped from at spawn (it settles onto its wheels)
 }
 
 # ----------------------------------------------------------------------------------------------------------

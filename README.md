@@ -82,6 +82,8 @@ openarm-tracer-sim/
 │   ├── keyboard_source.py, teleop_source.py, policy_source.py   # command sources
 │   ├── glfw_viewer.py       # Window, HUD, camera insets, recorder, snapshots
 │   ├── neck.py, neck_framing.py, neck_source.py   # camera neck: attach the SO-101 at load, frame points, auto follow / look-ahead
+│   ├── staging_source.py    # Scripted staging: DRIVE -> PEDESTAL -> ARMS -> NECK -> DONE (HANDOFF), beaker-on-hotplate task
+│   ├── episode_runner.py, episode_test_sources.py   # reset, stage, hand off to a source under test, judge, log; test-only idle / cheat sources
 │   ├── robot_specs.py       # Rates, motor gains, camera specs, calibration status
 │   ├── actuator_mapping.py  # Actuator name -> index mapping
 │   ├── joint_addressing.py
@@ -106,6 +108,17 @@ openarm-tracer-sim/
 │   └── session_log.md       # Decisions, findings and problems, by session
 └── README.md
 ```
+
+## Beaker-on-hotplate episodes
+
+`experiments/beaker_hotplate_episode.py --source idle|cheat [--viewer] [--repeat N] [--cross-check]` runs one or more
+episodes (`src/episode_runner.py`): reset to the fixed spawn state, the scripted staging source (`src/staging_source.py`,
+speeds / ramps / tolerances in `STAGING_CFG`, poses in `TASK_CFG`) drives to the staging pose, sets the pedestal, moves the left
+arm through the via waypoint to the ready pose and frames the task with the neck camera, then the arms and grippers go to the source
+under test. Exclusivity is on in episodes. An episode ends at success (`check_success`, checked after HANDOFF only), at a
+60 s timeout after HANDOFF, or at once as `STAGING_FAILED` if the base cannot reach its pose within 1 cm / 1 degree after 3
+corrective re-approaches. Each episode writes `episode_log.csv` (10 Hz) and `episode_summary.json`. `idle` (arms hold, expect
+TIMEOUT) and `cheat` (teleports the beaker onto the hotplate 2 s after HANDOFF, expect SUCCESS) exist only to test the runner.
 
 ## Features
 

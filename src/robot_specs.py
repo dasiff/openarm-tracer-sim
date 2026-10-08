@@ -150,8 +150,8 @@ CAMERA_SPECS = [
         "name": "eagle_cam",
         "parent": "openarm_body_link0",
         # Placeholder pending real mount: 45 deg pitch, height chosen so the optical axis hits the work area center at HANDOFF.
-        "pos": [0.05, 0.0, 0.9486],
-        "look_at": [0.7571, 0.0, 0.2415],
+        "pos": [0.05, 0.0, 0.9686],
+        "look_at": [0.7571, 0.0, 0.2615],
         "up": [0.0, 0.0, 1.0],
         "fovy": ORBBEC_FOVY_DEG,
         "resolution": ORBBEC_RESOLUTION,

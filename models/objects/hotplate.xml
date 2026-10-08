@@ -10,7 +10,7 @@
 -->
 <mujoco>
   <worldbody>
-    <body name="task_hotplate" pos="0.80 0.68 0.96">
+    <body name="task_hotplate" pos="0.80 0.66 0.96">
       <geom name="task_hotplate_base" type="box" size="0.09 0.09 0.03" pos="0 0 0.03"
             rgba="0.30 0.30 0.33 1" friction="1.0 0.005 0.0001"/>
       <geom name="task_hotplate_top_plate" type="box" size="0.075 0.075 0.004" pos="0 0 0.064"

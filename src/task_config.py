@@ -24,30 +24,35 @@ TASK_CFG = {
     # Objects (xy in the world; z comes from the bench top). These equal the defaults in
     # models/objects/*.xml; the values here are the ones applied at load. 20 cm centre to centre; the hotplate is on
     # the robot's right of the beaker (the left arm and shoulder hide the robot's left side from the eagle camera).
-    "beaker_xy": (1.00, 0.68),
-    "hotplate_xy": (0.80, 0.68),
+    # y = 0.66 puts the 18 cm deep hotplate 5 cm from the bench's front edge (the layout search's rule).
+    "beaker_xy": (1.00, 0.66),
+    "hotplate_xy": (0.80, 0.66),
     "beaker_settle_clearance": 0.002,      # m, the beaker is dropped from this height above the bench top
     "warmup_s": 1.0,                       # start-up as combined_controller.py: arms held at zero while the robot settles,
     "resettle_s": 0.4,                     # then the drooped pose is captured as the resting pose and held
 
-    # Robot spawn on open floor, 2.6 m from the bench edge and facing +y, away from the bench, so DRIVE
-    # needs a real turn (about 170 deg) and a real drive (about 2.2 m). It is roughly north of the staging
-    # area on purpose: the heading from spawn to staging is -75 deg, so the final in-place turn is ~15 deg.
-    # With a spawn far to the side the final turn is ~40 deg and sweeps a footprint corner (0.46 m from base_link's origin) into the bench unless
-    # the standoff is 22 cm or more, which puts the objects out of reach. Re-run the staging search after
-    # moving the spawn: it checks the swept footprint for the configured spawn.
+    # Robot spawn on open floor, 2.6 m from the bench edge and facing +y, away from the bench, so DRIVE needs a real
+    # turn (about 180 deg) and a real drive (about 2.2 m). It is roughly north of the staging area on purpose: the
+    # heading from spawn to staging is -89 deg, so the final in-place turn is only ~1 deg. With a spawn far to the
+    # side the final turn is large and sweeps a footprint corner (0.46 m from base_link's origin) into the bench unless
+    # the standoff is large, which puts the objects out of reach. Re-run the layout search after moving the spawn: it
+    # checks the swept footprint for the configured spawn.
     "spawn_xy": (0.70, 3.40),
     "spawn_yaw": math.radians(90.0),
 
-    # --- from experiments/beaker_hotplate_staging_search.py (results in data/beaker_hotplate_staging/); re-run it if
-    # --- the objects, spawn, pedestal or cameras change ---
-    "staging_xy": (0.8750, 1.2213),        # base_link origin, m; 8 cm from the bench edge (base front to bench top edge)
+    # --- from experiments/beaker_hotplate_layout_search.py (results in data/beaker_hotplate_layout/); re-run it if the
+    # --- objects, spawn, pedestal or the grasp orientation constraint change ---
+    "staging_xy": (0.7500, 1.2213),        # base_link origin, m; 8 cm from the bench edge (base front to bench top edge)
     "staging_yaw": math.radians(-90.0),    # facing the bench
     "pedestal_q": -0.2,                    # pedestal_lift command, m of stage travel (0 = raised, negative = lowered)
     "arm": "left",                         # the arm that gets the ready pose
-    "ready_q": (-1.42142, -0.45600, 0.86935, 1.22879, -0.95571, 0.44376, 1.20655),   # that arm's 7 joints, rad
-    "ready_tcp": (1.0000, 0.7300, 1.1750), # world xyz of the TCP at ready_q when the base is at the staging pose
-    "ready_via_q": (-0.86967, -0.83671, -0.11607, 0.66404, -0.33348, 0.77695, 0.82962),  # one waypoint between the hanging pose and ready_q (None = straight move); a straight move hits the bench
+    "ready_q": (-1.00748, -0.70464, 0.47191, 1.24247, -0.77442, -0.08043, 0.61180),   # that arm's 7 joints, rad (margin 40 deg)
+    "ready_tcp": (1.0000, 0.7100, 1.1750), # world xyz of the TCP at ready_q when the base is at the staging pose
+    "ready_via_q": (-0.43303, -1.53625, 0.35152, 0.86596, 0.27423, -0.00064, -0.62994),  # waypoint hanging pose -> via -> ready (margin 45 deg); a straight move hits the bench
+    # Left-arm joint solutions of the other task poses (from the layout search; the beaker is held upright for the last two)
+    "grasp_q": (-1.07325, -0.36123, 0.79668, 0.53576, -1.02172, 0.19696, 0.19506),        # TCP at beaker mid-height, fingers open (margin 30.7 deg)
+    "above_plate_q": (-1.36316, -0.26016, 1.13214, 0.74114, -0.94935, -0.13076, 0.37412), # TCP 10 cm above hotplate_top, beaker held (24.9 deg)
+    "setdown_q": (-1.25683, -0.23374, 1.16252, 0.69941, -1.15110, -0.01193, 0.24228),      # beaker bottom 2 mm above the hotplate top, beaker held (23.4 deg)
 }
 
 # ----------------------------------------------------------------------------------------------------------
@@ -80,6 +85,41 @@ SEARCH_CFG = {
     "place_clear_above_plate": 0.10,       # m, second reach target above hotplate_top
     "finger_open": 0.044,                  # m, fully open (both fingers)
     "path_margin": 0.03,                   # m, the arm path stays this far from the bench, objects and furniture
+}
+
+# ----------------------------------------------------------------------------------------------------------
+# Joint layout + staging search with slack at every task pose (experiments/beaker_hotplate_layout_search.py)
+# ----------------------------------------------------------------------------------------------------------
+LAYOUT_CFG = {
+    "arm": "left",
+    "n_samples": 20_000_000,               # random joint samples of that arm (the usable ones are kept, with their joint margin)
+    "seed": 1,
+    # Object pair: slid together along the bench (hotplate to the robot's right of the beaker, i.e. smaller world x)
+    "spacings": (0.20, 0.25, 0.30),        # m, beaker to hotplate centre
+    "bench_edge_margin": 0.05,             # m, objects at least this far from every bench edge; fixes the pair's y
+    "pair_xs": (0.6, 0.8, 1.0, 1.2, 1.4),  # beaker x positions tried (reach does not depend on x; furniture and the turn do)
+    # Staging pose, relative to the pair: standoff (base front to bench edge), lateral offset from the pair midpoint
+    # along the bench, yaw offset from facing the bench, pedestal command
+    "standoffs": (0.08, 0.10, 0.12, 0.14, 0.16),
+    "laterals": tuple(round(0.05 * i, 2) for i in range(-8, 3)),
+    "yaw_offsets_deg": (-20.0, -10.0, 0.0, 10.0, 20.0),
+    "pedestal_qs": (0.0, -0.04, -0.08, -0.12, -0.16, -0.20),
+    # Requirements
+    "required_clearance": 0.08,            # m, base footprint to bench at the staging pose
+    "required_turn_clearance": 0.05,       # m, footprint swept by the final in-place turn
+    "min_furniture_clearance": 0.03,       # m
+    "required_margin_deg": 10.0,           # every arm joint this far from its limit at every task pose
+    "clear_margin": 0.003,                 # m, arm geoms (except the fingers on the beaker) stay this far from everything else
+    "path_margin": 0.03,                   # m, the rest -> via -> ready path stays this far from everything
+    "holding_finger_q": 0.0368,            # m per finger: gap 70 mm = the beaker diameter (gap = 2 q - 3.6 mm)
+    "setdown_clearance": 0.002,            # m, the held beaker's bottom starts this far above the hotplate top
+    # Robustness: base perturbed by +-dx, +-dy, +-dyaw (all 8 corners)
+    "robust_xy": 0.02,
+    "robust_yaw_deg": 2.0,
+    # Search effort
+    "reach_radius": 0.015,                 # m, samples within this of a target give the screening margin
+    "n_screen_keep": 120,                  # candidates (by screening margin) that get the exact IK
+    "n_seeds": 100,
 }
 
 # ----------------------------------------------------------------------------------------------------------

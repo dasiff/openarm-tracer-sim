@@ -145,6 +145,14 @@ STAGING_CFG = {
     "drive_settle_s": 0.3,                 # the arrival must hold this long with the base at rest
     "drive_max_reapproach": 3,             # corrective re-approaches before DRIVE gives up (-> the episode is STAGING_FAILED)
     "drive_timeout": 120.0,                # s
+    # Pose corrections after PEDESTAL and after ARMS (the pedestal and arm moves push the base off its pose): if the base is outside
+    # drive_pos_tol / drive_yaw_tol it is moved back. NEW values (not from the earlier approved set):
+    "correction_aim_frac": 0.5,            # the corrections go to within this fraction of the tolerance (aim for the centre, not the edge)
+    "correction_timeout": 60.0,            # s per correction
+    "correction_arms_max_pos": 0.02,       # m: with the arm extended, a base error above this fails the episode (STAGING_FAILED) instead of moving
+    "correction_arms_max_yaw": math.radians(3.0),   # rad: same for yaw
+    "correction_arms_min_base_clearance": 0.05,     # m: base to bench, checked every tick of the extended-arm correction (it is 0.08 at the staging pose)
+    "correction_arms_min_arm_clearance": 0.03,      # m: the task arm to the bench, same check
     # PEDESTAL
     "pedestal_speed": 0.05,                # m/s of command change (the lift's jog speed)
     "pedestal_tol": 0.003,                 # m

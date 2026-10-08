@@ -3,7 +3,7 @@
 Episode runner for the beaker-on-hotplate task: one run = reset, stage, hand off to a source under test, judge, log.
 
     summary = run_episode(make_test_source, model, data, task_cfg=TASK_CFG, staging_cfg=STAGING_CFG, episode_cfg=EPISODE_CFG,
-                          viewer=None, out_dir=None, handoff_frame=None, held=None)
+                          viewer=None, out_dir=None, handoff_frame=None, held=None, loop_cfg=None)
 
   reset     mj_resetData + the task's object poses; the loop spawns the robot at the task's spawn pose (position and yaw) and
             settles it (nothing is randomized). The same model / data can be reused for any number of episodes.
@@ -16,7 +16,8 @@ Episode runner for the beaker-on-hotplate task: one run = reset, stage, hand off
 Exclusivity is ON in episodes (episode_cfg["exclusive"]); the loop's default stays off elsewhere.
 
 The runner drives src/control_loop.run_loop through its cfg["on_tick"] hook (route switching, end conditions, logging, measurements).
-The summary: outcome, per-phase durations, arrival errors and the final in-place turn angle, base drift per phase and after HANDOFF,
+The summary: outcome, per-phase durations (including the two pose-correction phases when they ran), arrival errors, the final in-place turn
+angle, the pose corrections (needed or not, error before and after, extended-arm clearances), base drift per phase and after HANDOFF,
 minimum base-to-bench clearance during the drive, contacts per phase, the neck framing report at HANDOFF, the holds the loop logged,
 and the success-check diagnostics.
 """
@@ -55,7 +56,7 @@ def _body_set(model, root_name):
 
 
 def run_episode(make_test_source, model, data, task_cfg=TASK_CFG, staging_cfg=STAGING_CFG, episode_cfg=EPISODE_CFG,
-                viewer=None, out_dir=None, handoff_frame=None, held=None):
+                viewer=None, out_dir=None, handoff_frame=None, held=None, loop_cfg=None):
     wall0 = time.perf_counter()
     mujoco.mj_resetData(model, data)
     apply_task_poses(model, data, task_cfg)
@@ -130,7 +131,7 @@ def run_episode(make_test_source, model, data, task_cfg=TASK_CFG, staging_cfg=ST
             print(f"[episode] t={t:.2f} s: HANDOFF reached; arms and grippers now belong to the source under test ('{test['name']}')")
         obs["episode"] = {"phase": phase, "handoff_time": R["handoff_time"]}
         # measurements: drift per phase, contacts, clearance during DRIVE
-        if phase in R["drift"] and phase in R["phase_base"] and phase != "DRIVE":
+        if phase in R["drift"] and phase in R["phase_base"] and phase != "DRIVE" and not phase.startswith("CORRECT"):
             x0, y0, yaw0 = R["phase_base"][phase]
             d = R["drift"][phase]
             d["max_pos"] = max(d["max_pos"], math.hypot(x - x0, y - y0))
@@ -174,6 +175,7 @@ def run_episode(make_test_source, model, data, task_cfg=TASK_CFG, staging_cfg=ST
            "spawn_yaw": task_cfg["spawn_yaw"], "routes": routes, "exclusive": episode_cfg["exclusive"], "on_tick": on_tick,
            "cameras": viewer is not None, "camera_roundrobin": True, "held": held,
            "hotkeys": {"quit": __import__("glfw").KEY_ESCAPE} if viewer is not None else {}}
+    cfg.update(loop_cfg or {})
     result = run_loop(model, data, sources, cfg, viewer=viewer)
     if log_file is not None:
         log_file.close()
@@ -186,11 +188,14 @@ def run_episode(make_test_source, model, data, task_cfg=TASK_CFG, staging_cfg=ST
     final = None
     if R["handoff_base"] is not None:
         gx, gy = task_cfg["staging_xy"]
-        final = {"pos_err_mm": 1000 * math.hypot(R["handoff_base"][0] - gx, R["handoff_base"][1] - gy),
-                 "yaw_err_deg": math.degrees(wrap(R["handoff_base"][2] - task_cfg["staging_yaw"]))}
+        ex, ey = gx - R["handoff_base"][0], gy - R["handoff_base"][1]
+        gyaw = task_cfg["staging_yaw"]
+        final = {"pos_err_mm": 1000 * math.hypot(ex, ey), "yaw_err_deg": math.degrees(wrap(R["handoff_base"][2] - gyaw)),
+                 "along_mm": 1000 * (ex * math.cos(gyaw) + ey * math.sin(gyaw)),          # > 0: short of the staging pose, farther from the bench
+                 "lateral_mm": 1000 * (-ex * math.sin(gyaw) + ey * math.cos(gyaw))}       # > 0: the staging pose is to the base's left
     drift = {k: {"max_pos_mm": 1000 * v["max_pos"], "max_yaw_deg": math.degrees(v["max_yaw"]),
                  "net_pos_mm": 1000 * v.get("net_pos", 0.0), "net_yaw_deg": math.degrees(v.get("net_yaw", 0.0))}
-             for k, v in R["drift"].items() if k != "DRIVE"}
+             for k, v in R["drift"].items() if k != "DRIVE" and not k.startswith("CORRECT")}
     rep = st["framing_report"]
     summary = {
         "outcome": R["outcome"], "staging_error": st["error"], "sim_time_end": R["t_end"], "handoff_time": R["handoff_time"],
@@ -201,7 +206,7 @@ def run_episode(make_test_source, model, data, task_cfg=TASK_CFG, staging_cfg=ST
         "base_pose_error_at_handoff": final,
         "first_turn_deg": st["first_turn_deg"], "final_in_place_turn_deg": st["final_turn_deg"],
         "planned_final_turn_deg": st["planned_final_turn_deg"], "drive_reapproaches": st["reapproaches"],
-        "base_drift": drift, "min_base_to_bench_clearance_during_drive_mm": None if R["min_clearance"] is None else 1000 * R["min_clearance"],
+        "pose_corrections": st["corrections"], "base_drift": drift, "min_base_to_bench_clearance_during_drive_mm": None if R["min_clearance"] is None else 1000 * R["min_clearance"],
         "contacts_by_phase": {k: [{"pair": list(p), "first_s": v["first"], "last_s": v["last"], "ticks": v["ticks"]} for p, v in d.items()]
                               for k, d in R["contacts"].items()},
         "neck_framing_report": rep, "holds": result["hold_log"], "success_check": R["diag"], "log_rows_hz": episode_cfg["log_hz"],

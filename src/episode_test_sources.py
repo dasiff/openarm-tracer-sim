@@ -6,6 +6,10 @@ TEST-ONLY command sources for exercising src/episode_runner.py. They are not tas
     make_cheat_source(model, data, delay_s=2.0) CHEATS: delay_s after HANDOFF it teleports the beaker, upright, onto the hotplate through
                                                 its freejoint. Only tests the runner's success path. Expected outcome: SUCCESS.
 
+    make_kick_source(model, data, phase, delay_s, along_mm, lateral_mm, yaw_deg)
+                                                TEST ONLY: delay_s into `phase` it displaces the base (teleports it by along_mm along the
+                                                staging heading, lateral_mm to the left, yaw_deg) to exercise the pose-correction steps.
+
 A test source is given to the runner as a factory make(model, data) -> source dict. The runner publishes
 obs["episode"] = {"phase", "handoff_time" (None before HANDOFF)}, which is what these read.
 """
@@ -37,3 +41,32 @@ def make_cheat_source(model, data, delay_s=2.0, task_cfg=TASK_CFG):
         return None
 
     return {"name": "cheat", "step": step, "state": state}
+
+
+def make_kick_source(model, data, phase, delay_s, along_mm, lateral_mm, yaw_deg, task_cfg=TASK_CFG):
+    """Test only: displace the base once, delay_s after the staging source entered `phase`. along > 0 = toward the bench (the staging heading)."""
+    import math
+    state = {"kicked_at": None, "phase_start": None}
+    gyaw = task_cfg["staging_yaw"]
+
+    def step(obs):
+        ep = obs.get("episode")
+        if state["kicked_at"] is not None or not ep:
+            return None
+        if ep["phase"] != phase:
+            state["phase_start"] = None
+            return None
+        if state["phase_start"] is None:
+            state["phase_start"] = obs["time"]
+        if obs["time"] - state["phase_start"] >= delay_s:
+            a, l = along_mm / 1000.0, lateral_mm / 1000.0
+            data.qpos[0] += a * math.cos(gyaw) - l * math.sin(gyaw)
+            data.qpos[1] += a * math.sin(gyaw) + l * math.cos(gyaw)
+            yaw = 2.0 * math.atan2(data.qpos[6], data.qpos[3]) + math.radians(yaw_deg)
+            data.qpos[3:7] = [math.cos(yaw / 2), 0.0, 0.0, math.sin(yaw / 2)]
+            mujoco.mj_forward(model, data)
+            state["kicked_at"] = obs["time"]
+            print(f"[kick] t={obs['time']:.2f} s in {phase}: base displaced by {along_mm:+.0f} mm along, {lateral_mm:+.0f} mm sideways, {yaw_deg:+.1f} deg (TEST ONLY)")
+        return None
+
+    return {"name": "kick", "step": step, "state": state}

@@ -6,26 +6,35 @@ tolerances), none from this file.
 
     source = make_staging_source(model, data, task_cfg=TASK_CFG, cfg=STAGING_CFG, points_fn=framing_points)
     source["step"](obs) -> commands          (the loop calls it every tick)
-    source["state"]     phase, done, error, phases {name: {start, end}}, arrival, final_turn_deg, framing_report, ...
+    source["state"]     phase, done, error, phases {name: {start, end}}, arrival, corrections, final_turn_deg, framing_report, ...
 
 Phases, in order (one subsystem moves at a time; the neck is exempt and stays at its look-ahead aim while driving):
-  DRIVE     turn in place toward the staging xy, drive straight, turn to the staging yaw, with the ground-truth base pose. Speeds
-            ramp gently (STAGING_CFG). The straight leg follows the line from where it started to the goal (heading plus cross-track
-            correction, so it stays accurate right up to the goal; steering at the bearing to the goal is ill-conditioned near it). Arrival = within drive_pos_tol and drive_yaw_tol with the base at rest for drive_settle_s;
-            the tolerances are never loosened. If the pose is not held after drive_max_reapproach corrective re-approaches (or on
-            the timeout) state["error"] is set and the source stops commanding; the runner ends the episode as STAGING_FAILED.
-            On arrival the base gets a zero Twist.
-  PEDESTAL  the pedestal command ramps to task_cfg["pedestal_q"].
-  ARMS      the task arm moves (minimum jerk, arms_move_s) rest -> ready_via_q -> ready_q, the gripper opening on the way.
-  NECK      frame_points() on points_fn(model, data) (beaker, hotplate, the gripper at its ready pose), the result is commanded, then held.
-  DONE      state["done"] = True. The source stops commanding.
-Phase end = the target reached, with the moving joints below the settle velocity for the settle time (so each phase also waits
-for its own motion to die out). state["final_turn_deg"] is the in-place turn done at the staging pose (the staging search's swept
-clearance assumed a small one); state["planned_final_turn_deg"] is what the straight approach from the spawn implies.
+  DRIVE              turn in place toward the staging xy, drive straight, turn to the staging yaw, with the ground-truth base pose. Speeds
+                     ramp gently (STAGING_CFG). The straight leg follows the line from where it started to the goal (heading plus
+                     cross-track correction, so it stays accurate right up to the goal; steering at the bearing to the goal is
+                     ill-conditioned near it). Arrival = within drive_pos_tol and drive_yaw_tol with the base at rest for drive_settle_s;
+                     the tolerances are never loosened. After drive_max_reapproach corrective re-approaches (or on the timeout)
+                     state["error"] is set and the source stops commanding; the runner ends the episode as STAGING_FAILED.
+  PEDESTAL           the pedestal command ramps to task_cfg["pedestal_q"].
+  CORRECT_PEDESTAL   the pedestal move pushes the base: if it is outside the tolerance, the same go-to-pose controller moves it back (the
+                     arms are still tucked), aiming for correction_aim_frac of the tolerance. Skipped (and logged) if the pose is fine.
+  ARMS               the task arm moves (minimum jerk, arms_move_s) rest -> ready_via_q -> ready_q, the gripper opening on the way.
+  CORRECT_ARMS       same check. With the arm extended only a creep-speed correction is allowed: a yaw turn in place and a straight move
+                     along the heading (forward or back); a sideways error cannot be fixed without a large turn, which would sweep the
+                     arm, so it counts as too large. If the needed correction exceeds correction_arms_max_pos / _max_yaw (or the sideways
+                     error exceeds the tolerance), or the base-to-bench or arm-to-bench clearance (checked every tick) falls below its
+                     minimum, state["error"] is set (STAGING_FAILED): the extended arm is not moved further.
+  NECK               frame_points() on points_fn(model, data) (beaker, hotplate, the gripper at its ready pose), the result is commanded, then held.
+  DONE               state["done"] = True. The source stops commanding.
+Phase end = the target reached, with the moving joints below the settle velocity for the settle time. state["final_turn_deg"] is the
+in-place turn done at the staging pose at the end of DRIVE (the staging search's swept clearance assumed a small one);
+state["planned_final_turn_deg"] is what the straight approach from the spawn implies. state["corrections"] records, for each correction
+step, whether it was needed, the pose error before and after, its duration and (extended arm) the smallest clearances seen.
 """
 
 import math
 
+import mujoco
 import numpy as np
 
 from src import robot_specs
@@ -47,6 +56,156 @@ def _min_jerk(u):
     return 10 * u ** 3 - 15 * u ** 4 + 6 * u ** 5
 
 
+def _pose_controller(cfg, goal, max_lin, max_ang, tol_pos, tol_yaw, real_pos_tol, real_yaw_tol, max_reapproach):
+    """Turn in place toward the goal, drive straight along the line to it, turn to the goal yaw. Returns {"reset", "step", "S"}.
+
+    step(obs, t, dt) -> (commands, status) with status "running", "arrived" or "failed" (S["fail"] says why). The pose must be within
+    tol_pos / tol_yaw (the aim) with the base at rest for drive_settle_s; after max_reapproach corrective re-approaches a pose that is
+    not within the aim but is within real_pos_tol / real_yaw_tol still counts as arrived; one that is not within those is a failure.
+    """
+    gx, gy, gyaw = goal
+    S = {"leg": "TURN1", "twist": (0.0, 0.0), "ok_since": None, "reapproach": 0, "line": None, "first_turn": None, "final_turn": None,
+         "fail": None, "aim_missed": False}
+
+    def reset(x, y, yaw):
+        S.update(leg="TURN1" if math.hypot(gx - x, gy - y) >= tol_pos else "TURN2", twist=(0.0, 0.0), ok_since=None, reapproach=0,
+                 line=None, first_turn=None, final_turn=None, fail=None, aim_missed=False)
+
+    def turn_rate(err, tol_leg):
+        w = math.sqrt(2 * cfg["drive_ang_decel"] * max(abs(err) - 0.3 * tol_leg, 0.0))
+        return math.copysign(max(min(w, max_ang), min(cfg["drive_creep_ang"], max_ang)), err)
+
+    def step(obs, t, dt):
+        x, y, yaw = obs["base_pose"]
+        dist = math.hypot(gx - x, gy - y)
+        bearing = math.atan2(gy - y, gx - x)
+        leg = S["leg"]
+        lin_t = ang_t = 0.0
+        if leg == "TURN1":
+            if dist < tol_pos:
+                leg = "TURN2"
+            else:
+                err = wrap(bearing - yaw)
+                if S["first_turn"] is None:
+                    S["first_turn"] = math.degrees(err)
+                if abs(err) < cfg["drive_turn_first_tol"]:
+                    leg = "DRIVE"
+                    S["line"] = (x, y, bearing)                  # the straight leg follows this line to the goal
+                else:
+                    ang_t = turn_rate(err, cfg["drive_turn_first_tol"])
+        if leg == "DRIVE":
+            sx, sy, lh = S["line"]
+            ux, uy = math.cos(lh), math.sin(lh)
+            along_rem = (gx - x) * ux + (gy - y) * uy            # distance left along the line
+            lateral = -(x - sx) * uy + (y - sy) * ux             # left of the line is positive
+            if dist < tol_pos:
+                leg = "TURN2"
+            elif along_rem < 0.0:                                # went past the goal without arriving: stop, SETTLE will re-approach
+                leg = "TURN2"
+            else:
+                v = math.sqrt(2 * cfg["drive_lin_decel"] * max(dist - 0.3 * tol_pos, 0.0))
+                lin_t = max(min(v, max_lin), min(cfg["drive_creep_lin"], max_lin))
+                # heading plus cross-track correction (Stanley): aim at the line, a little further along it the further off it we are
+                want = lh - math.atan2(cfg["drive_cross_track_gain"] * lateral, max(S["twist"][0], 0.1))
+                err = wrap(want - yaw)
+                ang_t = max(-cfg["drive_steer_max"], min(cfg["drive_steer_max"], cfg["drive_steer_gain"] * err))
+                if abs(wrap(lh - yaw)) > math.radians(20) and dist > 0.3:     # knocked far off course: turn again
+                    leg = "TURN1"
+                    lin_t = ang_t = 0.0
+        if leg == "TURN2":
+            err = wrap(gyaw - yaw)
+            if S["final_turn"] is None:
+                S["final_turn"] = math.degrees(err)              # the in-place turn at the goal
+            if abs(err) < tol_yaw:
+                leg = "SETTLE"
+            else:
+                ang_t = turn_rate(err, tol_yaw)
+        if leg == "SETTLE":
+            lin, ang = S["twist"]
+            yaw_err = abs(wrap(gyaw - yaw))
+            at_rest = abs(lin) < 1e-9 and abs(ang) < 1e-9
+            in_tol = dist < tol_pos and yaw_err < tol_yaw
+            if not in_tol and at_rest:                           # drifted out after stopping: re-approach, or give up
+                S["reapproach"] += 1
+                S["ok_since"] = None
+                if S["reapproach"] > max_reapproach:
+                    if dist < real_pos_tol and yaw_err < real_yaw_tol:
+                        S["aim_missed"] = True                   # not within the tighter aim, but within the tolerance: accepted
+                        S["leg"] = leg
+                        return [{"mode": "base", "twist": (0.0, 0.0)}], "arrived"
+                    S["fail"] = (f"the base is not within {real_pos_tol * 100:.0f} cm / {math.degrees(real_yaw_tol):.0f} deg of the staging "
+                                 f"pose after {max_reapproach} corrective re-approaches (now {dist * 1000:.1f} mm, {math.degrees(yaw_err):.2f} deg)")
+                    return [], "failed"
+                S["final_turn"] = None
+                leg = "TURN1" if dist >= tol_pos else "TURN2"
+            elif in_tol and at_rest:
+                if S["ok_since"] is None:
+                    S["ok_since"] = t
+                if t - S["ok_since"] >= cfg["drive_settle_s"]:
+                    S["leg"] = leg
+                    return [{"mode": "base", "twist": (0.0, 0.0)}], "arrived"
+        S["leg"] = leg
+        lin, ang = S["twist"]
+        lin = _slew(lin, lin_t, cfg["drive_lin_accel"], cfg["drive_lin_decel"], dt)
+        ang = _slew(ang, ang_t, cfg["drive_ang_accel"], cfg["drive_ang_decel"], dt)
+        S["twist"] = (lin, ang)
+        return [{"mode": "base", "twist": (lin, ang)}], "running"
+
+    return {"reset": reset, "step": step, "S": S}
+
+
+def _creep_controller(cfg, goal, tol_pos, tol_yaw, real_pos_tol, real_yaw_tol, max_pos, max_yaw):
+    """Correction for an extended arm: creep-speed yaw turn in place, then a creep-speed straight move along the heading (forward or
+    back). No turn toward a bearing: a sideways error is not corrected (a differential base would have to turn ~90 degrees with the arm out).
+    step(obs, t, dt) -> (commands, status, ...) like _pose_controller; S["fail"] says why it failed."""
+    gx, gy, gyaw = goal
+    S = {"stage": "CHECK", "twist": (0.0, 0.0), "ok_since": None, "fail": None}
+
+    def errors(obs):
+        x, y, yaw = obs["base_pose"]
+        ex, ey = gx - x, gy - y
+        return ex * math.cos(yaw) + ey * math.sin(yaw), -ex * math.sin(yaw) + ey * math.cos(yaw), wrap(gyaw - yaw)   # along, lateral (left +), yaw
+
+    def step(obs, t, dt):
+        along, lateral, yaw_err = errors(obs)
+        if S["stage"] == "CHECK":
+            if abs(along) > max_pos or abs(yaw_err) > max_yaw or abs(lateral) > real_pos_tol:
+                S["fail"] = (f"the correction with the arm extended would be too large or sideways (along {along * 1000:+.1f} mm, sideways {lateral * 1000:+.1f} mm, "
+                             f"yaw {math.degrees(yaw_err):+.2f} deg; allowed along {max_pos * 1000:.0f} mm, sideways {real_pos_tol * 1000:.0f} mm, yaw {math.degrees(max_yaw):.1f} deg)")
+                return [], "failed"
+            S["stage"] = "YAW"
+        lin_t = ang_t = 0.0
+        if S["stage"] == "YAW":
+            if abs(yaw_err) < tol_yaw:
+                S["stage"] = "MOVE"
+            else:
+                ang_t = math.copysign(cfg["drive_creep_ang"], yaw_err)
+        if S["stage"] == "MOVE":
+            if abs(along) < tol_pos:
+                S["stage"] = "SETTLE"
+            else:
+                lin_t = math.copysign(cfg["drive_creep_lin"], along)
+        if S["stage"] == "SETTLE":
+            lin, ang = S["twist"]
+            if abs(lin) < 1e-9 and abs(ang) < 1e-9:
+                pos_err = math.hypot(gx - obs["base_pose"][0], gy - obs["base_pose"][1])
+                if pos_err < real_pos_tol and abs(yaw_err) < real_yaw_tol:
+                    if S["ok_since"] is None:
+                        S["ok_since"] = t
+                    if t - S["ok_since"] >= cfg["drive_settle_s"]:
+                        return [{"mode": "base", "twist": (0.0, 0.0)}], "arrived"
+                else:
+                    S["fail"] = f"after the creep correction the base is still {pos_err * 1000:.1f} mm / {math.degrees(abs(yaw_err)):.2f} deg off"
+                    return [], "failed"
+        lin, ang = S["twist"]
+        lin = _slew(lin, lin_t, cfg["drive_lin_accel"], cfg["drive_lin_decel"], dt)
+        ang = _slew(ang, ang_t, cfg["drive_ang_accel"], cfg["drive_ang_decel"], dt)
+        S["twist"] = (lin, ang)
+        return [{"mode": "base", "twist": (lin, ang)}], "running"
+
+    return {"step": step, "S": S}
+
+
 def make_staging_source(model, data, task_cfg=TASK_CFG, cfg=STAGING_CFG, points_fn=framing_points):
     arm = task_cfg["arm"]
     arm_idx = arm_ids(model, arm)
@@ -54,20 +213,41 @@ def make_staging_source(model, data, task_cfg=TASK_CFG, cfg=STAGING_CFG, points_
     neck = neck_ids(model, robot_specs.NECK_SPECS)
     gx, gy = task_cfg["staging_xy"]
     gyaw = task_cfg["staging_yaw"]
+    goal = (gx, gy, gyaw)
     spawn = task_cfg["spawn_xy"]
     planned_heading = math.atan2(gy - spawn[1], gx - spawn[0])
     state = {"phase": "DRIVE", "done": False, "error": None, "phases": {}, "arrival": None, "final_turn_deg": None,
              "planned_final_turn_deg": math.degrees(wrap(gyaw - planned_heading)), "first_turn_deg": None, "reapproaches": 0,
-             "framing_report": None}
-    P = {"entered": False, "leg": "TURN1", "twist": (0.0, 0.0), "ok_since": None, "still_since": None, "neck_sent": False,
-         "u": 0.0, "last_arm": None, "path": None, "neck_targets": None, "first_cmd_done": False}
+             "framing_report": None, "corrections": []}
+    P = {"entered": False, "still_since": None, "neck_sent": False, "u": 0.0, "last_arm": None, "path": None, "neck_targets": None,
+         "corr": None}
+    pos_tol, yaw_tol = cfg["drive_pos_tol"], cfg["drive_yaw_tol"]
+    frac = cfg["correction_aim_frac"]
+    drive_ctl = _pose_controller(cfg, goal, cfg["drive_max_lin_vel"], cfg["drive_max_ang_vel"], pos_tol, yaw_tol, pos_tol, yaw_tol,
+                                 cfg["drive_max_reapproach"])
+    ped_ctl = _pose_controller(cfg, goal, cfg["drive_max_lin_vel"], cfg["drive_max_ang_vel"], frac * pos_tol, frac * yaw_tol, pos_tol, yaw_tol,
+                               cfg["drive_max_reapproach"])
+    arm_ctl = _creep_controller(cfg, goal, frac * pos_tol, frac * yaw_tol, pos_tol, yaw_tol, cfg["correction_arms_max_pos"], cfg["correction_arms_max_yaw"])
+    drive_ctl["started"] = ped_ctl["started"] = False
+
+    # clearances to the bench, watched every tick during the extended-arm correction
+    base_names = ["base_link", "right_link", "left_Link", "right_front_link", "right_rear_link", "left_front_link", "left_rear_link"]
+    base_geoms = [g for g in range(model.ngeom) if model.body(int(model.geom_bodyid[g])).name in base_names]
+    arm_geoms = [g for g in range(model.ngeom) if model.geom_group[g] == 3 and model.body(int(model.geom_bodyid[g])).name.startswith(f"openarm_{arm}_")
+                 and not model.body(int(model.geom_bodyid[g])).name.endswith("link0")]
+    bench_geoms = [g for g in range(model.ngeom) if int(model.geom_bodyid[g]) == model.body("bench").id]
+    ft = np.zeros(6)
+
+    def clearances():
+        d = lambda A: min(mujoco.mj_geomDistance(model, data, a, b, 1.0, ft) for a in A for b in bench_geoms)
+        return d(base_geoms), d(arm_geoms)
 
     def enter(name, t):
         if state["phase"] in state["phases"]:
             state["phases"][state["phase"]]["end"] = t
         state["phase"] = name
         state["phases"][name] = {"start": t, "end": None}
-        P.update(still_since=None, ok_since=None)
+        P.update(still_since=None)
 
     def still_for(t, ok, dwell):
         """True once `ok` has held for `dwell` seconds."""
@@ -82,87 +262,30 @@ def make_staging_source(model, data, task_cfg=TASK_CFG, cfg=STAGING_CFG, points_
         state["error"] = msg
         state["phases"][state["phase"]]["end"] = t
 
+    def pose_err(obs):
+        x, y, yaw = obs["base_pose"]
+        ex, ey = gx - x, gy - y
+        # along > 0: the base is short of the staging pose (farther from the bench); lateral > 0: the staging pose is to the base's left
+        return {"pos_mm": 1000 * math.hypot(ex, ey), "yaw_deg": math.degrees(wrap(yaw - gyaw)),
+                "along_mm": 1000 * (ex * math.cos(gyaw) + ey * math.sin(gyaw)), "lateral_mm": 1000 * (-ex * math.sin(gyaw) + ey * math.cos(gyaw))}
+
     # ------------------------------------------------------------------ DRIVE
     def drive(obs, t, dt):
-        x, y, yaw = obs["base_pose"]
-        dist = math.hypot(gx - x, gy - y)
-        bearing = math.atan2(gy - y, gx - x)
-        leg = P["leg"]
-        lin_t = ang_t = 0.0
-
-        def turn_rate(err, tol_leg):
-            w = math.sqrt(2 * cfg["drive_ang_decel"] * max(abs(err) - 0.3 * tol_leg, 0.0))
-            return math.copysign(max(min(w, cfg["drive_max_ang_vel"]), cfg["drive_creep_ang"]), err)
-
-        if leg == "TURN1":
-            if dist < cfg["drive_pos_tol"]:
-                leg = "TURN2"
-            else:
-                err = wrap(bearing - yaw)
-                if state["first_turn_deg"] is None:
-                    state["first_turn_deg"] = math.degrees(err)
-                if abs(err) < cfg["drive_turn_first_tol"]:
-                    leg = "DRIVE"
-                    P["line"] = (x, y, bearing)                  # the straight leg follows this line to the goal
-                else:
-                    ang_t = turn_rate(err, cfg["drive_turn_first_tol"])
-        if leg == "DRIVE":
-            sx, sy, lh = P["line"]
-            ux, uy = math.cos(lh), math.sin(lh)
-            along_rem = (gx - x) * ux + (gy - y) * uy            # distance left along the line
-            lateral = -(x - sx) * uy + (y - sy) * ux             # left of the line is positive
-            if dist < cfg["drive_pos_tol"]:
-                leg = "TURN2"
-            elif along_rem < 0.0:                                # went past the goal without arriving: stop, SETTLE will re-approach
-                leg = "TURN2"
-            else:
-                v = math.sqrt(2 * cfg["drive_lin_decel"] * max(dist - 0.3 * cfg["drive_pos_tol"], 0.0))
-                lin_t = max(min(v, cfg["drive_max_lin_vel"]), cfg["drive_creep_lin"])
-                # heading plus cross-track correction (Stanley): aim at the line, a little further along it the further off it we are
-                want = lh - math.atan2(cfg["drive_cross_track_gain"] * lateral, max(P["twist"][0], 0.1))
-                err = wrap(want - yaw)
-                ang_t = max(-cfg["drive_steer_max"], min(cfg["drive_steer_max"], cfg["drive_steer_gain"] * err))
-                if abs(wrap(lh - yaw)) > math.radians(20) and dist > 0.3:     # knocked far off course: turn again
-                    leg = "TURN1"
-                    lin_t = ang_t = 0.0
-        if leg == "TURN2":
-            err = wrap(gyaw - yaw)
-            if state["final_turn_deg"] is None:
-                state["final_turn_deg"] = math.degrees(err)      # the in-place turn at the staging pose
-            if abs(err) < cfg["drive_yaw_tol"]:
-                leg = "SETTLE"
-            else:
-                ang_t = turn_rate(err, cfg["drive_yaw_tol"])
-        if leg == "SETTLE":
-            lin, ang = P["twist"]
-            pos_err, yaw_err = dist, abs(wrap(gyaw - yaw))
-            at_rest = abs(lin) < 1e-9 and abs(ang) < 1e-9
-            in_tol = pos_err < cfg["drive_pos_tol"] and yaw_err < cfg["drive_yaw_tol"]
-            if not in_tol and at_rest:                           # drifted out after stopping: re-approach, or give up
-                state["reapproaches"] += 1
-                P["ok_since"] = None
-                if state["reapproaches"] > cfg["drive_max_reapproach"]:
-                    state["arrival"] = {"pos_err": pos_err, "yaw_err_deg": math.degrees(yaw_err), "ok": False}
-                    fail(t, f"DRIVE: the base is not within {cfg['drive_pos_tol'] * 100:.0f} cm / {math.degrees(cfg['drive_yaw_tol']):.0f} deg of the "
-                            f"staging pose after {cfg['drive_max_reapproach']} corrective re-approaches (now {pos_err * 1000:.1f} mm, "
-                            f"{math.degrees(yaw_err):.2f} deg)")
-                    return []
-                state["final_turn_deg"] = None
-                leg = "TURN1" if pos_err >= cfg["drive_pos_tol"] else "TURN2"
-            elif in_tol and at_rest:
-                if P["ok_since"] is None:
-                    P["ok_since"] = t
-                if t - P["ok_since"] >= cfg["drive_settle_s"]:
-                    state["arrival"] = {"pos_err": pos_err, "yaw_err_deg": math.degrees(yaw_err), "ok": True}
-                    P["leg"] = leg
-                    enter("PEDESTAL", t)
-                    return [{"mode": "base", "twist": (0.0, 0.0)}]
-        P["leg"] = leg
-        lin, ang = P["twist"]
-        lin = _slew(lin, lin_t, cfg["drive_lin_accel"], cfg["drive_lin_decel"], dt)
-        ang = _slew(ang, ang_t, cfg["drive_ang_accel"], cfg["drive_ang_decel"], dt)
-        P["twist"] = (lin, ang)
-        return [{"mode": "base", "twist": (lin, ang)}]
+        if not drive_ctl["started"]:
+            drive_ctl["started"] = True
+            drive_ctl["reset"](*obs["base_pose"])
+        cmds, status = drive_ctl["step"](obs, t, dt)
+        S = drive_ctl["S"]
+        state["first_turn_deg"], state["final_turn_deg"], state["reapproaches"] = S["first_turn"], S["final_turn"], S["reapproach"]
+        if status == "failed":
+            state["arrival"] = {"pos_err": math.hypot(gx - obs["base_pose"][0], gy - obs["base_pose"][1]),
+                                "yaw_err_deg": abs(math.degrees(wrap(gyaw - obs["base_pose"][2]))), "ok": False}
+            fail(t, "DRIVE: " + S["fail"])
+        elif status == "arrived":
+            e = pose_err(obs)
+            state["arrival"] = {"pos_err": e["pos_mm"] / 1000, "yaw_err_deg": abs(e["yaw_deg"]), "ok": True}
+            enter("PEDESTAL", t)
+        return cmds
 
     # ------------------------------------------------------------------ PEDESTAL
     def pedestal(obs, t, dt):
@@ -170,12 +293,60 @@ def make_staging_source(model, data, task_cfg=TASK_CFG, cfg=STAGING_CFG, points_
         applied = obs["applied"]["pedestal"]
         if abs(obs["pedestal_height"] - target) < cfg["pedestal_tol"] and abs(applied - target) < 1e-9 and \
                 still_for(t, abs(obs["joint_velocities"][ped_vadr]) < cfg["pedestal_settle_vel"], cfg["pedestal_settle_s"]):
-            enter("ARMS", t)
-            return []
+            return begin_correction(obs, t, "CORRECT_PEDESTAL", "ARMS")
         if abs(applied - target) < 1e-9:
             return []
         step = cfg["pedestal_speed"] * dt
         return [{"mode": "pedestal", "height": applied + max(-step, min(step, target - applied))}]
+
+    # ------------------------------------------------------------------ corrections
+    def begin_correction(obs, t, name, nxt):
+        """Check the base pose; enter the correction phase `name` if it is outside the tolerance, else go on to `nxt`."""
+        e = pose_err(obs)
+        needed = e["pos_mm"] / 1000 > pos_tol or abs(e["yaw_deg"]) > math.degrees(yaw_tol)
+        rec = {"phase": name, "needed": needed, "before": e, "after": e, "duration_s": 0.0, "status": "not needed", "next": nxt,
+               "min_base_clearance_mm": None, "min_arm_clearance_mm": None}
+        state["corrections"].append(rec)
+        if not needed:
+            enter(nxt, t)
+            return []
+        rec["status"] = "running"
+        if name == "CORRECT_PEDESTAL":
+            ped_ctl["reset"](*obs["base_pose"])
+        P["corr"] = rec
+        enter(name, t)
+        return []
+
+    def correct_pedestal(obs, t, dt):
+        cmds, status = ped_ctl["step"](obs, t, dt)
+        return finish_correction(obs, t, status, cmds, ped_ctl["S"]["fail"], ped_ctl["S"])
+
+    def correct_arms(obs, t, dt):
+        rec = P["corr"]
+        bc, ac = clearances()                                     # every tick: the extended arm must stay clear of the bench
+        rec["min_base_clearance_mm"] = 1000 * bc if rec["min_base_clearance_mm"] is None else min(rec["min_base_clearance_mm"], 1000 * bc)
+        rec["min_arm_clearance_mm"] = 1000 * ac if rec["min_arm_clearance_mm"] is None else min(rec["min_arm_clearance_mm"], 1000 * ac)
+        if bc < cfg["correction_arms_min_base_clearance"] or ac < cfg["correction_arms_min_arm_clearance"]:
+            rec["status"] = "failed (clearance)"
+            fail(t, f"CORRECT_ARMS: clearance to the bench too small (base {bc * 1000:.1f} mm, arm {ac * 1000:.1f} mm; minimums "
+                    f"{cfg['correction_arms_min_base_clearance'] * 1000:.0f} / {cfg['correction_arms_min_arm_clearance'] * 1000:.0f} mm)")
+            return []
+        cmds, status = arm_ctl["step"](obs, t, dt)
+        return finish_correction(obs, t, status, cmds, arm_ctl["S"]["fail"], arm_ctl["S"])
+
+    def finish_correction(obs, t, status, cmds, why, S):
+        rec = P["corr"]
+        rec["duration_s"] = t - state["phases"][state["phase"]]["start"]
+        if status == "failed":
+            rec["status"] = "failed"
+            rec["after"] = pose_err(obs)
+            fail(t, f"{state['phase']}: {why}")
+            return []
+        if status == "arrived":
+            rec["after"] = pose_err(obs)
+            rec["status"] = "done" + (" (within the tolerance, not the aim)" if S.get("aim_missed") else "")
+            enter(rec["next"], t)
+        return cmds
 
     # ------------------------------------------------------------------ ARMS
     def arms(obs, t, dt):
@@ -190,14 +361,13 @@ def make_staging_source(model, data, task_cfg=TASK_CFG, cfg=STAGING_CFG, points_
         qd = max(abs(obs["joint_velocities"][v]) for v in arm_idx["vadr"])
         if P["u"] >= 1.0 and np.abs(q_now - ready).max() < cfg["arms_tol"] and \
                 still_for(t, qd < cfg["arms_settle_vel"], cfg["arms_settle_s"]):
-            enter("NECK", t)
-            return []
+            return begin_correction(obs, t, "CORRECT_ARMS", "NECK")
         if P["last_arm"] is None or np.allclose(applied, P["last_arm"], atol=1e-12):      # advance only when the last command was applied
             P["u"] = min(1.0, P["u"] + dt / cfg["arms_move_s"])
         s = _min_jerk(P["u"])
-        pts, frac = P["path"]
-        i = min(int(np.searchsorted(frac, s, side="right")) - 1, len(pts) - 2)
-        q = pts[i] + (s - frac[i]) / (frac[i + 1] - frac[i]) * (pts[i + 1] - pts[i])
+        pts, frac_ = P["path"]
+        i = min(int(np.searchsorted(frac_, s, side="right")) - 1, len(pts) - 2)
+        q = pts[i] + (s - frac_[i]) / (frac_[i + 1] - frac_[i]) * (pts[i + 1] - pts[i])
         P["last_arm"] = q
         return [{"mode": "arms", "arm_targets": {arm: [float(v) for v in q]}, "gripper": {arm: float(cfg["finger_open"] * s)}}]
 
@@ -209,15 +379,16 @@ def make_staging_source(model, data, task_cfg=TASK_CFG, cfg=STAGING_CFG, points_
             P["neck_targets"], P["neck_sent"] = targets, True
             return [{"mode": "neck", "neck_targets": targets}]
         q = np.array([obs["joint_angles"][a] for a in neck["qadr"]])
-        goal = np.array([P["neck_targets"][n] for n in neck["names"]])
+        goal_q = np.array([P["neck_targets"][n] for n in neck["names"]])
         qd = max(abs(obs["joint_velocities"][v]) for v in neck["vadr"])
-        if np.abs(q - goal).max() < cfg["neck_tol"] and still_for(t, qd < cfg["neck_settle_vel"], cfg["neck_settle_s"]):
+        if np.abs(q - goal_q).max() < cfg["neck_tol"] and still_for(t, qd < cfg["neck_settle_vel"], cfg["neck_settle_s"]):
             enter("DONE", t)
             state["done"] = True
         return []
 
-    phases = {"DRIVE": (drive, "drive_timeout"), "PEDESTAL": (pedestal, "pedestal_timeout"), "ARMS": (arms, "arms_timeout"),
-              "NECK": (neck_phase, "neck_timeout")}
+    phases = {"DRIVE": (drive, "drive_timeout"), "PEDESTAL": (pedestal, "pedestal_timeout"),
+              "CORRECT_PEDESTAL": (correct_pedestal, "correction_timeout"), "ARMS": (arms, "arms_timeout"),
+              "CORRECT_ARMS": (correct_arms, "correction_timeout"), "NECK": (neck_phase, "neck_timeout")}
 
     def step(obs):
         if state["done"] or state["error"]:

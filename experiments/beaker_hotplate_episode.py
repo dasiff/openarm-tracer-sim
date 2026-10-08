@@ -56,9 +56,15 @@ def show(summary, label):
         print(f"arrival at the end of DRIVE: {a['pos_err_mm']:.2f} mm, {a['yaw_err_deg']:+.3f} deg (tolerance 10 mm / 1 deg); re-approaches {s['drive_reapproaches']}")
     if s["base_pose_error_at_handoff"]:
         e = s["base_pose_error_at_handoff"]
-        print(f"base pose error at HANDOFF: {e['pos_err_mm']:.2f} mm, {e['yaw_err_deg']:+.3f} deg")
+        print(f"base pose error at HANDOFF (after the corrections): {e['pos_err_mm']:.2f} mm, {e['yaw_err_deg']:+.3f} deg "
+              f"(along the heading {e['along_mm']:+.1f} mm (+ = short of the pose, away from the bench), sideways {e['lateral_mm']:+.1f} mm)")
     print(f"turns: first {s['first_turn_deg']:.1f} deg; final in-place turn at the staging pose {s['final_in_place_turn_deg']:.2f} deg "
           f"(straight approach from the spawn implies {s['planned_final_turn_deg']:.2f} deg; the 5.7 cm swept clearance assumed a small one)")
+    for c in s["pose_corrections"]:
+        b, a = c["before"], c["after"]
+        print(f"{c['phase']:17s}: {'needed' if c['needed'] else 'not needed'}; pose error {b['pos_mm']:.1f} mm / {b['yaw_deg']:+.2f} deg"
+              + (f" -> {a['pos_mm']:.1f} mm / {a['yaw_deg']:+.2f} deg in {c['duration_s']:.1f} s ({c['status']})" if c["needed"] else "")
+              + (f"; min clearance base {c['min_base_clearance_mm']:.0f} mm, arm {c['min_arm_clearance_mm']:.0f} mm" if c["min_arm_clearance_mm"] is not None else ""))
     for ph, d in s["base_drift"].items():
         print(f"base drift during {ph:8s}: net {d['net_pos_mm']:.3f} mm / {d['net_yaw_deg']:+.4f} deg, worst {d['max_pos_mm']:.3f} mm / {d['max_yaw_deg']:.4f} deg"
               + ("   (after HANDOFF)" if ph == "DONE" else ""))

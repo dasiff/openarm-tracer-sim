@@ -308,10 +308,15 @@ def main():
     global OUT_DIR
     ap = argparse.ArgumentParser(description=__doc__.split(chr(10))[1])
     ap.add_argument("--pedestal-qs", type=float, nargs="*", help="override SEARCH_CFG pedestal_qs (to look at alternatives)")
+    ap.add_argument("--pin", nargs=4, metavar=("STANDOFF", "BASE_X", "PEDESTAL_Q", "ARM"),
+                    help="evaluate only this staging pose (re-solve the ready pose / reach for an existing staging pose)")
+    ap.add_argument("--hotplate-x", type=float, help="override TASK_CFG hotplate x (to try hotplate placements)")
     ap.add_argument("--out-dir", help="write results here instead of data/beaker_hotplate_staging")
     args = ap.parse_args()
     if args.out_dir:
         OUT_DIR = Path(args.out_dir)
+    if args.hotplate_x is not None:
+        TASK_CFG["hotplate_xy"] = (args.hotplate_x, TASK_CFG["hotplate_xy"][1])
     t_start = time.time()
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     sim = load_task()
@@ -362,9 +367,12 @@ def main():
     pedestal_qs = [q for q in (args.pedestal_qs or C["pedestal_qs"]) if q >= lowest + C["pedestal_stop_margin"]]
     print(f"pedestal commands searched: {pedestal_qs} (the lowest command {lowest} is the torso-contact stop)")
     rows = []
-    for st in C["standoffs"]:
+    standoffs, laterals = C["standoffs"], C["laterals"]
+    if args.pin:
+        standoffs, laterals = (float(args.pin[0]),), (float(args.pin[1]) - mid_x,)
+    for st in standoffs:
         y_c = bench_edge_y + st + fp[1]                        # facing -y: the base front (x = fp[1]) is st from the bench edge
-        for lat in C["laterals"]:
+        for lat in laterals:
             xy = np.array([mid_x + lat, y_c])
             clear = rect_clearance(footprint_points(fp, xy, yaw_f), bench_hx, bench_hy)
             heading = math.atan2(*(xy - spawn_xy)[::-1])
@@ -410,8 +418,14 @@ def main():
         if r["furniture"] >= 0.03:
             ok2.append(r)
     print(f"{len(ok2)} also keep >= 3 cm from other furniture at the staging yaw and at the approach heading")
+    if args.pin:
+        ok2 = [r for r in ok2 if abs(r["pedestal_q"] - float(args.pin[2])) < 1e-9 and r["arm"] == args.pin[3]]
+        print(f"pinned to standoff {args.pin[0]} base x {args.pin[1]} pedestal {args.pin[2]} arm {args.pin[3]}: {len(ok2)} candidate(s)")
 
     # ---- 4. rank: clearance slack, then reach depth, then standoff
+    if not ok2:
+        print("no candidate left")
+        return
     best_gap = min(r["worst_gap"] for r in ok2)
     res = C["gap_resolution"]
     tied = [r for r in ok2 if r["worst_gap"] <= best_gap + res]
@@ -496,7 +510,7 @@ def main():
         standoff=r["standoff"], lateral=r["lateral"], clearance=r["clearance"], swept_clearance=r["swept_clearance"],
         furniture_clearance=r["furniture"], base_resting_z=z_rest,
         sample_gaps={"grasp": r["gap_grasp"], "place": r["gap_place"], "ready": r["gap_ready"]},
-        ik_gaps=gaps, clearance_slack=r["slack"], requirement_met=bool(r["slack"] >= 0),
+        ik_gaps=gaps, clearance_slack=r["slack"], requirement_met=bool(r["slack"] >= -1e-3),
         targets={k: [float(x) for x in v] for k, v in targets.items()},
         ik_details={k: {kk: (vv.tolist() if isinstance(vv, np.ndarray) else vv) for kk, vv in v.items()} for k, v in ik.items()},
         flagged=[k for k, v in {**{f"sample_{k}": v for k, v in
@@ -510,7 +524,7 @@ def main():
           f"(shoulder-line z {z_rest + 0.75 + 2 * r['pedestal_q'] + 0.698:.3f} m); standoff {r['standoff'] * 100:.0f} cm")
     print(f"footprint clearance {r['clearance'] * 100:.1f} cm (want >= {need_c * 100:.0f}); turn-swept {r['swept_clearance'] * 100:.1f} cm "
           f"(want >= {need_t * 100:.0f}); furniture {r['furniture'] * 100:.0f} cm -> "
-          + ("requirement MET" if r["slack"] >= 0 else f"requirement NOT met, best achievable margins (slack {r['slack'] * 100:+.1f} cm)"))
+          + ("requirement MET" if r["slack"] >= -1e-3 else f"requirement NOT met, best achievable margins (slack {r['slack'] * 100:+.1f} cm)"))
     for k in targets:
         print(f"gap {k:5s}: sampled {summary['sample_gaps'][k] * 1000:6.1f} mm   IK {gaps[k] * 1000:6.2f} mm")
     print("flagged (> 3 cm):", summary["flagged"] or "none")

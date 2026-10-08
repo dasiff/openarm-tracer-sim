@@ -9,8 +9,10 @@ level eagle camera and for downward tilts; saves the eagle frames.
 The HANDOFF pose is set directly (no sequence yet): base at the staging pose from src/task_config.py, pedestal at
 pedestal_q, the chosen arm at ready_q with the gripper open, then mj_forward. Coverage is the share of pixels
 whose first-hit geom is the hotplate top plate (or the beaker), from a 160 x 120 ray grid through the camera, so
-occlusion by the bench edge and the arms is included. "level" is the original placeholder (looks along the torso's
-+x). Cameras are added as extra cameras so one model serves all variants. Frames go to
+occlusion by the bench edge and the arms is included. --tilts adds eagle variants pitched down by those angles
+(about the same mount) for comparison. It also prints the camera placement rule: the horizontal distance d from the
+eagle camera to the beaker/hotplate midpoint along the facing direction, the sideways offset of the midpoint, and the
+mount height that puts the midpoint on the 45-degree optical axis (camera d above the bench top). Frames go to
 data/beaker_hotplate_eagle/<tag>_<camera>.png (the three robot_specs cameras plus the variants).
 """
 
@@ -36,7 +38,6 @@ from src.task_config import TASK_CFG  # noqa: E402
 from src.task_beaker_hotplate import load_task, spawn_and_settle, arm_ids, yaw_to_quat  # noqa: E402
 
 OUT_DIR = PROJECT_ROOT / "data" / "beaker_hotplate_eagle"
-LEVEL_LOOK_AT = [1.0, 0.0, 0.45]             # the original eagle placeholder (before the tilt)
 
 
 def tilted(spec, deg, name):
@@ -88,8 +89,7 @@ def main():
         TASK_CFG.update(staging_xy=tuple(r["staging_xy"]), pedestal_q=r["pedestal_q"], arm=r["arm"], ready_q=tuple(r["ready_q"]))
 
     eagle = next(c for c in robot_specs.CAMERA_SPECS if c["name"] == "eagle_cam")
-    level = dict(eagle, name="eagle_level", look_at=LEVEL_LOOK_AT)
-    all_specs.extend(robot_specs.CAMERA_SPECS + [level] + [tilted(eagle, t, f"eagle_tilt{t:g}") for t in args.tilts])
+    all_specs.extend(robot_specs.CAMERA_SPECS + [tilted(eagle, t, f"eagle_tilt{t:g}") for t in args.tilts])
     sim = load_task(cameras=all_specs)
     model, data = sim.model, sim.data
     st = spawn_and_settle(sim)
@@ -106,10 +106,27 @@ def main():
         data.qpos[model.jnt_qposadr[model.actuator_trnid[a, 0]]] = 0.044
     mujoco.mj_forward(model, data)
 
+    # camera placement rule: 45 deg down along the facing direction, high enough that the optical axis meets the bench top
+    # at the beaker/hotplate midpoint. d = horizontal distance camera -> midpoint along the facing direction; the camera is
+    # then d above the bench top. A sideways offset of the midpoint is only reported (no yaw).
+    from src.task_beaker_hotplate import bench_top_z
+    b0 = data.body("openarm_body_link0")
+    R0 = b0.xmat.reshape(3, 3)
+    eagle_spec = next(c for c in robot_specs.CAMERA_SPECS if c["name"] == "eagle_cam")
+    cam_xy = b0.xpos[:2] + R0[:2, :2] @ np.array(eagle_spec["pos"][:2])
+    mid = 0.5 * (np.array(TASK_CFG["beaker_xy"]) + np.array(TASK_CFG["hotplate_xy"]))
+    d_fwd = float((mid - cam_xy) @ R0[:2, 0])
+    lateral = float((mid - cam_xy) @ R0[:2, 1])            # + = to the robot's left
+    top = bench_top_z(model)
+    print(f"camera rule: midpoint ({mid[0]:.3f}, {mid[1]:.3f}); camera xy ({cam_xy[0]:.4f}, {cam_xy[1]:.4f}); d = {d_fwd:.4f} m ahead, "
+          f"lateral offset {lateral:+.4f} m (+ = robot left); bench top {top:.3f}; body_link0 z {b0.xpos[2]:.4f}")
+    print(f"  -> camera height {top + d_fwd:.4f} m world = mount z {top + d_fwd - b0.xpos[2]:.4f} m in the openarm_body_link0 frame; "
+          f"look_at (pos + [cos45, 0, -sin45]) = [{eagle_spec['pos'][0] + math.cos(math.radians(45)):.4f}, 0.0, "
+          f"{top + d_fwd - b0.xpos[2] - math.sin(math.radians(45)):.4f}]")
     print(f"HANDOFF pose ({args.tag}): base {TASK_CFG['staging_xy']}, pedestal {TASK_CFG['pedestal_q']}, {TASK_CFG['arm']} arm ready; "
           f"eagle z {data.cam_xpos[model.camera('eagle_cam').id][2]:.3f} m")
     print(f"{'camera':16s} {'hotplate top %':>15s} {'beaker %':>10s}   bboxes (x0,y0,x1,y1 px of 640x480)")
-    for c in ["eagle_level", "eagle_cam"] + [f"eagle_tilt{t:g}" for t in args.tilts]:
+    for c in ["eagle_cam"] + [f"eagle_tilt{t:g}" for t in args.tilts]:
         r = coverage(model, data, c)
         label = c + (" (robot_specs)" if c == "eagle_cam" else "")
         print(f"{label:16s} {r['hotplate_top']:15.2f} {r['beaker']:10.2f}   top {r['hotplate_top_bbox']}  beaker {r['beaker_bbox']}")
@@ -119,7 +136,7 @@ def main():
         gl.make_current()
         rig = CameraRig(model, all_specs, mujoco.MjrContext(model, mujoco.mjtFontScale.mjFONTSCALE_150))
         rig.render(data)
-        for c in ["eagle_level", "eagle_cam", "right_wrist_cam", "left_wrist_cam"] + [f"eagle_tilt{t:g}" for t in args.tilts]:
+        for c in ["eagle_cam", "right_wrist_cam", "left_wrist_cam"] + [f"eagle_tilt{t:g}" for t in args.tilts]:
             p = OUT_DIR / f"{args.tag}_{c}.png"
             cv2.imwrite(str(p), cv2.cvtColor(rig.images[c], cv2.COLOR_RGB2BGR))
         print(f"frames: {OUT_DIR.relative_to(PROJECT_ROOT)}/{args.tag}_*.png")

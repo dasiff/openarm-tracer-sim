@@ -22,9 +22,10 @@ TASK_CFG = {
     "scene": "models/scenes/chemistry_lab_beaker_hotplate.xml",
 
     # Objects (xy in the world; z comes from the bench top). These equal the defaults in
-    # models/objects/*.xml; the values here are the ones applied at load. 25 cm centre to centre.
+    # models/objects/*.xml; the values here are the ones applied at load. 20 cm centre to centre; the hotplate is on
+    # the robot's right of the beaker (the left arm and shoulder hide the robot's left side from the eagle camera).
     "beaker_xy": (1.00, 0.68),
-    "hotplate_xy": (1.25, 0.68),
+    "hotplate_xy": (0.80, 0.68),
     "beaker_settle_clearance": 0.002,      # m, the beaker is dropped from this height above the bench top
     "warmup_s": 1.0,                       # start-up as combined_controller.py: arms held at zero while the robot settles,
     "resettle_s": 0.4,                     # then the drooped pose is captured as the resting pose and held
@@ -44,9 +45,9 @@ TASK_CFG = {
     "staging_yaw": math.radians(-90.0),    # facing the bench
     "pedestal_q": -0.2,                    # pedestal_lift command, m of stage travel (0 = raised, negative = lowered)
     "arm": "left",                         # the arm that gets the ready pose
-    "ready_q": (-1.43339, -0.49497, 1.10791, 1.20618, -1.02765, 0.32195, 1.13080),   # that arm's 7 joints, rad
+    "ready_q": (-1.42142, -0.45600, 0.86935, 1.22879, -0.95571, 0.44376, 1.20655),   # that arm's 7 joints, rad
     "ready_tcp": (1.0000, 0.7300, 1.1750), # world xyz of the TCP at ready_q when the base is at the staging pose
-    "ready_via_q": (-0.87565, -0.85619, 0.00321, 0.65274, -0.36945, 0.71605, 0.79175),                 # one waypoint between the hanging pose and ready_q (None = straight move); a straight move hits the bench
+    "ready_via_q": (-0.86967, -0.83671, -0.11607, 0.66404, -0.33348, 0.77695, 0.82962),  # one waypoint between the hanging pose and ready_q (None = straight move); a straight move hits the bench
 }
 
 # ----------------------------------------------------------------------------------------------------------

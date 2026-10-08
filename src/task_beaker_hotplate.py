@@ -100,7 +100,8 @@ def spawn_and_settle(sim, cfg=TASK_CFG):
     def run(seconds):
         for _ in range(int(round(seconds * robot_specs.PHYSICS_HZ))):
             data.ctrl[:] = hold
-            data.qvel[dof:dof + 6] = 0.0                  # base held still (z is not special-cased: it is at rest)
+            data.qvel[dof + 0:dof + 2] = 0.0              # base held still: xy, roll, pitch, yaw rate; z is left to
+            data.qvel[dof + 3:dof + 6] = 0.0              # physics so the robot settles onto its wheels
             mujoco.mj_step(model, data)
 
     run(cfg["warmup_s"])

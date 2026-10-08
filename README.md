@@ -64,6 +64,11 @@ openarm-tracer-sim/
 │   ├── simulator.py         # Generic MuJoCo simulator (injects the cameras at load)
 │   ├── controller.py        # PD controller (20 actuators)
 │   ├── cameras.py           # Simulated Orbbec cameras, offscreen rendering
+│   ├── control_loop.py      # run_loop(): the control loop (router, command validation, optional exclusivity / hold); headless-capable
+│   ├── commands.py          # Mode-tagged command format (base / pedestal / arms / idle) and validate_command()
+│   ├── base_control.py      # Twist -> free-joint velocity base drive
+│   ├── keyboard_source.py, teleop_source.py, policy_source.py   # command sources
+│   ├── glfw_viewer.py       # Window, HUD, camera insets, recorder, snapshots
 │   ├── robot_specs.py       # Rates, motor gains, camera specs, calibration status
 │   ├── actuator_mapping.py  # Actuator name -> index mapping
 │   ├── joint_addressing.py
@@ -75,7 +80,8 @@ openarm-tracer-sim/
 │   └── policies/            # Policy implementations
 ├── deps/OpenArm-Combined/   # Robot model (submodule)
 ├── experiments/
-│   ├── combined_controller.py     # Main interactive sim: keyboard, webcam teleop, cameras
+│   ├── combined_controller.py     # Launcher for the interactive sim: keyboard, webcam teleop, policy, cameras (loop is in src/)
+│   ├── cc_bench_scenarios.sh, cc_bench_compare.py, cc_loop_tests.py   # before/after regression scenarios, headless and hold-rule tests
 │   ├── camera_snapshot.py         # Render the simulated cameras once to PNGs
 │   ├── chemistry_lab_tracer_teleop.py
 │   ├── run_basic_sim.py, run_with_dummy_policy.py, test_controller.py

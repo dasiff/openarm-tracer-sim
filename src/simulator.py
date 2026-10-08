@@ -9,6 +9,7 @@ import numpy as np
 from src import robot_specs
 from src.arm_actuators import add_arm_actuators
 from src.cameras import add_cameras, make_offscreen_big_enough
+from src.neck import add_neck
 from src.pedestal import add_pedestal_lift
 
 
@@ -23,7 +24,8 @@ class RobotSimulator:
     """
 
     def __init__(self, model_path: str = None, track_bodies: list[str] = None,
-                 cameras: list[dict] = None, pedestal_lift: dict = None):
+                 cameras: list[dict] = None, pedestal_lift: dict = None,
+                 neck=True):
         """
         Initialize simulator.
 
@@ -44,6 +46,9 @@ class RobotSimulator:
                 placeholder pedestal lift (stage coupling + one position
                 actuator, appended as the last actuator) is added via MjSpec.
                 Off by default: it changes the actuator count from 20 to 21.
+            neck: the SO-101 camera neck (src/neck.py, robot_specs.NECK_SPECS), attached to the torso after the pedestal
+                lift, before the cameras (the eagle camera is on the neck). True = robot_specs.NECK_SPECS, a dict = those
+                specs, None / False = no neck (then the eagle camera has no body to sit on: pass cameras without it).
         """
         if model_path is None:
             project_root = Path(__file__).parent.parent
@@ -60,10 +65,12 @@ class RobotSimulator:
         # in robot_specs.
         spec = mujoco.MjSpec.from_file(str(model_path))
         add_arm_actuators(spec)
-        if cameras:
-            add_cameras(spec, cameras)
         if pedestal_lift:
             add_pedestal_lift(spec, pedestal_lift)
+        if neck:
+            add_neck(spec, robot_specs.NECK_SPECS if neck is True else neck)
+        if cameras:
+            add_cameras(spec, cameras)
         self.model = spec.compile()
         if cameras:
             make_offscreen_big_enough(self.model, cameras)

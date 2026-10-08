@@ -113,9 +113,11 @@ from src import robot_specs
 from src.control_loop import run_loop
 from src.glfw_viewer import make_glfw_viewer
 from src.keyboard_source import DRIVE_CFG, key_code, make_keyboard_source
+from src.neck_source import make_neck_auto_source
 from src.logger import TrajectoryLogger
 from src.policy_source import make_policy_source
 from src.simulator import RobotSimulator
+from src.task_beaker_hotplate import framing_points
 from src.teleop_source import make_teleop_source
 
 
@@ -304,11 +306,17 @@ def run(scene: str, spawn_pos, groups: list[dict], policy,
     # --- Sources ---
     ped_aid = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_ACTUATOR, robot_specs.PEDESTAL_SPECS["actuator_name"])
     ped_step = robot_specs.PEDESTAL_SPECS["jog_speed"] * steps_per_frame * model.opt.timestep
-    sources = {"keyboard": make_keyboard_source(model, held, drive_cfg, ped_step, tuple(model.actuator_ctrlrange[ped_aid]))}
+    sources = {"keyboard": make_keyboard_source(model, held, drive_cfg, ped_step, tuple(model.actuator_ctrlrange[ped_aid]),
+                                                data=data, neck_specs=robot_specs.NECK_SPECS, points_fn=framing_points)}
     routes = {}
     if mode == "teleop":
         sources["teleop"] = make_teleop_source(model, data, camera=camera, preview=preview,
                                                fake=bench["fake_teleop"], simclock=bench["fake_simclock"])
+    auto = robot_specs.NECK_AUTO_SPECS["mode"]
+    if auto != "off" and (mode == "teleop" or auto == "always"):
+        # the neck follows the grippers (teleop) and looks ahead while driving; the keyboard still commands it and wins
+        sources["neck_auto"] = make_neck_auto_source(model, data, sources.get("teleop"), sources["keyboard"])
+        routes["neck"] = ("keyboard", "neck_auto")
     if policy is not None and auto_ids:
         sources["policy"] = make_policy_source(model, policy, auto_ids)
         routes.update(sources["policy"]["routes"])
@@ -318,6 +326,7 @@ def run(scene: str, spawn_pos, groups: list[dict], policy,
     print(f"       right arm + A S D F G H J K / - Z X C V B N M ,")
     print(f"       (columns = joints 1-7 then gripper; upper key +, gripper + opens)")
     print(f"Pedestal (placeholder lift):  Page Up = raise   Page Down = lower")
+    print(f"Camera neck:  pan/lift/elbow/wrist  + 9 0 - =  / - O P [ ]    F7 = frame the task points   F8 = default aim (look ahead)")
     print(f"F3=save camera images  F4=snapshot  F5=trajectory log  "
           f"F6=record video + joint CSV  Esc=quit")
     if mode == "teleop":

@@ -17,6 +17,10 @@ logger, chemistry lab scene, cameras and webcam teleop all exist now (see `git l
   data/arm_hold/suite_summary.txt). Remaining: arms swing ~20 cm during fast turns (2 rad/s, 91%
   force on left j1) and end ~2 cm off after stopping. Check sim turn rate/acceleration against
   the real Tracer before tuning.
+- [ ] **Confirm the camera neck specs.** The SO-101 mount (top of the torso plate, `NECK_SPECS`), which 4 joints are active
+  (assumed shoulder pan / lift / elbow / wrist flex), the STS3215 gains and the camera module on its end are placeholders;
+  the neck adds 0.655 kg, which already changes the arm-swing transient when the base starts (up to 4.6 degrees of yaw in the manual
+  baseline). Teleop could follow the operator's head instead of the grippers once a head pose is available from the webcam path.
 - [ ] **Real camera parameters.** Eagle and wrist camera poses, field of view and resolution are
   placeholders; replace them when the Orbbec model and mounting are known.
 - [ ] **Camera image realism.** The floor and lighting wash out to white; consider lower floor

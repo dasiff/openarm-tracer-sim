@@ -76,6 +76,45 @@ PEDESTAL_SPECS = {
     "jog_speed": 0.05,                            # m/s of stage travel while a key is held
 }
 
+# Camera neck: an SO-101 arm carrying the eagle camera -- PLACEHOLDER.
+# The team plans a 4-DOF SO-101 as the camera neck. The mounting and which joints are active are unconfirmed:
+#   * ASSUMPTION: the 4 neck DOF are shoulder_pan, shoulder_lift, elbow_flex, wrist_flex. Every other joint of the model
+#     (wrist_roll, gripper) is removed at load time; the wrist-roll link stays as a rigid part, locked at its zero (the
+#     model's zero is the middle of each joint's range). Change `active_joints` to change the neck's DOF.
+#   * ASSUMPTION: mounted on top of the torso plate (the top face of the torso's top plate is +0.773 m in the
+#     openarm_body_link0 frame, its centre 1 cm behind the torso axis), facing forward, pending real mounting specs.
+#   * The vendored model is models/so101/so101_new_calib_camera.xml (Apache-2.0, see models/so101/PROVENANCE.md). Joint ranges,
+#     masses and servo gains (STS3215) are upstream's, not measured on our hardware. src/neck.py attaches it at load.
+# Joint limits (deg): shoulder_pan +-110, shoulder_lift +-100, elbow_flex +-97, wrist_flex +-95.
+NECK_SPECS = {
+    "model_xml": "models/so101/so101_new_calib_camera.xml",
+    "prefix": "neck_",                       # prefix of every neck body / joint / actuator name in the combined model
+    "mount_body": "openarm_body_link0",
+    "mount_pos": (-0.01, 0.0, 0.773),        # m in the mount body's frame
+    "mount_quat": (1.0, 0.0, 0.0, 0.0),
+    "active_joints": ("shoulder_pan", "shoulder_lift", "elbow_flex", "wrist_flex"),
+    "removed_bodies": ("moving_jaw_so101_v1",),   # the gripper's moving jaw (its joint and actuator go with the inactive joints)
+    # The neck's default aim, used at start-up, by the home key and while driving: optical axis 30 degrees below the
+    # horizon, straight ahead, so the operator sees where the robot is going (about 10 degrees on each flex joint).
+    "drive_pose": (0.0, 0.1677, 0.1784, 0.1775),   # rad, in the order of active_joints
+    "max_speed": 1.5,                        # rad/s: the loop moves the neck's position targets no faster than this
+    "jog_step": 0.02,                        # rad per command tick while a neck jog key is held
+    "camera_body": "wrist_camera",           # the camera module of the official mount (the eagle camera is added to it)
+}
+
+# Automatic neck behavior (src/neck_source.py). "teleop": only while the arms are on the webcam operator (F2); "always";
+# "off". While active: the neck frames the grippers when the base is at rest, and returns to the drive pose (looks
+# ahead) while the base is driving. A neck key press pauses it.
+NECK_AUTO_SPECS = {
+    "mode": "teleop",
+    "follow_period": 0.5,         # s between framing updates
+    "deadband": 0.03,             # rad: smaller changes are not sent (no jitter)
+    "pause_after_key": 3.0,       # s the keyboard has the neck after any neck key
+    "drive_lin": 0.05,            # m/s: the base counts as driving above this commanded speed
+    "drive_ang": 0.10,            # rad/s
+    "resume_delay": 1.0,          # s at rest before following the grippers again
+}
+
 # OpenArm Bimanual Manipulator
 # The per-joint motor, gains, armature and torque limits live in ARM_ACTUATOR_SPECS below.
 OPENARM_SPECS = {
@@ -148,11 +187,16 @@ ORBBEC_FOVY_DEG = 58.0
 CAMERA_SPECS = [
     {
         "name": "eagle_cam",
-        "parent": "openarm_body_link0",
-        # Placeholder pending real mount: 45 deg pitch, height chosen so the optical axis hits the work area center at HANDOFF.
-        "pos": [0.05, 0.0, 0.9686],
-        "look_at": [0.7571, 0.0, 0.2615],
-        "up": [0.0, 0.0, 1.0],
+        # Placeholder pending real mount: the camera module at the end of the SO-101 neck (NECK_SPECS), looking along the
+        # direction the neck's last link points (the optical axis is the forward direction of the gripper frame, with the
+        # image level because the neck has no roll joint). pos / look_at / up are in the neck_wrist_camera body frame:
+        # 25 mm in front of the module's origin, looking straight along the link; the module's axes are tilted by the
+        # official mount, hence the odd-looking numbers. The neck's pose (and so what the camera sees) comes from
+        # src/neck_framing.py or the neck keys.
+        "parent": "neck_wrist_camera",
+        "pos": [0.0, -0.0106, 0.0226],
+        "look_at": [0.0, -0.4344, 0.9284],
+        "up": [0.9988, -0.0441, -0.0206],
         "fovy": ORBBEC_FOVY_DEG,
         "resolution": ORBBEC_RESOLUTION,
         # Shadows make no visible difference in this view but cost ~10x the

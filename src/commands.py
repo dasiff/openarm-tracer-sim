@@ -9,11 +9,17 @@ or None / [] for "nothing new". Commands are plain dicts tagged with a mode:
     {"mode": "pedestal", "height": h}             pedestal_lift command [m]: 0 = fully raised, negative = lowered
     {"mode": "arms",     "arm_targets": {"left": [7 rad], "right": [7 rad]},     joint targets, joints 1-7
                          "gripper":     {"left": g, "right": g}}                  finger travel [m], 0 closed .. 0.044 open
+    {"mode": "neck",     "neck_targets": {"shoulder_pan": rad, ...}}      camera neck joint targets (joint names of
+                                                                          NECK_SPECS["active_joints"]); partial dicts are fine
     {"mode": "idle"}                              nothing is commanded; the base is brought to a stop
 
 "arm_targets" and "gripper" are both optional in an arms command, and either side may be left out: only what is
 present changes. Targets are absolute, not increments. Subsystems that are not commanded hold their last targets
 (the base holds a zero Twist once it has been stopped).
+
+The neck is EXEMPT from exclusivity (EXEMPT_SUBSYSTEMS): it may move while the base, pedestal or arms move, and it is never held
+back or counted as the active subsystem. The loop moves the neck's position targets toward the commanded ones at no more than
+cfg["neck_max_speed"].
 
 Exclusivity (LOOP_CFG["exclusive"], off by default): when on, only one subsystem moves at a time. If a command for a
 different subsystem arrives while the active one is still moving, the loop holds it until the active subsystem has
@@ -25,7 +31,8 @@ Adding a subsystem (a camera neck, say) means adding its name to SUBSYSTEMS and 
 
 import math
 
-SUBSYSTEMS = ("base", "pedestal", "arms")
+SUBSYSTEMS = ("base", "pedestal", "arms", "neck")
+EXEMPT_SUBSYSTEMS = ("neck",)                  # not subject to exclusivity / the hold rule
 MODES = SUBSYSTEMS + ("idle",)
 SIDES = ("left", "right")
 
@@ -42,7 +49,7 @@ def validate_command(cmd, limits=None):
 
     A malformed command (not a dict, unknown mode, missing or non-finite values, wrong lengths) returns None with the
     reasons. Out-of-range values are clipped to `limits` and reported in the messages (the command is still returned).
-    limits (optional): {"arm": {side: (lo[7], hi[7])}, "gripper": (lo, hi), "pedestal": (lo, hi)}.
+    limits (optional): {"arm": {side: (lo[7], hi[7])}, "gripper": (lo, hi), "pedestal": (lo, hi), "neck": {joint: (lo, hi)}}.
     """
     limits = limits or {}
     msgs = []
@@ -66,6 +73,24 @@ def validate_command(cmd, limits=None):
             msgs.append(f"pedestal height {h:.4f} clipped to [{lo:.3f}, {hi:.3f}]")
             h = min(max(h, lo), hi)
         return {"mode": "pedestal", "height": h}, msgs
+    if mode == "neck":
+        nt = cmd.get("neck_targets")
+        if not isinstance(nt, dict) or not nt:
+            return None, ["neck command needs a non-empty neck_targets dict"]
+        out = {"mode": "neck", "neck_targets": {}}
+        for name, v in nt.items():
+            if not _finite(v):
+                return None, [f"neck_targets[{name!r}] must be a finite angle, got {v!r}"]
+            v = float(v)
+            if "neck" in limits:
+                if name not in limits["neck"]:
+                    return None, [f"unknown neck joint {name!r}"]
+                lo, hi = limits["neck"][name]
+                if not lo <= v <= hi:
+                    msgs.append(f"neck_targets[{name!r}] {v:.3f} clipped to [{lo:.3f}, {hi:.3f}]")
+                    v = min(max(v, lo), hi)
+            out["neck_targets"][name] = v
+        return out, msgs
     # arms
     out = {"mode": "arms"}
     at = cmd.get("arm_targets")

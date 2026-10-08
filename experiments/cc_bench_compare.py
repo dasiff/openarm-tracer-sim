@@ -24,7 +24,13 @@ def load(path):
 def main(a_path, b_path):
     ha, A = load(a_path)
     hb, B = load(b_path)
-    assert ha == hb, "different columns"
+    common = [h for h in ha if h in hb]                     # a log with extra columns (the neck's) is compared on the shared ones
+    A = A[:, [ha.index(h) for h in common]]
+    B = B[:, [hb.index(h) for h in common]]
+    ha = common
+    extra = [h for h in hb if h not in common]
+    if extra:
+        print(f"  (columns only in {b_path}, not compared: {extra})")
     n = min(len(A), len(B))
     print(f"{a_path}: {len(A)} rows; {b_path}: {len(B)} rows; comparing {n}")
     if len(A) != len(B):

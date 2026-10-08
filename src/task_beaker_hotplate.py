@@ -17,6 +17,7 @@ import mujoco
 import numpy as np
 
 from src import robot_specs
+from src.neck import neck_ids, set_neck_pose
 from src.simulator import RobotSimulator
 from src.task_config import TASK_CFG, SUCCESS_CFG
 
@@ -96,6 +97,9 @@ def spawn_and_settle(sim, cfg=TASK_CFG):
     unclaimed = [a for a in range(model.nu) if a not in wheels]
     hold = np.zeros(model.nu)
     hold[ped] = robot_specs.PEDESTAL_SPECS["target_height"]
+    neck = neck_ids(model, robot_specs.NECK_SPECS)
+    if neck is not None:
+        hold[neck["act"]] = robot_specs.NECK_SPECS["drive_pose"]
 
     def run(seconds):
         for _ in range(int(round(seconds * robot_specs.PHYSICS_HZ))):
@@ -106,7 +110,7 @@ def spawn_and_settle(sim, cfg=TASK_CFG):
 
     run(cfg["warmup_s"])
     for a in unclaimed:                     # capture the drooped pose; kill any residual swing
-        if a == ped:
+        if a == ped or (neck is not None and a in neck["act"]):
             continue
         j = int(model.actuator_trnid[a, 0])
         hold[a] = data.qpos[model.jnt_qposadr[j]]
@@ -145,3 +149,40 @@ def check_success(model, data, cfg=SUCCESS_CFG):
         "d_at_rest": {"ok": speed < cfg["speed_max"], "speed_m_s": round(speed, 4), "max_m_s": cfg["speed_max"]},
     }
     return all(v["ok"] for v in diag.values()), diag
+
+
+# ----------------------------------------------------------------------------------------------------------
+# What the neck camera should frame
+# ----------------------------------------------------------------------------------------------------------
+def framing_points(model, data, cfg=TASK_CFG):
+    """World points the neck camera has to keep in view for this task: the beaker, the hotplate and the arm's gripper.
+
+    Corners of the beaker's and the hotplate's bounding boxes (so their whole bodies fit, not just their centres) and the
+    gripper's TCP, hand origin and finger tips of the arm that carries the task (cfg["arm"], at whatever pose it is in).
+    Returns {} if the scene has no task."""
+    if mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, "task_beaker") < 0:
+        return {}
+    pts = {}
+
+    def box(name, center, half):
+        for i, (sx, sy, sz) in enumerate(((a, b, c) for a in (-1, 1) for b in (-1, 1) for c in (-1, 1))):
+            pts[f"{name}_corner{i}"] = np.array(center) + np.array([sx, sy, sz]) * np.array(half)
+
+    top = bench_top_z(model)
+    g = model.geom("task_beaker_glass")
+    r, hh = float(model.geom_size[g.id][0]), float(model.geom_size[g.id][1])
+    bpos = data.body("task_beaker").xpos
+    box("beaker", bpos + [0, 0, hh], [r, r, hh])
+    hot = data.body("task_hotplate").xpos
+    base = model.geom("task_hotplate_base")
+    box("hotplate", hot + [0, 0, float(model.geom_size[base.id][2])], [float(model.geom_size[base.id][0]), float(model.geom_size[base.id][1]),
+                                                                       float(model.geom_size[base.id][2])])
+    side = cfg["arm"]
+    hand = data.body(f"openarm_{side}_hand")
+    R = hand.xmat.reshape(3, 3)
+    tcp = data.body(f"openarm_{side}_hand_tcp").xpos
+    pts[f"{side}_gripper_tcp"] = tcp.copy()
+    pts[f"{side}_gripper_hand"] = hand.xpos.copy()
+    for k, sgn in enumerate((-1, 1)):                                      # the finger tips: 1.5 cm past the TCP, +-4.5 cm across
+        pts[f"{side}_gripper_tip{k}"] = tcp + R @ np.array([0.0, sgn * 0.045, 0.015])
+    return pts

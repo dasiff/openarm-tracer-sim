@@ -12,6 +12,8 @@ supplies it. Every tick the source reads the key state and returns up to three c
             the last speed after the keys are released, exactly as before
   pedestal  Page Up / Page Down: the applied height plus one step
   arms      jog keys: the applied joint / gripper targets plus one step for each key held
+  neck      jog keys 9 0 - = (+) and O P [ ] (-) for pan, lift, elbow, wrist; F7 frames the task points (src/neck_framing.py,
+            when the scene has a task); F8 returns the neck to its default aim. None of these keys is used for anything else.
 Targets are computed from obs["applied"] (what the loop currently holds), not from an internal integrator, so a command
 that is held back by the hold rule does not wind up while it waits.
 """
@@ -38,6 +40,10 @@ JOG_KEYS = {
 # lowers while held. The command moves at jog_speed per second of SIM time, not per viewer
 # frame, so it does not depend on the viewer's fps.
 PEDESTAL_KEYS = {"up": "PAGE_UP", "down": "PAGE_DOWN"}
+
+# Camera neck: the same layout idea as the arms (plus on the upper row, minus below, one column per joint, shoulder to wrist)
+NECK_KEYS = {"plus": ["9", "0", "MINUS", "EQUAL"], "minus": ["O", "P", "LEFT_BRACKET", "RIGHT_BRACKET"],
+             "frame": "F7", "home": "F8"}
 
 # Base drive keys and ramp (was CONTROL_GROUPS[0]["keys"] / ["drive_params"])
 DRIVE_CFG = {
@@ -92,7 +98,7 @@ def build_jog_tables(model, mujoco):
     return tables
 
 
-def make_keyboard_source(model, held, drive_cfg, ped_step, ped_range):
+def make_keyboard_source(model, held, drive_cfg, ped_step, ped_range, data=None, neck_specs=None, points_fn=None, framing_cfg=None):
     """drive_cfg: DRIVE_CFG-shaped dict, or None for no base keys. ped_step: pedestal command change per tick [m].
     ped_range: (lo, hi)."""
     import mujoco
@@ -111,6 +117,14 @@ def make_keyboard_source(model, held, drive_cfg, ped_step, ped_range):
                   for side, kk in JOG_KEYS.items()}
     ped_keys = {d: key_code(k) for d, k in PEDESTAL_KEYS.items()}
     ped_lo, ped_hi = ped_range
+
+    # --- neck keys (only if the model has a neck) ---
+    from src.neck import neck_ids
+    nk = neck_ids(model, neck_specs) if neck_specs is not None else None
+    if nk is not None:
+        neck_pairs = list(zip([key_code(k) for k in NECK_KEYS["plus"]], [key_code(k) for k in NECK_KEYS["minus"]]))
+        k_frame, k_home = key_code(NECK_KEYS["frame"]), key_code(NECK_KEYS["home"])
+        state.update(neck_active_t=-1e9, prev_f7=False, prev_f8=False)
 
     def step(obs):
         applied = obs["applied"]
@@ -175,6 +189,33 @@ def make_keyboard_source(model, held, drive_cfg, ped_step, ped_range):
             if grip:
                 cmd["gripper"] = grip
             cmds.append(cmd)
+
+        # --- Camera neck: jog, frame the task points (F7), default aim (F8). Exempt from exclusivity. ---
+        if nk is not None:
+            goal = applied["neck_goal"]
+            moved = {}
+            for j, (k_plus, k_minus) in enumerate(neck_pairs):
+                d = int(held(k_plus)) - int(held(k_minus))
+                if d:
+                    moved[nk["names"][j]] = float(np.clip(goal[nk["names"][j]] + d * neck_specs["jog_step"], nk["lo"][j], nk["hi"][j]))
+            if moved:
+                cmds.append({"mode": "neck", "neck_targets": moved})
+                state["neck_active_t"] = obs["time"]
+            f7, f8 = held(k_frame), held(k_home)
+            if f7 and not state["prev_f7"]:
+                state["neck_active_t"] = obs["time"]
+                points = points_fn(model, data) if points_fn is not None else None
+                if not points:
+                    print("F7: no task loaded in this scene, nothing to frame")
+                else:
+                    from src.neck_framing import frame_points, summarize
+                    targets, report = frame_points(model, data, points, framing_cfg or {})
+                    print("F7 " + summarize(report))
+                    cmds.append({"mode": "neck", "neck_targets": targets})
+            if f8 and not state["prev_f8"]:
+                state["neck_active_t"] = obs["time"]
+                cmds.append({"mode": "neck", "neck_targets": dict(zip(nk["names"], neck_specs["drive_pose"]))})
+            state["prev_f7"], state["prev_f8"] = f7, f8
         return cmds
 
     return {"name": "keyboard", "step": step, "state": state}

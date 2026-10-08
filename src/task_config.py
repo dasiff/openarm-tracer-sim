@@ -40,13 +40,13 @@ TASK_CFG = {
 
     # --- from experiments/beaker_hotplate_staging_search.py (results in data/beaker_hotplate_staging/); re-run it if
     # --- the objects, spawn, pedestal or cameras change ---
-    "staging_xy": (0.9250, 1.1913),        # base_link origin, m; 5 cm from the bench edge (base front to bench top edge)
+    "staging_xy": (0.8750, 1.2213),        # base_link origin, m; 8 cm from the bench edge (base front to bench top edge)
     "staging_yaw": math.radians(-90.0),    # facing the bench
-    "pedestal_q": -0.16,                   # pedestal_lift command, m of stage travel (0 = raised, negative = lowered)
+    "pedestal_q": -0.2,                    # pedestal_lift command, m of stage travel (0 = raised, negative = lowered)
     "arm": "left",                         # the arm that gets the ready pose
-    "ready_q": (-0.78539, -0.17562, 0.50322, 1.45046, -0.18216, -0.07632, 1.18286),   # that arm's 7 joints, rad
+    "ready_q": (-1.43339, -0.49497, 1.10791, 1.20618, -1.02765, 0.32195, 1.13080),   # that arm's 7 joints, rad
     "ready_tcp": (1.0000, 0.7300, 1.1750), # world xyz of the TCP at ready_q when the base is at the staging pose
-    "ready_via_q": (-0.19933, 0.17453, 0.75320, 1.44486, 0.02015, -0.38740, 1.01399),                 # one waypoint between the hanging pose and ready_q (None = straight move); a straight move hits the bench
+    "ready_via_q": (-0.87565, -0.85619, 0.00321, 0.65274, -0.36945, 0.71605, 0.79175),                 # one waypoint between the hanging pose and ready_q (None = straight move); a straight move hits the bench
 }
 
 # ----------------------------------------------------------------------------------------------------------
@@ -66,6 +66,8 @@ SEARCH_CFG = {
     "pedestal_qs": (0.0, -0.04, -0.08, -0.12, -0.16, -0.20, -0.228),
     "pedestal_stop_margin": 0.01,          # m, candidates this close to the lowest command (the torso-contact stop) are skipped
     "min_clearance": 0.05,                 # m, base footprint to bench at the staging pose (the requirement)
+    "required_clearance": 0.08,            # m, wanted: footprint to bench at the staging pose (the hard minimum is min_clearance)
+    "required_turn_clearance": 0.05,       # m, wanted: swept footprint of the final turn (hard minimum min_turn_clearance)
     "min_turn_clearance": 0.02,            # m, the footprint swept by the final in-place turn (the drive stops short, on the far side)
     "gap_resolution": 0.03,                # m, sampled gaps within this of the best go on to IK (the sample density limits them; IK then gives the exact gap)
     "gap_flag": 0.03,                      # m, report anything above this

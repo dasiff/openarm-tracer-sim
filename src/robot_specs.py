@@ -150,7 +150,11 @@ CAMERA_SPECS = [
         "name": "eagle_cam",
         "parent": "openarm_body_link0",
         "pos": [0.05, 0.0, 0.45],
-        "look_at": [1.0, 0.0, 0.45],
+        # Pitched 10 degrees DOWN (was level: look_at [1.0, 0.0, 0.45]). SIM ASSUMPTION pending the real mount.
+        # On the bench task the level camera sat at about bench-top height and saw the tabletop edge-on, with
+        # the objects in the upper half of the image; 10 degrees brings the beaker to the middle of the image
+        # at the staging pose. look_at = pos + (cos 10, 0, -sin 10).
+        "look_at": [1.0348, 0.0, 0.2764],
         "up": [0.0, 0.0, 1.0],
         "fovy": ORBBEC_FOVY_DEG,
         "resolution": ORBBEC_RESOLUTION,

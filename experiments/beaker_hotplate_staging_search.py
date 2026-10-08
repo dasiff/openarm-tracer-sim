@@ -29,16 +29,18 @@ Method
      footprint swept by the final in-place turn (from the approach heading, i.e. the direction from the spawn, to
      the staging yaw, about base_link's origin) comes closer than 2 cm to the bench (the drive stops short of the
      goal, on the side away from the bench), or if the base comes within 3 cm of other lab furniture.
-  4. Gaps below the sample resolution (1 cm) are ties. Ties are broken by how well the eagle camera sees the beaker
-     and the hotplate from that pose (share of the image covered by the less visible of the two, from a ray grid, so
-     occlusion counts; the camera is fixed to the torso, so it depends on the pedestal height),
-     then by how many samples lie within 3 cm of the worst target (a candidate deep inside the workspace beats one
-     on its edge), then by the larger standoff (more room for the 3 cm arrival tolerance).
+  4. Sampled gaps within the sample resolution (3 cm, the flag threshold) of the best are all candidates; the
+     sampled gap is only a screen (the sample density limits it), the IK in step 5 gives the exact gap. The
+     candidates are ranked by clearance slack = min(footprint clearance - 8 cm, swept-turn clearance - 5 cm), largest
+     first, then by how many samples lie within 3 cm of the worst target (deeper inside the workspace is better),
+     then by the larger standoff. There is no camera term. The 8 cm / 5 cm are required "if achievable": the
+     result says whether they are met and gives the margins either way.
   5. The winner is refined with damped-least-squares IK from the nearest samples, which gives the ready joint
      angles and an exact (IK) gap for each target, and the ready pose is checked in MuJoCo for contacts.
 Results: data/beaker_hotplate_staging/candidates.csv, staging_result.json, and a config snippet on stdout.
 """
 
+import argparse
 import csv
 import json
 import math
@@ -59,6 +61,7 @@ from src.task_beaker_hotplate import (  # noqa: E402
     load_task, spawn_and_settle, bench_top_z, yaw_to_quat, wrap, arm_ids)
 
 OUT_DIR = PROJECT_ROOT / "data" / "beaker_hotplate_staging"
+CACHE_DIR = OUT_DIR                              # joint samples are cached here whatever --out-dir is
 C = SEARCH_CFG
 SIDES = ("right", "left")
 
@@ -112,7 +115,7 @@ def usable_samples(model, side, rng):
     jnt = arm_ids(model, side)["jnt"]
     lo, hi = model.jnt_range[jnt, 0], model.jnt_range[jnt, 1]
     key = "_".join(str(C[k]) for k in ("n_samples", "seed", "approach_down_deg", "approach_cone_deg", "finger_axis_max_z"))
-    cache = OUT_DIR / f"samples_{side}_{key}.npz"
+    cache = CACHE_DIR / f"samples_{side}_{key}.npz"
     if cache.exists():
         z = np.load(cache)
         return z["P"], z["Q"], lo, hi
@@ -194,23 +197,6 @@ def furniture_clearance(model, data, robot_bodies, base_geoms, dist_max=0.4):
         for bg in base_geoms:
             best = min(best, mujoco.mj_geomDistance(model, data, bg, g, dist_max, fromto))
     return best
-
-
-# ----------------------------------------------------------------------------------------------------------
-# Eagle camera visibility
-# ----------------------------------------------------------------------------------------------------------
-def visibility(model, data, cam_id, geom_sets, fovy_deg, aspect, nx=64, ny=48):
-    """Fraction of the camera image covered by each geom set, from a nx x ny grid of rays (first hit counts, so
-    occlusion by the bench edge or the arms is included). geom_sets: {name: set of geom ids}."""
-    pos, R = data.cam_xpos[cam_id].copy(), data.cam_xmat[cam_id].reshape(3, 3)
-    th = math.tan(math.radians(fovy_deg) / 2)
-    u, v = np.meshgrid(np.linspace(-1, 1, nx), np.linspace(-1, 1, ny))
-    dirs_c = np.c_[(u * th * aspect).ravel(), (v * th).ravel(), -np.ones(nx * ny)]
-    dirs = (R @ (dirs_c / np.linalg.norm(dirs_c, axis=1, keepdims=True)).T).T
-    geomid = np.zeros(nx * ny, dtype=np.int32)
-    dist = np.zeros(nx * ny)
-    mujoco.mj_multiRay(model, data, pos, dirs.ravel(), None, 1, -1, geomid, dist, None, nx * ny, 1e10)
-    return {k: float(np.isin(geomid, list(ids)).mean()) for k, ids in geom_sets.items()}
 
 
 # ----------------------------------------------------------------------------------------------------------
@@ -319,6 +305,13 @@ def plan_arm_path(model, data, side, base_xy, yaw, z_rest, pedestal_q, rest_q, r
 
 # ----------------------------------------------------------------------------------------------------------
 def main():
+    global OUT_DIR
+    ap = argparse.ArgumentParser(description=__doc__.split(chr(10))[1])
+    ap.add_argument("--pedestal-qs", type=float, nargs="*", help="override SEARCH_CFG pedestal_qs (to look at alternatives)")
+    ap.add_argument("--out-dir", help="write results here instead of data/beaker_hotplate_staging")
+    args = ap.parse_args()
+    if args.out_dir:
+        OUT_DIR = Path(args.out_dir)
     t_start = time.time()
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     sim = load_task()
@@ -366,7 +359,7 @@ def main():
     bench_edge_y = bench_cy + bench_hy
     spawn_xy = np.array(TASK_CFG["spawn_xy"])
     lowest = robot_specs.PEDESTAL_SPECS["lowest_command"]
-    pedestal_qs = [q for q in C["pedestal_qs"] if q >= lowest + C["pedestal_stop_margin"]]
+    pedestal_qs = [q for q in (args.pedestal_qs or C["pedestal_qs"]) if q >= lowest + C["pedestal_stop_margin"]]
     print(f"pedestal commands searched: {pedestal_qs} (the lowest command {lowest} is the torso-contact stop)")
     rows = []
     for st in C["standoffs"]:
@@ -387,7 +380,7 @@ def main():
                         cnt[name] = int(s["tree"].query_ball_point(tb, C["reach_radius"], return_length=True))
                     rows.append(dict(standoff=st, lateral=lat, x=xy[0], y=xy[1], pedestal_q=q, arm=side, clearance=clear,
                                      swept_clearance=swept, gap_grasp=g["grasp"], gap_place=g["place"], gap_ready=g["ready"],
-                                     worst_gap=max(g.values()), reach_count=min(cnt.values()), visible=-1))
+                                     worst_gap=max(g.values()), reach_count=min(cnt.values())))
     print(f"{len(rows)} candidates ({len(C['standoffs'])} standoffs x {len(C['laterals'])} laterals x "
           f"{len(pedestal_qs)} heights x 2 arms)")
     ok_rows = [r for r in rows if r["clearance"] >= C["min_clearance"] and r["swept_clearance"] >= C["min_turn_clearance"]]
@@ -418,48 +411,22 @@ def main():
             ok2.append(r)
     print(f"{len(ok2)} also keep >= 3 cm from other furniture at the staging yaw and at the approach heading")
 
-    # ---- 4. rank: gap (to the sample resolution), then eagle camera visibility, then reach depth, then standoff
+    # ---- 4. rank: clearance slack, then reach depth, then standoff
     best_gap = min(r["worst_gap"] for r in ok2)
     res = C["gap_resolution"]
     tied = [r for r in ok2 if r["worst_gap"] <= best_gap + res]
     print(f"best worst-case gap {best_gap * 1000:.1f} mm; {len(tied)} candidates within {res * 1000:.0f} mm of it")
 
-    cam = model.camera("eagle_cam")
-    spec = robot_specs.CAMERA_SPECS[0]
-    aspect = spec["resolution"][0] / spec["resolution"][1]
-    geom_sets = {"beaker": {model.geom("task_beaker_glass").id},
-                 "hotplate": {model.geom("task_hotplate_top_plate").id}}      # the top plate: that is the surface the task is about
+    need_c, need_t = C["required_clearance"], C["required_turn_clearance"]
     for r in tied:
-        data.qpos[free_dof:free_dof + 7] = [r["x"], r["y"], z_rest, *yaw_to_quat(yaw_f)]
-        for jn in robot_specs.PEDESTAL_SPECS["joints"]:
-            data.qpos[model.joint(jn).qposadr[0]] = r["pedestal_q"]
-        mujoco.mj_forward(model, data)
-        fr = visibility(model, data, cam.id, geom_sets, spec["fovy"], aspect)
-        r["visible_beaker"], r["visible_plate"] = fr["beaker"], fr["hotplate"]
-        r["visible"] = min(fr["beaker"], fr["hotplate"])             # the less visible of the two objects
-        r["eagle_z"] = float(data.cam_xpos[cam.id][2])
-    tied.sort(key=lambda r: (-round(r["visible"], 3), -r["reach_count"], -r["standoff"]))
-    print(f"eagle camera: {spec['resolution'][0]}x{spec['resolution'][1]}, fovy {spec['fovy']} deg, level, fixed to the torso")
-    print("top candidates (eagle = share of the eagle image covered by beaker / hotplate; ranked on the smaller):")
+        r["slack"] = min(r["clearance"] - need_c, r["swept_clearance"] - need_t)
+    tied.sort(key=lambda r: (-round(r["slack"], 3), -r["reach_count"], -r["standoff"]))
+    print(f"top candidates, ranked by clearance slack (need clearance >= {need_c * 100:.0f} cm and swept turn >= {need_t * 100:.0f} cm; slack >= 0 means met):")
     for r in tied[:8]:
         print(f"  {r['arm']:5s} standoff {r['standoff']:.2f} lat {r['lateral']:+.2f} q {r['pedestal_q']:+.3f}  "
               f"gaps g/p/r {r['gap_grasp'] * 1000:.1f}/{r['gap_place'] * 1000:.1f}/{r['gap_ready'] * 1000:.1f} mm  "
-              f"reach_count {r['reach_count']:5d}  eagle {100 * r['visible_beaker']:.1f}%/{100 * r['visible_plate']:.1f}%  eagle z {r['eagle_z']:.2f}  "
-              f"clear {r['clearance'] * 100:.1f} cm swept {r['swept_clearance'] * 100:.1f} cm furn {r['furniture'] * 100:.0f} cm")
-
-    print("best sampled candidate per pedestal command (screening only; eagle = image share of beaker / hotplate top plate):")
-    for q in pedestal_qs:
-        pool = [r for r in ok2 if r["pedestal_q"] == q]
-        if not pool:
-            continue
-        b = min(pool, key=lambda r: r["worst_gap"])
-        data.qpos[free_dof:free_dof + 7] = [b["x"], b["y"], z_rest, *yaw_to_quat(yaw_f)]
-        for jn in robot_specs.PEDESTAL_SPECS["joints"]:
-            data.qpos[model.joint(jn).qposadr[0]] = q
-        mujoco.mj_forward(model, data)
-        fr = visibility(model, data, cam.id, geom_sets, spec["fovy"], aspect)
-        print(f"  q {q:+.3f}: {b['arm']:5s} lat {b['lateral']:+.2f} standoff {b['standoff']:.2f} worst gap {b['worst_gap'] * 1000:5.1f} mm  "
-              f"eagle z {data.cam_xpos[cam.id][2]:.2f}  eagle {100 * fr['beaker']:.1f}% / {100 * fr['hotplate']:.1f}%")
+              f"reach_count {r['reach_count']:5d}  clear {r['clearance'] * 100:.1f} cm swept {r['swept_clearance'] * 100:.1f} cm "
+              f"furn {r['furniture'] * 100:.0f} cm  slack {r['slack'] * 100:+.1f} cm")
 
     with open(OUT_DIR / "candidates.csv", "w", newline="") as f:
         keys = sorted({k for r in rows for k in r})
@@ -529,7 +496,7 @@ def main():
         standoff=r["standoff"], lateral=r["lateral"], clearance=r["clearance"], swept_clearance=r["swept_clearance"],
         furniture_clearance=r["furniture"], base_resting_z=z_rest,
         sample_gaps={"grasp": r["gap_grasp"], "place": r["gap_place"], "ready": r["gap_ready"]},
-        ik_gaps=gaps, eagle_image_share={"beaker": r["visible_beaker"], "hotplate": r["visible_plate"]}, eagle_z=r["eagle_z"],
+        ik_gaps=gaps, clearance_slack=r["slack"], requirement_met=bool(r["slack"] >= 0),
         targets={k: [float(x) for x in v] for k, v in targets.items()},
         ik_details={k: {kk: (vv.tolist() if isinstance(vv, np.ndarray) else vv) for kk, vv in v.items()} for k, v in ik.items()},
         flagged=[k for k, v in {**{f"sample_{k}": v for k, v in
@@ -541,7 +508,9 @@ def main():
     print("\n=== chosen staging pose ===")
     print(f"arm {r['arm']}; staging xy ({r['x']:.3f}, {r['y']:.3f}) yaw {math.degrees(yaw_f):.0f} deg; pedestal_q {r['pedestal_q']:+.3f} "
           f"(shoulder-line z {z_rest + 0.75 + 2 * r['pedestal_q'] + 0.698:.3f} m); standoff {r['standoff'] * 100:.0f} cm")
-    print(f"footprint clearance {r['clearance'] * 100:.1f} cm; turn-swept {r['swept_clearance'] * 100:.1f} cm; furniture {r['furniture'] * 100:.0f} cm")
+    print(f"footprint clearance {r['clearance'] * 100:.1f} cm (want >= {need_c * 100:.0f}); turn-swept {r['swept_clearance'] * 100:.1f} cm "
+          f"(want >= {need_t * 100:.0f}); furniture {r['furniture'] * 100:.0f} cm -> "
+          + ("requirement MET" if r["slack"] >= 0 else f"requirement NOT met, best achievable margins (slack {r['slack'] * 100:+.1f} cm)"))
     for k in targets:
         print(f"gap {k:5s}: sampled {summary['sample_gaps'][k] * 1000:6.1f} mm   IK {gaps[k] * 1000:6.2f} mm")
     print("flagged (> 3 cm):", summary["flagged"] or "none")

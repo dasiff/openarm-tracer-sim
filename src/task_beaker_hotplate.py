@@ -68,9 +68,12 @@ def apply_task_poses(model, data, cfg=TASK_CFG):
 
 
 def load_task(cfg=TASK_CFG, cameras=True):
-    """RobotSimulator on the task scene, with the pedestal lift, optionally the cameras, objects placed."""
+    """RobotSimulator on the task scene, with the pedestal lift, objects placed.
+
+    cameras: True = robot_specs.CAMERA_SPECS, False = none, or a list of camera spec dicts."""
+    cams = robot_specs.CAMERA_SPECS if cameras is True else (cameras or None)
     sim = RobotSimulator(model_path=str(PROJECT_ROOT / cfg["scene"]),
-                         cameras=robot_specs.CAMERA_SPECS if cameras else None,
+                         cameras=cams,
                          pedestal_lift=robot_specs.PEDESTAL_SPECS)
     apply_task_poses(sim.model, sim.data, cfg)
     return sim

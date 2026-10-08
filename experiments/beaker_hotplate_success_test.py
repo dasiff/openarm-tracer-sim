@@ -10,7 +10,10 @@ beaker is teleported through its free joint (qpos), mj_forward is called, the sc
 beaker settles, and check_success() is read:
     1. beaker at its start pose            -> expect False
     2. beaker placed on the hotplate       -> expect True
-    3. on the hotplate, tipped 45 degrees  -> expect False
+    3. on the hotplate, tipped 45 degrees  -> expect False (it topples and rolls off during the second, so this
+                                              mostly exercises the position conditions)
+    4. on the hotplate, tipped 45 degrees, evaluated immediately (no settling) -> expect False, with the tilt
+       condition failing and the position, height and rest conditions passing (isolates the upright check)
 Prints PASS/FAIL (PASS = the result matched the expectation) with each sub-condition and its measured value.
 Exit code 1 if any case fails.
 """
@@ -51,18 +54,25 @@ def main():
             mujoco.mj_step(model, data)
 
     half = math.radians(45) / 2
+    tip = [math.cos(half), math.sin(half), 0, 0]             # 45 deg about the world x axis
+    # (name, base position, quaternion, settle first?, expected result, expected failing conditions)
     cases = [
-        ("1. beaker at its start pose", [*TASK_CFG["beaker_xy"], top + 0.002], [1, 0, 0, 0], False),
-        ("2. beaker placed on the hotplate", [top_site[0], top_site[1], top_site[2] + 0.002], [1, 0, 0, 0], True),
-        ("3. on the hotplate, tipped 45 deg", [top_site[0], top_site[1], top_site[2] + 0.03], [math.cos(half), math.sin(half), 0, 0], False),
+        ("1. beaker at its start pose", [*TASK_CFG["beaker_xy"], top + 0.002], [1, 0, 0, 0], True, False, None),
+        ("2. beaker placed on the hotplate", [top_site[0], top_site[1], top_site[2] + 0.002], [1, 0, 0, 0], True, True, None),
+        ("3. on the hotplate, tipped 45 deg, settled 1 s", [top_site[0], top_site[1], top_site[2] + 0.03], tip, True, False, None),
+        ("4. on the hotplate, tipped 45 deg, evaluated immediately", [top_site[0], top_site[1], top_site[2]], tip, False, False,
+         {"c_upright"}),
     ]
     n_pass = 0
-    for name, xyz, quat, expect in cases:
+    for name, xyz, quat, settle_first, expect, fails in cases:
         place(xyz, quat)
-        settle()
+        if settle_first:
+            settle()
         ok, diag = check_success(model, data, SUCCESS_CFG)
-        n_pass += ok == expect
-        print(f"{'PASS' if ok == expect else 'FAIL'}  {name}: check_success -> {ok} (expected {expect})")
+        good = ok == expect and (fails is None or {k for k, v in diag.items() if not v["ok"]} == fails)
+        n_pass += good
+        print(f"{'PASS' if good else 'FAIL'}  {name}: check_success -> {ok} (expected {expect})"
+              + (f", failing conditions must be exactly {sorted(fails)}" if fails else ""))
         for k, v in diag.items():
             print(f"        {k:18s} {'ok ' if v['ok'] else 'NOT'}  " + ", ".join(f"{kk}={vv}" for kk, vv in v.items() if kk != "ok"))
     print(f"{n_pass}/{len(cases)} cases PASS")

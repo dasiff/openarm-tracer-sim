@@ -84,6 +84,7 @@ openarm-tracer-sim/
 │   ├── neck.py, neck_framing.py, neck_source.py   # camera neck: attach the SO-101 at load, frame points, auto follow / look-ahead
 │   ├── staging_source.py    # Scripted staging: DRIVE -> PEDESTAL -> ARMS -> NECK -> DONE (HANDOFF), beaker-on-hotplate task
 │   ├── episode_runner.py, episode_test_sources.py   # reset, stage, hand off to a source under test, judge, log; test-only idle / cheat sources
+│   ├── run_record.py, replay.py   # record a live run's physics inputs; replay it exactly (state check) and render its cameras to video
 │   ├── robot_specs.py       # Rates, motor gains, camera specs, calibration status
 │   ├── actuator_mapping.py  # Actuator name -> index mapping
 │   ├── joint_addressing.py
@@ -119,6 +120,15 @@ under test. Exclusivity is on in episodes. An episode ends at success (`check_su
 60 s timeout after HANDOFF, or at once as `STAGING_FAILED` if the base cannot reach its pose within 1 cm / 1 degree after 3
 corrective re-approaches. Each episode writes `episode_log.csv` (10 Hz) and `episode_summary.json`. `idle` (arms hold, expect
 TIMEOUT) and `cheat` (teleports the beaker onto the hotplate 2 s after HANDOFF, expect SUCCESS) exist only to test the runner.
+
+## Record live, render offline
+
+`combined_controller.py --record-run DIR` (or `beaker_hotplate_episode.py --record`) records what the physics received on every
+tick (ctrl vector and base velocity, exact float64) plus state hashes, about 17 KB per sim second. `experiments/replay_run.py DIR`
+replays it headless: the states must match the live run bit for bit (same machine and MuJoCo version), and it renders the policy
+cameras to one video per camera (`eagle_cam.mp4`, ...) at 30 Hz, 640x480, each camera with its own shadow setting, about 25 MB
+per sim minute for the three cameras. Options: `--cameras`, `--hz`, `--size`, `--shadows`, `--from-tick/--to-tick` for a clip,
+`--verify-only` (no GL). See `src/run_record.py` and `src/replay.py`.
 
 ## Features
 

@@ -245,7 +245,7 @@ def _resolve_groups(model, groups):
 def run(scene: str, spawn_pos, groups: list[dict], policy,
         mode: str = "manual", camera: int = 0, preview: bool = True,
         snapshot_every: float = 0.0, snapshot_dir: str | None = None,
-        record: bool = False):
+        record: bool = False, record_run: str | None = None):
     """
     Main entry point (unchanged signature): load the scene, build the viewer and the sources, run the loop.
 
@@ -258,6 +258,7 @@ def run(scene: str, spawn_pos, groups: list[dict], policy,
                     When None, auto groups hold their actuators and only the
                     keyboard responds — i.e. pure keyboard control.
         mode:       "manual" (keyboard) or "teleop" (F2 switches the arms to the webcam operator).
+        record_run: directory: record the run's physics inputs for an exact offline replay (src/run_record.py, experiments/replay_run.py).
     """
     bench = _perf_settings()
     global CAMERA_SHADOWS, SHOW_HUD, SHOW_CAMERA_INSETS
@@ -351,6 +352,7 @@ def run(scene: str, spawn_pos, groups: list[dict], policy,
         "spawn_pos": spawn_pos, "warmup_s": WARMUP_SEC, "resettle_s": RESETTLE_SEC, "routes": routes,
         "claimed_ids": sorted(claimed_ids), "held": held, "tick_ref": tick, "bench_frames": bench["frames"],
         "bench_log": bench["log"], "preview": preview and mode == "teleop",
+        "record_run": record_run, "record_meta": {"model": {"kind": "scene", "scene": scene}, "mode": mode},
         "hotkeys": {"toggle_route": glfw.KEY_F2 if mode == "teleop" else None, "toggle_log": glfw.KEY_F5, "quit": glfw.KEY_ESCAPE},
     }
     run_loop(model, data, sources, cfg, viewer=viewer, logger=TrajectoryLogger())
@@ -382,6 +384,9 @@ def main():
     parser.add_argument("--record", action="store_true",
                         help="start recording the viewer (MP4 + joint CSV) on the "
                              "first frame; F6 stops / restarts it")
+    parser.add_argument("--record-run", default=None, metavar="DIR",
+                        help="record the run (the physics inputs and verification hashes) in DIR, for an exact offline replay "
+                             "with experiments/replay_run.py (video of the policy cameras, state check)")
     parser.add_argument("--no-preview", action="store_true",
                         help="teleop: don't show the live camera window")
     args = parser.parse_args()
@@ -400,6 +405,7 @@ def main():
         snapshot_every=args.snapshot_every,
         snapshot_dir=args.snapshot_dir,
         record=args.record,
+        record_run=args.record_run,
     )
 
 

@@ -48,6 +48,10 @@ Cameras. Two separate rigs, so what the operator sees can be cheap while what a 
     one camera per render, each camera updating at cfg["inset_hz"]. It feeds only the viewer's insets.
 A viewer run that does not need the policy cameras sets cfg["cameras"] = False; loop["render"](name) still gives full-quality frames on demand.
 
+Recording and replay: cfg["record_run"] = DIR writes, for every tick, the ctrl vector and the world base velocity the physics received,
+plus state hashes (src/run_record.py). cfg["replay"] (src/replay.py) runs the same setup and the same physics step with those inputs
+instead of sources, calling its hooks at the end of the settle, after every physics step and after every tick.
+
 Headless: viewer=None runs without a window. Cameras then render through an offscreen context (set MUJOCO_GL=egl before
 importing mujoco on a machine without a display) or are skipped with cfg["cameras"] = False.
 """
@@ -64,6 +68,7 @@ from src.base_control import apply_base_velocity, base_yaw, find_base_dof, twist
 from src.cameras import CameraRig
 from src.commands import EXEMPT_SUBSYSTEMS, validate_command
 from src.neck import neck_ids
+from src.run_record import RunRecorder
 
 LOOP_CFG = {
     "source_hz": 62.5,             # command / viewer tick; the physics rate must be a whole multiple (12 steps at 750 Hz)
@@ -99,6 +104,9 @@ LOOP_CFG = {
     "spawn_yaw": None,             # rad, base yaw at spawn (None = leave the XML's)
     "neck_specs": None,            # None = robot_specs.NECK_SPECS (the neck is skipped if the model has none)
     "neck_max_speed": None,        # rad/s; None = NECK_SPECS["max_speed"]
+    "record_run": None,            # directory: record the run's physics inputs and verification hashes (src/run_record.py)
+    "record_meta": None,           # dict stored in the recording's meta.json: {"model": recipe to rebuild the model, ...}
+    "replay": None,                # src/replay.py: {"ctrl", "basevel", "on_start", "on_step", "on_tick_end"}: no sources, inputs from a recording
 }
 
 ROUTE_KEYS = ("base", "pedestal", "arms.left", "arms.right", "gripper.left", "gripper.right", "neck")
@@ -281,6 +289,14 @@ def run_loop(model, data, sources, cfg, viewer=None, logger=None):
         mujoco.mj_step(model, data)
     print(f"Arms locked at resting pose, re-settled at z={data.qpos[2]:.4f}")
 
+    replay = cfg["replay"]
+    recorder = None
+    if replay is not None:
+        replay["on_start"](model, data)
+    elif cfg["record_run"]:
+        recorder = RunRecorder(cfg["record_run"], model, data, {**cfg, "claimed_ids": list(cfg["claimed_ids"])}, cfg["record_meta"],
+                               cfg["source_hz"], steps_per_frame)
+
     # Sources that build things that need the settled robot (the teleop session, the fake operator's clock)
     for src in sources.values():
         if "start" in src:
@@ -439,6 +455,31 @@ def run_loop(model, data, sources, cfg, viewer=None, logger=None):
     loop_api = {"routes": routes, "stop": lambda reason="stop": stop_req.__setitem__(0, reason), "render": render}
     status = None
 
+    def advance(vx, vy, wz):
+        """The tick's physics: `steps_per_frame` steps, the base velocity written before each (shared by live runs and replays)."""
+        nonlocal step_count, cam_tick
+        for _ in range(steps_per_frame):
+            if base_dof is not None:
+                apply_base_velocity(data, base_dof, vx, vy, wz)
+            mujoco.mj_step(model, data)
+            step_count += 1
+            if bench_log is not None and step_count % 75 == 0:
+                qw_, qx_, qy_, qz_ = data.qpos[3:7]
+                bench_csv.writerow([f"{data.time:.6f}", f"{data.qpos[0]:.9f}", f"{data.qpos[1]:.9f}",
+                                    f"{math.degrees(math.atan2(2.0 * (qw_ * qz_ + qx_ * qy_), 1.0 - 2.0 * (qy_ * qy_ + qz_ * qz_))):.9f}",
+                                    f"{data.qpos[ped_qadr]:.9f}"] + [f"{data.qpos[a]:.9f}" for a in log_joints]
+                                   + ([f"{data.qpos[a]:.9f}" for a in neck["qadr"]] if neck is not None else []))
+            if replay is not None:
+                replay["on_step"](step_count, data)
+            if rig is not None and step_count % cam_every == 0:
+                t_c0 = pc()
+                if cfg["camera_roundrobin"]:
+                    rig.render(data, [cam_names[cam_tick % len(cam_names)]])
+                    cam_tick += 1
+                else:
+                    rig.render(data)
+                tm["cam"] += pc() - t_c0
+
     print(f"--- entering loop ---")
     logging_active = False
     prev_l = False
@@ -451,6 +492,14 @@ def run_loop(model, data, sources, cfg, viewer=None, logger=None):
     # ---------------------------------------------------------------
     while True:
       try:
+        if replay is not None:                           # inputs from a recording: the same physics step, no sources, no hooks
+            if frame >= replay["n_ticks"] or replay["stop"]():
+                break
+            data.ctrl[:] = replay["ctrl"][frame]
+            advance(*replay["basevel"][frame])
+            replay["on_tick_end"](frame, data)
+            frame += 1
+            continue
         t_f0 = pc()
         obs = observation(model, data)
         t = data.time
@@ -513,25 +562,12 @@ def run_loop(model, data, sources, cfg, viewer=None, logger=None):
         # Targets are held for the whole frame: write them once as position commands; the MuJoCo
         # servos track them from the live state on every physics step.
         data.ctrl[:] = np.where(is_pos, hold_qpos_targets, 0.0)
-        for _ in range(steps_per_frame):
-            if base_dof is not None:
-                apply_base_velocity(data, base_dof, base_vx, base_vy, base_wz)
-            mujoco.mj_step(model, data)
-            step_count += 1
-            if bench_log is not None and step_count % 75 == 0:
-                qw_, qx_, qy_, qz_ = data.qpos[3:7]
-                bench_csv.writerow([f"{data.time:.6f}", f"{data.qpos[0]:.9f}", f"{data.qpos[1]:.9f}",
-                                    f"{math.degrees(math.atan2(2.0 * (qw_ * qz_ + qx_ * qy_), 1.0 - 2.0 * (qy_ * qy_ + qz_ * qz_))):.9f}",
-                                    f"{data.qpos[ped_qadr]:.9f}"] + [f"{data.qpos[a]:.9f}" for a in log_joints]
-                                   + ([f"{data.qpos[a]:.9f}" for a in neck["qadr"]] if neck is not None else []))
-            if rig is not None and step_count % cam_every == 0:
-                t_c0 = pc()
-                if cfg["camera_roundrobin"]:
-                    rig.render(data, [cam_names[cam_tick % len(cam_names)]])
-                    cam_tick += 1
-                else:
-                    rig.render(data)
-                tm["cam"] += pc() - t_c0
+        if recorder is not None:
+            recorder.tick(frame, data.ctrl, (base_vx, base_vy, base_wz))
+            recorder.label(frame, status.split("  (")[0] if isinstance(status, str) else status)
+        advance(base_vx, base_vy, base_wz)
+        if recorder is not None:
+            recorder.end_tick(frame, data)
         tm["phys"] += pc() - t_p0
 
         # Logging
@@ -610,6 +646,8 @@ def run_loop(model, data, sources, cfg, viewer=None, logger=None):
         viewer["finish"]()
     if bench_log is not None:
         bench_log.close()
+    if recorder is not None:
+        recorder.close({"stopped_by": stop_req[0], "frames": frame})
     print(f"\nLoop exited after {frame} frames.")
     if logging_active and logger is not None and len(logger.trajectory) > 0:
         logger.save()

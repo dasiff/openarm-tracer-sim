@@ -90,13 +90,15 @@ def main():
     ap.add_argument("--repeat", type=int, default=1)
     ap.add_argument("--cross-check", action="store_true")
     ap.add_argument("--out")
+    ap.add_argument("--record", action="store_true", help="record each episode (physics inputs + verification hashes) in DIR/run<k>/recording for experiments/replay_run.py")
     args = ap.parse_args()
     out = Path(args.out) if args.out else PROJECT_ROOT / "data" / "beaker_hotplate_episodes" / (args.source + ("_viewer" if args.viewer else ""))
     runs = []
 
     def one(model, data, k, viewer=None, held=None):
         d = out / f"run{k}"
-        summary = run_episode(SOURCES[args.source], model, data, viewer=viewer, out_dir=d, handoff_frame=d / "handoff_eagle.png", held=held)
+        summary = run_episode(SOURCES[args.source], model, data, viewer=viewer, out_dir=d, handoff_frame=d / "handoff_eagle.png", held=held,
+                              record_dir=d / "recording" if args.record else None)
         show(summary, f"{args.source} episode {k}" + (" (viewer)" if viewer else " (headless)"))
         runs.append(d)
 

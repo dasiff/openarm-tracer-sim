@@ -3,7 +3,7 @@
 Episode runner for the beaker-on-hotplate task: one run = reset, stage, hand off to a source under test, judge, log.
 
     summary = run_episode(make_test_source, model, data, task_cfg=TASK_CFG, staging_cfg=STAGING_CFG, episode_cfg=EPISODE_CFG,
-                          viewer=None, out_dir=None, handoff_frame=None, held=None, loop_cfg=None)
+                          viewer=None, out_dir=None, handoff_frame=None, held=None, loop_cfg=None, record_dir=None)
 
   reset     mj_resetData + the task's object poses; the loop spawns the robot at the task's spawn pose (position and yaw) and
             settles it (nothing is randomized). The same model / data can be reused for any number of episodes.
@@ -56,7 +56,7 @@ def _body_set(model, root_name):
 
 
 def run_episode(make_test_source, model, data, task_cfg=TASK_CFG, staging_cfg=STAGING_CFG, episode_cfg=EPISODE_CFG,
-                viewer=None, out_dir=None, handoff_frame=None, held=None, loop_cfg=None):
+                viewer=None, out_dir=None, handoff_frame=None, held=None, loop_cfg=None, record_dir=None):
     wall0 = time.perf_counter()
     mujoco.mj_resetData(model, data)
     apply_task_poses(model, data, task_cfg)
@@ -175,6 +175,9 @@ def run_episode(make_test_source, model, data, task_cfg=TASK_CFG, staging_cfg=ST
            "spawn_yaw": task_cfg["spawn_yaw"], "routes": routes, "exclusive": episode_cfg["exclusive"], "on_tick": on_tick,
            "cameras": False, "camera_roundrobin": True, "held": held,
            "hotkeys": {"quit": __import__("glfw").KEY_ESCAPE} if viewer is not None else {}}
+    if record_dir is not None:      # src/run_record.py: replayable with src/replay.py (labels = the phases)
+        cfg.update(record_run=str(record_dir), record_meta={"model": {"kind": "task", "task_cfg": task_cfg},
+                                                            "episode": {"staging_cfg": staging_cfg, "episode_cfg": episode_cfg}})
     cfg.update(loop_cfg or {})
     result = run_loop(model, data, sources, cfg, viewer=viewer)
     if log_file is not None:

@@ -15,6 +15,10 @@ Two stages, in order:
               and, test only, src/episode_test_sources.make_cheat_arm_stage.
 
 The controller (src/control_loop.py) steps the policy only in "auto" mode; in "teleop" mode it is paused, and resume() continues its current stage.
+Rule for every policy: on resume, every subsystem starts from where the operator left it, and the policy then moves it toward what it wants; it never
+jumps to a stale target. The staging stage does this for the base (its controllers slew from the applied Twist), the arm (src/rate_limit.py from the applied
+targets, arm_max_speed), the gripper (the same, gripper_max_speed, after resume()), the pedestal (its phase ramps from the applied height) and the neck
+(the loop slews it). A new policy or arm stage must do the same.
 policy["status"]() -> {"stage": "STAGING" | the arm stage's name, "phase": the staging phase ("DONE" once staging is complete), "handoff": bool,
 "error": the staging error or None}; the loop publishes it as obs["policy"].
 """
@@ -55,7 +59,9 @@ def make_task_policy(model, data, task_cfg=TASK_CFG, staging_cfg=STAGING_CFG, ar
         return arm["step"](obs)       # the first call is the tick after staging set DONE (the handoff tick)
 
     def resume():
-        if "resume" in arm and st["done"]:
+        if not st["done"]:
+            staging["resume"]()
+        elif "resume" in arm:
             arm["resume"]()
 
     return {"name": "policy", "step": step, "state": {"staging": st, "arm": arm["state"]}, "status": status, "resume": resume,

@@ -58,6 +58,13 @@ def _slew(cur, target, up, down, dt):
     return cur + max(-lim, min(lim, target - cur))
 
 
+def _start_from_applied(S, obs):
+    """Snap-back safety for the base: the controllers slew from the Twist the loop APPLIED last tick, not from their own memory of it. Normally they are
+    the same numbers; after an operator has had control (the base was brought to rest, the controller was paused) the memory is stale and
+    would make the first command a step to the old speed."""
+    S["twist"] = tuple(float(v) for v in obs["applied"]["twist"])
+
+
 def _min_jerk(u):
     u = min(max(u, 0.0), 1.0)
     return 10 * u ** 3 - 15 * u ** 4 + 6 * u ** 5
@@ -83,6 +90,7 @@ def _pose_controller(cfg, goal, max_lin, max_ang, tol_pos, tol_yaw, real_pos_tol
         return math.copysign(max(min(w, max_ang), min(cfg["drive_creep_ang"], max_ang)), err)
 
     def step(obs, t, dt):
+        _start_from_applied(S, obs)
         x, y, yaw = obs["base_pose"]
         dist = math.hypot(gx - x, gy - y)
         bearing = math.atan2(gy - y, gx - x)
@@ -174,6 +182,7 @@ def _creep_controller(cfg, goal, tol_pos, tol_yaw, real_pos_tol, real_yaw_tol, m
         return ex * math.cos(yaw) + ey * math.sin(yaw), -ex * math.sin(yaw) + ey * math.cos(yaw), wrap(gyaw - yaw)   # along, lateral (left +), yaw
 
     def step(obs, t, dt):
+        _start_from_applied(S, obs)
         along, lateral, yaw_err = errors(obs)
         if S["stage"] == "CHECK":
             if abs(along) > max_pos or abs(yaw_err) > max_yaw or abs(lateral) > real_pos_tol:
@@ -227,7 +236,7 @@ def make_staging_source(model, data, task_cfg=TASK_CFG, cfg=STAGING_CFG, points_
              "planned_final_turn_deg": math.degrees(wrap(gyaw - planned_heading)), "first_turn_deg": None, "reapproaches": 0,
              "framing_report": None, "corrections": []}
     P = {"entered": False, "still_since": None, "neck_sent": False, "u": 0.0, "last_arm": None, "path": None, "neck_targets": None,
-         "corr": None}
+         "corr": None, "lim_grip": False}
     pos_tol, yaw_tol = cfg["drive_pos_tol"], cfg["drive_yaw_tol"]
     frac = cfg["correction_aim_frac"]
     drive_ctl = _pose_controller(cfg, goal, cfg["drive_max_lin_vel"], cfg["drive_max_ang_vel"], pos_tol, yaw_tol, pos_tol, yaw_tol,
@@ -379,7 +388,12 @@ def make_staging_source(model, data, task_cfg=TASK_CFG, cfg=STAGING_CFG, points_
         # reach and is returned exactly as before; after the operator has moved the arm (the policy was paused) the arm glides back to the path.
         q = rate_limit(applied, q, cfg["arm_max_speed"], dt)
         P["last_arm"] = q
-        return [{"mode": "arms", "arm_targets": {arm: [float(v) for v in q]}, "gripper": {arm: float(cfg["finger_open"] * s)}}]
+        g = float(cfg["finger_open"] * s)
+        if P["lim_grip"]:                  # after a hand-back: from the applied gripper target, at most gripper_max_speed, until it is back on the path
+            g_lim = float(rate_limit([obs["applied"]["gripper"][arm]], [g], cfg["gripper_max_speed"], dt)[0])
+            P["lim_grip"] = g_lim != g
+            g = g_lim
+        return [{"mode": "arms", "arm_targets": {arm: [float(v) for v in q]}, "gripper": {arm: g}}]
 
     # ------------------------------------------------------------------ NECK
     def neck_phase(obs, t, dt):
@@ -463,4 +477,10 @@ def make_staging_source(model, data, task_cfg=TASK_CFG, cfg=STAGING_CFG, points_
             "min_base_to_bench_clearance_during_drive_mm": None if M["min_clearance"] is None else 1000 * M["min_clearance"],
             "neck_framing_report": state["framing_report"]}
 
-    return {"name": "staging", "step": step, "state": state, "observe": observe, "report": report}
+    def resume():
+        """The controller hands control back after an operator had it. Every subsystem restarts from where the operator left it: the base (the
+        controllers slew from the applied Twist, always), the arm (always rate-limited from the applied targets), the pedestal (its phase ramps
+        from the applied height) and the neck (the loop slews it) need nothing here; the gripper is rate-limited from the applied target until it is back on the path."""
+        P["lim_grip"] = True
+
+    return {"name": "staging", "step": step, "state": state, "observe": observe, "report": report, "resume": resume}

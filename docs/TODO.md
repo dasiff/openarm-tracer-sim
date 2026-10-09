@@ -37,9 +37,11 @@ logger, chemistry lab scene, cameras and webcam teleop all exist now (see `git l
   renders policy cameras (shadows on, 30 Hz round robin) on a fixed schedule when `cfg["cameras"]` is on; at ~200 ms per render on this
   VM that is most of the wall-clock time. A policy source should ask for frames when its inference step needs them (the loop's
   `render` hook already renders on demand); demo collection renders them offline from a recorded run instead (src/replay.py).
-- [ ] **Snap-back after an operator hand-back.** The staging ARMS stage glides back to its path at `arm_max_speed` (1.0 rad/s) in a straight line in joint
-  space, which is not checked against the bench (the operator may have left the arm anywhere), and the gripper target is not rate-limited. A later
-  stage should plan the way back, or ask the operator to return the arm to a safe pose first.
+- [ ] **After an operator hand-back the staging stage glides back but does not restore what it only commanded once.** (1) The arm and gripper glide back to
+  their path in a straight line in joint space / finger travel, not checked against the bench. (2) The pedestal is commanded only in PEDESTAL and the neck only at
+  the start of DRIVE and in NECK: if the operator changes them and hands back in a later phase, staging does not move them back (a neck moved by the operator
+  during NECK stalls the phase until its 15 s timeout, which ends the episode as STAGING_FAILED). A later stage should plan the way back or restore the
+  per-phase targets on resume.
 - [ ] **Replay video codec.** The OpenCV build here has no H.264 (no libx264): videos are MPEG-4 part 2 (`mp4v`; `--quality` is ignored by it).
   VP9 (`--codec VP90`, .webm) is ~15% smaller. For smaller / better video add an ffmpeg dependency (imageio-ffmpeg) and write H.264.
   The videos are lossy: do not train from them without deciding that; the dataset format openpi trains from is still open.

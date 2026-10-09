@@ -19,6 +19,11 @@ E1  a request nobody answers (request_operator stage, operator_timeout 5 s, no k
 E2  the same, but a key is pressed (SPACE) at handoff + 50: TIMEOUT of kind operator (the operator did act).
 S   snap-back: F9 during ARMS, the operator jogs the arm ~0.6 rad away, Enter: the arm targets glide back (never faster than arm_max_speed per
     tick); with the limiter disabled the same run jumps.
+G   snap-back of the gripper: F9 during ARMS, the operator opens the gripper, Enter: the gripper target moves at most gripper_max_speed * dt per
+    tick (control run: limit disabled, it jumps).
+B2  snap-back of the base: F9 while the base drives at cruise speed, Enter 78 ticks later: the applied Twist rises from rest at the controller's
+    acceleration (control run: the controller's stale memory of its speed is used, as before, and the Twist steps to the old speed).
+P   the pedestal: F9 during PEDESTAL, the operator moves it, Enter: no step (the phase already ramps from the applied height; no control run).
 C1  teleop start (no policy), the beaker teleported at ~3 s: time 0 is the handoff, success is checked from the start: SUCCESS, operator_assisted.
 C2  teleop start, nothing happens, operator_timeout = 5 s: TIMEOUT of kind operator after 5.0 s.
 """
@@ -216,8 +221,94 @@ def scenario_S(model, data):
     check("staging still completes and hands off", s["handoff_time"] is not None and not s["staging_error"], f"outcome {s['outcome']}")
 
 
+def _resume_run(model, data, trigger, keys, staging_cfg=STAGING_CFG, record=("twist", "pedestal", "gripper"), end=300):
+    """A staging episode in which the operator takes over and hands back at ticks relative to `trigger` (a function of the probe's record that
+    returns True on the tick to start counting). keys: {glfw key: [(first, last), ...]} in ticks after the trigger. At `end` the operator takes over
+    again and aborts, so the run stops there. Returns (T, per-tick records {name: array}, summary)."""
+    tick = [0]
+    pr = {"T": None, "rec": {k: [] for k in record}, "phase": []}
+
+    def probe_step(obs):
+        ap = obs["applied"]
+        pr["rec"]["twist"].append(np.array(ap["twist"])) if "twist" in pr["rec"] else None
+        pr["rec"]["pedestal"].append(ap["pedestal"]) if "pedestal" in pr["rec"] else None
+        pr["rec"]["gripper"].append(ap["gripper"]["left"]) if "gripper" in pr["rec"] else None
+        pr["phase"].append(obs["policy"]["phase"] if obs.get("policy") else None)
+        if pr["T"] is None and obs.get("policy") and trigger(obs):
+            pr["T"] = obs["tick"]
+        return None
+
+    def held(code):
+        if pr["T"] is None:
+            return False
+        k = tick[0] - pr["T"]
+        if code == glfw.KEY_F9 and end <= k <= end + 1:
+            return True
+        if code == glfw.KEY_DELETE and end + 3 <= k <= end + 4:
+            return True
+        return any(a <= k <= b for a, b in keys.get(code, ()))
+
+    s = run_episode(None, model, data, staging_cfg=staging_cfg, held=held, loop_cfg={"tick_ref": tick},
+                    extra_sources=lambda m, d: {"probe": {"name": "probe", "step": probe_step, "state": {}}})
+    return pr["T"], {k: np.array(v) for k, v in pr["rec"].items()}, s
+
+
+def scenario_G(model, data):
+    print("\nG: snap-back of the gripper. F9 during ARMS, the operator opens the gripper (key 8), Enter")
+    res = {}
+    for label, v in (("with the limiter (gripper_max_speed 0.05 m/s)", STAGING_CFG["gripper_max_speed"]), ("limiter disabled (control run)", 1e9)):
+        T, rec, s = _resume_run(model, data, lambda o: o["policy"]["phase"] == "ARMS", {glfw.KEY_F9: [(150, 151)], glfw.KEY_8: [(160, 169)], glfw.KEY_ENTER: [(200, 201)]},
+                                {**STAGING_CFG, "gripper_max_speed": v})
+        g = rec["gripper"]
+        moved = abs(g[T + 175] - g[T + 155])
+        after = np.abs(np.diff(g[T + 199:T + 199 + 100])).max()
+        res[label] = (moved, after)
+        print(f"  {label}: the operator moved the gripper target {1000 * moved:.1f} mm; after the hand-back the largest per-tick change is {1000 * after:.3f} mm "
+              f"({after / 0.016:.3f} m/s); outcome {s['outcome']}")
+    check("the operator moved the gripper well away from the path", res["with the limiter (gripper_max_speed 0.05 m/s)"][0] > 0.02, f"{1000 * res['with the limiter (gripper_max_speed 0.05 m/s)'][0]:.1f} mm")
+    check("after the hand-back the gripper target moves at most gripper_max_speed * dt = 0.8 mm per tick", res["with the limiter (gripper_max_speed 0.05 m/s)"][1] <= 0.05 * 0.016 + 1e-9,
+          f"{1000 * res['with the limiter (gripper_max_speed 0.05 m/s)'][1]:.3f} mm")
+    check("without the limiter the same run jumps", res["limiter disabled (control run)"][1] > 0.01, f"{1000 * res['limiter disabled (control run)'][1]:.1f} mm in one tick")
+
+
+def scenario_B2(model, data):
+    print("\nB2: snap-back of the base. F9 while the base drives at cruise speed, Enter 78 ticks later")
+    import src.staging_source as ss
+    res = {}
+    real = ss._start_from_applied
+    for label, fn in (("with the controllers starting from the applied Twist", real), ("control run: the controllers' own memory of the Twist (the old behaviour)", lambda S, obs: None)):
+        ss._start_from_applied = fn
+        try:
+            T, rec, s = _resume_run(model, data, lambda o: o["policy"]["phase"] == "DRIVE" and o["applied"]["twist"][0] >= 0.25, {glfw.KEY_F9: [(2, 3)], glfw.KEY_ENTER: [(80, 81)]},
+                                    end=140)
+        finally:
+            ss._start_from_applied = real
+        tw = rec["twist"]
+        speed_before = tw[T + 1][0]
+        rest = abs(tw[T + 79][0])
+        d = np.abs(np.diff(tw[T + 80:T + 80 + 50], axis=0))
+        res[label] = (rest, d[:, 0].max(), d[:, 1].max(), speed_before)
+        print(f"  {label}: speed when the operator took over {speed_before:.3f} m/s, at rest before the hand-back ({rest:.4f} m/s); after it the largest per-tick change of "
+              f"the Twist is {d[:, 0].max():.4f} m/s and {d[:, 1].max():.4f} rad/s")
+    k1, k2 = list(res)
+    check("the base was at rest when control came back", res[k1][0] < 1e-9, f"{res[k1][0]:.4f} m/s")
+    check("with the fix the Twist changes at most accel * dt per tick (0.0016 m/s, 0.0032 rad/s)", res[k1][1] <= 0.1 * 0.016 + 1e-9 and res[k1][2] <= 0.2 * 0.016 + 1e-9,
+          f"{res[k1][1]:.4f} m/s, {res[k1][2]:.4f} rad/s")
+    check("the control run steps the Twist to the old speed", res[k2][1] > 0.1, f"{res[k2][1]:.3f} m/s in one tick")
+
+
+def scenario_P(model, data):
+    print("\nP: the pedestal. F9 during PEDESTAL, the operator moves it (Page Up), Enter")
+    T, rec, s = _resume_run(model, data, lambda o: o["policy"]["phase"] == "PEDESTAL", {glfw.KEY_F9: [(50, 51)], glfw.KEY_PAGE_UP: [(60, 69)], glfw.KEY_ENTER: [(100, 101)]}, end=200)
+    p = rec["pedestal"]
+    after = np.abs(np.diff(p[T + 99:T + 99 + 60])).max()
+    moved = abs(p[T + 99] - p[T + 55])
+    check("the operator moved the pedestal", moved > 0.005, f"{1000 * moved:.1f} mm")
+    check("after the hand-back the pedestal target moves at most pedestal_speed * dt = 0.8 mm per tick", after <= 0.05 * 0.016 + 1e-9, f"{1000 * after:.3f} mm")
+
+
 def main():
-    which = sys.argv[1:] or ["K", "A", "B", "C1", "C2", "D", "E", "S"]
+    which = sys.argv[1:] or ["K", "A", "B", "C1", "C2", "D", "E", "S", "G", "B2", "P"]
     if "K" in which:
         scenario_K()
     sim = load_task(cameras=True)
@@ -234,6 +325,12 @@ def main():
         scenario_E(model, data)
     if "S" in which:
         scenario_S(model, data)
+    if "G" in which:
+        scenario_G(model, data)
+    if "B2" in which:
+        scenario_B2(model, data)
+    if "P" in which:
+        scenario_P(model, data)
     print(f"\n{sum(results)}/{len(results)} checks passed")
     sys.exit(0 if all(results) else 1)
 

@@ -7,6 +7,11 @@ TEST-ONLY helpers for exercising src/episode_runner.py. They are not task polici
                                                 teleports the beaker, upright, onto the hotplate through its freejoint. Only tests the
                                                 runner's success path. Expected episode outcome: SUCCESS. (The hold stage that replaced the old
                                                 idle source lives in src/task_policy.py.)
+    make_grasp_force_stage(model, data, forces=(1.0, 2.0, None))
+                                                An ARM STAGE (test only) for experiments/gripper_force_test.py: from the ready pose it moves the arm to the grasp pose
+                                                (the open fingers straddle the beaker), then closes the gripper on the beaker once per entry of `forces` with
+                                                {"position": 0, "max_force": F} (None = a plain 0: the ceiling), measuring the finger-on-beaker normal force, and opens
+                                                again between the closings. state["results"] has the settled numbers per closing.
     make_kick_source(model, data, phase, delay_s, along_mm, lateral_mm, yaw_deg)
                                                 A SOURCE (no routes, commands nothing) that displaces the base once (teleports it by along_mm
                                                 along the staging heading, lateral_mm to the left, yaw_deg) delay_s into a staging phase. It was
@@ -40,6 +45,84 @@ def make_cheat_arm_stage(model, data, delay_s=2.0, task_cfg=TASK_CFG):
         return None
 
     return {"name": "cheat", "step": step, "state": state}
+
+
+def make_grasp_force_stage(model, data, forces=(1.0, 2.0, None), task_cfg=TASK_CFG, move_s=4.0, settle_s=1.0, close_s=3.0, open_s=2.0, measure_s=1.0):
+    arm = task_cfg["arm"]
+    ready, grasp = np.array(task_cfg["ready_q"], float), np.array(task_cfg["grasp_q"], float)
+    open_g = task_cfg["finger_open"] if "finger_open" in task_cfg else 0.044
+    fingers = {b for b in range(model.nbody) if model.body(b).name.startswith(f"openarm_{arm}_") and model.body(b).name.endswith("finger")}
+    beaker = model.body("task_beaker").id
+    f_act = [model.actuator(f"{arm}_finger{k}_ctrl").id for k in (1, 2)]
+    f_q = [int(model.jnt_qposadr[model.actuator_trnid[a, 0]]) for a in f_act]
+    f6 = np.zeros(6)
+    # timeline
+    segs, t = [("move", move_s, None), ("settle", settle_s, None)], 0.0
+    for F in forces:
+        segs += [("close", close_s, F), ("open", open_s, None)]
+    state = {"t0": None, "results": [], "samples": [], "segments": segs, "total_s": sum(d for _, d, _ in segs)}
+
+    hand = model.body(f"openarm_{arm}_hand").id
+
+    def contact_forces():
+        """What each finger presses on the beaker with (N): the contact forces between the finger body and the beaker, summed as vectors in the world frame
+        and projected on the closing axis (the hand's y axis). (The sum of the contacts' normal magnitudes, which counts tilted contact points and
+        edge contacts more than once, is kept in "normal_sum" for comparison.)"""
+        axis = data.xmat[hand].reshape(3, 3)[:, 1]
+        out, normal_sum = {}, {}
+        for i in range(data.ncon):
+            c = data.contact[i]
+            b1, b2 = int(model.geom_bodyid[c.geom1]), int(model.geom_bodyid[c.geom2])
+            if (b1 in fingers and b2 == beaker) or (b2 in fingers and b1 == beaker):
+                mujoco.mj_contactForce(model, data, i, f6)
+                fb = b1 if b1 in fingers else b2
+                world = c.frame.reshape(3, 3).T @ f6[:3]               # contact frame (normal, tangents) -> world
+                out[fb] = out.get(fb, 0.0) + float(world @ axis)
+                normal_sum[fb] = normal_sum.get(fb, 0.0) + abs(float(f6[0]))
+        state["normal_sum"] = normal_sum
+        state["axis_z"] = float(axis[2])
+        return {k: abs(v) for k, v in out.items()}
+
+    def step(obs):
+        if state["t0"] is None:
+            state["t0"] = obs["time"]
+        el = obs["time"] - state["t0"]
+        start = 0.0
+        for kind, dur, F in segs:
+            if el < start + dur:
+                break
+            start += dur
+        else:
+            return None
+        local = el - start
+        if kind == "move":
+            u = min(local / move_s, 1.0)
+            q = ready + (grasp - ready) * (10 * u ** 3 - 15 * u ** 4 + 6 * u ** 5)
+            return {"mode": "arms", "arm_targets": {arm: [float(v) for v in q]}, "gripper": {arm: open_g}}
+        if kind in ("settle", "open"):
+            if kind == "open" and state["samples"]:
+                state["results"].append(_summarise(state["samples"], segs, state))
+                state["samples"] = []
+            return {"mode": "arms", "gripper": {arm: open_g}}
+        # close
+        if local >= close_s - measure_s:
+            cf = contact_forces()
+            state["samples"].append({"F": F, "contact": dict(cf), "normal_sum": dict(state.get("normal_sum", {})), "axis_z": state.get("axis_z", 0.0), "actuator": [abs(float(data.actuator_force[a])) for a in f_act], "q": [float(data.qpos[a]) for a in f_q],
+                                     "time": obs["time"], "cap": obs["applied"]["gripper_force"][arm]})
+        return {"mode": "arms", "gripper": {arm: 0.0 if F is None else {"position": 0.0, "max_force": F}}}
+
+    return {"name": "grasp_force_test", "step": step, "state": state}
+
+
+def _summarise(samples, segs, state):
+    nf = max(len(sm["contact"]) for sm in samples)
+    per_finger = [np.mean([sorted(sm["contact"].values())[i] if len(sm["contact"]) > i else 0.0 for sm in samples]) for i in range(max(nf, 1))]
+    ns = [np.mean([sorted(sm["normal_sum"].values())[i] if len(sm["normal_sum"]) > i else 0.0 for sm in samples]) for i in range(max(nf, 1))]
+    return {"max_force_command": samples[0]["F"], "applied_cap": samples[-1]["cap"], "contact_normal_N_per_finger_mean": [float(v) for v in per_finger],
+            "closing_axis_z": float(np.mean([sm["axis_z"] for sm in samples])), "contact_normal_sum_N_per_finger_mean": [float(v) for v in ns],
+            "contact_normal_N_peak": float(max((max(sm["contact"].values()) if sm["contact"] else 0.0) for sm in samples)),
+            "actuator_force_N_mean": [float(np.mean([sm["actuator"][i] for sm in samples])) for i in range(2)],
+            "finger_q_mm": [1000 * float(np.mean([sm["q"][i] for sm in samples])) for i in range(2)], "n_fingers_in_contact": nf}
 
 
 def make_kick_source(model, data, phase, delay_s, along_mm, lateral_mm, yaw_deg, task_cfg=TASK_CFG):

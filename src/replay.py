@@ -194,7 +194,7 @@ def replay_run(run_dir, out_dir=None, cameras=None, video="preview", hz=30.0, si
 
     cfg = {**meta["loop_cfg"], "cameras": False, "inset_cameras": False, "record_run": None, "mode": "teleop", "auto_source": None, "on_tick": None, "held": None, "tick_ref": None,
            "bench_frames": 0, "bench_log": None, "hotkeys": {}, "routes": {},
-           "replay": {"ctrl": rec["ctrl"], "basevel": rec["basevel"], "n_ticks": n_ticks, "on_start": on_start, "on_step": on_step,
+           "replay": {"ctrl": rec["ctrl"], "basevel": rec["basevel"], "gripforce": rec["gripforce"], "n_ticks": n_ticks, "on_start": on_start, "on_step": on_step,
                       "on_tick_end": on_tick_end, "stop": lambda: st["stop"]}}
     cfg["claimed_ids"] = list(cfg.get("claimed_ids") or ())
     try:

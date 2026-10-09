@@ -16,6 +16,12 @@ or None / [] for "nothing new". Commands are plain dicts tagged with a mode:
                                                   only from its auto source while the controller is in "auto" mode: it switches to "teleop"
                                                   at once (the rest of that tick's commands are dropped).
 
+A gripper entry is a finger travel, or {"position": travel, "max_force": N}: the fingers move toward the position (the servo's own gain) but the force
+each finger can apply is capped at max_force, so closing on an object stops at the object and presses with at most that force. max_force must be
+> 0; above the hardware ceiling (limits["gripper_force_ceiling"], robot_specs) it is clipped; omitted it is the ceiling, which is what the grippers
+always had. The limit belongs to the gripper entry: it changes only when an entry is present (a plain travel resets it to the ceiling). The clean
+command carries it as "gripper_force": {side: N or None (= the ceiling)}.
+
 "arm_targets" and "gripper" are both optional in an arms command, and either side may be left out: only what is
 present changes. Targets are absolute, not increments. Subsystems that are not commanded hold their last targets
 (the base holds a zero Twist once it has been stopped).
@@ -117,9 +123,26 @@ def validate_command(cmd, limits=None):
             out["arm_targets"][side] = q
     if gr is not None:
         out["gripper"] = {}
+        out["gripper_force"] = {}
+        ceiling = limits.get("gripper_force_ceiling")
         for side, g in gr.items():
+            fmax = None
+            if isinstance(g, dict):                        # {"position": m, "max_force": N}: the ROS gripper command (position + max effort)
+                if "position" not in g:
+                    return None, [f"gripper[{side!r}] needs a position, got {g!r}"]
+                g, fmax = g["position"], g.get("max_force")
             if side not in SIDES or not _finite(g):
                 return None, [f"gripper[{side!r}] must be a finite finger travel, got {g!r}"]
+            if fmax is not None:
+                if not _finite(fmax) or float(fmax) <= 0.0:
+                    return None, [f"gripper[{side!r}] max_force must be a finite force > 0 (N per finger), got {fmax!r}"]
+                fmax = float(fmax)
+                if ceiling is not None and fmax > ceiling:
+                    msgs.append(f"gripper[{side!r}] max_force {fmax:.2f} N clipped to the hardware ceiling {ceiling:.2f} N")
+                    fmax = ceiling
+            else:
+                fmax = ceiling                             # omitted = the hardware ceiling (None = the loop's)
+            out["gripper_force"][side] = fmax
             g = float(g)
             lo, hi = limits.get("gripper", (-math.inf, math.inf))
             if not lo <= g <= hi:

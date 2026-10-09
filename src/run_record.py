@@ -4,7 +4,8 @@ Record a live run so it can be replayed exactly (src/replay.py renders its camer
 
 What is recorded is what the physics received, not what the sources decided, so a keyboard, teleop, policy or scripted run all
 replay the same way. Per control tick (62.5 Hz): the full ctrl vector written for the tick and the world-frame base velocity
-(vx, vy, wz) written before each of the tick's physics steps, both as exact float64. Verification data: the integration state
+(vx, vy, wz) written before each of the tick's physics steps, and the force limit of each gripper (N per finger, written into the finger actuators'
+force range before the tick's steps), all as exact float64. Verification data: the integration state
 right after the settle, a hash of the state after every tick, and a full state checkpoint every `checkpoint_every` ticks (to say
 what differs when a hash does not match).
 
@@ -127,7 +128,7 @@ class RunRecorder:
         self.model, self.data = model, data
         self.chunk_ticks, self.checkpoint_every = chunk_ticks, checkpoint_every
         self.buf = new_state_buffer(model)
-        self.ctrl, self.basevel, self.hashes = [], [], []
+        self.ctrl, self.basevel, self.hashes, self.gripforce = [], [], [], []
         self.ck_ticks, self.ck_states = [], []
         self.start_tick, self.n_chunks, self.n_ticks = 0, 0, 0
         self.labels = []
@@ -145,8 +146,9 @@ class RunRecorder:
     def _write_meta(self):
         (self.dir / "meta.json").write_text(json.dumps({**self.meta, "labels": self.labels, "n_ticks": self.n_ticks}, indent=1))
 
-    def tick(self, frame, ctrl, basevel):
-        """Inputs of tick `frame`, called after ctrl is written and before the physics steps."""
+    def tick(self, frame, ctrl, basevel, gripforce=None):
+        """Inputs of tick `frame`, called after ctrl is written and before the physics steps. gripforce: the force limit of the (left, right) gripper, N per finger."""
+        self.gripforce.append(np.array(gripforce if gripforce is not None else [np.nan, np.nan], dtype=np.float64))
         self.ctrl.append(np.array(ctrl, dtype=np.float64))
         self.basevel.append(np.array(basevel, dtype=np.float64))
 
@@ -170,11 +172,11 @@ class RunRecorder:
             return
         n = len(self.hashes)                        # a tick whose physics did not finish has inputs but no hash: dropped
         np.savez(self.dir / "chunks" / f"chunk_{self.n_chunks:05d}.npz", start=self.start_tick, ctrl=np.array(self.ctrl[:n]),
-                 basevel=np.array(self.basevel[:n]), hashes=np.array(self.hashes, dtype=np.uint64), ck_ticks=np.array(self.ck_ticks, dtype=np.int64),
+                 basevel=np.array(self.basevel[:n]), gripforce=np.array(self.gripforce[:n]), hashes=np.array(self.hashes, dtype=np.uint64), ck_ticks=np.array(self.ck_ticks, dtype=np.int64),
                  ck_states=np.array(self.ck_states).reshape(len(self.ck_states), -1))
         self.start_tick += n
         self.n_chunks += 1
-        self.ctrl, self.basevel, self.hashes, self.ck_ticks, self.ck_states = [], [], [], [], []
+        self.ctrl, self.basevel, self.hashes, self.gripforce, self.ck_ticks, self.ck_states = [], [], [], [], [], []
         self._write_meta()
 
     def close(self, extra=None):
@@ -194,11 +196,12 @@ def load_recording(run_dir):
     parts = [np.load(f) for f in files]
     ctrl = np.concatenate([p["ctrl"] for p in parts])
     basevel = np.concatenate([p["basevel"] for p in parts])
+    gripforce = np.concatenate([p["gripforce"] for p in parts]) if all("gripforce" in p.files for p in parts) else None    # older recordings: the ceiling throughout
     hashes = np.concatenate([p["hashes"] for p in parts])
     ck = {int(t): s for p in parts for t, s in zip(p["ck_ticks"], p["ck_states"])}
     if int(parts[0]["start"]) != 0:
         raise ValueError(f"{run_dir}: the first chunk does not start at tick 0")
     if not meta.get("complete"):
         print(f"WARNING: {run_dir} was not closed cleanly (crash?); using the {len(ctrl)} ticks that were written")
-    return {"meta": meta, "initial_state": np.load(run_dir / "initial_state.npy"), "ctrl": ctrl, "basevel": basevel,
+    return {"meta": meta, "initial_state": np.load(run_dir / "initial_state.npy"), "ctrl": ctrl, "basevel": basevel, "gripforce": gripforce,
             "hashes": hashes, "checkpoints": ck}

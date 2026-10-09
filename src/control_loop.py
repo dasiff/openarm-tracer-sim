@@ -239,7 +239,7 @@ def run_loop(model, data, sources, cfg, viewer=None, logger=None):
     ped_lo, ped_hi = model.actuator_ctrlrange[ped_aid]
     ped_vadr = vadr(ped_aid)
     ped_qadr = int(model.jnt_qposadr[model.actuator_trnid[ped_aid, 0]])
-    limits = {"arm": {s: (np.array([jr(a)[0] for a in arm_act[s]]), np.array([jr(a)[1] for a in arm_act[s]])) for s in sides},
+    limits = {"gripper_force_ceiling": float(robot_specs.ARM_ACTUATOR_SPECS["fingers"]["force_limit"]), "arm": {s: (np.array([jr(a)[0] for a in arm_act[s]]), np.array([jr(a)[1] for a in arm_act[s]])) for s in sides},
               "gripper": tuple(jr(fing_act["left"][0])), "pedestal": (float(ped_lo), float(ped_hi))}
 
     neck_specs = cfg["neck_specs"] or robot_specs.NECK_SPECS
@@ -355,8 +355,23 @@ def run_loop(model, data, sources, cfg, viewer=None, logger=None):
           "still": {"base": 0.0, "pedestal": 0.0, "arms": 0.0}}
     msgs_seen = set()
 
+    # Gripper force limits: the force each finger of a gripper may apply (N). Set by a gripper command's max_force (default: the hardware ceiling) and
+    # written into the finger actuators' force range, once per tick, here and only here (policies never touch the model). The model is shared by
+    # episodes, so every run starts by putting the ceiling back.
+    ceiling = limits["gripper_force_ceiling"]
+    grip_force = {s: ceiling for s in sides}
+    grip_set = {s: None for s in sides}
+
+    def set_grip_force(forces):
+        for s, F in zip(sides, forces):
+            if grip_set[s] != F:
+                model.actuator_forcerange[fing_act[s]] = [-F, F]
+                grip_set[s] = F
+
+    set_grip_force([ceiling, ceiling])
+
     def applied():
-        return {"twist": st["twist"], "pedestal": float(hold_qpos_targets[ped_aid]),
+        return {"twist": st["twist"], "gripper_force": dict(grip_force), "pedestal": float(hold_qpos_targets[ped_aid]),
                 "arm_targets": {s: [float(hold_qpos_targets[a]) for a in arm_act[s]] for s in sides},
                 "gripper": {s: float(hold_qpos_targets[fing_act[s][0]]) for s in sides}, "mode": ex["active"],
                 "neck_targets": {n: float(hold_qpos_targets[a]) for n, a in zip(neck["names"], neck["act"])} if neck is not None else {},
@@ -377,6 +392,8 @@ def run_loop(model, data, sources, cfg, viewer=None, logger=None):
                 hold_qpos_targets[arm_act[s]] = q
             for s, g in cmd.get("gripper", {}).items():
                 hold_qpos_targets[fing_act[s]] = g
+            for s, F in cmd.get("gripper_force", {}).items():
+                grip_force[s] = ceiling if F is None else F
 
     # --- Exclusivity and the hold rule ---
     def measure_still():
@@ -585,6 +602,8 @@ def run_loop(model, data, sources, cfg, viewer=None, logger=None):
             if frame >= replay["n_ticks"] or replay["stop"]():
                 break
             data.ctrl[:] = replay["ctrl"][frame]
+            if replay.get("gripforce") is not None:
+                set_grip_force(replay["gripforce"][frame])
             advance(*replay["basevel"][frame])
             replay["on_tick_end"](frame, data)
             frame += 1
@@ -697,8 +716,9 @@ def run_loop(model, data, sources, cfg, viewer=None, logger=None):
         # Targets are held for the whole frame: write them once as position commands; the MuJoCo
         # servos track them from the live state on every physics step.
         data.ctrl[:] = np.where(is_pos, hold_qpos_targets, 0.0)
+        set_grip_force([grip_force[s] for s in sides])
         if recorder is not None:
-            recorder.tick(frame, data.ctrl, (base_vx, base_vy, base_wz))
+            recorder.tick(frame, data.ctrl, (base_vx, base_vy, base_wz), [grip_force[s] for s in sides])
             recorder.label(frame, status.split("  (")[0] if isinstance(status, str) else status)
         advance(base_vx, base_vy, base_wz)
         if recorder is not None:

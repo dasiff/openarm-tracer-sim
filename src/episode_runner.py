@@ -112,7 +112,8 @@ def run_episode(make_arm_stage, model, data, task_cfg=TASK_CFG, staging_cfg=STAG
                          + [f"{s}_joint{i}" for s in sides for i in range(1, 8)] + [f"{s}_finger{k}" for s in sides for k in (1, 2)]
                          + [f"neck_{n}" for n in (neck["names"] if neck else [])] + ["beaker_x", "beaker_y", "beaker_z"]
                          + ["cmd_twist_lin", "cmd_twist_ang", "cmd_pedestal"] + [f"cmd_{task_cfg['arm']}_joint{i}" for i in range(1, 8)]
-                         + [f"cmd_{task_cfg['arm']}_gripper"] + [f"cmd_neck_{n}" for n in (neck["names"] if neck else [])])
+                         + [f"cmd_{task_cfg['arm']}_gripper"] + [f"cmd_neck_{n}" for n in (neck["names"] if neck else [])]
+                         + [f"cmd_{task_cfg['arm']}_grip_max_force_N", f"{task_cfg['arm']}_finger_force_N"])
 
     def contacts_now():
         n = data.ncon
@@ -150,7 +151,8 @@ def run_episode(make_arm_stage, model, data, task_cfg=TASK_CFG, staging_cfg=STAG
                              + ([f"{q[a]:.9f}" for a in neck["qadr"]] if neck else []) + [f"{q[beaker_adr + k]:.9f}" for k in range(3)]
                              + [f"{ap['twist'][0]:.9f}", f"{ap['twist'][1]:.9f}", f"{ap['pedestal']:.9f}"]
                              + [f"{v:.9f}" for v in ap["arm_targets"][task_cfg["arm"]]] + [f"{ap['gripper'][task_cfg['arm']]:.9f}"]
-                             + ([f"{ap['neck_goal'][n]:.9f}" for n in neck["names"]] if neck else []))
+                             + ([f"{ap['neck_goal'][n]:.9f}" for n in neck["names"]] if neck else [])
+                             + [f"{ap['gripper_force'][task_cfg['arm']]:.9f}", f"{float(np.mean(np.abs(data.actuator_force[arm_act[task_cfg['arm']]['fingers']]))):.9f}"])
         # end conditions
         auto_t, op_t = R["auto_ticks"] * tick_dt, R["operator_ticks"] * tick_dt
         if ps is not None and ps["error"]:

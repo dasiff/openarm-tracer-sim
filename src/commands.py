@@ -12,6 +12,9 @@ or None / [] for "nothing new". Commands are plain dicts tagged with a mode:
     {"mode": "neck",     "neck_targets": {"shoulder_pan": rad, ...}}      camera neck joint targets (joint names of
                                                                           NECK_SPECS["active_joints"]); partial dicts are fine
     {"mode": "idle"}                              nothing is commanded; the base is brought to a stop
+    {"mode": "request_teleop", "reason": str}     not a subsystem command: the task policy asks for operator control. The loop honours it
+                                                  only from its auto source while the controller is in "auto" mode: it switches to "teleop"
+                                                  at once (the rest of that tick's commands are dropped).
 
 "arm_targets" and "gripper" are both optional in an arms command, and either side may be left out: only what is
 present changes. Targets are absolute, not increments. Subsystems that are not commanded hold their last targets
@@ -33,7 +36,7 @@ import math
 
 SUBSYSTEMS = ("base", "pedestal", "arms", "neck")
 EXEMPT_SUBSYSTEMS = ("neck",)                  # not subject to exclusivity / the hold rule
-MODES = SUBSYSTEMS + ("idle",)
+MODES = SUBSYSTEMS + ("idle", "request_teleop")
 SIDES = ("left", "right")
 
 
@@ -58,6 +61,8 @@ def validate_command(cmd, limits=None):
     mode = cmd["mode"]
     if mode == "idle":
         return {"mode": "idle"}, msgs
+    if mode == "request_teleop":
+        return {"mode": "request_teleop", "reason": str(cmd.get("reason", ""))}, msgs
     if mode == "base":
         tw = cmd.get("twist")
         if tw is None or len(tw) != 2 or not all(_finite(v) for v in tw):

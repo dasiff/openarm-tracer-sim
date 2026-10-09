@@ -14,7 +14,7 @@ new. The viewer is a plain dict of callables, created by the launcher and passed
     viewer["timers"]             render / hud_insets / swap_poll seconds, for the CC_BENCH_FRAMES report
 
 vcfg (all from the launcher): win, vsync, view_shadows, shadowsize, hud, insets, record, snapshot_every, snapshot_dir,
-bench_snap_dir, bench_snap_frame, finish, roundrobin, record_fps (video frames per second of SIM time; the loop's tick rate, divided
+bench_snap_dir, bench_snap_frame, finish, roundrobin, has_auto (the loop has an auto mode: F9 in the legend), record_fps (video frames per second of SIM time; the loop's tick rate, divided
 by the redraw interval when the recording starts), has_teleop. Pacing (vsync off) holds each tick to the loop's tick period, so sim
 time equals wall time when the machine keeps up.
 """
@@ -184,6 +184,7 @@ def make_glfw_viewer(model, data, vcfg):
                 ("A-K", "R arm +"), ("Z-,", "R arm -"),
                 ("PgUp/Dn", "pedestal"), ("9 0 - =", "neck +"), ("O P [ ]", "neck -"), ("F7", "frame"), ("F8", "neck home")] + \
         ([("F2", "man/tele")] if vcfg.get("has_teleop") else []) + \
+        ([("F9", "auto/teleop")] if vcfg.get("has_auto") else []) + \
         [("F3", "cam imgs"), ("F4", "snap"), ("F5", "log"),
          ("F6", "rec video"), ("Esc", "quit")]
 
@@ -343,7 +344,8 @@ def make_glfw_viewer(model, data, vcfg):
                  f"{ds.get('angular', 0):+.2f}"),
                 ("recording (F6)", "off" if not recorder.active else
                  f"REC {recorder.frames} frames, {recorder.frames / recorder.fps:.1f} s"),
-            ] + ([("episode", info["status"])] if info.get("status") else []) + ([("neck pan,lift,elb,wrist", ", ".join(f"{v:+.0f}" for v in info["neck_deg"]))] if info.get("neck_deg") else [])
+            ] + ([("episode", info["status"])] if info.get("status") else [])
+              + ([("controller", info["mode"].upper() + (f" - operator requested: {info['mode_note']}" if info.get("mode_note") else ""))] if info.get("mode") else []) + ([("neck pan,lift,elb,wrist", ", ".join(f"{v:+.0f}" for v in info["neck_deg"]))] if info.get("neck_deg") else [])
               + ([("arms (F2 toggles)", teleop_status)] if teleop_status is not None else []),
                 400, 180, hud_keys)
             blit(hud, 8, height - hud.shape[0] - 8)

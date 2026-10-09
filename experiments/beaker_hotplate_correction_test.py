@@ -7,11 +7,12 @@ Force the base pose corrections of the staging source (src/staging_source.py) an
 Each case runs a headless episode with the test-only kick source (src/episode_test_sources.make_kick_source), which displaces the base
 at a chosen moment, and with a copy of the config where needed. Episodes are short after HANDOFF (3 s).
   1. kick during PEDESTAL (25 mm sideways, 5 deg): the full DRIVE controller must bring it back (arms tucked)      -> corrected
-  2. kick late in ARMS, 12 mm toward the bench + 2 deg: creep correction with the arm out, reversing                -> corrected
-  3. kick late in ARMS, 10 mm away from the bench - 2 deg: creep correction, forward                                -> corrected
+  2. kick late in ARMS, 12 mm toward the bench + 1.5 deg: creep correction with the arm out, reversing             -> corrected
+  3. kick late in ARMS, 10 mm away from the bench - 1.5 deg: creep correction, forward                              -> corrected
   4. kick late in ARMS, 30 mm along: larger than correction_arms_max_pos                                           -> STAGING_FAILED, no move
   5. kick late in ARMS, 15 mm sideways: cannot be corrected without a large turn                                    -> STAGING_FAILED, no move
   6. as 2 with correction_arms_min_arm_clearance = 0.5 m: the clearance guard trips                               -> STAGING_FAILED
+  7. kick late in ARMS, 2.5 deg of yaw: larger than correction_arms_max_yaw (2 deg)                               -> STAGING_FAILED, no move
 """
 
 import copy
@@ -31,11 +32,12 @@ from src.task_config import EPISODE_CFG, STAGING_CFG  # noqa: E402
 
 CASES = [
     ("1 pedestal kick 25 mm sideways + 5 deg", ("PEDESTAL", 2.0, 0.0, 25.0, 5.0), {}, "corrected"),
-    ("2 arms kick 12 mm toward bench + 2 deg", ("ARMS", 9.0, 12.0, 0.0, 2.0), {}, "corrected"),
-    ("3 arms kick 10 mm away from bench - 2 deg", ("ARMS", 9.0, -10.0, 0.0, -2.0), {}, "corrected"),
+    ("2 arms kick 12 mm toward bench + 1.5 deg", ("ARMS", 9.0, 12.0, 0.0, 1.5), {}, "corrected"),
+    ("3 arms kick 10 mm away from bench - 1.5 deg", ("ARMS", 9.0, -10.0, 0.0, -1.5), {}, "corrected"),
     ("4 arms kick 30 mm along (> max)", ("ARMS", 9.0, 30.0, 0.0, 0.0), {}, "failed"),
     ("5 arms kick 15 mm sideways", ("ARMS", 9.0, 0.0, 15.0, 0.0), {}, "failed"),
-    ("6 as 2, arm clearance minimum 0.5 m", ("ARMS", 9.0, 12.0, 0.0, 2.0), {"correction_arms_min_arm_clearance": 0.5}, "failed"),
+    ("6 as 2, arm clearance minimum 0.5 m", ("ARMS", 9.0, 12.0, 0.0, 1.5), {"correction_arms_min_arm_clearance": 0.5}, "failed"),
+    ("7 arms kick 2.5 deg of yaw (> correction_arms_max_yaw = 2 deg)", ("ARMS", 9.0, 0.0, 0.0, 2.5), {}, "failed"),
 ]
 
 
@@ -46,7 +48,8 @@ def main():
     n_ok = 0
     for name, (phase, delay, along, lateral, yaw), override, expect in CASES:
         cfg = {**copy.deepcopy(STAGING_CFG), **override}
-        s = run_episode(lambda m, d: make_kick_source(m, d, phase, delay, along, lateral, yaw), model, data, staging_cfg=cfg, episode_cfg=ep_cfg)
+        s = run_episode(None, model, data, staging_cfg=cfg, episode_cfg=ep_cfg,
+                        extra_sources=lambda m, d: {"kick": make_kick_source(m, d, phase, delay, along, lateral, yaw)})
         recs = [c for c in s["pose_corrections"] if c["needed"]]
         got = "failed" if s["outcome"] == "STAGING_FAILED" else ("corrected" if recs and all(c["status"].startswith("done") for c in recs) else "no correction")
         n_ok += got == expect

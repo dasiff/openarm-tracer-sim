@@ -83,7 +83,8 @@ openarm-tracer-sim/
 │   ├── glfw_viewer.py       # Window, HUD, camera insets, recorder, snapshots
 │   ├── neck.py, neck_framing.py, neck_source.py   # camera neck: attach the SO-101 at load, frame points, auto follow / look-ahead
 │   ├── staging_source.py    # Scripted staging: DRIVE -> PEDESTAL -> ARMS -> NECK -> DONE (HANDOFF), beaker-on-hotplate task
-│   ├── episode_runner.py, episode_test_sources.py   # reset, stage, hand off to a source under test, judge, log; test-only idle / cheat sources
+│   ├── task_policy.py       # The auto-mode task policy: staging stage + arm stage (hold / request operator control)
+│   ├── episode_runner.py, episode_test_sources.py   # reset, success, timeouts, log; test-only cheat arm stage and kick source
 │   ├── run_record.py, replay.py   # record a live run's physics inputs; replay it exactly (state check) and render its cameras to video
 │   ├── robot_specs.py       # Rates, motor gains, camera specs, calibration status
 │   ├── actuator_mapping.py  # Actuator name -> index mapping
@@ -112,14 +113,22 @@ openarm-tracer-sim/
 
 ## Beaker-on-hotplate episodes
 
-`experiments/beaker_hotplate_episode.py --source idle|cheat [--viewer] [--repeat N] [--cross-check]` runs one or more
-episodes (`src/episode_runner.py`): reset to the fixed spawn state, the scripted staging source (`src/staging_source.py`,
-speeds / ramps / tolerances in `STAGING_CFG`, poses in `TASK_CFG`) drives to the staging pose, sets the pedestal, moves the left
-arm through the via waypoint to the ready pose and frames the task with the neck camera, then the arms and grippers go to the source
-under test. Exclusivity is on in episodes. An episode ends at success (`check_success`, checked after HANDOFF only), at a
-60 s timeout after HANDOFF, or at once as `STAGING_FAILED` if the base cannot reach its pose within 1 cm / 1 degree after 3
-corrective re-approaches. Each episode writes `episode_log.csv` (10 Hz) and `episode_summary.json`. `idle` (arms hold, expect
-TIMEOUT) and `cheat` (teleports the beaker onto the hotplate 2 s after HANDOFF, expect SUCCESS) exist only to test the runner.
+The controller is told who is in charge, `auto` or `teleop` (`cfg["mode"]` of `src/control_loop.py`). In `auto`, ONE task policy
+(`src/task_policy.py`) owns the whole task: its staging stage (`src/staging_source.py`, speeds / ramps / tolerances in `STAGING_CFG`,
+poses in `TASK_CFG`) drives to the staging pose, sets the pedestal, moves the left arm through the via waypoint to the ready pose and
+frames the task with the neck camera; then its arm stage takes over (for now `hold`, or `request_operator`). The policy can ask for operator
+control: the controller switches to `teleop` at once (the base stops, everything holds). F9 in the viewer toggles auto / teleop (taking
+over, or handing control back, in which case the policy continues its current stage). Every switch is logged (`mode_switches` in the summary).
+Exclusivity and the hold rule stay in the controller (on in episodes).
+
+`experiments/beaker_hotplate_episode.py [--mode auto|teleop] [--arm-stage hold|request_operator|cheat] [--viewer] [--repeat N]
+[--cross-check] [--record]` runs episodes (`src/episode_runner.py`), which only reset the scene, check success, enforce the timeouts and
+save the log: success (`check_success`, after the handoff, whoever is in charge; `operator_assisted` is true if the operator had control),
+`TIMEOUT` after 60 s of AUTO time after the handoff (paused while the operator has control) or 300 s of OPERATOR time
+(`operator_timeout`; a teleop-start episode counts time 0 as the handoff and uses it), or `STAGING_FAILED` if staging cannot reach its pose
+(1 cm / 1 degree after 3 corrective re-approaches, or a correction that is too large). Each episode writes `episode_log.csv` (10 Hz) and
+`episode_summary.json`. The `hold` arm stage (expect TIMEOUT) and `cheat` (test only: teleports the beaker onto the hotplate 2 s after
+the handoff, expect SUCCESS) exist to test the runner; `experiments/cc_mode_tests.py` tests the modes, the paused timeout and the operator timeout.
 
 ## Record live, render offline
 

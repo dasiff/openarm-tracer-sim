@@ -23,6 +23,15 @@ Each iteration ("tick", cfg["source_hz"] = 62.5 Hz = 12 physics steps at 750 Hz)
   5. logging, then viewer["frame"](info) if there is a viewer. The window is redrawn at cfg["viewer_draw_hz"] (30 Hz: every
      2nd tick, 31.25 Hz); on the other ticks the viewer only polls keys and paces. Physics and control run at the full rate.
 
+Controller mode (cfg["mode"], cfg["auto_source"]): "teleop" is the router exactly as configured (keyboard, webcam teleop, a policy on some
+fields: what the manual / teleop / policy launcher modes have always been). With cfg["auto_source"] naming a task-policy source there is
+also "auto": that one source owns every field and is stepped; while the mode is "teleop" it is not stepped (paused where it is). Switches:
+the toggle hotkey (cause "operator_key"; teleop -> auto calls the source's resume(), which continues its current stage) and the source's
+{"mode": "request_teleop", "reason": ...} command (cause "policy_request"; the tick's other commands are dropped). On every switch the
+exclusivity state is cleared, the base is brought to a stop at cfg["base_stop_*_decel"] (base commands wait until it is at rest), the arms /
+grippers / pedestal / neck hold their targets, and the switch is logged: {tick, time, from, to, cause, reason, stage} in the returned "mode_log".
+obs["mode"] and obs["policy"] (the auto source's status(), if it has one) are available to hooks and sources.
+
 Router: cfg["routes"] maps each field to the source that owns it. Fields: "base", "pedestal", "arms.left", "arms.right",
 "gripper.left", "gripper.right", "neck". A value is a source name or a tuple of names (several sources may command the
 field; later ones in the sources dict win a tick). By default everything is the keyboard. The F2 hotkey (teleop runs) moves both
@@ -104,6 +113,9 @@ LOOP_CFG = {
     "spawn_yaw": None,             # rad, base yaw at spawn (None = leave the XML's)
     "neck_specs": None,            # None = robot_specs.NECK_SPECS (the neck is skipped if the model has none)
     "neck_max_speed": None,        # rad/s; None = NECK_SPECS["max_speed"]
+    "mode": "teleop",              # who is in charge at the start: "teleop" (the router as configured) or "auto" (see auto_source)
+    "auto_source": None,           # name of the task-policy source. With it the loop has an "auto" mode in which that source owns every router field;
+                                   # the hotkey hotkeys["toggle_mode"] (F9) and the source's request_teleop command switch between the modes
     "record_run": None,            # directory: record the run's physics inputs and verification hashes (src/run_record.py)
     "record_meta": None,           # dict stored in the recording's meta.json: {"model": recipe to rebuild the model, ...}
     "replay": None,                # src/replay.py: {"ctrl", "basevel", "on_start", "on_step", "on_tick_end"}: no sources, inputs from a recording
@@ -416,6 +428,38 @@ def run_loop(model, data, sources, cfg, viewer=None, logger=None):
             stop_base()
         return []
 
+    # --- Controller mode: "teleop" (the router as configured) or "auto" (the auto source owns every field) ---
+    auto_src = cfg["auto_source"]
+    if cfg["mode"] not in ("teleop", "auto"):
+        raise ValueError(f"cfg['mode'] must be 'teleop' or 'auto', not {cfg['mode']!r}")
+    if (cfg["mode"] == "auto" or auto_src is not None) and auto_src not in sources:
+        raise ValueError(f"cfg['auto_source'] = {auto_src!r} is not one of the sources {sorted(sources)}")
+    ctl = {"mode": "teleop", "note": None, "ramp": False, "log": [], "tables": {"teleop": dict(routes)}}
+    teleop = sources.get("teleop")
+
+    def switch_mode(new, cause, reason=None):
+        old = ctl["mode"]
+        if new == old:
+            return
+        if new == "auto" and auto_src is None:
+            raise ValueError("no auto source: the loop has no auto mode")
+        if old == "teleop":                               # keep the operator's arm routing (F2) for the way back
+            ctl["tables"]["teleop"] = dict(routes)
+            if teleop is not None and routes["arms.left"] == "teleop":
+                teleop["disable"]()
+        routes.clear()
+        routes.update(ctl["tables"]["teleop"] if new == "teleop" else {k: auto_src for k in ROUTE_KEYS})
+        if new == "teleop" and teleop is not None and routes["arms.left"] == "teleop":
+            teleop["enable"]()
+        ctl.update(mode=new, ramp=True, note=reason if cause == "policy_request" else None)
+        ex.update(active=None, pending=None, hold_t0=None, hold_blocker=None)
+        stage = None
+        if auto_src is not None and "status" in sources[auto_src]:
+            stage = sources[auto_src]["status"]().get("stage")
+        ctl["log"].append({"tick": frame, "time": data.time, "from": old, "to": new, "cause": cause, "reason": reason, "stage": stage})
+        print(f"[mode] t={data.time:.2f} s (tick {frame}): {old.upper()} -> {new.upper()}  ({cause}{': ' + reason if reason else ''})"
+              + (f"  [stage {stage}]" if stage else ""))
+
     # --- Bench / test hooks ---
     bench_log = None
     if cfg["bench_log"]:
@@ -430,7 +474,6 @@ def run_loop(model, data, sources, cfg, viewer=None, logger=None):
     tm = {"phys": 0.0, "cam": 0.0, "inset": 0.0}
     t_bench0 = None
     ds_state = sources["keyboard"]["state"]["drive"] if "keyboard" in sources else {}
-    teleop = sources.get("teleop")
     jog_ids = {"L3": arm_act["left"][2], "R1": arm_act["right"][0], "Lg": fing_act["left"][0], "Rg": fing_act["right"][0]}
 
     # --- hook API for cfg["on_tick"] ---
@@ -452,7 +495,7 @@ def run_loop(model, data, sources, cfg, viewer=None, logger=None):
         """Full-quality frames of every camera from the current state (the viewer's F3 and test snapshots)."""
         return {n: render(n) for n in cam_names}
 
-    loop_api = {"routes": routes, "stop": lambda reason="stop": stop_req.__setitem__(0, reason), "render": render}
+    loop_api = {"routes": routes, "mode": lambda: ctl["mode"], "switch_mode": switch_mode, "stop": lambda reason="stop": stop_req.__setitem__(0, reason), "render": render}
     status = None
 
     def advance(vx, vy, wz):
@@ -488,6 +531,10 @@ def run_loop(model, data, sources, cfg, viewer=None, logger=None):
     frame = 0
     base_vx = base_vy = base_wz = 0.0
     t_f0 = pc()
+    prev_m = False
+    if cfg["mode"] == "auto":
+        switch_mode("auto", "initial")
+        ctl["ramp"] = False                                # nothing is moving at the start
 
     # ---------------------------------------------------------------
     while True:
@@ -507,7 +554,9 @@ def run_loop(model, data, sources, cfg, viewer=None, logger=None):
         obs.update(tick=frame, timestep=model.opt.timestep, steps_per_frame=steps_per_frame,
                    base_pose=(float(data.qpos[0]), float(data.qpos[1]), base_yaw(data)),
                    pedestal_height=float(data.qpos[ped_qadr]), applied=applied(),
-                   cameras=rig.images if rig else None)
+                   cameras=rig.images if rig else None, mode=ctl["mode"])
+        if auto_src is not None and "status" in sources[auto_src]:
+            obs["policy"] = sources[auto_src]["status"]()
         if cfg["on_tick"] is not None:
             status = cfg["on_tick"](obs, loop_api)
             if stop_req[0] is not None:
@@ -522,13 +571,36 @@ def run_loop(model, data, sources, cfg, viewer=None, logger=None):
                 teleop["enable"]() if new == "teleop" else teleop["disable"]()
             prev_t = cur_t_key
 
+        # F9: operator takes over from the auto source, or hands control back to it
+        if auto_src is not None and hk.get("toggle_mode") is not None:
+            cur_m_key = held(hk["toggle_mode"])
+            if cur_m_key and not prev_m:
+                if ctl["mode"] == "auto":
+                    switch_mode("teleop", "operator_key")
+                else:
+                    switch_mode("auto", "operator_key")
+                    if "resume" in sources[auto_src]:
+                        sources[auto_src]["resume"]()
+            prev_m = cur_m_key
+
         # --- Commands: every source steps; each keeps what the router gives it ---
         cmds = []
+        request = None
         for name, src in sources.items():
+            if name == auto_src and ctl["mode"] == "teleop":
+                continue                                    # the auto source is paused while the operator is in charge
             out = src["step"](obs)
             if out is None:
                 continue
             for cmd in ([out] if isinstance(out, dict) else out):
+                if isinstance(cmd, dict) and cmd.get("mode") == "request_teleop":
+                    clean, _ = validate_command(cmd, limits)
+                    if name == auto_src and ctl["mode"] == "auto":
+                        request = clean["reason"] or "operator control requested"
+                    elif ("request", name) not in msgs_seen:
+                        msgs_seen.add(("request", name))
+                        print(f"[{name}] request_teleop ignored (only the auto source can ask, and only in auto mode)")
+                    continue
                 if isinstance(cmd, dict) and cmd.get("mode") in ("base", "pedestal", "arms", "idle"):
                     cmd = _filter_by_route(cmd, name, routes)       # a malformed command goes on to validate_command
                 if cmd is None:
@@ -540,6 +612,14 @@ def run_loop(model, data, sources, cfg, viewer=None, logger=None):
                         print(f"[{name}] {n}")
                 if clean is not None:
                     cmds.append(clean)
+        if request is not None:
+            cmds = []
+            switch_mode("teleop", "policy_request", request)
+        if ctl["ramp"]:                                     # after a switch: the base comes to rest first
+            cmds = [c for c in cmds if c["mode"] != "base"]
+            stop_base()
+            if st["twist"] == (0.0, 0.0):
+                ctl["ramp"] = False
         measure_still()
         exempt = [c for c in cmds if c["mode"] in EXEMPT_SUBSYSTEMS]          # the neck: never held, never exclusive
         cmds = [c for c in cmds if c["mode"] not in EXEMPT_SUBSYSTEMS]
@@ -596,7 +676,7 @@ def run_loop(model, data, sources, cfg, viewer=None, logger=None):
                 "base_vel": (base_vx, base_vy, base_wz), "drive_state": ds_state, "targets": hold_qpos_targets,
                 "teleop_status": teleop["status"]() if teleop is not None else None,
                 "preview_frame": teleop["state"].get("preview_frame") if teleop is not None else None,
-                "preview": cfg["preview"], "status": status,
+                "preview": cfg["preview"], "status": status, "mode": ctl["mode"] if auto_src is not None else None, "mode_note": ctl["note"],
                 "neck_deg": [math.degrees(float(data.qpos[a])) for a in neck["qadr"]] if neck is not None else None})
             quit_now = res["quit"]
             yaw_deg = res["yaw_deg"]
@@ -666,4 +746,4 @@ def run_loop(model, data, sources, cfg, viewer=None, logger=None):
             except Exception:
                 pass
     print("Done.")
-    return {"frames": frame, "hold_log": ex["log"], "routes": routes, "stopped_by": stop_req[0]}
+    return {"frames": frame, "hold_log": ex["log"], "routes": routes, "stopped_by": stop_req[0], "mode_log": ctl["log"]}

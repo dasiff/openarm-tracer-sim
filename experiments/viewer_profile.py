@@ -3,7 +3,7 @@
 Where does the wall-clock time of a viewer run go?
 
     export DISPLAY=:0 XAUTHORITY=...
-    python experiments/viewer_profile.py episode [--ticks 600]       # a viewer episode (staging, idle test source) under cProfile
+    python experiments/viewer_profile.py episode [--ticks 600]       # a viewer episode (staging, hold stage) under cProfile
     python -m cProfile -o /tmp/launcher.prof experiments/combined_controller.py       # the interactive launcher, bench mode:
         (with CC_BENCH_FRAMES=600 CC_BENCH_KEYS="5-45:UP,45-95:SPACE,..." in the environment)
     python experiments/viewer_profile.py report /tmp/launcher.prof
@@ -69,18 +69,17 @@ def report(stats_path, top=18):
 def episode(ticks, loop_cfg=None, viewer_cfg=None):
     os.environ.pop("MUJOCO_GL", None)
     from src.episode_runner import run_episode
-    from src.episode_test_sources import make_idle_source
     from src.glfw_viewer import make_glfw_viewer
     from src.task_beaker_hotplate import load_task
     sim = load_task(cameras=True)
     viewer = make_glfw_viewer(sim.model, sim.data, {"win": (1280, 960), "vsync": 0, "view_shadows": False, "shadowsize": None, "hud": True, "insets": True,
                                                     "record": False, "snapshot_every": 0.0, "snapshot_dir": None, "bench_snap_dir": None,
                                                     "bench_snap_frame": 15, "finish": False, "roundrobin": True,
-                                                    "record_fps": 62.5, "has_teleop": False, **(viewer_cfg or {})})
+                                                    "record_fps": 62.5, "has_teleop": False, "has_auto": True, **(viewer_cfg or {})})
     viewer["set_held"](viewer["key_down"])
     prof = cProfile.Profile()
     prof.enable()
-    run_episode(lambda m, d: make_idle_source(), sim.model, sim.data, viewer=viewer, held=viewer["key_down"], loop_cfg={"bench_frames": ticks, **(loop_cfg or {})})
+    run_episode(None, sim.model, sim.data, viewer=viewer, held=viewer["key_down"], loop_cfg={"bench_frames": ticks, **(loop_cfg or {})})
     prof.disable()
     viewer["close"]()
     out = "/tmp/episode_viewer.prof"

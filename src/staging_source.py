@@ -7,6 +7,10 @@ tolerances), none from this file.
     source = make_staging_source(model, data, task_cfg=TASK_CFG, cfg=STAGING_CFG, points_fn=framing_points)
     source["step"](obs) -> commands          (the loop calls it every tick)
     source["state"]     phase, done, error, phases {name: {start, end}}, arrival, corrections, final_turn_deg, framing_report, ...
+    source["observe"](obs)   its own measurements, called every tick while the task policy is in charge: base drift per phase, the
+                             smallest base-to-bench clearance during DRIVE, the base pose at HANDOFF
+    source["report"]()       the staging part of the episode summary (phase durations, arrival, pose corrections, drift, clearance, the pose
+                             error at HANDOFF, turn angles, neck framing)
 
 Phases, in order (one subsystem moves at a time; the neck is exempt and stays at its look-ahead aim while driving):
   DRIVE              turn in place toward the staging xy, drive straight, turn to the staging yaw, with the ground-truth base pose. Speeds
@@ -409,4 +413,48 @@ def make_staging_source(model, data, task_cfg=TASK_CFG, cfg=STAGING_CFG, points_
             return []
         return lead + fn(obs, t, dt)
 
-    return {"name": "staging", "step": step, "state": state}
+    # ------------------------------------------------------------------ measurements and report
+    M = {"phase": None, "phase_base": {}, "drift": {}, "min_clearance": None, "handoff_base": None}
+
+    def observe(obs):
+        x, y, yaw = obs["base_pose"]
+        phase = "DONE" if state["done"] else state["phase"]
+        if phase != M["phase"]:                                  # drift is measured against the pose the phase started from
+            M["phase"] = phase
+            M["phase_base"][phase] = (x, y, yaw)
+            M["drift"].setdefault(phase, {"max_pos": 0.0, "max_yaw": 0.0})
+        if state["done"] and M["handoff_base"] is None:
+            M["handoff_base"] = (x, y, yaw)
+        if phase != "DRIVE" and not phase.startswith("CORRECT"):
+            x0, y0, yaw0 = M["phase_base"][phase]
+            d = M["drift"][phase]
+            d["max_pos"] = max(d["max_pos"], math.hypot(x - x0, y - y0))
+            d["max_yaw"] = max(d["max_yaw"], abs(wrap(yaw - yaw0)))
+            d["net_pos"], d["net_yaw"] = math.hypot(x - x0, y - y0), wrap(yaw - yaw0)
+        elif phase == "DRIVE":
+            c = min(mujoco.mj_geomDistance(model, data, a, b, 2.0, ft) for a in base_geoms for b in bench_geoms)
+            M["min_clearance"] = c if M["min_clearance"] is None else min(M["min_clearance"], c)
+
+    def report():
+        phases_ = state["phases"]
+        dur = {k: (v["end"] - v["start"]) if v["end"] is not None else None for k, v in phases_.items() if k != "DONE"}
+        final = None
+        if M["handoff_base"] is not None:
+            ex, ey = gx - M["handoff_base"][0], gy - M["handoff_base"][1]
+            final = {"pos_err_mm": 1000 * math.hypot(ex, ey), "yaw_err_deg": math.degrees(wrap(M["handoff_base"][2] - gyaw)),
+                     "along_mm": 1000 * (ex * math.cos(gyaw) + ey * math.sin(gyaw)),          # > 0: short of the staging pose, farther from the bench
+                     "lateral_mm": 1000 * (-ex * math.sin(gyaw) + ey * math.cos(gyaw))}       # > 0: the staging pose is to the base's left
+        drift = {k: {"max_pos_mm": 1000 * v["max_pos"], "max_yaw_deg": math.degrees(v["max_yaw"]),
+                     "net_pos_mm": 1000 * v.get("net_pos", 0.0), "net_yaw_deg": math.degrees(v.get("net_yaw", 0.0))}
+                 for k, v in M["drift"].items() if k != "DRIVE" and not k.startswith("CORRECT")}
+        arr = state["arrival"]
+        return {
+            "staging_error": state["error"], "phase_durations_s": dur, "phase_times": {k: [v["start"], v["end"]] for k, v in phases_.items()},
+            "arrival_at_end_of_drive": ({"pos_err_mm": 1000 * arr["pos_err"], "yaw_err_deg": arr["yaw_err_deg"], "ok": arr["ok"]} if arr else None),
+            "base_pose_error_at_handoff": final, "first_turn_deg": state["first_turn_deg"], "final_in_place_turn_deg": state["final_turn_deg"],
+            "planned_final_turn_deg": state["planned_final_turn_deg"], "drive_reapproaches": state["reapproaches"],
+            "pose_corrections": state["corrections"], "base_drift": drift,
+            "min_base_to_bench_clearance_during_drive_mm": None if M["min_clearance"] is None else 1000 * M["min_clearance"],
+            "neck_framing_report": state["framing_report"]}
+
+    return {"name": "staging", "step": step, "state": state, "observe": observe, "report": report}

@@ -150,7 +150,7 @@ STAGING_CFG = {
     "correction_aim_frac": 0.5,            # the corrections go to within this fraction of the tolerance (aim for the centre, not the edge)
     "correction_timeout": 60.0,            # s per correction
     "correction_arms_max_pos": 0.02,       # m: with the arm extended, a base error above this fails the episode (STAGING_FAILED) instead of moving
-    "correction_arms_max_yaw": math.radians(3.0),   # rad: same for yaw
+    "correction_arms_max_yaw": math.radians(2.0),   # rad: same for yaw (2 deg = the layout search's verified base-perturbation range)
     "correction_arms_min_base_clearance": 0.05,     # m: base to bench, checked every tick of the extended-arm correction (it is 0.08 at the staging pose)
     "correction_arms_min_arm_clearance": 0.03,      # m: the task arm to the bench, same check
     # PEDESTAL
@@ -177,7 +177,8 @@ STAGING_CFG = {
 # Episode runner (src/episode_runner.py)
 # ----------------------------------------------------------------------------------------------------------
 EPISODE_CFG = {
-    "timeout_after_handoff": 60.0,         # s of sim time after HANDOFF with no success -> outcome TIMEOUT
+    "timeout_after_handoff": 60.0,         # s of sim time under AUTO control after HANDOFF with no success -> outcome TIMEOUT (paused while the operator has control)
+    "operator_timeout": 300.0,             # s of sim time under operator (teleop) control with no success -> outcome TIMEOUT (also the budget of a teleop-start episode)
     "log_hz": 10.0,                        # state / command log, written on the first tick of every 1/log_hz s of sim time
     "exclusive": True,                     # one subsystem moves at a time (the neck is exempt); off by default elsewhere
     "spawn_z": 0.22,                       # m, height the base is dropped from at spawn (it settles onto its wheels)

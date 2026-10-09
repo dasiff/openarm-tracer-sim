@@ -8,12 +8,15 @@ new. The viewer is a plain dict of callables, created by the launcher and passed
     viewer["context"]            MjrContext of the window; the loop's camera rig renders through it
     viewer["key_down"](code)     is the GLFW key down right now (the launcher adds the CC_BENCH_KEYS injection)
     viewer["set_held"](held)     the launcher's held(code), used for the F3 / F4 / F6 keys
-    viewer["frame"](info)        draw one frame; returns {"quit": bool}   (info: see run_loop)
+    viewer["frame"](info)        called every tick; draws only when info["draw"] (the loop's viewer_draw_hz, 30 Hz), otherwise just polls
+                                 keys and paces to real time; returns {"quit": bool, "yaw_deg": float}   (info: see run_loop)
     viewer["finish"]()           stop an active recording (prints), viewer["close"]() terminate GLFW
     viewer["timers"]             render / hud_insets / swap_poll seconds, for the CC_BENCH_FRAMES report
 
 vcfg (all from the launcher): win, vsync, view_shadows, shadowsize, hud, insets, record, snapshot_every, snapshot_dir,
-bench_snap_dir, bench_snap_frame, finish, roundrobin, viewer_hz, record_fps, has_teleop.
+bench_snap_dir, bench_snap_frame, finish, roundrobin, record_fps (video frames per second of SIM time; the loop's tick rate, divided
+by the redraw interval when the recording starts), has_teleop. Pacing (vsync off) holds each tick to the loop's tick period, so sim
+time equals wall time when the machine keeps up.
 """
 
 import csv
@@ -103,7 +106,6 @@ class ViewerRecorder:
 def make_glfw_viewer(model, data, vcfg):
     show_hud = vcfg.get("hud", True)
     show_insets = vcfg.get("insets", True)
-    viewer_hz = vcfg.get("viewer_hz", 60)
 
     # --- Snapshots (press F4 in the MuJoCo window, or --snapshot-every N) ---
     snap_dir = Path(vcfg["snapshot_dir"]) if vcfg.get("snapshot_dir") else PROJECT_ROOT / "snapshots"
@@ -111,7 +113,7 @@ def make_glfw_viewer(model, data, vcfg):
     snap_state = {"last": _time.time(), "p_down": False}
     hud_state = {"last": _time.time(), "ms": 0.0}
     inset_cache = {}
-    state = {"held": lambda code: False, "prev_c": False, "prev_r": False}
+    state = {"held": lambda code: False, "prev_c": False, "prev_r": False, "yaw_deg": 0.0, "deadline": None, "bench_snapped": False}
 
     def save_snapshot(rgb, preview_frame):
         snap_dir.mkdir(parents=True, exist_ok=True)
@@ -234,12 +236,33 @@ def make_glfw_viewer(model, data, vcfg):
                         (150, 220, 150), 1, cv2.LINE_AA)
         return bmp
 
+    def pace(info):
+        if vcfg["vsync"] == 0:
+            # No vsync pacing: ticks are held to a schedule of one tick period each, so sim time never runs faster than wall
+            # time. The schedule is cumulative, so the fast ticks between redraws pay for the slow redraw ticks. A tick that
+            # runs late does not sleep; the schedule is reset if the machine falls more than 0.1 s behind (no catching up).
+            dt = info.get("tick_dt", 1.0 / 60)
+            now = pc()
+            if state["deadline"] is None or now - state["deadline"] > 0.1:
+                state["deadline"] = info["t_frame_start"] + dt
+            else:
+                state["deadline"] += dt
+            if state["deadline"] > now:
+                _time.sleep(state["deadline"] - now)
+
     def frame(info):
         """Draw one viewer frame. info: frame, time, t_frame_start, images (the camera rig's), base_vel (vx, vy, wz),
         drive_state, targets (the loop's position targets), teleop_status (None without teleop), preview_frame."""
         held = state["held"]
         t = info["time"]
         fr = info["frame"]
+        if not info.get("draw", True):
+            # Between redraws: key states still update every tick (the keyboard source reads them), and the tick is paced.
+            t_s0 = pc()
+            glfw.poll_events()
+            tm["swap_poll"] += pc() - t_s0
+            pace(info)
+            return {"quit": bool(glfw.window_should_close(window)), "yaw_deg": state["yaw_deg"]}
         images = info["images"]
         hold_qpos_targets = info["targets"]
         base_vx, base_vy, base_wz = info["base_vel"]
@@ -253,6 +276,7 @@ def make_glfw_viewer(model, data, vcfg):
                       f"  video:  {mp4}\n  joints: {csv_path}")
             else:
                 fb_w, fb_h = glfw.get_framebuffer_size(window)
+                recorder.fps = vcfg["record_fps"] / info.get("draw_every", 1)     # one video frame per redraw
                 recorder.start(fb_w, fb_h)
                 rec_t0[0] = _time.time()
                 print(f"Recording started: {recorder.paths[0]}  ({recorder.fps:g} fps sim time)")
@@ -265,7 +289,7 @@ def make_glfw_viewer(model, data, vcfg):
         if cur_c and not state["prev_c"]:
             cam_dir.mkdir(parents=True, exist_ok=True)
             stamp = _time.strftime("%H%M%S")
-            for cname, img in images.items():
+            for cname, img in info["snapshot_images"]().items():      # full-quality (policy) frames, not the operator insets
                 cv2.imwrite(str(cam_dir / f"{cname}_{stamp}.png"),
                             cv2.cvtColor(img, cv2.COLOR_RGB2BGR))
             print(f"Camera images saved: {cam_dir}/*_{stamp}.png")
@@ -278,6 +302,7 @@ def make_glfw_viewer(model, data, vcfg):
             math.atan2(2.0 * (qw * qz + qx * qy),
                        1.0 - 2.0 * (qy * qy + qz * qz)))
         cam.azimuth = yaw_deg + 90
+        state["yaw_deg"] = yaw_deg
 
         # Render
         width, height = glfw.get_framebuffer_size(window)
@@ -367,13 +392,14 @@ def make_glfw_viewer(model, data, vcfg):
             mujoco.mjr_readPixels(rgb, None, viewport, context)
             save_snapshot(rgb, info.get("preview_frame"))
         snap_state["p_down"] = p_now
-        if vcfg.get("bench_snap_dir") and fr == vcfg["bench_snap_frame"]:
+        if vcfg.get("bench_snap_dir") and fr >= vcfg["bench_snap_frame"] and not state["bench_snapped"]:   # the first redraw at or after the frame
+            state["bench_snapped"] = True
             sd = Path(vcfg["bench_snap_dir"]); sd.mkdir(parents=True, exist_ok=True)
             rgb = np.zeros((height, width, 3), dtype=np.uint8)
             mujoco.mjr_readPixels(rgb, None, viewport, context)
             cv2.imwrite(str(sd / "main.png"),
                         cv2.cvtColor(np.flipud(rgb), cv2.COLOR_RGB2BGR))
-            for cname, img in images.items():
+            for cname, img in info["snapshot_images"]().items():
                 cv2.imwrite(str(sd / f"{cname}.png"),
                             cv2.cvtColor(img, cv2.COLOR_RGB2BGR))
         if recorder.active:
@@ -391,12 +417,7 @@ def make_glfw_viewer(model, data, vcfg):
             mujoco.mjr_finish()
         tm["swap_poll"] += pc() - t_s0
 
-        if vcfg["vsync"] == 0:
-            # No vsync pacing: hold the viewer to VIEWER_HZ so sim time
-            # never runs faster than wall time.
-            slack = 1.0 / viewer_hz - (pc() - t_f0)
-            if slack > 0:
-                _time.sleep(slack)
+        pace(info)
         return {"quit": bool(glfw.window_should_close(window)), "yaw_deg": yaw_deg}
 
     def finish():

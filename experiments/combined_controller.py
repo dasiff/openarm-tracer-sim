@@ -54,7 +54,9 @@ RATES NOTE:
     run with CC_ROUNDROBIN=0 to render all three cameras on every tick, so
     each updates at the full CAMERA_HZ in sim time (the viewer then runs
     slower than real time on the VM).
-    The viewer redraws at VIEWER_HZ (60, 12 physics steps per frame).
+    The command tick is 62.5 Hz (12 physics steps); the viewer redraws every 2nd tick (VIEWER_DRAW_HZ = 30 -> 31.25 Hz).
+    The camera insets in the window are a separate, cheap render (shadows off, 320x240, each camera at INSET_HZ);
+    the policy cameras (shadows on, CAMERA_HZ) are rendered live only in policy mode, or with CC_POLICY_CAMS=1.
     Keys, policy and teleop targets are read once per viewer frame and held
     between frames and written to data.ctrl as joint angles; the MuJoCo position
     servos track them from the LIVE state on every physics step. Teleop targets are not clocked at
@@ -132,7 +134,9 @@ DEFAULT_POLICY = None
 # Same real-time durations as the old 500 / 200 steps at 500 Hz.
 WARMUP_SEC     = 1.0
 RESETTLE_SEC   = 0.4
-VIEWER_HZ      = 60
+VIEWER_HZ      = 60            # the command tick is round(750 / this) = 12 physics steps (62.5 Hz)
+VIEWER_DRAW_HZ = 30            # the window is redrawn every 2nd tick (31.25 Hz); physics and control run every tick
+INSET_HZ       = 1.0           # operator insets (shadows off, own render): update rate of each camera
 SHOW_CAMERA_INSETS = True
 SHOW_HUD = True  # sim time, base velocity, pose and viewer fps, top left
 # Camera renders with shadows/reflections. Turning this off is ~8x faster on
@@ -167,7 +171,9 @@ def _perf_settings():
     Resolution, shadow map size and window size made no measurable difference.
 
     CC_VIEW_SHADOWS=1  viewer shadows+reflections on   CC_ROUNDROBIN=0  render all cameras on every tick (demo recording)
-    CC_CAM_SHADOWS=0   camera shadows off (washes out wrist cams)
+    CC_CAM_SHADOWS=0   policy camera shadows off (washes out wrist cams)
+    CC_POLICY_CAMS=0|1 render the policy cameras live (default: only in policy mode)   CC_DRAW_HZ=N  viewer redraw rate
+    CC_INSET_HZ=N  update rate of each operator inset camera   CC_INSET_SHADOWS=1  inset shadows on   CC_INSET_RES=WxH
     CC_VSYNC=1         vsync on (frames stall ~1 s if the window is hidden)
     CC_CAM_RES=WxH  CC_CAM_HZ=N  CC_SHADOWSIZE=N  CC_WIN=WxH  CC_HUD=0  CC_INSETS=0
     CC_FAKE_TELEOP=1   scripted fake operator + solver (no webcam needed)
@@ -200,6 +206,11 @@ def _perf_settings():
         "log": e("CC_BENCH_LOG"),
         "inject": e("CC_BENCH_KEYS", ""),
         "snap_frame": int(e("CC_BENCH_SNAP_FRAME", "15")),
+        "draw_hz": float(e("CC_DRAW_HZ", VIEWER_DRAW_HZ)),
+        "inset_hz": float(e("CC_INSET_HZ", INSET_HZ)),
+        "inset_shadows": e("CC_INSET_SHADOWS") == "1",
+        "inset_res": wh(e("CC_INSET_RES")) or (320, 240),
+        "policy_cams": None if e("CC_POLICY_CAMS") is None else e("CC_POLICY_CAMS") == "1",
         "hud": e("CC_HUD") != "0",
         "insets": e("CC_INSETS") != "0",
     }
@@ -289,7 +300,7 @@ def run(scene: str, spawn_pos, groups: list[dict], policy,
         "win": bench["win"], "vsync": bench["vsync"], "view_shadows": bench["view_shadows"], "shadowsize": bench["shadowsize"],
         "hud": SHOW_HUD, "insets": SHOW_CAMERA_INSETS, "record": record, "snapshot_every": snapshot_every,
         "snapshot_dir": snapshot_dir, "bench_snap_dir": bench["snap_dir"], "bench_snap_frame": bench["snap_frame"],
-        "finish": bench["finish"], "roundrobin": bench["roundrobin"], "viewer_hz": VIEWER_HZ,
+        "finish": bench["finish"], "roundrobin": bench["roundrobin"],
         "record_fps": physics_hz / steps_per_frame, "has_teleop": mode == "teleop"})
     tick = [0]                                    # the loop keeps this equal to the frame number
     injected = set()
@@ -333,7 +344,10 @@ def run(scene: str, spawn_pos, groups: list[dict], policy,
         print(f"F2=toggle arms MANUAL / TELEOP (webcam); base keys work in both")
 
     cfg = {
-        "source_hz": physics_hz / steps_per_frame, "camera_roundrobin": bench["roundrobin"], "camera_shadows": CAMERA_SHADOWS,
+        "source_hz": physics_hz / steps_per_frame, "viewer_draw_hz": bench["draw_hz"],
+        "cameras": bench["policy_cams"] if bench["policy_cams"] is not None else "policy" in sources,
+        "inset_cameras": SHOW_CAMERA_INSETS, "inset_hz": bench["inset_hz"], "inset_res": bench["inset_res"],
+        "inset_shadows": bench["inset_shadows"], "camera_roundrobin": bench["roundrobin"], "camera_shadows": CAMERA_SHADOWS,
         "spawn_pos": spawn_pos, "warmup_s": WARMUP_SEC, "resettle_s": RESETTLE_SEC, "routes": routes,
         "claimed_ids": sorted(claimed_ids), "held": held, "tick_ref": tick, "bench_frames": bench["frames"],
         "bench_log": bench["log"], "preview": preview and mode == "teleop",

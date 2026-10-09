@@ -173,7 +173,7 @@ def run_episode(make_test_source, model, data, task_cfg=TASK_CFG, staging_cfg=ST
     spf = max(1, round(physics_hz / VIEWER_HZ))
     cfg = {"source_hz": physics_hz / spf, "spawn_pos": [task_cfg["spawn_xy"][0], task_cfg["spawn_xy"][1], episode_cfg["spawn_z"]],
            "spawn_yaw": task_cfg["spawn_yaw"], "routes": routes, "exclusive": episode_cfg["exclusive"], "on_tick": on_tick,
-           "cameras": viewer is not None, "camera_roundrobin": True, "held": held,
+           "cameras": False, "camera_roundrobin": True, "held": held,
            "hotkeys": {"quit": __import__("glfw").KEY_ESCAPE} if viewer is not None else {}}
     cfg.update(loop_cfg or {})
     result = run_loop(model, data, sources, cfg, viewer=viewer)

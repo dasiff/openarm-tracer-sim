@@ -20,7 +20,8 @@ Each iteration ("tick", cfg["source_hz"] = 62.5 Hz = 12 physics steps at 750 Hz)
   3b. the neck (exempt from exclusivity) moves its position targets toward the commanded ones at cfg["neck_max_speed"]
   4. write the position targets to data.ctrl once, then step physics 12 times, writing the base velocity before every
      step and rendering a camera every cam_every (25) steps
-  5. logging, then viewer["frame"](info) if there is a viewer (HUD, insets, recording, pacing)
+  5. logging, then viewer["frame"](info) if there is a viewer. The window is redrawn at cfg["viewer_draw_hz"] (30 Hz: every
+     2nd tick, 31.25 Hz); on the other ticks the viewer only polls keys and paces. Physics and control run at the full rate.
 
 Router: cfg["routes"] maps each field to the source that owns it. Fields: "base", "pedestal", "arms.left", "arms.right",
 "gripper.left", "gripper.right", "neck". A value is a source name or a tuple of names (several sources may command the
@@ -40,6 +41,12 @@ the observation is built and before the sources step. It may add keys to `obs` (
 obs["episode"]), change routes at run time (loop["routes"] is the live router table), end the run with loop["stop"](reason), and render
 one camera frame with loop["render"](camera_name) (works headless: an offscreen EGL context is created on first use). It may return a short
 status string, shown in the viewer's HUD. cfg["spawn_yaw"] sets the base's yaw at spawn (None = the XML's).
+
+Cameras. Two separate rigs, so what the operator sees can be cheap while what a policy sees stays full quality:
+  * the policy cameras (cfg["cameras"], "camera_hz", "camera_shadows"; shadows on, 30 Hz round robin by default) fill obs["cameras"];
+  * the operator insets (cfg["inset_cameras"], only with a viewer): a second rig with shadows off, rendered at cfg["inset_res"],
+    one camera per render, each camera updating at cfg["inset_hz"]. It feeds only the viewer's insets.
+A viewer run that does not need the policy cameras sets cfg["cameras"] = False; loop["render"](name) still gives full-quality frames on demand.
 
 Headless: viewer=None runs without a window. Cameras then render through an offscreen context (set MUJOCO_GL=egl before
 importing mujoco on a machine without a display) or are skipped with cfg["cameras"] = False.
@@ -63,7 +70,12 @@ LOOP_CFG = {
     "camera_hz": None,             # None = robot_specs.CAMERA_HZ (30)
     "camera_roundrobin": True,     # one camera per render tick (a VM performance setting); False renders all each tick
     "camera_shadows": True,
-    "cameras": True,               # False: no camera rig at all (pure physics run)
+    "cameras": True,               # policy cameras. False: no policy rig (pure physics run, or a viewer run that only needs the insets)
+    "viewer_draw_hz": 30,          # window redraw rate; the tick is quantised to a whole number of ticks per redraw (2 -> 31.25 Hz)
+    "inset_cameras": True,         # operator insets from their own cheap rig (used only when there is a viewer)
+    "inset_hz": 1.0,               # update rate of EACH inset camera (they take turns: 3 x this many renders per second)
+    "inset_res": (320, 240),       # inset render size (the viewer draws them at most this big)
+    "inset_shadows": False,
     "spawn_pos": None,             # [x, y, z] for the base free joint, or None for the XML default
     "warmup_s": 1.0,               # settle durations in seconds, converted to steps from the physics rate
     "resettle_s": 0.4,
@@ -287,6 +299,22 @@ def run_loop(model, data, sources, cfg, viewer=None, logger=None):
     cam_names = [cs["name"] for cs in robot_specs.CAMERA_SPECS]
     cam_tick = 0
 
+    # --- Operator insets: their own rig (shadows off, small), rendered only on viewer redraws ---
+    draw_every = max(1, round(cfg["source_hz"] / cfg["viewer_draw_hz"])) if viewer is not None else 1
+    irig, inset_every, inset_tick = None, 1, 0
+    if viewer is not None and cfg["inset_cameras"]:
+        w_i, h_i = cfg["inset_res"]
+        ispecs = [{**cs, "resolution": (w_i, h_i), "shadows": cfg["inset_shadows"]} for cs in robot_specs.CAMERA_SPECS]
+        irig = CameraRig(model, ispecs, viewer["context"], shadows=cfg["inset_shadows"])
+        irig.render(data)
+        # renders per second = n_cameras * inset_hz, one every `inset_every` redraws
+        inset_every = max(1, round((cfg["source_hz"] / draw_every) / (len(ispecs) * cfg["inset_hz"])))
+        print(f"Viewer: redraw every {draw_every} ticks ({cfg['source_hz'] / draw_every:.1f} Hz); operator insets {w_i}x{h_i}, shadows "
+              f"{'on' if cfg['inset_shadows'] else 'off'}, one camera every {inset_every} redraws "
+              f"(each camera ~{cfg['source_hz'] / draw_every / inset_every / len(ispecs):.1f} Hz)")
+    elif viewer is not None:
+        print(f"Viewer: redraw every {draw_every} ticks ({cfg['source_hz'] / draw_every:.1f} Hz); no operator insets")
+
     # --- The loop's state: the applied targets, the base Twist, the exclusivity / hold bookkeeping ---
     st = {"twist": (0.0, 0.0)}
     neck_goal = neck_home.copy() if neck is not None else None
@@ -383,7 +411,7 @@ def run_loop(model, data, sources, cfg, viewer=None, logger=None):
                            + [f"{sd}_joint{i}" for sd in ("left", "right") for i in range(1, 8)]
                            + [f"{sd}_finger{k}" for sd in ("left", "right") for k in (1, 2)]
                            + ([f"neck_{n}" for n in neck["names"]] if neck is not None else []))
-    tm = {"phys": 0.0, "cam": 0.0}
+    tm = {"phys": 0.0, "cam": 0.0, "inset": 0.0}
     t_bench0 = None
     ds_state = sources["keyboard"]["state"]["drive"] if "keyboard" in sources else {}
     teleop = sources.get("teleop")
@@ -403,6 +431,10 @@ def run_loop(model, data, sources, cfg, viewer=None, logger=None):
             rig_box["rig"] = CameraRig(model, robot_specs.CAMERA_SPECS, ctx, shadows=cfg["camera_shadows"])
         rig_box["rig"].render(data, [name])
         return rig_box["rig"].images[name].copy()
+
+    def snapshot_images():
+        """Full-quality frames of every camera from the current state (the viewer's F3 and test snapshots)."""
+        return {n: render(n) for n in cam_names}
 
     loop_api = {"routes": routes, "stop": lambda reason="stop": stop_req.__setitem__(0, reason), "render": render}
     status = None
@@ -514,8 +546,17 @@ def run_loop(model, data, sources, cfg, viewer=None, logger=None):
 
         quit_now = False
         if viewer is not None:
+            draw = frame % draw_every == 0
+            if draw and irig is not None:
+                if (frame // draw_every) % inset_every == 0:
+                    t_c0 = pc()
+                    irig.render(data, [cam_names[inset_tick % len(cam_names)]])
+                    inset_tick += 1
+                    tm["inset"] += pc() - t_c0
             res = viewer["frame"]({
-                "frame": frame, "time": t, "t_frame_start": t_f0, "images": rig.images if rig else {},
+                "draw": draw, "draw_every": draw_every, "tick_dt": tick_dt, "snapshot_images": snapshot_images,
+                "frame": frame, "time": t, "t_frame_start": t_f0,
+                "images": irig.images if irig is not None else (rig.images if rig else {}),
                 "base_vel": (base_vx, base_vy, base_wz), "drive_state": ds_state, "targets": hold_qpos_targets,
                 "teleop_status": teleop["status"]() if teleop is not None else None,
                 "preview_frame": teleop["state"].get("preview_frame") if teleop is not None else None,

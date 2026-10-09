@@ -28,9 +28,15 @@ logger, chemistry lab scene, cameras and webcam teleop all exist now (see `git l
   placeholders; replace them when the Orbbec model and mounting are known.
 - [ ] **Camera image realism.** The floor and lighting wash out to white; consider lower floor
   reflectance and lighting for the camera views.
-- [ ] **Viewer speed on the VM** is about 8-13 fps. The remaining cost is the wrist-camera shadow
-  passes; try the VM's 3D acceleration and video memory settings. Recording demos with
-  `CC_ROUNDROBIN=0` is slower still.
+- [ ] **Viewer speed on the VM.** The window now redraws at 30 Hz (every 2nd tick) and the operator insets come from their own cheap
+  render (shadows off, 320x240, each camera at 1 Hz); a viewer episode runs at ~0.9x real time (was 0.11x) and the launcher at ~0.95x.
+  A camera render costs ~25-40 ms on this VM whatever its size, so more inset updates cost real time (2 Hz: ~0.75x, 5 Hz: ~0.65x).
+  Open: record live and render the cameras offline (replay); the VM's 3D acceleration / video memory settings; why physics is ~2x
+  slower per tick with the viewer open than headless (0.7 vs 0.4 ms per step).
+- [ ] **VLA evaluation: render the policy cameras only when the policy requests an observation, not every frame.** The loop
+  renders policy cameras (shadows on, 30 Hz round robin) on a fixed schedule when `cfg["cameras"]` is on; at ~200 ms per render on this
+  VM that is most of the wall-clock time. A policy source should ask for frames when its inference step needs them (the loop's
+  `render` hook already renders on demand); demo collection will render them offline from a recorded run instead.
 - [ ] **Do not draw per-frame text with `mjr_overlay`** on this VM: its driver leaks a resource per
   glyph and aborts the process after about 250 frames. Use bitmap text (see the viewer HUD).
 - [ ] Report the provisioner problem upstream (it rejects the openarm product).

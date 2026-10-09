@@ -106,7 +106,7 @@ def main():
     if args.viewer:
         viewer = make_glfw_viewer(model, data, {"win": (1280, 960), "vsync": 0, "view_shadows": False, "shadowsize": None, "hud": True, "insets": True,
                                                 "record": False, "snapshot_every": 0.0, "snapshot_dir": None, "bench_snap_dir": None,
-                                                "bench_snap_frame": 15, "finish": False, "roundrobin": True, "viewer_hz": 60,
+                                                "bench_snap_frame": 15, "finish": False, "roundrobin": True,
                                                 "record_fps": 62.5, "has_teleop": False})
         viewer["set_held"](viewer["key_down"])
         held = viewer["key_down"]

@@ -126,9 +126,9 @@ TIMEOUT) and `cheat` (teleports the beaker onto the hotplate 2 s after HANDOFF, 
 `combined_controller.py --record-run DIR` (or `beaker_hotplate_episode.py --record`) records what the physics received on every
 tick (ctrl vector and base velocity, exact float64) plus state hashes, about 17 KB per sim second. `experiments/replay_run.py DIR`
 replays it headless: the states must match the live run bit for bit (same machine and MuJoCo version), and it renders the policy
-cameras to one video per camera (`eagle_cam.mp4`, ...) at 30 Hz, 640x480, each camera with its own shadow setting, about 25 MB
+cameras to one MP4 per camera (`eagle_cam.mp4`, ...) at 30 Hz, 640x480, each camera with its own shadow setting, about 25 MB
 per sim minute for the three cameras. Options: `--cameras`, `--hz`, `--size`, `--shadows`, `--from-tick/--to-tick` for a clip,
-`--verify-only` (no GL). See `src/run_record.py` and `src/replay.py`.
+`--video none|preview|training` (verify only / lossy MP4, the default / lossless PNG frames named by tick). See `src/run_record.py` and `src/replay.py`.
 
 ## Features
 

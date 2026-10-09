@@ -2,12 +2,14 @@
 """
 Replay a recorded run: verify the states against the live run and render its cameras to video, offline.
 
-    python experiments/replay_run.py RUN_DIR [--out DIR] [--cameras eagle_cam left_wrist_cam ... | none] [--hz 30] [--size 640x480]
-                                     [--shadows policy|on|off] [--codec mp4v] [--quality N] [--verify-only] [--max-ticks N] [--from-tick A] [--to-tick B]
+    python experiments/replay_run.py RUN_DIR [--video none|preview|training] [--out DIR] [--cameras eagle_cam left_wrist_cam ...] [--hz 30]
+                                     [--size 640x480] [--shadows policy|on|off] [--codec mp4v] [--quality N] [--max-ticks N] [--from-tick A] [--to-tick B]
 
 RUN_DIR is a recording made with `combined_controller.py --record-run DIR` or `beaker_hotplate_episode.py --record`.
-Output (default RUN_DIR/replay): one video per camera, <camera>.mp4, playing at --hz frames per second of sim time; frames.csv (frame, tick,
-sim_time); replay_report.json. --verify-only checks the states without rendering (no GL needed). Exit status 1 if the replay does not match.
+--video none      verify only: the states are checked, nothing is rendered or written (no GL needed)
+--video preview   (default) lossy MP4, one per camera: OUT/<camera>.mp4, playing at --hz frames per second of sim time
+--video training  lossless PNG frames, one folder per camera: OUT/<camera>/<tick:06d>.png
+OUT defaults to RUN_DIR/replay; it also gets frames.csv (frame, tick, sim_time) and replay_report.json. Exit status 1 if the replay does not match.
 See src/replay.py.
 """
 
@@ -29,14 +31,15 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("run_dir")
     ap.add_argument("--out")
-    ap.add_argument("--cameras", nargs="*", default=None, help="camera names, or 'none' (default: all recorded cameras)")
+    ap.add_argument("--video", choices=["none", "preview", "training"], default="preview",
+                    help="none: verify only; preview: lossy MP4 per camera (default); training: lossless PNG frames, one folder per camera, named by tick")
+    ap.add_argument("--cameras", nargs="+", default=None, help="camera names (default: all recorded cameras)")
     ap.add_argument("--hz", type=float, default=30.0, help="video frame rate in sim time; a whole divisor of the 750 Hz physics rate")
     ap.add_argument("--size", help="WxH override of the camera resolution (default: as recorded, 640x480)")
     ap.add_argument("--shadows", choices=["policy", "on", "off"], default="policy",
                     help="policy: each camera as the policy sees it (robot_specs.CAMERA_SPECS); on / off: force")
     ap.add_argument("--codec", default="mp4v", help="OpenCV fourcc of the videos")
     ap.add_argument("--quality", type=int, default=None, help="0-100 writer quality, if the codec honours it")
-    ap.add_argument("--verify-only", action="store_true")
     ap.add_argument("--max-ticks", type=int, default=None, help="stop the replay after this many ticks")
     ap.add_argument("--from-tick", type=int, default=0, help="render only from this tick (62.5 ticks per sim second; the states are still verified from tick 0)")
     ap.add_argument("--to-tick", type=int, default=None, help="render only up to this tick, and stop the replay there")
@@ -44,14 +47,8 @@ def main():
 
     run_dir = Path(args.run_dir)
     out = Path(args.out) if args.out else run_dir / "replay"
-    cams = args.cameras
-    if args.verify_only or (cams is not None and [c.lower() for c in cams] == ["none"]):
-        cams = []
-    elif cams is None:
-        import json
-        cams = [c["name"] for c in json.loads((run_dir / "meta.json").read_text())["robot_specs"]["CAMERA_SPECS"]]
     size = tuple(int(v) for v in args.size.lower().split("x")) if args.size else None
-    rep = replay_run(run_dir, out_dir=out if cams else None, cameras=cams, hz=args.hz, size=size, shadows=args.shadows, codec=args.codec,
+    rep = replay_run(run_dir, out_dir=out, cameras=args.cameras, video=args.video, hz=args.hz, size=size, shadows=args.shadows, codec=args.codec,
                      quality=args.quality, max_ticks=args.to_tick + 1 if args.to_tick is not None and args.max_ticks is None else args.max_ticks,
                      render_ticks=(args.from_tick, args.to_tick if args.to_tick is not None else 10 ** 12))
     sys.exit(0 if rep["ok"] else 1)

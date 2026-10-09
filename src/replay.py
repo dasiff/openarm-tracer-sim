@@ -11,10 +11,13 @@ state after the settle and the state hash after every tick must equal the live r
 replay and reports the tick and which parts of the state differ (at the next 1 s checkpoint). Bit-exact reproduction is only
 guaranteed on the same machine, MuJoCo version and CPU; on another one the replay says so and reports the mismatch.
 
-Cameras: every `hz` (30 by default; a whole divisor of the physics rate) all selected cameras are rendered from the state at that
-physics step, with the policy cameras' own settings by default (each camera's "shadows" flag as in robot_specs.CAMERA_SPECS), and
-written to one video per camera, out_dir/<camera>.mp4, playing at `hz` frames per second of sim time, plus out_dir/frames.csv
-(frame, tick, sim_time). No cameras and no out_dir = verify only (no GL needed, and faster).
+Cameras: every `hz` (30 by default; a whole divisor of the physics rate) all selected cameras (default: all recorded) are rendered from the
+state at that physics step, with the policy cameras' own settings by default (each camera's "shadows" flag as in robot_specs.CAMERA_SPECS).
+`video` says what is written:
+    "none"      verify only: no rendering, no GL, no output files (faster)
+    "preview"   lossy MP4 (OpenCV, MPEG-4 part 2), one video per camera, out_dir/<camera>.mp4, playing at `hz` frames per second of sim time
+    "training"  lossless PNG frames, one folder per camera, out_dir/<camera>/<tick:06d>.png (the control tick the frame was rendered in)
+plus out_dir/frames.csv (frame, tick, sim_time) and out_dir/replay_report.json.
 """
 
 import csv
@@ -72,9 +75,24 @@ class ReplayMismatch(RuntimeError):
     pass
 
 
-def replay_run(run_dir, out_dir=None, cameras=None, hz=30.0, size=None, shadows="policy", codec="mp4v", quality=None,
+class PngFrames:
+    """Writes each frame as out/<camera>/<tick:06d>.png (lossless); same write / release interface as a cv2.VideoWriter."""
+
+    def __init__(self, folder):
+        self.folder = Path(folder)
+        self.folder.mkdir(parents=True, exist_ok=True)
+
+    def write(self, frame_bgr, tick):
+        if not cv2.imwrite(str(self.folder / f"{tick:06d}.png"), frame_bgr):
+            raise RuntimeError(f"could not write a PNG to {self.folder}")
+
+    def release(self):
+        pass
+
+
+def replay_run(run_dir, out_dir=None, cameras=None, video="preview", hz=30.0, size=None, shadows="policy", codec="mp4v", quality=None,
                verify=True, max_ticks=None, render_ticks=None, quiet=False):
-    """Replay `run_dir`. cameras: names to render (None = none); size: (w, h) override of the camera resolution;
+    """Replay `run_dir`. video: "none" | "preview" | "training" (see the module doc); cameras: names to render (None = all recorded); size: (w, h) override of the camera resolution;
     shadows: "policy" (per camera, as recorded), "on" or "off"; codec / quality: OpenCV fourcc and 0-100 quality (None = default).
     render_ticks: (first, last) tick range to render (None = all); the states are verified over the whole run, or up to max_ticks.
     Returns a report dict (also written to out_dir/replay_report.json): {"ok", "ticks", "mismatch", "videos", ...}."""
@@ -103,12 +121,16 @@ def replay_run(run_dir, out_dir=None, cameras=None, hz=30.0, size=None, shadows=
     # --- cameras and videos ---
     rig, specs, writers, frames_csv, gl_keepalive = None, [], {}, None, None
     out = Path(out_dir) if out_dir else None
-    if cameras:
+    if video not in ("none", "preview", "training"):
+        raise ValueError(f"video must be none, preview or training, not {video!r}")
+    if video == "training" and hz > meta["source_hz"] + 1e-9:
+        raise ValueError(f"training frames are named by tick: --hz must be at most the tick rate ({meta['source_hz']:g} Hz)")
+    if video != "none":
         if out is None:
-            raise ValueError("rendering cameras needs an out_dir")
+            raise ValueError(f"video={video!r} needs an out_dir")
         out.mkdir(parents=True, exist_ok=True)
         known = {cs["name"]: cs for cs in meta["robot_specs"]["CAMERA_SPECS"]}
-        for name in cameras:
+        for name in (cameras if cameras else list(known)):
             if name not in known:
                 raise ValueError(f"camera '{name}' not in the recording; has {sorted(known)}")
             cs = dict(known[name])
@@ -125,8 +147,12 @@ def replay_run(run_dir, out_dir=None, cameras=None, hz=30.0, size=None, shadows=
         gl_keepalive, context = _headless_context(model)
         rig = CameraRig(model, specs, context, shadows=bool(meta["loop_cfg"].get("camera_shadows", True)))
         for cs in specs:
-            path = out / f"{cs['name']}{CONTAINER.get(codec, '.mp4')}"
-            writers[cs["name"]] = open_video(path, hz, tuple(cs["resolution"]), codec, quality)
+            if video == "preview":
+                path = out / f"{cs['name']}{CONTAINER.get(codec, '.mp4')}"
+                writers[cs["name"]] = open_video(path, hz, tuple(cs["resolution"]), codec, quality)
+            else:
+                path = out / cs["name"]
+                writers[cs["name"]] = PngFrames(path)
             report["videos"][cs["name"]] = str(path)
         frames_csv = open(out / "frames.csv", "w", newline="")
         fw = csv.writer(frames_csv)
@@ -144,9 +170,11 @@ def replay_run(run_dir, out_dir=None, cameras=None, hz=30.0, size=None, shadows=
     def on_step(step_count, data_):
         if rig is not None and step_count % every == 0 and (render_ticks is None or render_ticks[0] <= (step_count - 1) // spt <= render_ticks[1]):
             rig.render(data_)
+            tick = (step_count - 1) // spt
             for cs in specs:
-                writers[cs["name"]].write(cv2.cvtColor(rig.images[cs["name"]], cv2.COLOR_RGB2BGR))
-            fw.writerow([st["frames"], (step_count - 1) // spt, f"{data_.time:.6f}"])
+                bgr = cv2.cvtColor(rig.images[cs["name"]], cv2.COLOR_RGB2BGR)
+                writers[cs["name"]].write(bgr, tick) if video == "training" else writers[cs["name"]].write(bgr)
+            fw.writerow([st["frames"], tick, f"{data_.time:.6f}"])
             st["frames"] += 1
 
     def on_tick_end(frame, data_):
@@ -188,9 +216,9 @@ def replay_run(run_dir, out_dir=None, cameras=None, hz=30.0, size=None, shadows=
     report["ok"] = (st["mismatch"] is None and result["frames"] == n_ticks) if verify else None
     report["wall_seconds"] = time.perf_counter() - wall0
     if writers:
-        report["video_bytes"] = {k: Path(v).stat().st_size for k, v in report["videos"].items() if Path(v).exists()}
-    if out is not None:
-        out.mkdir(parents=True, exist_ok=True)
+        report["video_bytes"] = {k: (sum(f.stat().st_size for f in Path(v).glob("*.png")) if Path(v).is_dir() else Path(v).stat().st_size)
+                                 for k, v in report["videos"].items() if Path(v).exists()}
+    if video != "none":
         (out / "replay_report.json").write_text(json.dumps(jsonable(report), indent=1))
     if not quiet:
         if verify:
@@ -199,6 +227,6 @@ def replay_run(run_dir, out_dir=None, cameras=None, hz=30.0, size=None, shadows=
         for w in report["warnings"]:
             print("warning:", w)
         if writers:
-            print(f"rendered {st['frames']} frames per camera at {hz:g} Hz: " + ", ".join(f"{k} {v / 1e6:.1f} MB" for k, v in report["video_bytes"].items())
+            print(f"{video}: rendered {st['frames']} frames per camera at {hz:g} Hz: " + ", ".join(f"{k} {v / 1e6:.1f} MB" for k, v in report["video_bytes"].items())
                   + f"  ({report['wall_seconds']:.0f} s wall)")
     return report

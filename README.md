@@ -117,8 +117,10 @@ The controller is told who is in charge, `auto` or `teleop` (`cfg["mode"]` of `s
 (`src/task_policy.py`) owns the whole task: its staging stage (`src/staging_source.py`, speeds / ramps / tolerances in `STAGING_CFG`,
 poses in `TASK_CFG`) drives to the staging pose, sets the pedestal, moves the left arm through the via waypoint to the ready pose and
 frames the task with the neck camera; then its arm stage takes over (for now `hold`, or `request_operator`). The policy can ask for operator
-control: the controller switches to `teleop` at once (the base stops, everything holds). F9 in the viewer toggles auto / teleop (taking
-over, or handing control back, in which case the policy continues its current stage). Every switch is logged (`mode_switches` in the summary).
+control: the controller switches to `teleop` at once (the base stops, everything holds). In the viewer F9 takes over from the policy, Enter hands control back (the policy
+continues its current stage, its arm targets gliding from where the operator left them, `src/rate_limit.py`) and Delete aborts the episode
+(`ABORTED_BY_OPERATOR`); a banner shows "OPERATOR NEEDED: <reason>" (with a sound) after a request and the available keys while the operator
+has control. Every switch is logged (`mode_switches` in the summary).
 Exclusivity and the hold rule stay in the controller (on in episodes).
 
 `experiments/beaker_hotplate_episode.py [--mode auto|teleop] [--arm-stage hold|request_operator|cheat] [--viewer] [--repeat N]

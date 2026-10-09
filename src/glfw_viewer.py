@@ -14,7 +14,7 @@ new. The viewer is a plain dict of callables, created by the launcher and passed
     viewer["timers"]             render / hud_insets / swap_poll seconds, for the CC_BENCH_FRAMES report
 
 vcfg (all from the launcher): win, vsync, view_shadows, shadowsize, hud, insets, record, snapshot_every, snapshot_dir,
-bench_snap_dir, bench_snap_frame, finish, roundrobin, has_auto (the loop has an auto mode: F9 in the legend), record_fps (video frames per second of SIM time; the loop's tick rate, divided
+bench_snap_dir, bench_snap_frame, finish, roundrobin, legend_extra (more [(key, label)] for the HUD legend), record_fps (video frames per second of SIM time; the loop's tick rate, divided
 by the redraw interval when the recording starts), has_teleop. Pacing (vsync off) holds each tick to the loop's tick period, so sim
 time equals wall time when the machine keeps up.
 """
@@ -31,6 +31,7 @@ import mujoco
 import numpy as np
 
 from src import robot_specs
+from src.alert_sound import play_alert
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 CAMERA_SNAPSHOT_DIR = "data/camera_snapshots"
@@ -113,7 +114,7 @@ def make_glfw_viewer(model, data, vcfg):
     snap_state = {"last": _time.time(), "p_down": False}
     hud_state = {"last": _time.time(), "ms": 0.0}
     inset_cache = {}
-    state = {"held": lambda code: False, "prev_c": False, "prev_r": False, "yaw_deg": 0.0, "deadline": None, "bench_snapped": False}
+    state = {"held": lambda code: False, "prev_c": False, "prev_r": False, "alert_seq": 0, "yaw_deg": 0.0, "deadline": None, "bench_snapped": False}
 
     def save_snapshot(rgb, preview_frame):
         snap_dir.mkdir(parents=True, exist_ok=True)
@@ -184,7 +185,7 @@ def make_glfw_viewer(model, data, vcfg):
                 ("A-K", "R arm +"), ("Z-,", "R arm -"),
                 ("PgUp/Dn", "pedestal"), ("9 0 - =", "neck +"), ("O P [ ]", "neck -"), ("F7", "frame"), ("F8", "neck home")] + \
         ([("F2", "man/tele")] if vcfg.get("has_teleop") else []) + \
-        ([("F9", "auto/teleop")] if vcfg.get("has_auto") else []) + \
+        list(vcfg.get("legend_extra", [])) + \
         [("F3", "cam imgs"), ("F4", "snap"), ("F5", "log"),
          ("F6", "rec video"), ("Esc", "quit")]
 
@@ -257,6 +258,9 @@ def make_glfw_viewer(model, data, vcfg):
         held = state["held"]
         t = info["time"]
         fr = info["frame"]
+        if info.get("alert_seq", 0) != state["alert_seq"]:      # a policy request for the operator: sound once (the banner shows on the redraws)
+            state["alert_seq"] = info.get("alert_seq", 0)
+            play_alert()
         if not info.get("draw", True):
             # Between redraws: key states still update every tick (the keyboard source reads them), and the tick is paced.
             t_s0 = pc()
@@ -320,6 +324,17 @@ def make_glfw_viewer(model, data, vcfg):
             mujoco.mjr_overlay(
                 mujoco.mjtFont.mjFONT_NORMAL,
                 mujoco.mjtGridPos.mjGRID_TOPLEFT, viewport, " ", None, context)
+        banner_h = 0
+        if info.get("banner"):
+            # A full-width bar along the top: red for a request nobody has answered, blue while the operator has control.
+            text, kind = info["banner"]
+            banner_h, scale = 56, 0.9
+            while cv2.getTextSize(text, cv2.FONT_HERSHEY_DUPLEX, scale, 2)[0][0] > width - 40 and scale > 0.4:
+                scale -= 0.05
+            bar = np.full((banner_h, width, 3), (200, 30, 30) if kind == "needed" else (30, 90, 200), np.uint8)
+            tw, th = cv2.getTextSize(text, cv2.FONT_HERSHEY_DUPLEX, scale, 2)[0]
+            cv2.putText(bar, text, ((width - tw) // 2, (banner_h + th) // 2), cv2.FONT_HERSHEY_DUPLEX, scale, (255, 255, 255), 2, cv2.LINE_AA)
+            blit(bar, 0, height - banner_h)
         if show_hud:
             now = _time.time()
             dt_wall = now - hud_state["last"]
@@ -345,10 +360,10 @@ def make_glfw_viewer(model, data, vcfg):
                 ("recording (F6)", "off" if not recorder.active else
                  f"REC {recorder.frames} frames, {recorder.frames / recorder.fps:.1f} s"),
             ] + ([("episode", info["status"])] if info.get("status") else [])
-              + ([("controller", info["mode"].upper() + (f" - operator requested: {info['mode_note']}" if info.get("mode_note") else ""))] if info.get("mode") else []) + ([("neck pan,lift,elb,wrist", ", ".join(f"{v:+.0f}" for v in info["neck_deg"]))] if info.get("neck_deg") else [])
+              + ([("controller", info["mode"].upper())] if info.get("mode") else []) + ([("neck pan,lift,elb,wrist", ", ".join(f"{v:+.0f}" for v in info["neck_deg"]))] if info.get("neck_deg") else [])
               + ([("arms (F2 toggles)", teleop_status)] if teleop_status is not None else []),
                 400, 180, hud_keys)
-            blit(hud, 8, height - hud.shape[0] - 8)
+            blit(hud, 8, height - hud.shape[0] - 8 - banner_h)
         if show_insets:
             # One row of insets along the bottom: the simulated cameras, plus
             # the operator webcam in teleop runs. Each is scaled to fit the

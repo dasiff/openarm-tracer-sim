@@ -9,12 +9,16 @@ timeouts, save the log and the summary. Everything else is the task policy's (sr
   reset     mj_resetData + the task's object poses; the loop spawns the robot at the task's spawn pose (position and yaw) and settles it
             (nothing is randomized). The same model / data can be reused for any number of episodes.
   mode      "auto": ONE task policy (staging stage, then the arm stage made by make_arm_stage(model, data); None = hold) owns the whole task. It
-            may ask for operator control (the controller then switches to teleop at once); F9 toggles auto / teleop in the viewer.
+            may ask for operator control (the controller then switches to teleop at once). In the viewer F9 takes over from the
+            policy, Enter hands control back (the policy continues its stage), Delete aborts (ABORTED_BY_OPERATOR); the last two
+            only act while the operator has control.
             "teleop": no policy; the operator (keyboard) drives from the start and time 0 counts as the handoff.
   handoff   the policy's staging stage reaching DONE (teleop start: the first tick). The eagle frame is saved to `handoff_frame`.
   judge     check_success() every tick after the handoff, whoever is in charge: success ends the episode (SUCCESS, with operator_assisted
-            true if the operator had control at any time). TIMEOUT: episode_cfg["timeout_after_handoff"] of sim time under AUTO control (paused
-            while the operator has control), or episode_cfg["operator_timeout"] of sim time under OPERATOR control. If staging cannot reach its
+            true if the operator had control at any time). The operator can end it at once with the abort key (ABORTED_BY_OPERATOR; only while
+            the operator has control). TIMEOUT: episode_cfg["timeout_after_handoff"] of sim time under AUTO control (paused
+            while the operator has control), or episode_cfg["operator_timeout"] of sim time under OPERATOR control (OPERATOR_NO_RESPONSE instead of TIMEOUT if the policy had requested
+            the operator and no key was pressed at all). If staging cannot reach its
             pose the policy reports an error and the episode ends at once as STAGING_FAILED.
   log       out_dir/episode_log.csv (state, mode and applied commands at episode_cfg["log_hz"]) and out_dir/episode_summary.json.
 Exclusivity is ON in episodes (episode_cfg["exclusive"]); the loop's default stays off elsewhere. `extra_sources` (test only): a factory
@@ -162,8 +166,12 @@ def run_episode(make_arm_stage, model, data, task_cfg=TASK_CFG, staging_cfg=STAG
                 R["outcome"], R["t_end"], R["timeout_kind"] = "TIMEOUT", t, "auto"
                 loop["stop"]("timeout")
             elif cur == "teleop" and op_t >= episode_cfg["operator_timeout"] - 1e-6:
-                R["outcome"], R["t_end"], R["timeout_kind"] = "TIMEOUT", t, "operator"
-                loop["stop"]("timeout")
+                if obs["operator"]["requested"] and not obs["operator"]["responded"]:      # the policy asked and nobody did anything
+                    R["outcome"], R["t_end"], R["timeout_kind"] = "OPERATOR_NO_RESPONSE", t, "operator"
+                    loop["stop"]("operator_no_response")
+                else:
+                    R["outcome"], R["t_end"], R["timeout_kind"] = "TIMEOUT", t, "operator"
+                    loop["stop"]("timeout")
         if R["handoff_time"] is not None and R["outcome"] is None:   # the clocks: auto time is paused while the operator has control
             R["auto_ticks" if cur == "auto" else "operator_ticks"] += 1
         return (f"{phase}" + (f"  (+{auto_t:.0f} s)" if R["handoff_time"] is not None else "") + (f"  operator {op_t:.0f} s" if op_t else "")
@@ -173,7 +181,8 @@ def run_episode(make_arm_stage, model, data, task_cfg=TASK_CFG, staging_cfg=STAG
            "spawn_yaw": task_cfg["spawn_yaw"], "exclusive": episode_cfg["exclusive"], "on_tick": on_tick,
            "mode": mode, "auto_source": "policy" if policy is not None else None,
            "cameras": False, "camera_roundrobin": True, "held": held,
-           "hotkeys": {"toggle_mode": glfw.KEY_F9, **({"quit": glfw.KEY_ESCAPE} if viewer is not None else {})}}
+           "hotkeys": {"take_over": glfw.KEY_F9, "hand_back": (glfw.KEY_ENTER, glfw.KEY_KP_ENTER), "abort": glfw.KEY_DELETE,
+                       **({"quit": glfw.KEY_ESCAPE} if viewer is not None else {})}}
     if record_dir is not None:      # src/run_record.py: replayable with src/replay.py (labels = the phases)
         cfg.update(record_run=str(record_dir), record_meta={"model": {"kind": "task", "task_cfg": task_cfg}, "mode": mode,
                                                             "episode": {"staging_cfg": staging_cfg, "episode_cfg": episode_cfg}})

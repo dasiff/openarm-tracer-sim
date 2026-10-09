@@ -4,13 +4,21 @@ Tests of the controller modes (auto / teleop) with the beaker-on-hotplate task p
 
     MUJOCO_GL=egl python experiments/cc_mode_tests.py [A B C1 C2]
 
+K   the keys: Enter, the abort key (Delete) and the F9 take-over key are not used by any other key of the controller (the keyboard source's
+    drive / jog / pedestal / neck keys, the viewer's F2-F7 and Esc).
 A   auto / hold stage. At handoff + 100 ticks F9 (operator takes over), the operator drives the base back a little (arrow key, then SPACE),
-    at handoff + 200 F9 again (control returns to auto, the policy continues its stage). With timeout_after_handoff = 5 s:
+    at handoff + 200 Enter (control returns to auto, the policy continues its stage). Enter and Delete pressed earlier, in auto mode, do nothing;
+    F9 pressed in teleop mode does not hand back. With timeout_after_handoff = 5 s:
     the switches are logged with cause operator_key, the base moved under the operator, the auto clock was paused while the operator had
     control (auto time 5.008 s = 313 ticks, operator time 1.6 s = 100 ticks) and the episode ends as an AUTO timeout.
 B   auto / request_operator stage + a test source that teleports the beaker onto the hotplate at 46 s (after the request, so under teleop):
     the policy's request switches to teleop at the handoff (cause policy_request), the auto clock stays at 0, and the episode is
     SUCCESS with operator_assisted true.
+D   abort: the operator takes over (F9) and presses Delete: the episode ends at once as ABORTED_BY_OPERATOR.
+E1  a request nobody answers (request_operator stage, operator_timeout 5 s, no key pressed): OPERATOR_NO_RESPONSE.
+E2  the same, but a key is pressed (SPACE) at handoff + 50: TIMEOUT of kind operator (the operator did act).
+S   snap-back: F9 during ARMS, the operator jogs the arm ~0.6 rad away, Enter: the arm targets glide back (never faster than arm_max_speed per
+    tick); with the limiter disabled the same run jumps.
 C1  teleop start (no policy), the beaker teleported at ~3 s: time 0 is the handoff, success is checked from the start: SUCCESS, operator_assisted.
 C2  teleop start, nothing happens, operator_timeout = 5 s: TIMEOUT of kind operator after 5.0 s.
 """
@@ -30,7 +38,7 @@ import numpy as np  # noqa: E402
 from src.episode_runner import run_episode  # noqa: E402
 from src.episode_test_sources import make_cheat_arm_stage  # noqa: E402
 from src.task_beaker_hotplate import load_task  # noqa: E402
-from src.task_config import EPISODE_CFG  # noqa: E402
+from src.task_config import EPISODE_CFG, STAGING_CFG  # noqa: E402
 from src.task_policy import make_request_operator_stage  # noqa: E402
 
 results = []
@@ -64,7 +72,9 @@ def scenario_A(model, data):
             return False
         k = tick[0] - H
         if code == glfw.KEY_F9:
-            return k in (100, 101, 200, 201)
+            return k in (100, 101, 150, 151)          # take over; the second press (in teleop) must not hand back
+        if code in (glfw.KEY_ENTER, glfw.KEY_DELETE):
+            return k in (50, 51) or (code == glfw.KEY_ENTER and k in (200, 201))      # k = 50: auto mode, ignored
         if code == glfw.KEY_DOWN:
             return 110 <= k <= 124
         if code == glfw.KEY_SPACE:
@@ -74,7 +84,7 @@ def scenario_A(model, data):
     s = run_episode(None, model, data, episode_cfg={**EPISODE_CFG, "timeout_after_handoff": 5.0}, held=held, loop_cfg={"tick_ref": tick},
                     extra_sources=lambda m, d: {"probe": src})
     sw = s["mode_switches"]
-    check("switch log: initial auto, operator_key to teleop, operator_key back", [(m["from"], m["to"], m["cause"]) for m in sw] ==
+    check("switch log: initial auto, operator_key to teleop, operator_key back (Enter / Delete in auto and F9 in teleop did nothing)", [(m["from"], m["to"], m["cause"]) for m in sw] ==
           [("teleop", "auto", "initial"), ("auto", "teleop", "operator_key"), ("teleop", "auto", "operator_key")], str([m["cause"] for m in sw]))
     H = probe["H"]
     moved = np.hypot(*(np.array(probe["poses"][H + 150][:2]) - np.array(probe["poses"][H + 105][:2])))
@@ -108,8 +118,108 @@ def scenario_C(model, data):
           f"{s['outcome']} {s['timeout_kind']} operator {s['operator_time_s']:.3f} s")
 
 
+def scenario_K():
+    print("\nK: key map")
+    from src import keyboard_source as ks
+    used = {ks.key_code(k) for kk in ks.JOG_KEYS.values() for lst in kk.values() for k in lst}
+    used |= {ks.key_code(k) for k in ks.PEDESTAL_KEYS.values()} | {ks.key_code(k) for k in ks.NECK_KEYS["plus"] + ks.NECK_KEYS["minus"]}
+    used |= {ks.key_code(ks.NECK_KEYS["frame"]), ks.key_code(ks.NECK_KEYS["home"])}
+    used |= {ks.key_code(k) for lst in ks.DRIVE_CFG["keys"].values() for k in lst}
+    viewer_keys = {glfw.KEY_F2, glfw.KEY_F3, glfw.KEY_F4, glfw.KEY_F5, glfw.KEY_F6, glfw.KEY_ESCAPE}       # combined_controller / glfw_viewer hotkeys
+    mine = {"F9 take over": {glfw.KEY_F9}, "Enter hand back": {glfw.KEY_ENTER, glfw.KEY_KP_ENTER}, "Delete abort": {glfw.KEY_DELETE}}
+    for name, codes in mine.items():
+        check(f"{name} is not used by any other key", not (codes & (used | viewer_keys)))
+    check("the abort key is not Esc (Esc quits the viewer)", glfw.KEY_ESCAPE not in mine["Delete abort"])
+
+
+def scenario_D(model, data):
+    print("\nD: operator takes over (F9) and aborts (Delete)")
+    tick = [0]
+    src, probe = make_probe()
+
+    def held(code):
+        H = probe["H"]
+        if H is None:
+            return False
+        k = tick[0] - H
+        return (code == glfw.KEY_F9 and k in (20, 21)) or (code == glfw.KEY_DELETE and k in (60, 61))
+
+    s = run_episode(None, model, data, held=held, loop_cfg={"tick_ref": tick}, extra_sources=lambda m, d: {"probe": src})
+    H = probe["H"]
+    check("outcome ABORTED_BY_OPERATOR, ended 40 ticks after the take-over", s["outcome"] == "ABORTED_BY_OPERATOR" and s["sim_time_end"] is not None
+          and abs((s["sim_time_end"] - s["handoff_time"]) - 60 * 0.016) < 0.05, f"{s['outcome']} at handoff + {s['sim_time_end'] - s['handoff_time']:.2f} s")
+
+
+def scenario_E(model, data):
+    print("\nE1: policy requests the operator, nobody does anything, operator_timeout 5 s")
+    s = run_episode(lambda m, d: make_request_operator_stage(), model, data, episode_cfg={**EPISODE_CFG, "operator_timeout": 5.0})
+    check("OPERATOR_NO_RESPONSE after 5.0 s of operator time", s["outcome"] == "OPERATOR_NO_RESPONSE" and abs(s["operator_time_s"] - 5.0) < 0.02,
+          f"{s['outcome']} operator {s['operator_time_s']:.3f} s")
+    print("E2: the same, but a key is pressed (SPACE) 50 ticks after the request")
+    tick = [0]
+    src, probe = make_probe()
+    held = lambda code: probe["H"] is not None and code == glfw.KEY_SPACE and tick[0] - probe["H"] in (50, 51)
+    s = run_episode(lambda m, d: make_request_operator_stage(), model, data, episode_cfg={**EPISODE_CFG, "operator_timeout": 5.0}, held=held,
+                    loop_cfg={"tick_ref": tick}, extra_sources=lambda m, d: {"probe": src})
+    check("TIMEOUT (operator), not OPERATOR_NO_RESPONSE", s["outcome"] == "TIMEOUT" and s["timeout_kind"] == "operator", f"{s['outcome']} {s['timeout_kind']}")
+
+
+def _snapback_run(model, data, max_speed):
+    tick = [0]
+    pr = {"A": None, "applied": [], "phase": []}
+
+    def probe_step(obs):
+        pr["applied"].append(np.array(obs["applied"]["arm_targets"]["left"]))
+        pr["phase"].append(obs["policy"]["phase"] if obs.get("policy") else None)
+        if pr["A"] is None and obs.get("policy") and obs["policy"]["phase"] == "ARMS":
+            pr["A"] = obs["tick"]
+        return None
+
+    def held(code):
+        if pr["A"] is None:
+            return False
+        k = tick[0] - pr["A"]
+        if code == glfw.KEY_F9:
+            return k in (150, 151)
+        if code == glfw.KEY_2:                      # left joint 2 up (0.05 rad per tick while held)
+            return 160 <= k <= 179
+        if code == glfw.KEY_4:                      # and joint 4
+            return 160 <= k <= 171
+        if code == glfw.KEY_ENTER:
+            return k in (260, 261)
+        return False
+
+    cfg = {**STAGING_CFG, "arm_max_speed": max_speed}
+    s = run_episode(None, model, data, staging_cfg=cfg, episode_cfg={**EPISODE_CFG, "timeout_after_handoff": 3.0}, held=held, loop_cfg={"tick_ref": tick},
+                    extra_sources=lambda m, d: {"probe": {"name": "probe", "step": probe_step, "state": {}}})
+    A = pr["A"]
+    q = np.array(pr["applied"])                      # applied left-arm targets per tick (index = tick)
+    return s, A, q
+
+
+def scenario_S(model, data):
+    print("\nS: snap-back. F9 during ARMS, jog the arm well away (joints 2 and 4), Enter")
+    out = {}
+    for label, v in (("with the limiter (arm_max_speed 1.0 rad/s)", STAGING_CFG["arm_max_speed"]), ("limiter disabled (control run)", 1e9)):
+        s, A, q = _snapback_run(model, data, v)
+        away = np.abs(q[A + 160] - q[A + 259]).max()                      # how far the operator moved the arm (largest joint)
+        after = np.abs(np.diff(q[A + 259:A + 259 + 400], axis=0)).max()   # largest per-tick change of any joint's target from just before the hand-back (tick A+260) on
+        first = np.abs(q[A + 261] - q[A + 260]).max()                     # the first tick after the hand-back
+        out[label] = (s, away, after, first)
+        print(f"  {label}: the operator moved the arm {away:.2f} rad; after the hand-back the largest per-tick change of a target is {after:.4f} rad "
+              f"({after / 0.016:.2f} rad/s), the first tick {first:.4f} rad; outcome {s['outcome']}, staging error {s['staging_error']}")
+    s, away, after, first = out["with the limiter (arm_max_speed 1.0 rad/s)"]
+    jump = out["limiter disabled (control run)"][2]
+    check("the operator moved the arm well away", away > 0.5, f"{away:.2f} rad")
+    check("after the hand-back no target moves more than arm_max_speed * dt = 0.016 rad per tick", after <= 0.016 + 1e-9, f"{after:.4f} rad")
+    check("without the limiter the same run jumps (so the test can tell)", jump > 0.3, f"{jump:.3f} rad in one tick")
+    check("staging still completes and hands off", s["handoff_time"] is not None and not s["staging_error"], f"outcome {s['outcome']}")
+
+
 def main():
-    which = sys.argv[1:] or ["A", "B", "C1", "C2"]
+    which = sys.argv[1:] or ["K", "A", "B", "C1", "C2", "D", "E", "S"]
+    if "K" in which:
+        scenario_K()
     sim = load_task(cameras=True)
     model, data = sim.model, sim.data
     if "A" in which:
@@ -118,6 +228,12 @@ def main():
         scenario_B(model, data)
     if "C1" in which or "C2" in which:
         scenario_C(model, data)
+    if "D" in which:
+        scenario_D(model, data)
+    if "E" in which:
+        scenario_E(model, data)
+    if "S" in which:
+        scenario_S(model, data)
     print(f"\n{sum(results)}/{len(results)} checks passed")
     sys.exit(0 if all(results) else 1)
 

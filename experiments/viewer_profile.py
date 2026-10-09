@@ -75,7 +75,7 @@ def episode(ticks, loop_cfg=None, viewer_cfg=None):
     viewer = make_glfw_viewer(sim.model, sim.data, {"win": (1280, 960), "vsync": 0, "view_shadows": False, "shadowsize": None, "hud": True, "insets": True,
                                                     "record": False, "snapshot_every": 0.0, "snapshot_dir": None, "bench_snap_dir": None,
                                                     "bench_snap_frame": 15, "finish": False, "roundrobin": True,
-                                                    "record_fps": 62.5, "has_teleop": False, "has_auto": True, **(viewer_cfg or {})})
+                                                    "record_fps": 62.5, "has_teleop": False, "legend_extra": [("F9", "take over"), ("Enter", "hand back"), ("Del", "abort")], **(viewer_cfg or {})})
     viewer["set_held"](viewer["key_down"])
     prof = cProfile.Profile()
     prof.enable()

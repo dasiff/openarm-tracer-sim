@@ -9,9 +9,9 @@ Run beaker-on-hotplate episodes (src/episode_runner.py): the controller in auto 
                 with the keyboard (needs --viewer); time 0 is the handoff and the operator timeout (300 s) applies.
 --arm-stage     the policy's arm stage after staging. hold (default): holds (expected outcome TIMEOUT after 60 s of auto time).
                 request_operator: asks for operator control once, then holds (the controller switches to teleop; with a viewer the operator
-                drives, F9 hands control back; headless nobody does and the operator timeout ends it). cheat: test only, the beaker is teleported
+                drives, Enter hands control back; headless nobody does and the operator timeout ends it). cheat: test only, the beaker is teleported
                 onto the hotplate 2 s after the handoff (expected: SUCCESS).
---viewer        open the viewer (GLFW) and run in real time; needs a display. F9 toggles auto / teleop. Without it the run is headless (no window;
+--viewer        open the viewer (GLFW) and run in real time; needs a display. F9 takes over, Enter hands back, Delete aborts the episode. Without it the run is headless (no window;
                 the HANDOFF eagle frame is rendered through EGL, set MUJOCO_GL=egl on a machine without a display).
 --repeat N      N episodes in a row on the SAME model (reset by mj_resetData); the logs are compared byte for byte.
 --cross-check   also run one episode on a freshly loaded model (the first model is dropped first, to save memory) and compare it as well.
@@ -124,7 +124,7 @@ def main():
         viewer = make_glfw_viewer(model, data, {"win": (1280, 960), "vsync": 0, "view_shadows": False, "shadowsize": None, "hud": True, "insets": True,
                                                 "record": False, "snapshot_every": 0.0, "snapshot_dir": None, "bench_snap_dir": None,
                                                 "bench_snap_frame": 15, "finish": False, "roundrobin": True,
-                                                "record_fps": 62.5, "has_teleop": False, "has_auto": args.mode == "auto"})
+                                                "record_fps": 62.5, "has_teleop": False, "legend_extra": ([("F9", "take over")] if args.mode == "auto" else []) + ([("Enter", "hand back")] if args.mode == "auto" else []) + [("Del", "abort")]})
         viewer["set_held"](viewer["key_down"])
         held = viewer["key_down"]
     for k in range(args.repeat):

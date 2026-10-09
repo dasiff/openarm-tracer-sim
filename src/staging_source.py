@@ -22,7 +22,9 @@ Phases, in order (one subsystem moves at a time; the neck is exempt and stays at
   PEDESTAL           the pedestal command ramps to task_cfg["pedestal_q"].
   CORRECT_PEDESTAL   the pedestal move pushes the base: if it is outside the tolerance, the same go-to-pose controller moves it back (the
                      arms are still tucked), aiming for correction_aim_frac of the tolerance. Skipped (and logged) if the pose is fine.
-  ARMS               the task arm moves (minimum jerk, arms_move_s) rest -> ready_via_q -> ready_q, the gripper opening on the way.
+  ARMS               the task arm moves (minimum jerk, arms_move_s) rest -> ready_via_q -> ready_q, the gripper opening on the way. The targets go
+                     through src/rate_limit.py from the arm's applied targets (arm_max_speed), so after an operator has moved the arm
+                     and handed back they glide back to the path instead of jumping.
   CORRECT_ARMS       same check. With the arm extended only a creep-speed correction is allowed: a yaw turn in place and a straight move
                      along the heading (forward or back); a sideways error cannot be fixed without a large turn, which would sweep the
                      arm, so it counts as too large. If the needed correction exceeds correction_arms_max_pos / _max_yaw (or the sideways
@@ -42,6 +44,7 @@ import mujoco
 import numpy as np
 
 from src import robot_specs
+from src.rate_limit import rate_limit
 from src.neck import neck_ids
 from src.neck_framing import frame_points
 from src.task_beaker_hotplate import arm_ids, framing_points, wrap
@@ -372,6 +375,9 @@ def make_staging_source(model, data, task_cfg=TASK_CFG, cfg=STAGING_CFG, points_
         pts, frac_ = P["path"]
         i = min(int(np.searchsorted(frac_, s, side="right")) - 1, len(pts) - 2)
         q = pts[i] + (s - frac_[i]) / (frac_[i + 1] - frac_[i]) * (pts[i + 1] - pts[i])
+        # Snap-back safety: the targets start from the arm's CURRENT applied targets and move at most arm_max_speed. Normally the goal is within
+        # reach and is returned exactly as before; after the operator has moved the arm (the policy was paused) the arm glides back to the path.
+        q = rate_limit(applied, q, cfg["arm_max_speed"], dt)
         P["last_arm"] = q
         return [{"mode": "arms", "arm_targets": {arm: [float(v) for v in q]}, "gripper": {arm: float(cfg["finger_open"] * s)}}]
 

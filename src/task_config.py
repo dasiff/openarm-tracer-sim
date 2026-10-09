@@ -161,6 +161,7 @@ STAGING_CFG = {
     "pedestal_timeout": 30.0,
     # ARMS: minimum-jerk move along rest -> ready_via_q -> ready_q (joint-space arc length), gripper opening on the way
     "arms_move_s": 10.0,                   # s; was 6: at 6 s the servos lagged the path by up to 6 deg and the fingers grazed the bench top
+    "arm_max_speed": 1.0,                  # rad/s per joint: snap-back limit on the arm targets (staging itself peaks at 0.52 rad/s). NEW value, to be approved
     "arms_tol": 0.03,                      # rad, every joint
     "arms_settle_vel": 0.02,               # rad/s
     "arms_settle_s": 0.3,

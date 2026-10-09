@@ -56,12 +56,15 @@ def make_task_policy(model, data, task_cfg=TASK_CFG, staging_cfg=STAGING_CFG, ar
         staging["observe"](obs)
         if not st["done"]:
             return staging["step"](obs)
+        if staging["restoring"]():                 # after a hand-back: put back what the operator moved (pedestal, neck) before the arm stage goes on
+            cmds, finished = staging["restore_step"](obs, obs["time"], obs["timestep"] * obs["steps_per_frame"])
+            if not finished:
+                return cmds
         return arm["step"](obs)       # the first call is the tick after staging set DONE (the handoff tick)
 
     def resume():
-        if not st["done"]:
-            staging["resume"]()
-        elif "resume" in arm:
+        staging["resume"]()
+        if st["done"] and "resume" in arm:
             arm["resume"]()
 
     return {"name": "policy", "step": step, "state": {"staging": st, "arm": arm["state"]}, "status": status, "resume": resume,

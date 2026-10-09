@@ -37,11 +37,10 @@ logger, chemistry lab scene, cameras and webcam teleop all exist now (see `git l
   renders policy cameras (shadows on, 30 Hz round robin) on a fixed schedule when `cfg["cameras"]` is on; at ~200 ms per render on this
   VM that is most of the wall-clock time. A policy source should ask for frames when its inference step needs them (the loop's
   `render` hook already renders on demand); demo collection renders them offline from a recorded run instead (src/replay.py).
-- [ ] **After an operator hand-back the staging stage glides back but does not restore what it only commanded once.** (1) The arm and gripper glide back to
-  their path in a straight line in joint space / finger travel, not checked against the bench. (2) The pedestal is commanded only in PEDESTAL and the neck only at
-  the start of DRIVE and in NECK: if the operator changes them and hands back in a later phase, staging does not move them back (a neck moved by the operator
-  during NECK stalls the phase until its 15 s timeout, which ends the episode as STAGING_FAILED). A later stage should plan the way back or restore the
-  per-phase targets on resume.
+- [ ] **After an operator hand-back the staging stage restores what it needs, but not everything.** The arm and gripper glide back to their path in a straight
+  line in joint space / finger travel, not checked against the bench (the operator may have left the arm anywhere). The pedestal (after its phase) and the neck
+  framing (in NECK and after DONE) are put back, and the operator's time does not count toward a phase timeout; the neck's look-ahead aim during DRIVE..ARMS is
+  not restored (NECK frames it later anyway). A later stage should plan the way back for the arm.
 - [ ] **Gripper force caps on real hardware.** The operator's gripper commands (keyboard, teleop) carry no `max_force`, so they reset the cap to the ceiling
   (10 N per finger, a placeholder: `ARM_ACTUATOR_SPECS["fingers"]["force_limit"]`). On the real gripper they should also carry a force cap. With `kp` = 100 N/m a
   finger cannot push harder than `kp` times its distance from the commanded position (3.7 N on the 70 mm beaker), so caps above that do nothing.

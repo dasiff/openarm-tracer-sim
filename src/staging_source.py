@@ -58,6 +58,10 @@ def _slew(cur, target, up, down, dt):
     return cur + max(-lim, min(lim, target - cur))
 
 
+RESTORE_ON_RESUME = True      # tests set these False for the control runs
+COMPENSATE_PAUSES = True
+
+
 def _start_from_applied(S, obs):
     """Snap-back safety for the base: the controllers slew from the Twist the loop APPLIED last tick, not from their own memory of it. Normally they are
     the same numbers; after an operator has had control (the base was brought to rest, the controller was paused) the memory is stale and
@@ -236,7 +240,7 @@ def make_staging_source(model, data, task_cfg=TASK_CFG, cfg=STAGING_CFG, points_
              "planned_final_turn_deg": math.degrees(wrap(gyaw - planned_heading)), "first_turn_deg": None, "reapproaches": 0,
              "framing_report": None, "corrections": []}
     P = {"entered": False, "still_since": None, "neck_sent": False, "u": 0.0, "last_arm": None, "path": None, "neck_targets": None,
-         "corr": None, "lim_grip": False}
+         "corr": None, "lim_grip": False, "paused": 0.0, "last_t": None, "restore": False, "neck_resent": False}
     pos_tol, yaw_tol = cfg["drive_pos_tol"], cfg["drive_yaw_tol"]
     frac = cfg["correction_aim_frac"]
     drive_ctl = _pose_controller(cfg, goal, cfg["drive_max_lin_vel"], cfg["drive_max_ang_vel"], pos_tol, yaw_tol, pos_tol, yaw_tol,
@@ -258,11 +262,20 @@ def make_staging_source(model, data, task_cfg=TASK_CFG, cfg=STAGING_CFG, points_
         d = lambda A: min(mujoco.mj_geomDistance(model, data, a, b, 1.0, ft) for a in A for b in bench_geoms)
         return d(base_geoms), d(arm_geoms)
 
+    def close_phase(t):
+        rec = state["phases"].get(state["phase"])
+        if rec is not None:
+            rec["end"], rec["paused_s"] = t, P["paused"] - rec["p0"]
+
+    def elapsed(t):
+        """Sim time in the current phase, not counting the time an operator had control (so a phase does not time out because of it)."""
+        rec = state["phases"][state["phase"]]
+        return t - rec["start"] - (P["paused"] - rec["p0"])
+
     def enter(name, t):
-        if state["phase"] in state["phases"]:
-            state["phases"][state["phase"]]["end"] = t
+        close_phase(t)
         state["phase"] = name
-        state["phases"][name] = {"start": t, "end": None}
+        state["phases"][name] = {"start": t, "end": None, "p0": P["paused"]}
         P.update(still_since=None)
 
     def still_for(t, ok, dwell):
@@ -276,7 +289,7 @@ def make_staging_source(model, data, task_cfg=TASK_CFG, cfg=STAGING_CFG, points_
 
     def fail(t, msg):
         state["error"] = msg
-        state["phases"][state["phase"]]["end"] = t
+        close_phase(t)
 
     def pose_err(obs):
         x, y, yaw = obs["base_pose"]
@@ -352,7 +365,7 @@ def make_staging_source(model, data, task_cfg=TASK_CFG, cfg=STAGING_CFG, points_
 
     def finish_correction(obs, t, status, cmds, why, S):
         rec = P["corr"]
-        rec["duration_s"] = t - state["phases"][state["phase"]]["start"]
+        rec["duration_s"] = elapsed(t)
         if status == "failed":
             rec["status"] = "failed"
             rec["after"] = pose_err(obs)
@@ -419,16 +432,26 @@ def make_staging_source(model, data, task_cfg=TASK_CFG, cfg=STAGING_CFG, points_
             return []
         t = obs["time"]
         dt = obs["timestep"] * obs["steps_per_frame"]
+        if P["last_t"] is not None and t - P["last_t"] > 1.5 * dt:          # not stepped for a while: an operator had control
+            P["paused"] += (t - P["last_t"] - dt) if COMPENSATE_PAUSES else 0.0
+            P["still_since"] = None
+            for c in (drive_ctl, ped_ctl, arm_ctl):
+                c["S"]["ok_since"] = None
+        P["last_t"] = t
+        if P["restore"]:
+            cmds, finished = restore_step(obs, t, dt)
+            if not finished:
+                return cmds
         if not P["entered"]:
             P["entered"] = True
-            state["phases"]["DRIVE"] = {"start": t, "end": None}
+            state["phases"]["DRIVE"] = {"start": t, "end": None, "p0": 0.0}
             lead = [{"mode": "neck", "neck_targets": dict(zip(robot_specs.NECK_SPECS["active_joints"], robot_specs.NECK_SPECS["drive_pose"]))}] \
                 if neck is not None else []                       # the neck looks ahead while driving (it already does; made explicit)
         else:
             lead = []
         phase = state["phase"]
         fn, timeout_key = phases[phase]
-        if t - state["phases"][phase]["start"] > cfg[timeout_key]:
+        if elapsed(t) > cfg[timeout_key]:
             fail(t, f"{phase} timed out after {cfg[timeout_key]:.0f} s")
             return []
         return lead + fn(obs, t, dt)
@@ -457,7 +480,7 @@ def make_staging_source(model, data, task_cfg=TASK_CFG, cfg=STAGING_CFG, points_
 
     def report():
         phases_ = state["phases"]
-        dur = {k: (v["end"] - v["start"]) if v["end"] is not None else None for k, v in phases_.items() if k != "DONE"}
+        dur = {k: (v["end"] - v["start"] - v.get("paused_s", 0.0)) if v["end"] is not None else None for k, v in phases_.items() if k != "DONE"}
         final = None
         if M["handoff_base"] is not None:
             ex, ey = gx - M["handoff_base"][0], gy - M["handoff_base"][1]
@@ -477,10 +500,46 @@ def make_staging_source(model, data, task_cfg=TASK_CFG, cfg=STAGING_CFG, points_
             "min_base_to_bench_clearance_during_drive_mm": None if M["min_clearance"] is None else 1000 * M["min_clearance"],
             "neck_framing_report": state["framing_report"]}
 
+    # ------------------------------------------------------------------ restoring what the operator moved
+    AFTER_PEDESTAL = ("CORRECT_PEDESTAL", "ARMS", "CORRECT_ARMS", "NECK", "DONE")
+
+    def restore_step(obs, t, dt):
+        """After a hand-back: put back what this stage still needs and an operator may have moved, smoothly and one thing at a time. Returns (commands, finished).
+        pedestal   once the PEDESTAL phase is over it must be at the staging height: re-ramped from the applied height at pedestal_speed.
+        neck       in NECK the framing is re-run (the phase does it when neck_sent is cleared); after the stage is DONE the framing is re-run here and
+                   the neck moves there at the loop's neck speed. Before NECK the neck is not needed (NECK frames it anyway)."""
+        phase = "DONE" if state["done"] else state["phase"]
+        if phase in AFTER_PEDESTAL:
+            target = task_cfg["pedestal_q"]
+            applied = obs["applied"]["pedestal"]
+            if abs(applied - target) > 1e-9:
+                step = cfg["pedestal_speed"] * dt
+                return [{"mode": "pedestal", "height": applied + max(-step, min(step, target - applied))}], False
+            if abs(obs["pedestal_height"] - target) >= cfg["pedestal_tol"] or \
+                    not still_for(t, abs(obs["joint_velocities"][ped_vadr]) < cfg["pedestal_settle_vel"], cfg["pedestal_settle_s"]):
+                return [], False
+        if phase == "NECK":
+            P["neck_sent"] = False
+        elif phase == "DONE" and neck is not None:
+            if not P["neck_resent"]:
+                targets, report = frame_points(model, data, points_fn(model, data, task_cfg))
+                state["framing_report"] = report
+                P["neck_targets"], P["neck_resent"] = targets, True
+                return [{"mode": "neck", "neck_targets": targets}], False
+            q = np.array([obs["joint_angles"][a] for a in neck["qadr"]])
+            goal_q = np.array([P["neck_targets"][n] for n in neck["names"]])
+            qd = max(abs(obs["joint_velocities"][v]) for v in neck["vadr"])
+            if not (np.abs(q - goal_q).max() < cfg["neck_tol"] and still_for(t, qd < cfg["neck_settle_vel"], cfg["neck_settle_s"])):
+                return [], False
+        P["restore"], P["neck_resent"] = False, False
+        return [], True
+
     def resume():
         """The controller hands control back after an operator had it. Every subsystem restarts from where the operator left it: the base (the
         controllers slew from the applied Twist, always), the arm (always rate-limited from the applied targets), the pedestal (its phase ramps
         from the applied height) and the neck (the loop slews it) need nothing here; the gripper is rate-limited from the applied target until it is back on the path."""
         P["lim_grip"] = True
+        P["restore"] = True if RESTORE_ON_RESUME else False
+        P["still_since"] = None
 
-    return {"name": "staging", "step": step, "state": state, "observe": observe, "report": report, "resume": resume}
+    return {"name": "staging", "step": step, "state": state, "observe": observe, "report": report, "resume": resume, "restore_step": restore_step, "restoring": lambda: P["restore"]}

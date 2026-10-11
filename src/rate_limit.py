@@ -10,6 +10,8 @@ arm while the policy was paused) the step is the straight line in joint space to
 `max_speed * dt`; the arm then glides back instead of jumping.
 
 A policy calls it with the arm's CURRENT APPLIED targets (obs["applied"]["arm_targets"][side]) as `current`, not with its own last command.
+
+The module also holds `min_jerk(u)`, the smooth 0-to-1 time profile used for scripted arm moves.
 """
 
 import numpy as np
@@ -37,3 +39,16 @@ def rate_limit(current, goal, max_speed, dt):
     if biggest <= step:
         return goal
     return current + delta * (step / biggest)
+
+
+def min_jerk(u):
+    """Gives the minimum-jerk interpolation fraction for a time fraction.
+
+    Args:
+        u (float): The fraction of the movement time elapsed; clamped to [0, 1].
+
+    Returns:
+        float: 10 u^3 - 15 u^4 + 6 u^5, which goes from 0 to 1 with zero speed and acceleration at both ends.
+    """
+    u = min(max(u, 0.0), 1.0)
+    return 10 * u ** 3 - 15 * u ** 4 + 6 * u ** 5

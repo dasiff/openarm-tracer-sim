@@ -34,6 +34,7 @@ import numpy as np
 
 from src import robot_specs
 from src.alert_sound import play_alert
+from src.base_control import base_yaw
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 CAMERA_SNAPSHOT_DIR = "data/camera_snapshots"
@@ -572,10 +573,7 @@ def make_glfw_viewer(model, data, vcfg):
 
         # Camera follow
         cam.lookat[:] = data.xpos[base_body_id]
-        qw, qx, qy, qz = data.xquat[base_body_id]
-        yaw_deg = math.degrees(
-            math.atan2(2.0 * (qw * qz + qx * qy),
-                       1.0 - 2.0 * (qy * qy + qz * qz)))
+        yaw_deg = math.degrees(base_yaw(data))
         cam.azimuth = yaw_deg + 90
         state["yaw_deg"] = yaw_deg
 

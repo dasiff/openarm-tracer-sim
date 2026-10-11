@@ -347,7 +347,7 @@ def branch_failures(seed=0, spread=0.0, n_free=20, n_collide=8, tol=1e-3,
 def model_check(sf_off, n=100):
     """Does the combined robot (Tracer + OpenArm) map to the solver by name?"""
     import openarm_teleop
-    from src.actuator_mapping import NAME_TO_IDX
+    from legacy.actuator_mapping import NAME_TO_IDX
     scene = PROJECT_ROOT / "models" / "scenes" / "chemistry_lab_combined.xml"
     arms = Arms(model=scene, contacts=False)
     m = arms.m
@@ -371,10 +371,10 @@ def model_check(sf_off, n=100):
             if m.actuator_trnid[aid, 0] != jid:
                 bad.append(f"{side} joint{i}: actuator drives {m.joint(m.actuator_trnid[aid, 0]).name}")
             if NAME_TO_IDX[f"{side}_joint{i}"] != aid:
-                bad.append(f"{side} joint{i}: src.actuator_mapping index {NAME_TO_IDX[f'{side}_joint{i}']} "
+                bad.append(f"{side} joint{i}: legacy.actuator_mapping index {NAME_TO_IDX[f'{side}_joint{i}']} "
                            f"!= model actuator id {aid}")
     print("joint order by name (solver spec order == model joint names == actuator "
-          f"targets == src.actuator_mapping indices): {'OK for all 14 arm joints' if not bad else bad}")
+          f"targets == legacy.actuator_mapping indices): {'OK for all 14 arm joints' if not bad else bad}")
     lim = 0.0
     for side in SIDES:
         lo, hi = spec[f"{side}_arm/joint_lower"], spec[f"{side}_arm/joint_upper"]

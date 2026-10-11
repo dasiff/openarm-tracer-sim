@@ -32,7 +32,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
 from src import robot_specs  # noqa: E402
-from src.controller import RobotController  # noqa: E402
+from legacy.controller import RobotController  # noqa: E402
 from src.arm_actuators import add_arm_actuators  # noqa: E402
 from src.pedestal import add_pedestal_lift, pedestal_load  # noqa: E402
 

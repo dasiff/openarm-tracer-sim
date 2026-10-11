@@ -11,9 +11,9 @@ current_file = Path(__file__).resolve()
 project_root = current_file.parent.parent
 sys.path.insert(0, str(project_root))
 
-from src.controller import RobotController
+from legacy.controller import RobotController
 from src.simulator import RobotSimulator
-from src.actuator_mapping import ACTUATOR_INDICES
+from legacy.actuator_mapping import ACTUATOR_INDICES
 
 def test_controller():
     print("Testing Controller...")

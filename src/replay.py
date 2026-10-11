@@ -41,6 +41,7 @@ import mujoco
 import numpy as np
 
 from src import robot_specs
+from src.base_control import base_yaw
 from src.cameras import CameraRig
 from src.control_loop import _headless_context, run_loop
 from src.run_record import (describe_state_diff, get_state, jsonable, load_recording, model_hash, new_state_buffer, specs_snapshot,
@@ -344,7 +345,7 @@ def replay_run(run_dir, out_dir=None, cameras=None, video="preview", hz=30.0, si
             "auto") and "fps" (float, the rendering rate `hz`).
         """
         vx, vy, wz = (float(v) for v in rec["basevel"][tick])
-        yaw = math.atan2(2.0 * (data_.qpos[3] * data_.qpos[6] + data_.qpos[4] * data_.qpos[5]), 1.0 - 2.0 * (data_.qpos[5] ** 2 + data_.qpos[6] ** 2))
+        yaw = base_yaw(data_)
         phase = phase_at[tick] or "DRIVE"
         status = phase + (f"  (+{(tick - handoff_tick) * tick_dt:.0f} s)" if handoff_tick is not None and tick >= handoff_tick else "")
         return {"time": data_.time, "base_vel": (vx, vy, wz), "twist": (vx * math.cos(yaw) + vy * math.sin(yaw), wz), "status": status,

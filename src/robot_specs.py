@@ -8,23 +8,20 @@ and camera neck that are added to the robot at load time, the arm and finger act
 The values are used in the MuJoCo simulation as they are, and are to be calibrated or updated when physical hardware is available.
 
 Contents and readers:
-    PHYSICS_HZ, PD_HZ, CAMERA_HZ, SIMULATION_TIMESTEP, SIMULATION_FREQUENCY: rates in hertz (Hz) and the physics timestep in
-        seconds. PHYSICS_HZ, SIMULATION_TIMESTEP and CAMERA_HZ are read by src/simulator.py, src/control_loop.py and others;
-        PD_HZ (proportional-derivative controller rate) and SIMULATION_FREQUENCY are not read by any code.
-    TRACER_SPECS: the Agilex Tracer X2 mobile base (wheels, pedestal damping). Reference values only; no code reads it.
+    PHYSICS_HZ, CAMERA_HZ, SIMULATION_TIMESTEP: rates in hertz (Hz) and the physics timestep in seconds. Read by src/simulator.py,
+        src/control_loop.py and others.
     PEDESTAL_SPECS: the stand-in pedestal lift actuator, added by src/pedestal.py. PLACEHOLDER: every number is a guess.
     NECK_SPECS: the SO-101 camera neck, attached by src/neck.py and used by src/neck_framing.py and the control loop.
         PLACEHOLDER: the mounting and the active joints are unconfirmed.
     NECK_AUTO_SPECS: settings of the automatic neck behaviour in src/neck_source.py.
-    OPENARM_SPECS: the OpenArm bimanual manipulator (arm count, degrees of freedom (DOF) per arm, gripper). Reference values
-        only; no code reads it.
     ARM_ACTUATOR_SPECS: per-joint motor, armature, gains and torque limits of the arms, the finger actuator gains and the gravity
-        compensation bodies, read by src/arm_actuators.py and src/controller.py. The gains are PLACEHOLDERS.
+        compensation bodies, read by src/arm_actuators.py and legacy/controller.py. The gains are PLACEHOLDERS.
     ORBBEC_RESOLUTION, ORBBEC_FOVY_DEG, CAMERA_SPECS: the camera resolution, the vertical field of view (FOV) in degrees and the
         list of camera specifications (name, parent body, pose, FOV, resolution, shadows) added by src/cameras.py. PLACEHOLDER:
         the Orbbec camera model and every camera pose are unconfirmed.
-    GLOBAL_DAMPING: joint damping in the model. Not read by any code.
-    CALIBRATION_STATUS, CALIBRATION_TODO: notes on what is estimated and what is to be measured. Documentation only.
+
+Reference values that no code reads (the Tracer base's wheel and pedestal figures, the OpenArm summary, the calibration status and the
+calibration to-do list) are in docs/robot_reference.md.
 """
 
 # Simulation rates
@@ -34,34 +31,8 @@ Contents and readers:
 # 60 kHz, safety filter 3 kHz per Kong), but on hardware the 750 Hz loop is
 # the ceiling, so the sim uses the latest target on each PD step.
 PHYSICS_HZ = 750
-PD_HZ = 750
 CAMERA_HZ = 30  # camera tick rate; set CC_ROUNDROBIN=0 in the viewer so every camera updates at this rate
 SIMULATION_TIMESTEP = 1 / PHYSICS_HZ  # seconds (sim choice: one physics step per PD step)
-SIMULATION_FREQUENCY = PHYSICS_HZ
-
-# Tracer Mobile Base
-TRACER_SPECS = {
-    "name": "Agilex Tracer X2",
-    "control_frequency": PD_HZ,  # Hz
-    
-    # Wheels
-    "drive_wheels": {
-        "friction": 1.5,  # High grip
-        "gear_ratio": 10,  # Motor:wheel
-        "max_torque": 10,  # N·m (estimated from gearing)
-    },
-    
-    "caster_wheels": {
-        "friction": 0.1,  # Low friction for turning
-    },
-    
-    # Pedestal (arm mounting)
-    "pedestal": {
-        "bottom_joint_damping": 800,  # Stiff
-        "top_joint_damping": 50000,   # Very stiff
-        "max_height_range": 0.5,      # ±0.25 m each joint
-    },
-}
 
 # Pedestal lift actuator -- PLACEHOLDER
 # The real lift hardware is unconfirmed (waiting on Dan's answer), and the pedestal model
@@ -119,7 +90,6 @@ NECK_SPECS = {
     "drive_pose": (0.0, 0.1677, 0.1784, 0.1775),   # rad, in the order of active_joints
     "max_speed": 1.5,                        # rad/s: the loop moves the neck's position targets no faster than this
     "jog_step": 0.02,                        # rad per command tick while a neck jog key is held
-    "camera_body": "wrist_camera",           # the camera module of the official mount (the eagle camera is added to it)
 }
 
 # Automatic neck behavior (src/neck_source.py). "teleop": only while the arms are on the webcam operator (F2); "always";
@@ -133,21 +103,6 @@ NECK_AUTO_SPECS = {
     "drive_lin": 0.05,            # m/s: the base counts as driving above this commanded speed
     "drive_ang": 0.10,            # rad/s
     "resume_delay": 1.0,          # s at rest before following the grippers again
-}
-
-# OpenArm Bimanual Manipulator
-# The per-joint motor, gains, armature and torque limits live in ARM_ACTUATOR_SPECS below.
-OPENARM_SPECS = {
-    "name": "OpenArm Bimanual",
-    "arms": 2,  # Left and right
-    "dof_per_arm": 7,  # Joints
-
-    # Gripper
-    "gripper": {
-        "model": "DM4310",
-        "motor_type": "position_control",  # all 4 fingers (src/arm_actuators.py makes them position actuators)
-        "max_opening": 0.044,  # meters
-    },
 }
 
 # Arm and finger actuators. src/arm_actuators.py reads ONLY from this section; the same numbers apply to
@@ -242,36 +197,3 @@ CAMERA_SPECS = [
         "resolution": ORBBEC_RESOLUTION,
     },
 ]
-
-# Global joint damping (prevents infinite spinning)
-GLOBAL_DAMPING = 0.4
-
-# Status of calibration
-CALIBRATION_STATUS = {
-    "inertia_matrices": "ESTIMATED (from CAD, need real measurement)",
-    "friction_coefficients": "ROUGH ESTIMATE (need measurement)",
-    "control_latency": "MODELED AS 0.002s (actual ROS latency unknown)",
-    "backlash_deadband": "NOT MODELED (need measurement when hardware available)",
-    "motor_response": "MODELED FROM SPECS (need tuning)",
-    "camera_intrinsics": "PLACEHOLDER (Orbbec model unknown; resolution/FOV guessed)",
-    "camera_mounting": "PLACEHOLDER (poses guessed until mounting info arrives)",
-}
-
-# When hardware arrives, update these
-CALIBRATION_TODO = """
-PRIORITY 1 (Critical for sim-to-real):
-- [ ] Measure actual motor torque constants
-- [ ] Measure joint friction and damping
-- [ ] Measure control latency with ROS overhead
-- [ ] Measure backlash/deadbands
-
-PRIORITY 2 (Important):
-- [ ] Verify inertia matrices from CAD
-- [ ] Measure gripper grip force
-- [ ] Characterize wheel slip/friction
-
-PRIORITY 3 (Nice-to-have):
-- [ ] Electromagnetic noise/ripple
-- [ ] Temperature effects on motors
-- [ ] Wear patterns over time
-"""

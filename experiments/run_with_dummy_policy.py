@@ -16,7 +16,7 @@ project_root = current_file.parent.parent
 sys.path.insert(0, str(project_root))
 
 from src.simulator import RobotSimulator
-from src.controller import RobotController  
+from legacy.controller import RobotController  
 from src.logger import TrajectoryLogger
 from models.policies.dummy_policy import DummyPolicy
 

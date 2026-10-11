@@ -25,7 +25,7 @@ import numpy as np
 def build_actuator_addressing(model):
     """
     Returns a dict with, for every actuator (in actuator declaration order,
-    i.e. matching src/actuator_mapping.ACTUATOR_NAMES):
+    i.e. matching legacy/actuator_mapping.ACTUATOR_NAMES):
       - names:        actuator names
       - joint_names:  the joint each actuator drives
       - qpos_indices: correct index into data.qpos for that actuator's joint

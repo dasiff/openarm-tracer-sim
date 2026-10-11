@@ -53,7 +53,7 @@ import mujoco
 import numpy as np
 
 from src import robot_specs
-from src.rate_limit import rate_limit
+from src.rate_limit import min_jerk, rate_limit
 from src.neck import neck_ids
 from src.neck_framing import frame_points
 from src.task_beaker_hotplate import arm_ids, framing_points, wrap
@@ -98,19 +98,6 @@ def _start_from_applied(S, obs):
         obs (dict): The observation; obs["applied"]["twist"] is the (linear, angular) Twist the loop applied.
     """
     S["twist"] = tuple(float(v) for v in obs["applied"]["twist"])
-
-
-def _min_jerk(u):
-    """Gives the minimum-jerk interpolation fraction for a time fraction.
-
-    Args:
-        u (float): The fraction of the movement time elapsed; clamped to [0, 1].
-
-    Returns:
-        float: 10 u^3 - 15 u^4 + 6 u^5, which goes from 0 to 1 with zero speed and acceleration at both ends.
-    """
-    u = min(max(u, 0.0), 1.0)
-    return 10 * u ** 3 - 15 * u ** 4 + 6 * u ** 5
 
 
 def _pose_controller(cfg, goal, max_lin, max_ang, tol_pos, tol_yaw, real_pos_tol, real_yaw_tol, max_reapproach):
@@ -740,7 +727,7 @@ def make_staging_source(model, data, task_cfg=TASK_CFG, cfg=STAGING_CFG, points_
             return begin_correction(obs, t, "CORRECT_ARMS", "NECK")
         if P["last_arm"] is None or np.allclose(applied, P["last_arm"], atol=1e-12):      # advance only when the last command was applied
             P["u"] = min(1.0, P["u"] + dt / cfg["arms_move_s"])
-        s = _min_jerk(P["u"])
+        s = min_jerk(P["u"])
         pts, frac_ = P["path"]
         i = min(int(np.searchsorted(frac_, s, side="right")) - 1, len(pts) - 2)
         q = pts[i] + (s - frac_[i]) / (frac_[i + 1] - frac_[i]) * (pts[i + 1] - pts[i])

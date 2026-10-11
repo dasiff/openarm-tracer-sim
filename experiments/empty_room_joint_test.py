@@ -25,9 +25,9 @@ current_file = Path(__file__).resolve()
 project_root = current_file.parent.parent
 sys.path.insert(0, str(project_root))
 
-from src.actuator_mapping import ACTUATOR_NAMES
-from src.controller import RobotController
-from src.joint_addressing import build_actuator_addressing
+from legacy.actuator_mapping import ACTUATOR_NAMES
+from legacy.controller import RobotController
+from legacy.joint_addressing import build_actuator_addressing
 
 MODEL_PATH = project_root / "deps" / "OpenArm-Combined" / "combined_robot.xml"
 WARMUP_STEPS = 300   # let gravity/contact settling happen before the "before" snapshot

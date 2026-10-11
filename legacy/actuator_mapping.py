@@ -31,7 +31,6 @@ ACTUATOR_NAMES = [
 
 # Mapping name → action index
 NAME_TO_IDX = {name: idx for idx, name in enumerate(ACTUATOR_NAMES)}
-IDX_TO_NAME = {idx: name for idx, name in enumerate(ACTUATOR_NAMES)}
 
 # For backward compatibility
 ACTUATOR_INDICES = list(range(20))  # Just 0-19

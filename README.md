@@ -90,7 +90,6 @@ more inset updates cost real time. All the switches (`CC_*` environment variable
 openarm-tracer-sim/
 ├── src/
 │   ├── simulator.py         # Generic MuJoCo simulator (injects the cameras at load)
-│   ├── controller.py        # PD controller (20 actuators)
 │   ├── cameras.py           # Simulated Orbbec cameras, offscreen rendering
 │   ├── control_loop.py      # run_loop(): the control loop (router, command validation, optional exclusivity / hold); headless-capable
 │   ├── commands.py          # Mode-tagged command format (base / pedestal / arms / neck / idle / request_teleop; gripper position + max_force) and validate_command()
@@ -100,16 +99,14 @@ openarm-tracer-sim/
 │   ├── neck.py, neck_framing.py, neck_source.py   # camera neck: attach the SO-101 at load, frame points, auto follow / look-ahead
 │   ├── staging_source.py    # Scripted staging: DRIVE -> PEDESTAL -> ARMS -> NECK -> DONE (HANDOFF), beaker-on-hotplate task
 │   ├── task_policy.py       # The auto-mode task policy: staging stage + arm stage (hold / request operator control)
-│   ├── episode_runner.py, episode_test_sources.py   # reset, success, timeouts, log; test-only cheat arm stage and kick source
+│   ├── episode_runner.py    # reset, success, timeouts, log
 │   ├── run_record.py, replay.py   # record a live run's physics inputs; replay it exactly (state check) and render its cameras to video
 │   ├── rate_limit.py, alert_sound.py   # joint-target rate limiter (snap-back safety); the operator alert beep
 │   ├── viewer_composite.py  # The live viewer's picture rendered offscreen from a state (replay --video viewer)
-│   ├── robot_specs.py       # Rates, motor gains, camera specs, calibration status
-│   ├── actuator_mapping.py  # Actuator name -> index mapping
-│   ├── joint_addressing.py
-│   ├── environment.py
-│   ├── logger.py            # Trajectory logging
-│   └── utils.py
+│   ├── robot_specs.py       # Rates, motor gains, camera specs (placeholders marked)
+│   ├── safety_filter.py     # Arm joint angles through geo_kin's collision filter (starting point for the planned safety filter)
+│   └── logger.py            # Trajectory logging
+├── legacy/                  # controller.py, actuator_mapping.py, joint_addressing.py: kept only for old experiments (see legacy/README.md)
 ├── models/
 │   ├── scenes/              # chemistry_lab*.xml, single_block.xml, ...
 │   └── policies/            # Policy implementations
@@ -118,6 +115,7 @@ openarm-tracer-sim/
 ├── experiments/
 │   ├── combined_controller.py     # Launcher for the interactive sim: keyboard, webcam teleop, policy, cameras (loop is in src/)
 │   ├── cc_bench_scenarios.sh, cc_bench_compare.py, cc_loop_tests.py   # before/after regression scenarios, headless and hold-rule tests
+│   ├── episode_test_sources.py    # Test-only helpers: cheat and grasp-force arm stages, base kick source
 │   ├── beaker_hotplate_episode.py # Run beaker-on-hotplate episodes (auto / teleop mode, arm stage, viewer, recording)
 │   ├── replay_run.py              # Replay a recording: state check and cameras to video / PNG frames
 │   ├── cc_mode_tests.py, gripper_force_test.py, beaker_hotplate_correction_test.py   # tests: modes / operator keys / snap-back / restore; gripper force limit; base pose corrections

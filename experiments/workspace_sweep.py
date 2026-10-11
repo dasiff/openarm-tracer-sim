@@ -14,8 +14,8 @@ project_root = current_file.parent.parent
 sys.path.insert(0, str(project_root))
 
 from src.simulator import RobotSimulator
-from src.actuator_mapping import NAME_TO_IDX
-from src.controller import RobotController
+from legacy.actuator_mapping import NAME_TO_IDX
+from legacy.controller import RobotController
 
 
 def get_right_gripper_position(sim):

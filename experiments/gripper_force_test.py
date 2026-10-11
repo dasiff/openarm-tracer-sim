@@ -28,7 +28,7 @@ import numpy as np  # noqa: E402
 from src import robot_specs  # noqa: E402
 from src.commands import validate_command  # noqa: E402
 from src.episode_runner import run_episode  # noqa: E402
-from src.episode_test_sources import make_grasp_force_stage  # noqa: E402
+from episode_test_sources import make_grasp_force_stage  # noqa: E402
 from src.replay import replay_run  # noqa: E402
 from src.task_beaker_hotplate import load_task  # noqa: E402
 from src.task_config import EPISODE_CFG  # noqa: E402

@@ -36,7 +36,7 @@ from experiments.branch_jump_demo import GRAVCOMP_BODIES, run_trajectory  # noqa
 from experiments.realistic_snap import DURATION, HOLD, build_candidates  # noqa: E402
 from models.policies.branch_jump_policy import SOLVER_DEFAULT_Q, BranchJumpPolicy  # noqa: E402
 from src import robot_specs  # noqa: E402
-from src.controller import RobotController  # noqa: E402
+from legacy.controller import RobotController  # noqa: E402
 from src.arm_actuators import add_arm_actuators  # noqa: E402
 from src.pedestal import add_pedestal_lift  # noqa: E402
 

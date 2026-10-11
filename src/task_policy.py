@@ -12,7 +12,7 @@ Two stages, in order:
                 make_hold_stage()                      holds (nothing is commanded); used when arm_stage is None.
                 make_request_operator_stage(reason)    asks for operator control once, then holds (so after the operator hands control
                                                        back the policy simply continues: holding).
-              and, test only, src/episode_test_sources.make_cheat_arm_stage.
+              and, test only, experiments/episode_test_sources.make_cheat_arm_stage.
 
 The controller (src/control_loop.py) steps the policy only in "auto" mode; in "teleop" mode it is paused, and resume() continues its current stage.
 Rule for every policy: on resume, every subsystem starts from where the operator left it, and the policy then moves it toward what it wants; it never

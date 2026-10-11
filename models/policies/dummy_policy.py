@@ -1,7 +1,7 @@
 """Dummy policy for single block task - hardcoded sequence."""
 
 import numpy as np
-from src.actuator_mapping import ACTUATOR_NAMES, NAME_TO_IDX
+from legacy.actuator_mapping import ACTUATOR_NAMES, NAME_TO_IDX
 
 
 class DummyPolicy:

@@ -23,6 +23,8 @@ An arm stage is a dict {"name", "step"(obs) -> command or None, "state"}. The ki
 import mujoco
 import numpy as np
 
+from src.base_control import base_yaw
+from src.rate_limit import min_jerk
 from src.task_config import TASK_CFG
 
 
@@ -172,8 +174,7 @@ def make_grasp_force_stage(model, data, forces=(1.0, 2.0, None), task_cfg=TASK_C
             return None
         local = el - start
         if kind == "move":
-            u = min(local / move_s, 1.0)
-            q = ready + (grasp - ready) * (10 * u ** 3 - 15 * u ** 4 + 6 * u ** 5)
+            q = ready + (grasp - ready) * min_jerk(local / move_s)
             return {"mode": "arms", "arm_targets": {arm: [float(v) for v in q]}, "gripper": {arm: open_g}}
         if kind in ("settle", "open"):
             if kind == "open" and state["samples"]:
@@ -267,7 +268,7 @@ def make_kick_source(model, data, phase, delay_s, along_mm, lateral_mm, yaw_deg,
             a, l = along_mm / 1000.0, lateral_mm / 1000.0
             data.qpos[0] += a * math.cos(gyaw) - l * math.sin(gyaw)
             data.qpos[1] += a * math.sin(gyaw) + l * math.cos(gyaw)
-            yaw = 2.0 * math.atan2(data.qpos[6], data.qpos[3]) + math.radians(yaw_deg)
+            yaw = base_yaw(data) + math.radians(yaw_deg)
             data.qpos[3:7] = [math.cos(yaw / 2), 0.0, 0.0, math.sin(yaw / 2)]
             mujoco.mj_forward(model, data)
             state["kicked_at"] = obs["time"]

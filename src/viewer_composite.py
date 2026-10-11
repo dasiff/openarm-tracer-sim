@@ -27,6 +27,7 @@ import mujoco
 import numpy as np
 
 from src import robot_specs
+from src.base_control import base_yaw
 from src.cameras import CameraRig
 from src.glfw_viewer import CAM_DISTANCE, CAM_ELEVATION, FOVY_DEG, hud_key_list, text_bitmap
 from src.neck import neck_ids
@@ -129,8 +130,7 @@ class CompositeRenderer:
         model, W, H = self.model, self.W, self.H
         # --- the three cameras, then the follow view ---
         self.rig.render(data)
-        qw, qx, qy, qz = data.xquat[self.base_body]
-        yaw_deg = math.degrees(math.atan2(2.0 * (qw * qz + qx * qy), 1.0 - 2.0 * (qy * qy + qz * qz)))
+        yaw_deg = math.degrees(base_yaw(data))
         self.cam.lookat[:] = data.xpos[self.base_body]
         self.cam.azimuth = yaw_deg + 90
         mujoco.mjr_setBuffer(mujoco.mjtFramebuffer.mjFB_OFFSCREEN, self.context)

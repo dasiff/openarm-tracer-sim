@@ -24,7 +24,7 @@ What it does
      damping terms implicitly, which is what makes the servo stable; they differ only in that "implicit"
      also differentiates the Coriolis terms (more cost, no visible difference here). Measured on the hold
      tests: see data/arm_hold/. implicitfast is MuJoCo's recommended choice.
-Actuator order and names are unchanged (src/actuator_mapping.ACTUATOR_NAMES still indexes them).
+Actuator order and names are unchanged (legacy/actuator_mapping.ACTUATOR_NAMES still indexes them).
 """
 
 import mujoco

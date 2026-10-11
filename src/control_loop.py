@@ -800,9 +800,8 @@ def run_loop(model, data, sources, cfg, viewer=None, logger=None):
             mujoco.mj_step(model, data)
             step_count += 1
             if bench_log is not None and step_count % 75 == 0:
-                qw_, qx_, qy_, qz_ = data.qpos[3:7]
                 bench_csv.writerow([f"{data.time:.6f}", f"{data.qpos[0]:.9f}", f"{data.qpos[1]:.9f}",
-                                    f"{math.degrees(math.atan2(2.0 * (qw_ * qz_ + qx_ * qy_), 1.0 - 2.0 * (qy_ * qy_ + qz_ * qz_))):.9f}",
+                                    f"{math.degrees(base_yaw(data)):.9f}",
                                     f"{data.qpos[ped_qadr]:.9f}"] + [f"{data.qpos[a]:.9f}" for a in log_joints]
                                    + ([f"{data.qpos[a]:.9f}" for a in neck["qadr"]] if neck is not None else []))
             if replay is not None:
@@ -845,7 +844,6 @@ def run_loop(model, data, sources, cfg, viewer=None, logger=None):
         t_f0 = pc()
         obs = observation(model, data)
         t = data.time
-        qw_, qx_, qy_, qz_ = data.qpos[3:7]
         obs.update(tick=frame, timestep=model.opt.timestep, steps_per_frame=steps_per_frame,
                    base_pose=(float(data.qpos[0]), float(data.qpos[1]), base_yaw(data)),
                    pedestal_height=float(data.qpos[ped_qadr]), applied=applied(),

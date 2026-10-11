@@ -4,7 +4,7 @@ Force the base pose corrections of the staging source (src/staging_source.py) an
 
     MUJOCO_GL=egl python experiments/beaker_hotplate_correction_test.py
 
-Each case runs a headless episode with the test-only kick source (src/episode_test_sources.make_kick_source), which displaces the base
+Each case runs a headless episode with the test-only kick source (experiments/episode_test_sources.make_kick_source), which displaces the base
 at a chosen moment, and with a copy of the config where needed. Episodes are short after HANDOFF (3 s).
   1. kick during PEDESTAL (25 mm sideways, 5 deg): the full DRIVE controller must bring it back (arms tucked)      -> corrected
   2. kick late in ARMS, 12 mm toward the bench + 1.5 deg: creep correction with the arm out, reversing             -> corrected
@@ -26,7 +26,7 @@ if not os.environ.get("DISPLAY"):
     os.environ.setdefault("MUJOCO_GL", "egl")
 
 from src.episode_runner import run_episode  # noqa: E402
-from src.episode_test_sources import make_kick_source  # noqa: E402
+from episode_test_sources import make_kick_source  # noqa: E402
 from src.task_beaker_hotplate import load_task  # noqa: E402
 from src.task_config import EPISODE_CFG, STAGING_CFG  # noqa: E402
 

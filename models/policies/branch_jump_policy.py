@@ -9,7 +9,7 @@ arm solution than the one it was given.
 """
 
 import numpy as np
-from src.actuator_mapping import ACTUATOR_NAMES, NAME_TO_IDX
+from legacy.actuator_mapping import ACTUATOR_NAMES, NAME_TO_IDX
 
 # The solver's default arm pose (geo_kin RetargetSession.default_q): elbow bent 90 degrees.
 SOLVER_DEFAULT_Q = np.array([0.0, 0.0, 0.0, 1.5708, 0.0, 0.0, 0.0])
@@ -39,7 +39,7 @@ class BranchJumpPolicy:
     curve 10u^3 - 15u^4 + 6u^5 for profile "smooth" (zero velocity and
     acceleration at both ends). After `duration` seconds the arm holds. Same
     interface as the other policies: call it with (state, t) and get a
-    20-element action indexed like src.actuator_mapping.ACTUATOR_NAMES. Only
+    20-element action indexed like legacy.actuator_mapping.ACTUATOR_NAMES. Only
     the moving arm's seven joints are set; every other entry is 0.
     """
 

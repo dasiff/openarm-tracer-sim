@@ -293,7 +293,7 @@ def hold_check(policy, poses, settle=0.5, hold=2.0, verbose=True):
     Returns a list of dicts, one per pose. verbose=False prints nothing.
     """
     import mujoco
-    from src.controller import RobotController
+    from legacy.controller import RobotController
     log = print if verbose else (lambda *args, **kwargs: None)
 
     m = load_model()
@@ -382,7 +382,7 @@ def render_video(path, t, cmd, out_on, policy, events, rich=False, still_dir=Non
     """
     import cv2
     import mujoco
-    from src.controller import RobotController
+    from legacy.controller import RobotController
 
     m = load_model()
     w, h = (1280, 720) if rich else (640, 480)

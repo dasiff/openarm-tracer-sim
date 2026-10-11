@@ -98,8 +98,10 @@ openarm-tracer-sim/
 │   ├── glfw_viewer.py       # Window, HUD, camera insets, recorder, snapshots
 │   ├── neck.py, neck_framing.py, neck_source.py   # camera neck: attach the SO-101 at load, frame points, auto follow / look-ahead
 │   ├── staging_source.py    # Scripted staging: DRIVE -> PEDESTAL -> ARMS -> NECK -> DONE (HANDOFF), beaker-on-hotplate task
-│   ├── task_policy.py       # The auto-mode task policy: staging stage + arm stage (hold / request operator control)
-│   ├── episode_runner.py    # reset, success, timeouts, log
+│   ├── sequential_policy.py # Generic policy of stages that run one after the other (any navigation stage, then any manipulation stage); hold / request-operator stages
+│   ├── task_policy.py       # The beaker task's policy: the staging stage + an arm stage, combined by sequential_policy.py
+│   ├── episode_runner.py    # Generic episode runner (a task supplies reset, policy, success check and time limits): timeouts, success, log, summary
+│   ├── robot_helpers.py     # Robot-level helpers: arm actuator / joint ids, the contact monitor
 │   ├── run_record.py, replay.py   # record a live run's physics inputs; replay it exactly (state check) and render its cameras to video
 │   ├── rate_limit.py, alert_sound.py   # joint-target rate limiter (snap-back safety); the operator alert beep
 │   ├── viewer_composite.py  # The live viewer's picture rendered offscreen from a state (replay --video viewer)
@@ -120,6 +122,7 @@ openarm-tracer-sim/
 │   ├── beaker_hotplate_episode.py # Run beaker-on-hotplate episodes (auto / teleop mode, arm stage, viewer, recording)
 │   ├── replay_run.py              # Replay a recording: state check and cameras to video / PNG frames
 │   ├── cc_mode_tests.py, gripper_force_test.py, beaker_hotplate_correction_test.py   # tests: modes / operator keys / snap-back / restore; gripper force limit; base pose corrections
+│   ├── sequential_policy_test.py  # test of the stage combiner with made-up stages (no simulation)
 │   ├── viewer_profile.py          # Where the wall-clock time of a viewer run goes (cProfile)
 │   ├── camera_snapshot.py         # Render the simulated cameras once to PNGs
 │   ├── chemistry_lab_tracer_teleop.py
@@ -143,6 +146,11 @@ continues its current stage, its arm targets gliding from where the operator lef
 (`ABORTED_BY_OPERATOR`); a banner shows "OPERATOR NEEDED: <reason>" (with a sound) after a request and the available keys while the operator
 has control. Every switch is logged (`mode_switches` in the summary).
 Exclusivity and the hold rule stay in the controller (on in episodes).
+
+The episode runner is generic: `run_episode(task, model, data, ...)` knows nothing about the beaker. A task is a dictionary (see the docstring of
+`src/episode_runner.py`): how to reset the scene, which policy to run, how to check success, the time limits, and how replay rebuilds the model. The beaker
+task is built by `make_task()` in `src/task_beaker_hotplate.py`; its policy is `src/task_policy.py`, a sequence of stages (`src/sequential_policy.py`: a
+planner can replace the staging stage and a learned policy the arm stage without touching the combining code).
 
 `experiments/beaker_hotplate_episode.py [--mode auto|teleop] [--arm-stage hold|request_operator|cheat] [--viewer] [--repeat N]
 [--cross-check] [--record] [--out DIR]` (`--mode teleop` needs `--viewer`: the operator drives from the start; `--repeat` reuses the model and compares the logs

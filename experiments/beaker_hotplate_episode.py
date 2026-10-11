@@ -39,9 +39,9 @@ import glfw  # noqa: E402
 
 from src.episode_runner import run_episode  # noqa: E402
 from episode_test_sources import make_cheat_arm_stage  # noqa: E402
-from src.task_policy import make_request_operator_stage  # noqa: E402
+from src.sequential_policy import make_request_operator_stage  # noqa: E402
 from src.glfw_viewer import make_glfw_viewer  # noqa: E402
-from src.task_beaker_hotplate import load_task  # noqa: E402
+from src.task_beaker_hotplate import load_task, make_task  # noqa: E402
 
 ARM_STAGES = {"hold": None, "request_operator": lambda model, data: make_request_operator_stage(), "cheat": lambda model, data: make_cheat_arm_stage(model, data)}
 
@@ -112,7 +112,7 @@ def main():
 
     def one(model, data, k, viewer=None, held=None):
         d = out / f"run{k}"
-        summary = run_episode(ARM_STAGES[args.arm_stage], model, data, mode=args.mode, viewer=viewer, out_dir=d, handoff_frame=d / "handoff_eagle.png", held=held,
+        summary = run_episode(make_task(ARM_STAGES[args.arm_stage]), model, data, mode=args.mode, viewer=viewer, out_dir=d, handoff_frame=d / "handoff_eagle.png", held=held,
                               record_dir=d / "recording" if args.record else None)
         show(summary, f"{args.mode}{'/' + args.arm_stage if args.mode == 'auto' else ''} episode {k}" + (" (viewer)" if viewer else " (headless)"))
         runs.append(d)

@@ -2,7 +2,11 @@
 """Beaker-on-hotplate task: scene loading, start-up settle, the success check and the points the neck camera must frame.
 
 Plain functions and flat dicts (src/task_config.py), no classes. The drive -> pedestal -> arms -> neck staging sequence is NOT
-here: it is the scripted source in src/staging_source.py, which uses the helpers of this file (arm_ids, framing_points, wrap).
+here: it is the scripted source in src/staging_source.py, which uses the helpers of this file (framing_points, wrap).
+
+make_task() packages the task for the generic episode runner (src/episode_runner.py): a dictionary that says how to reset the scene, which policy
+to run, how to check success and what the time limits are (see the runner's docstring for the keys). rebuild_task() is what replay calls (from the
+recipe stored in a recording) to rebuild the model. run_beaker_episode() is a shorthand for tests that builds the task and runs one episode.
 
 Reused from the repo: src.simulator.RobotSimulator (scene load, arm / finger position actuators, cameras, the
 placeholder pedestal lift, the camera neck) and the start-up of experiments/combined_controller.py / pedestal_lift_test.py (warm-up
@@ -17,8 +21,9 @@ import numpy as np
 
 from src import robot_specs
 from src.neck import neck_ids, set_neck_pose
+from src.robot_helpers import arm_ids  # noqa: F401  (the experiments import it from here)
 from src.simulator import RobotSimulator
-from src.task_config import TASK_CFG, SUCCESS_CFG
+from src.task_config import EPISODE_CFG, STAGING_CFG, SUCCESS_CFG, TASK_CFG
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
@@ -63,33 +68,6 @@ def bench_top_z(model):
     return float(model.geom_pos[g.id][2] + model.geom_size[g.id][2])
 
 
-def arm_ids(model, side):
-    """Looks up the actuators and joints of one arm's 7 joints, and its 2 finger actuators.
-
-    Args:
-        model (mujoco.MjModel): A model with the actuators "<side>_joint1_ctrl" to "<side>_joint7_ctrl" and
-            "<side>_finger1_ctrl", "<side>_finger2_ctrl".
-        side (str): "left" or "right".
-
-    Returns:
-        dict: With the keys
-            "act" (list of int): Actuator ids of the 7 joints, in joint order.
-            "jnt" (list of int): Joint ids of those actuators.
-            "qadr" (list of int): Addresses of the joints in qpos.
-            "vadr" (list of int): Addresses of the joints in qvel.
-            "fingers" (list of int): Actuator ids of the 2 finger actuators.
-    """
-    act = [model.actuator(f"{side}_joint{i}_ctrl").id for i in range(1, 8)]
-    jnt = [int(model.actuator_trnid[a, 0]) for a in act]
-    qadr = [int(model.jnt_qposadr[j]) for j in jnt]
-    vadr = [int(model.jnt_dofadr[j]) for j in jnt]
-    fingers = [model.actuator(f"{side}_finger{k}_ctrl").id for k in (1, 2)]
-    return {"act": act, "jnt": jnt, "qadr": qadr, "vadr": vadr, "fingers": fingers}
-
-
-# ----------------------------------------------------------------------------------------------------------
-# Loading
-# ----------------------------------------------------------------------------------------------------------
 def apply_task_poses(model, data, cfg=TASK_CFG):
     """Writes the object poses from the config into the model and data, without stepping.
 
@@ -299,3 +277,91 @@ def framing_points(model, data, cfg=TASK_CFG):
     for k, sgn in enumerate((-1, 1)):                                      # the finger tips: 1.5 cm past the TCP, +-4.5 cm across
         pts[f"{side}_gripper_tip{k}"] = tcp + R @ np.array([0.0, sgn * 0.045, 0.015])
     return pts
+
+
+# ----------------------------------------------------------------------------------------------------------
+# The task for the generic episode runner
+# ----------------------------------------------------------------------------------------------------------
+def make_task(arm_stage=None, task_cfg=TASK_CFG, staging_cfg=STAGING_CFG, episode_cfg=EPISODE_CFG, success_cfg=SUCCESS_CFG):
+    """Packages the beaker task for src/episode_runner.run_episode().
+
+    Args:
+        arm_stage (callable | None): Factory arm_stage(model, data) -> stage dictionary for the stage that owns the arms after the handoff (see
+            src/sequential_policy.py). None means the hold stage. Defaults to None.
+        task_cfg (dict): Task poses. Defaults to TASK_CFG.
+        staging_cfg (dict): Staging speeds, ramps and tolerances. Defaults to STAGING_CFG.
+        episode_cfg (dict): Time limits and run settings: "timeout_after_handoff" and "operator_timeout" (seconds), "log_hz", "exclusive"
+            and "spawn_z" (metres). Defaults to EPISODE_CFG.
+        success_cfg (dict): Success check thresholds. Defaults to SUCCESS_CFG.
+
+    Returns:
+        dict: The task, with the keys the runner reads: "name", "reset" (model, data -> spawn dict), "make_policy" (model, data -> policy source),
+        "check_success" (model, data -> (bool, diagnostics)), "limits" (the time limits and run settings), "log_extras" (model -> (column names,
+        row function of data)), "framing_points" (model, data -> world points for the F7 key), "handoff_camera" ("eagle_cam"), "handoff_label"
+        ("DONE"), "recipe" (how replay rebuilds the model) and "meta" (configuration saved in a recording).
+    """
+    def reset(model, data):
+        """Resets the simulation state, places the task objects and returns where the robot is to spawn."""
+        mujoco.mj_resetData(model, data)
+        apply_task_poses(model, data, task_cfg)
+        return {"spawn_pos": [task_cfg["spawn_xy"][0], task_cfg["spawn_xy"][1], episode_cfg["spawn_z"]], "spawn_yaw": task_cfg["spawn_yaw"]}
+
+    def make_policy(model, data):
+        """Builds the staging stage followed by the arm stage (hold if none was given)."""
+        from src.task_policy import make_task_policy         # imported here: task_policy imports staging_source, which imports this file
+        return make_task_policy(model, data, task_cfg, staging_cfg, arm_stage(model, data) if arm_stage else None)
+
+    def log_extras(model):
+        """Gives the beaker's position as extra log columns."""
+        adr = int(model.joint("task_beaker_free").qposadr[0])
+        return ["beaker_x", "beaker_y", "beaker_z"], lambda data: [f"{data.qpos[adr + k]:.9f}" for k in range(3)]
+
+    return {"name": "beaker_hotplate", "reset": reset, "make_policy": make_policy,
+            "check_success": lambda model, data: check_success(model, data, success_cfg),
+            "limits": dict(episode_cfg), "log_extras": log_extras,
+            "framing_points": lambda model, data: framing_points(model, data, task_cfg),
+            "handoff_camera": "eagle_cam", "handoff_label": "DONE",
+            "recipe": {"entry": "src.task_beaker_hotplate:rebuild_task", "cfg": {"task_cfg": task_cfg}},
+            "meta": {"task_cfg": task_cfg, "staging_cfg": staging_cfg, "episode_cfg": episode_cfg}}
+
+
+def rebuild_task(cfg, meta):
+    """Rebuilds the model of a recorded beaker episode (called by src/replay.py from a recording's recipe).
+
+    Args:
+        cfg (dict): The recipe's configuration: {"task_cfg": the task poses used by the recorded run}.
+        meta (dict): The recording's meta.json, whose "robot_specs"/"CAMERA_SPECS" gives the cameras the model was built with.
+
+    Returns:
+        tuple: (model, data, reset), where reset(model, data) repeats what the live run did to the state before the loop started.
+    """
+    task_cfg = cfg["task_cfg"]
+    sim = load_task(cfg=task_cfg, cameras=meta["robot_specs"]["CAMERA_SPECS"])
+
+    def reset(model, data):
+        """Resets the state and places the task objects, as the task's reset does."""
+        mujoco.mj_resetData(model, data)
+        apply_task_poses(model, data, task_cfg)
+
+    return sim.model, sim.data, reset
+
+
+def run_beaker_episode(make_arm_stage, model, data, task_cfg=TASK_CFG, staging_cfg=STAGING_CFG, episode_cfg=EPISODE_CFG, **kwargs):
+    """Runs one beaker episode: builds the task with make_task() and calls the generic runner.
+
+    A shorthand for the tests, which vary the arm stage and the configuration.
+
+    Args:
+        make_arm_stage (callable | None): Arm stage factory, see make_task().
+        model (mujoco.MjModel): The compiled model.
+        data (mujoco.MjData): Simulation state.
+        task_cfg (dict): Task poses. Defaults to TASK_CFG.
+        staging_cfg (dict): Staging configuration. Defaults to STAGING_CFG.
+        episode_cfg (dict): Time limits and run settings. Defaults to EPISODE_CFG.
+        **kwargs: Passed to src/episode_runner.run_episode() (mode, viewer, out_dir, handoff_frame, held, loop_cfg, record_dir, extra_sources).
+
+    Returns:
+        dict: The episode summary of run_episode().
+    """
+    from src.episode_runner import run_episode
+    return run_episode(make_task(make_arm_stage, task_cfg, staging_cfg, episode_cfg), model, data, **kwargs)

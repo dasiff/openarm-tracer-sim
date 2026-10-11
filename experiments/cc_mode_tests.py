@@ -44,11 +44,11 @@ if not os.environ.get("DISPLAY"):
 import glfw  # noqa: E402
 import numpy as np  # noqa: E402
 
-from src.episode_runner import run_episode  # noqa: E402
+from src.task_beaker_hotplate import run_beaker_episode as run_episode  # noqa: E402
 from episode_test_sources import make_cheat_arm_stage  # noqa: E402
 from src.task_beaker_hotplate import load_task  # noqa: E402
 from src.task_config import EPISODE_CFG, STAGING_CFG, TASK_CFG  # noqa: E402
-from src.task_policy import make_request_operator_stage  # noqa: E402
+from src.sequential_policy import make_request_operator_stage  # noqa: E402
 
 results = []
 

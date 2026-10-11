@@ -68,7 +68,7 @@ def report(stats_path, top=18):
 
 def episode(ticks, loop_cfg=None, viewer_cfg=None):
     os.environ.pop("MUJOCO_GL", None)
-    from src.episode_runner import run_episode
+    from src.task_beaker_hotplate import run_beaker_episode as run_episode
     from src.glfw_viewer import make_glfw_viewer
     from src.task_beaker_hotplate import load_task
     sim = load_task(cameras=True)

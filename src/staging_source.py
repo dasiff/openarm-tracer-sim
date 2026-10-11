@@ -17,7 +17,9 @@ otherwise (_deg degrees, _mm millimetres, _s seconds).
     source["report"]()       the staging part of the episode summary (phase durations, arrival, pose corrections, drift, clearance, the pose
                              error at HANDOFF, turn angles, neck framing)
     source["resume"]()       called after an operator had control and hands it back (see resume() inside make_staging_source)
-    source["restore_step"](obs, t, dt), source["restoring"]()   put back the pedestal and neck an operator moved, after a hand-back
+    source["restore_step"](obs, t, dt)   put back the pedestal and neck an operator moved, after a hand-back
+    The source is also a stage of src/sequential_policy.py: it has "done", "error", "phase" and "restore" (the restore step, or None when
+    nothing is pending), "failure_outcome" ("STAGING_FAILED") and "report_top_level".
 
 Phases, in order (one subsystem moves at a time; the neck is exempt and stays at its look-ahead aim while driving):
   DRIVE              turn in place toward the staging (x, y) position, drive straight, turn to the staging yaw, with the ground-truth base pose. Speeds
@@ -400,7 +402,12 @@ def make_staging_source(model, data, task_cfg=TASK_CFG, cfg=STAGING_CFG, points_
             "report" (callable): report() -> dict, the staging part of the episode summary.
             "resume" (callable): resume() -> None; called when an operator hands control back.
             "restore_step" (callable): restore_step(obs, t, dt) -> (commands, finished); see restore_step() below.
-            "restoring" (callable): restoring() -> bool; True while a restore after a hand-back is pending.
+            "done" (callable): done() -> bool; True once the phase is DONE.
+            "error" (callable): error() -> str | None; the failure message, if any.
+            "phase" (callable): phase() -> str; the current phase, "DONE" once finished.
+            "restore" (callable): restore(obs) -> None | (commands, finished); None unless a restore after a hand-back is pending.
+            "failure_outcome" (str): "STAGING_FAILED", the episode outcome when this stage fails.
+            "report_top_level" (bool): True; the keys of report() go to the top level of the episode summary.
     """
     arm = task_cfg["arm"]
     arm_idx = arm_ids(model, arm)
@@ -940,4 +947,12 @@ def make_staging_source(model, data, task_cfg=TASK_CFG, cfg=STAGING_CFG, points_
         P["restore"] = True if RESTORE_ON_RESUME else False
         P["still_since"] = None
 
-    return {"name": "staging", "step": step, "state": state, "observe": observe, "report": report, "resume": resume, "restore_step": restore_step, "restoring": lambda: P["restore"]}
+    def restore(obs):
+        """Runs the restore step if one is pending after a hand-back; returns None otherwise (the sequential-policy form of restore_step)."""
+        if not P["restore"]:
+            return None
+        return restore_step(obs, obs["time"], obs["timestep"] * obs["steps_per_frame"])
+
+    return {"name": "staging", "step": step, "state": state, "observe": observe, "report": report, "resume": resume, "restore_step": restore_step,
+            "done": lambda: state["done"], "error": lambda: state["error"], "phase": lambda: "DONE" if state["done"] else state["phase"],
+            "restore": restore, "failure_outcome": "STAGING_FAILED", "report_top_level": True}

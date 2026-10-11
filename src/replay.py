@@ -31,6 +31,7 @@ out_dir/<name>_report.json.
 """
 
 import csv
+import importlib
 import json
 import math
 import time
@@ -47,7 +48,6 @@ from src.control_loop import _headless_context, run_loop
 from src.run_record import (describe_state_diff, get_state, jsonable, load_recording, model_hash, new_state_buffer, specs_snapshot,
                             state_hash)
 from src.simulator import RobotSimulator
-from src.task_beaker_hotplate import apply_task_poses, load_task
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
@@ -55,24 +55,31 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 def build_model(meta):
     """Rebuilds the model and data of a recorded run from the recipe in its metadata.
 
-    The recipe is meta["model"]: either {"kind": "task", "task_cfg": {...}} (built with src/task_beaker_hotplate.load_task) or
-    {"kind": "scene", "scene": path} (a scene file relative to the project root, loaded with RobotSimulator). The cameras come
-    from the recording's own meta["robot_specs"]["CAMERA_SPECS"].
+    The recipe is meta["model"], one of:
+      {"entry": "module:function", "cfg": {...}}   a task's own rebuild function, called as function(cfg, meta) -> (model, data, reset)
+                                                  (written by src/episode_runner.run_episode from the task's "recipe");
+      {"kind": "scene", "scene": path}             a scene file relative to the project root, loaded with RobotSimulator;
+      {"kind": "task", "task_cfg": {...}}          the form of older beaker recordings (built with src/task_beaker_hotplate.load_task).
+    The cameras come from the recording's own meta["robot_specs"]["CAMERA_SPECS"].
 
     Args:
         meta (dict): The recording's metadata (the "meta" entry of src/run_record.load_recording).
 
     Returns:
         tuple: (model, data, reset), where model (mujoco.MjModel) and data (mujoco.MjData) are the rebuilt model and its data, and
-        reset (callable) takes (model, data) and repeats what the live run did to data before run_loop: for a "task" recipe it
-        resets the data and applies the task's object poses, for a "scene" recipe it does nothing.
+        reset (callable) takes (model, data) and repeats what the live run did to data before run_loop: for an "entry" or
+        "task" recipe it resets the data and applies the task's object poses, for a "scene" recipe it does nothing.
 
     Raises:
-        ValueError: If the recipe kind is neither "task" nor "scene".
+        ValueError: If the recipe has no known form.
     """
     recipe = meta["model"]
     cams = meta["robot_specs"]["CAMERA_SPECS"]
+    if "entry" in recipe:
+        module_name, function_name = recipe["entry"].split(":")
+        return getattr(importlib.import_module(module_name), function_name)(recipe["cfg"], meta)
     if recipe["kind"] == "task":
+        from src.task_beaker_hotplate import apply_task_poses, load_task      # only older recordings need the beaker task here
         task_cfg = recipe["task_cfg"]
         sim = load_task(cfg=task_cfg, cameras=cams)
 
@@ -186,7 +193,7 @@ def replay_run(run_dir, out_dir=None, cameras=None, video="preview", hz=30.0, si
         quiet (bool): If True, print nothing. Defaults to False.
         name (str): "viewer" mode only: the file stem of the MP4, the handoff PNG, the frame table and the report. Defaults to "viewer".
         after_handoff_s (float or None): Stop the replay (and the video) this many seconds of sim time after the handoff, which is the
-            first "DONE" label of the recording; combined with `max_ticks` by taking the smaller. Defaults to None.
+            first label of the recording that equals its meta "handoff_label" ("DONE" for older recordings); combined with `max_ticks` by taking the smaller. Defaults to None.
         legend_extra (list or None): "viewer" mode only: extra (key, label) pairs for the key legend of the status panel; None
             means the keys of the episode viewer for the recorded mode. Defaults to None.
 
@@ -204,7 +211,7 @@ def replay_run(run_dir, out_dir=None, cameras=None, video="preview", hz=30.0, si
             videos (dict): Output path (str) per camera name, or under "viewer" the MP4; empty if nothing is rendered.
             frames_rendered (int): Number of frames written per camera.
             wall_seconds (float): Elapsed real time of the call, in seconds.
-            handoff_tick (int or None): Control tick of the first "DONE" label, or None if the recording has none.
+            handoff_tick (int or None): Control tick of the first handoff label, or None if the recording has none.
             handoff_still (str): "viewer" mode only, present once saved: path of the PNG of the picture at the handoff frame.
             video_bytes (dict): Present if anything was written: size in bytes of each entry of `videos` (the sum of the PNG files
                 for a folder).
@@ -220,10 +227,11 @@ def replay_run(run_dir, out_dir=None, cameras=None, video="preview", hz=30.0, si
     rec = load_recording(run_dir)
     meta = rec["meta"]
     labels = meta.get("labels", [])
-    handoff_tick = next((l["tick"] for l in labels if l["label"] == "DONE"), None)
+    handoff_label = meta.get("handoff_label", "DONE")
+    handoff_tick = next((l["tick"] for l in labels if l["label"] == handoff_label), None)
     if after_handoff_s is not None:
         if handoff_tick is None:
-            raise ValueError("after_handoff_s needs a recording with a handoff (no 'DONE' label in it)")
+            raise ValueError("after_handoff_s needs a recording with a handoff (no handoff label in it)")
         end = handoff_tick + int(round(after_handoff_s * meta["source_hz"]))
         max_ticks = end + 1 if max_ticks is None else min(max_ticks, end + 1)
     n_ticks = len(rec["ctrl"]) if max_ticks is None else min(len(rec["ctrl"]), max_ticks)

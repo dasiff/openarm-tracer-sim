@@ -25,7 +25,7 @@ sys.path.insert(0, str(PROJECT_ROOT))
 if not os.environ.get("DISPLAY"):
     os.environ.setdefault("MUJOCO_GL", "egl")
 
-from src.episode_runner import run_episode  # noqa: E402
+from src.task_beaker_hotplate import run_beaker_episode as run_episode  # noqa: E402
 from episode_test_sources import make_kick_source  # noqa: E402
 from src.task_beaker_hotplate import load_task  # noqa: E402
 from src.task_config import EPISODE_CFG, STAGING_CFG  # noqa: E402

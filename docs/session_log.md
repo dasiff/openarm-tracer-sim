@@ -28,8 +28,7 @@ out of memory and crashed. The second (from 18:56) resumed the work.
   in one commit (d8179d6), controller work in others.
 - **Compare versions before debugging the controller:** settle the
   3.3.4 vs 3.13.0 question before touching the arm-swing bug.
-- **Push only to `origin`** (github.com/dasiff). The gatech mirror is not
-  maintained. Commits from the VM use the repo-local author
+- **`origin` (github.com/dasiff) is the only remote.** Commits from the VM use the repo-local author
   `David Siff <dasiff@gmail.com>`. The VM has no stored GitHub credentials.
 - **Run MuJoCo jobs one at a time on this VM** (see Problems).
 

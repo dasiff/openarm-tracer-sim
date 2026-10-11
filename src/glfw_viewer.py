@@ -104,6 +104,50 @@ class ViewerRecorder:
         return (*self.paths, self.frames)
 
 
+def hud_key_list(has_teleop, legend_extra=()):
+    """The key legend of the status panel: [(key, label)]."""
+    return [("Arrows", "drive"), ("Spc", "stop"),
+            ("1-8", "L arm +"), ("Q-I", "L arm -"),
+            ("A-K", "R arm +"), ("Z-,", "R arm -"),
+            ("PgUp/Dn", "pedestal"), ("9 0 - =", "neck +"), ("O P [ ]", "neck -"), ("F7", "frame"), ("F8", "neck home")] + \
+        ([("F2", "man/tele")] if has_teleop else []) + \
+        list(legend_extra) + \
+        [("F3", "cam imgs"), ("F4", "snap"), ("F5", "log"),
+         ("F6", "rec video"), ("Esc", "quit")]
+
+
+def text_bitmap(rows, w, label_w, keys=(), scale=1.0):
+    """The status panel as an RGB bitmap: rows of (label, value) and the key legend (keycap icon + short label, flowed left to right and wrapped to the
+    panel width, to use as little height as possible). `scale` scales every size (w and label_w are given already scaled); 1.0 is the live viewer."""
+    S = lambda v: int(round(v * scale))
+    line_h, key_h, font = S(20), S(24), cv2.FONT_HERSHEY_SIMPLEX
+    fs_row, fs_key, thick = 0.45 * scale, 0.4 * scale, max(1, int(round(scale)))
+    layout, x, line = [], S(6), 0
+    for key, label in keys:
+        kw = cv2.getTextSize(key, font, fs_key, thick)[0][0] + S(8)
+        lw = cv2.getTextSize(label, font, fs_key, thick)[0][0]
+        if x + kw + S(4) + lw > w - S(6) and x > S(6):
+            x, line = S(6), line + 1
+        layout.append((key, label, x, line, kw))
+        x += kw + S(4) + lw + S(12)
+    top = line_h * len(rows) + S(8)
+    h = top + (key_h * (line + 1) + S(6) if keys else 0)
+    bmp = np.full((h, w, 3), 45, np.uint8)
+    for i, (lab, val) in enumerate(rows):
+        y = line_h * (i + 1) - S(3)
+        cv2.putText(bmp, lab, (S(6), y), font, fs_row, (190, 190, 190), thick, cv2.LINE_AA)
+        cv2.putText(bmp, val, (label_w, y), font, fs_row, (255, 255, 255), thick, cv2.LINE_AA)
+    if keys:
+        cv2.line(bmp, (S(6), top - S(2)), (w - S(6), top - S(2)), (110, 110, 110), thick)
+    for key, label, kx, ln, kw in layout:
+        y = top + key_h * ln + S(17)
+        cv2.rectangle(bmp, (kx, y - S(14)), (kx + kw, y + S(4)), (80, 80, 80), -1)
+        cv2.rectangle(bmp, (kx, y - S(14)), (kx + kw, y + S(4)), (200, 200, 200), thick)
+        cv2.putText(bmp, key, (kx + S(4), y), font, fs_key, (255, 255, 255), thick, cv2.LINE_AA)
+        cv2.putText(bmp, label, (kx + kw + S(4), y), font, fs_key, (150, 220, 150), thick, cv2.LINE_AA)
+    return bmp
+
+
 def make_glfw_viewer(model, data, vcfg):
     show_hud = vcfg.get("hud", True)
     show_insets = vcfg.get("insets", True)
@@ -180,14 +224,7 @@ def make_glfw_viewer(model, data, vcfg):
         + [f"{n}_target" for n, _, _ in rec_joints])
     rec_t0 = [0.0]
 
-    hud_keys = [("Arrows", "drive"), ("Spc", "stop"),
-                ("1-8", "L arm +"), ("Q-I", "L arm -"),
-                ("A-K", "R arm +"), ("Z-,", "R arm -"),
-                ("PgUp/Dn", "pedestal"), ("9 0 - =", "neck +"), ("O P [ ]", "neck -"), ("F7", "frame"), ("F8", "neck home")] + \
-        ([("F2", "man/tele")] if vcfg.get("has_teleop") else []) + \
-        list(vcfg.get("legend_extra", [])) + \
-        [("F3", "cam imgs"), ("F4", "snap"), ("F5", "log"),
-         ("F6", "rec video"), ("Esc", "quit")]
+    hud_keys = hud_key_list(vcfg.get("has_teleop"), vcfg.get("legend_extra", []))
 
     # Text is drawn into small RGB bitmaps with OpenCV and blitted with
     # one mjr_drawPixels each. mjr_overlay draws one glyph per GL call,
@@ -202,41 +239,6 @@ def make_glfw_viewer(model, data, vcfg):
         flat = np.ascontiguousarray(np.flipud(img)).ravel()
         mujoco.mjr_drawPixels(
             flat, None, mujoco.MjrRect(left, bottom, w, h), context)
-
-    def text_bitmap(rows, w, label_w, keys=()):
-        line_h, key_h, font = 20, 24, cv2.FONT_HERSHEY_SIMPLEX
-        # Key legend: keycap icon + short label, flowed left to right and
-        # wrapped to the panel width, to use as little height as possible.
-        layout, x, line = [], 6, 0
-        for key, label in keys:
-            kw = cv2.getTextSize(key, font, 0.4, 1)[0][0] + 8
-            lw = cv2.getTextSize(label, font, 0.4, 1)[0][0]
-            if x + kw + 4 + lw > w - 6 and x > 6:
-                x, line = 6, line + 1
-            layout.append((key, label, x, line, kw))
-            x += kw + 4 + lw + 12
-        top = line_h * len(rows) + 8
-        h = top + (key_h * (line + 1) + 6 if keys else 0)
-        bmp = np.full((h, w, 3), 45, np.uint8)
-        for i, (lab, val) in enumerate(rows):
-            y = line_h * (i + 1) - 3
-            cv2.putText(bmp, lab, (6, y), cv2.FONT_HERSHEY_SIMPLEX,
-                        0.45, (190, 190, 190), 1, cv2.LINE_AA)
-            cv2.putText(bmp, val, (label_w, y), cv2.FONT_HERSHEY_SIMPLEX,
-                        0.45, (255, 255, 255), 1, cv2.LINE_AA)
-        if keys:
-            cv2.line(bmp, (6, top - 2), (w - 6, top - 2), (110, 110, 110), 1)
-        for key, label, kx, ln, kw in layout:
-            y = top + key_h * ln + 17
-            cv2.rectangle(bmp, (kx, y - 14), (kx + kw, y + 4),
-                          (80, 80, 80), -1)
-            cv2.rectangle(bmp, (kx, y - 14), (kx + kw, y + 4),
-                          (200, 200, 200), 1)
-            cv2.putText(bmp, key, (kx + 4, y), font, 0.4,
-                        (255, 255, 255), 1, cv2.LINE_AA)
-            cv2.putText(bmp, label, (kx + kw + 4, y), font, 0.4,
-                        (150, 220, 150), 1, cv2.LINE_AA)
-        return bmp
 
     def pace(info):
         if vcfg["vsync"] == 0:

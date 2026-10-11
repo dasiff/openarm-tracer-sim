@@ -103,6 +103,7 @@ openarm-tracer-sim/
 │   ├── episode_runner.py, episode_test_sources.py   # reset, success, timeouts, log; test-only cheat arm stage and kick source
 │   ├── run_record.py, replay.py   # record a live run's physics inputs; replay it exactly (state check) and render its cameras to video
 │   ├── rate_limit.py, alert_sound.py   # joint-target rate limiter (snap-back safety); the operator alert beep
+│   ├── viewer_composite.py  # The live viewer's picture rendered offscreen from a state (replay --video viewer)
 │   ├── robot_specs.py       # Rates, motor gains, camera specs, calibration status
 │   ├── actuator_mapping.py  # Actuator name -> index mapping
 │   ├── joint_addressing.py
@@ -175,9 +176,12 @@ position-controlled; the loop writes `max_force` into the finger actuators' forc
 tick (ctrl vector and base velocity, exact float64) plus state hashes, about 17 KB per sim second. `experiments/replay_run.py DIR`
 replays it headless: the states must match the live run bit for bit (same machine and MuJoCo version), and it renders the policy
 cameras to one MP4 per camera (`eagle_cam.mp4`, ...) at 30 Hz, 640x480, each camera with its own shadow setting, about 25 MB
-per sim minute for the three cameras. Options: `--video none|preview|training` (verify only / lossy MP4, the default / lossless PNG frames
+per sim minute for the three cameras. Options: `--video none|preview|training|viewer` (verify only / lossy MP4, the default / lossless PNG frames
 `<camera>/<tick>.png`, about 230 MB per sim minute), `--cameras`, `--hz`, `--size`, `--shadows policy|on|off`, `--from-tick/--to-tick` for a clip, `--max-ticks`,
-`--codec` and `--quality` (the OpenCV build has no H.264; MPEG-4 and VP9 work). The exit status is 1 if the replay does not match. See `src/run_record.py` and `src/replay.py`.
+`--codec` and `--quality` (the OpenCV build has no H.264; MPEG-4 and VP9 work). The exit status is 1 if the replay does not match.
+`--video viewer` renders the live viewer's picture offscreen (follow camera, status panel, the three camera tiles; `src/viewer_composite.py`) as one 1920x1080
+MP4 at 30 frames per sim second with shadows on everywhere, plus a PNG of the same picture at the handoff (`--name STEM`, `--after-handoff S`): e.g.
+`replay_run.py DIR --video viewer --after-handoff 3 --out data/notebook --name staging_run_<date>` (about 26 minutes of rendering for the 41 s staging clip, 34 MB). See `src/run_record.py` and `src/replay.py`.
 
 ## Features
 

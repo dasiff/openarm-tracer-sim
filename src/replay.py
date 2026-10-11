@@ -17,11 +17,14 @@ state at that physics step, with the policy cameras' own settings by default (ea
     "none"      verify only: no rendering, no GL, no output files (faster)
     "preview"   lossy MP4 (OpenCV, MPEG-4 part 2), one video per camera, out_dir/<camera>.mp4, playing at `hz` frames per second of sim time
     "training"  lossless PNG frames, one folder per camera, out_dir/<camera>/<tick:06d>.png (the control tick the frame was rendered in)
+    "viewer"    one MP4 of the live viewer's picture (src/viewer_composite.py: the follow camera, the status panel, the three camera tiles), 1920x1080 by default,
+                shadows on everywhere, out_dir/<name>.mp4, plus a PNG of the same picture at the handoff frame, out_dir/<name>_handoff.png
 plus out_dir/frames.csv (frame, tick, sim_time) and out_dir/replay_report.json.
 """
 
 import csv
 import json
+import math
 import time
 from pathlib import Path
 
@@ -91,14 +94,23 @@ class PngFrames:
 
 
 def replay_run(run_dir, out_dir=None, cameras=None, video="preview", hz=30.0, size=None, shadows="policy", codec="mp4v", quality=None,
-               verify=True, max_ticks=None, render_ticks=None, quiet=False):
+               verify=True, max_ticks=None, render_ticks=None, quiet=False, name="viewer", after_handoff_s=None, legend_extra=None):
     """Replay `run_dir`. video: "none" | "preview" | "training" (see the module doc); cameras: names to render (None = all recorded); size: (w, h) override of the camera resolution;
     shadows: "policy" (per camera, as recorded), "on" or "off"; codec / quality: OpenCV fourcc and 0-100 quality (None = default).
     render_ticks: (first, last) tick range to render (None = all); the states are verified over the whole run, or up to max_ticks.
+    video "viewer": name = the output file stem; after_handoff_s = stop the replay (and the video) this many sim seconds after the handoff (the first "DONE"
+    label of the recording); size defaults to 1920x1080; legend_extra = more [(key, label)] for the panel's key legend (default: the keys of the episode viewer for the recorded mode).
     Returns a report dict (also written to out_dir/replay_report.json): {"ok", "ticks", "mismatch", "videos", ...}."""
     wall0 = time.perf_counter()
     rec = load_recording(run_dir)
     meta = rec["meta"]
+    labels = meta.get("labels", [])
+    handoff_tick = next((l["tick"] for l in labels if l["label"] == "DONE"), None)
+    if after_handoff_s is not None:
+        if handoff_tick is None:
+            raise ValueError("after_handoff_s needs a recording with a handoff (no 'DONE' label in it)")
+        end = handoff_tick + int(round(after_handoff_s * meta["source_hz"]))
+        max_ticks = end + 1 if max_ticks is None else min(max_ticks, end + 1)
     n_ticks = len(rec["ctrl"]) if max_ticks is None else min(len(rec["ctrl"]), max_ticks)
     report = {"run": str(run_dir), "ok": None, "ticks": 0, "n_ticks_recorded": len(rec["ctrl"]), "mismatch": None, "warnings": [], "videos": {}}
 
@@ -121,8 +133,14 @@ def replay_run(run_dir, out_dir=None, cameras=None, video="preview", hz=30.0, si
     # --- cameras and videos ---
     rig, specs, writers, frames_csv, gl_keepalive = None, [], {}, None, None
     out = Path(out_dir) if out_dir else None
-    if video not in ("none", "preview", "training"):
-        raise ValueError(f"video must be none, preview or training, not {video!r}")
+    if video not in ("none", "preview", "training", "viewer"):
+        raise ValueError(f"video must be none, preview, training or viewer, not {video!r}")
+    composite, still = None, {"path": None, "saved": False}
+    if video == "viewer":
+        size = tuple(size) if size else (1920, 1080)
+        shadows = "on"
+        model.vis.global_.offwidth = max(model.vis.global_.offwidth, size[0])      # the offscreen buffer must hold the follow view (before the GL context exists)
+        model.vis.global_.offheight = max(model.vis.global_.offheight, size[1])
     if video == "training" and hz > meta["source_hz"] + 1e-9:
         raise ValueError(f"training frames are named by tick: --hz must be at most the tick rate ({meta['source_hz']:g} Hz)")
     if video != "none":
@@ -130,11 +148,11 @@ def replay_run(run_dir, out_dir=None, cameras=None, video="preview", hz=30.0, si
             raise ValueError(f"video={video!r} needs an out_dir")
         out.mkdir(parents=True, exist_ok=True)
         known = {cs["name"]: cs for cs in meta["robot_specs"]["CAMERA_SPECS"]}
-        for name in (cameras if cameras else list(known)):
-            if name not in known:
-                raise ValueError(f"camera '{name}' not in the recording; has {sorted(known)}")
-            cs = dict(known[name])
-            if size:
+        for cam_name in (cameras if cameras else list(known)):
+            if cam_name not in known:
+                raise ValueError(f"camera '{cam_name}' not in the recording; has {sorted(known)}")
+            cs = dict(known[cam_name])
+            if size and video != "viewer":
                 cs["resolution"] = tuple(size)
             else:
                 cs["resolution"] = tuple(cs["resolution"])
@@ -146,7 +164,16 @@ def replay_run(run_dir, out_dir=None, cameras=None, video="preview", hz=30.0, si
             specs.append(cs)
         gl_keepalive, context = _headless_context(model)
         rig = CameraRig(model, specs, context, shadows=bool(meta["loop_cfg"].get("camera_shadows", True)))
-        for cs in specs:
+        if video == "viewer":
+            from src.viewer_composite import CompositeRenderer
+            if legend_extra is None:
+                legend_extra = ([("F9", "take over"), ("Enter", "hand back")] if meta.get("mode") == "auto" else []) + [("Del", "abort")]
+            composite = CompositeRenderer(model, context, specs, size=size, legend_extra=legend_extra)
+            path = out / f"{name}.mp4"
+            writers["viewer"] = open_video(path, hz, size, codec, quality)
+            report["videos"]["viewer"] = str(path)
+            still["path"] = out / f"{name}_handoff.png"
+        for cs in ([] if video == "viewer" else specs):
             if video == "preview":
                 path = out / f"{cs['name']}{CONTAINER.get(codec, '.mp4')}"
                 writers[cs["name"]] = open_video(path, hz, tuple(cs["resolution"]), codec, quality)
@@ -154,7 +181,7 @@ def replay_run(run_dir, out_dir=None, cameras=None, video="preview", hz=30.0, si
                 path = out / cs["name"]
                 writers[cs["name"]] = PngFrames(path)
             report["videos"][cs["name"]] = str(path)
-        frames_csv = open(out / "frames.csv", "w", newline="")
+        frames_csv = open(out / (f"{name}_frames.csv" if video == "viewer" else "frames.csv"), "w", newline="")
         fw = csv.writer(frames_csv)
         fw.writerow(["frame", "tick", "sim_time"])
 
@@ -167,8 +194,33 @@ def replay_run(run_dir, out_dir=None, cameras=None, video="preview", hz=30.0, si
         if verify and not np.array_equal(buf, rec["initial_state"]):
             raise ReplayMismatch("the state after the settle differs from the live run's: " + "; ".join(describe_state_diff(model_, buf, rec["initial_state"])))
 
+    phase_at = np.empty(len(rec["ctrl"]), dtype=object)
+    for i, l in enumerate(labels):
+        phase_at[l["tick"]:(labels[i + 1]["tick"] if i + 1 < len(labels) else len(phase_at))] = l["label"]
+    tick_dt = spt * model.opt.timestep
+
+    def composite_info(tick, data_):
+        """What the live viewer's panel would show at this tick, from the recording: the applied base velocity, the phase label with the time since the handoff
+        (the runner's status text), the controller mode (the recorded phase 'OPERATOR' = teleop)."""
+        vx, vy, wz = (float(v) for v in rec["basevel"][tick])
+        yaw = math.atan2(2.0 * (data_.qpos[3] * data_.qpos[6] + data_.qpos[4] * data_.qpos[5]), 1.0 - 2.0 * (data_.qpos[5] ** 2 + data_.qpos[6] ** 2))
+        phase = phase_at[tick] or "DRIVE"
+        status = phase + (f"  (+{(tick - handoff_tick) * tick_dt:.0f} s)" if handoff_tick is not None and tick >= handoff_tick else "")
+        return {"time": data_.time, "base_vel": (vx, vy, wz), "twist": (vx * math.cos(yaw) + vy * math.sin(yaw), wz), "status": status,
+                "mode": ("teleop" if phase == "OPERATOR" else "auto") if meta.get("mode") == "auto" else None, "fps": hz}
+
     def on_step(step_count, data_):
-        if rig is not None and step_count % every == 0 and (render_ticks is None or render_ticks[0] <= (step_count - 1) // spt <= render_ticks[1]):
+        if composite is not None and step_count % every == 0 and (render_ticks is None or render_ticks[0] <= (step_count - 1) // spt <= render_ticks[1]):
+            tick = (step_count - 1) // spt
+            bgr = cv2.cvtColor(composite.render(data_, composite_info(tick, data_)), cv2.COLOR_RGB2BGR)
+            writers["viewer"].write(bgr)
+            if not still["saved"] and handoff_tick is not None and tick >= handoff_tick:        # the picture at the handoff frame
+                cv2.imwrite(str(still["path"]), bgr)
+                still["saved"] = True
+                report["handoff_still"] = str(still["path"])
+            fw.writerow([st["frames"], tick, f"{data_.time:.6f}"])
+            st["frames"] += 1
+        elif rig is not None and composite is None and step_count % every == 0 and (render_ticks is None or render_ticks[0] <= (step_count - 1) // spt <= render_ticks[1]):
             rig.render(data_)
             tick = (step_count - 1) // spt
             for cs in specs:
@@ -215,11 +267,12 @@ def replay_run(run_dir, out_dir=None, cameras=None, video="preview", hz=30.0, si
     report["frames_rendered"] = st["frames"]
     report["ok"] = (st["mismatch"] is None and result["frames"] == n_ticks) if verify else None
     report["wall_seconds"] = time.perf_counter() - wall0
+    report["handoff_tick"] = handoff_tick
     if writers:
         report["video_bytes"] = {k: (sum(f.stat().st_size for f in Path(v).glob("*.png")) if Path(v).is_dir() else Path(v).stat().st_size)
                                  for k, v in report["videos"].items() if Path(v).exists()}
     if video != "none":
-        (out / "replay_report.json").write_text(json.dumps(jsonable(report), indent=1))
+        (out / (f"{name}_report.json" if video == "viewer" else "replay_report.json")).write_text(json.dumps(jsonable(report), indent=1))
     if not quiet:
         if verify:
             print(("VERIFIED: " + f"{report['ticks']} ticks ({report['ticks'] / meta['source_hz']:.1f} s sim), every state bit-identical to the live run")

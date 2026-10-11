@@ -3,10 +3,12 @@
 Replay a recorded run: verify the states against the live run and render its cameras to video, offline.
 
     python experiments/replay_run.py RUN_DIR [--video none|preview|training] [--out DIR] [--cameras eagle_cam left_wrist_cam ...] [--hz 30]
-                                     [--size 640x480] [--shadows policy|on|off] [--codec mp4v] [--quality N] [--max-ticks N] [--from-tick A] [--to-tick B]
+                                     [--size 640x480] [--shadows policy|on|off] [--codec mp4v] [--quality N] [--max-ticks N] [--from-tick A] [--to-tick B] [--name STEM] [--after-handoff S]
 
 RUN_DIR is a recording made with `combined_controller.py --record-run DIR` or `beaker_hotplate_episode.py --record`.
 --video none      verify only: the states are checked, nothing is rendered or written (no GL needed)
+--video viewer    one MP4 of the live viewer's picture (follow camera, status panel, the three camera tiles), 1920x1080 by default, shadows on everywhere:
+                  OUT/<name>.mp4, plus OUT/<name>_handoff.png (the same picture at the handoff). --name sets the file stem, --after-handoff S stops S sim seconds after the handoff.
 --video preview   (default) lossy MP4, one per camera: OUT/<camera>.mp4, playing at --hz frames per second of sim time
 --video training  lossless PNG frames, one folder per camera: OUT/<camera>/<tick:06d>.png
 OUT defaults to RUN_DIR/replay; it also gets frames.csv (frame, tick, sim_time) and replay_report.json. Exit status 1 if the replay does not match.
@@ -31,8 +33,11 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("run_dir")
     ap.add_argument("--out")
-    ap.add_argument("--video", choices=["none", "preview", "training"], default="preview",
-                    help="none: verify only; preview: lossy MP4 per camera (default); training: lossless PNG frames, one folder per camera, named by tick")
+    ap.add_argument("--video", choices=["none", "preview", "training", "viewer"], default="preview",
+                    help="none: verify only; preview: lossy MP4 per camera (default); training: lossless PNG frames, one folder per camera, named by tick; "
+                         "viewer: one MP4 of the live viewer's layout (1920x1080) and a PNG at the handoff")
+    ap.add_argument("--name", default="viewer", help="viewer mode: the file stem of the MP4 and the handoff PNG")
+    ap.add_argument("--after-handoff", type=float, default=None, help="stop the replay (and the video) this many sim seconds after the handoff")
     ap.add_argument("--cameras", nargs="+", default=None, help="camera names (default: all recorded cameras)")
     ap.add_argument("--hz", type=float, default=30.0, help="video frame rate in sim time; a whole divisor of the 750 Hz physics rate")
     ap.add_argument("--size", help="WxH override of the camera resolution (default: as recorded, 640x480)")
@@ -50,7 +55,7 @@ def main():
     size = tuple(int(v) for v in args.size.lower().split("x")) if args.size else None
     rep = replay_run(run_dir, out_dir=out, cameras=args.cameras, video=args.video, hz=args.hz, size=size, shadows=args.shadows, codec=args.codec,
                      quality=args.quality, max_ticks=args.to_tick + 1 if args.to_tick is not None and args.max_ticks is None else args.max_ticks,
-                     render_ticks=(args.from_tick, args.to_tick if args.to_tick is not None else 10 ** 12))
+                     render_ticks=(args.from_tick, args.to_tick if args.to_tick is not None else 10 ** 12), name=args.name, after_handoff_s=args.after_handoff)
     sys.exit(0 if rep["ok"] else 1)
 
 

@@ -22,17 +22,14 @@ and the keyboard's own normalised command are left out, and a "twist lin, ang" r
 
 import math
 
-import cv2
 import mujoco
 import numpy as np
 
 from src import robot_specs
-from src.base_control import base_yaw
 from src.cameras import CameraRig
-from src.glfw_viewer import CAM_DISTANCE, CAM_ELEVATION, FOVY_DEG, hud_key_list, text_bitmap
+from src.viewer_layout import (FOVY_DEG, REFERENCE_HEIGHT, hud_bitmap, hud_key_list, hud_position, hud_rows, inset_layout, inset_tile,
+                               setup_follow_camera, update_follow_camera)
 from src.neck import neck_ids
-
-REFERENCE_HEIGHT = 960          # the live viewer window is 1280x960
 
 
 class CompositeRenderer:
@@ -89,7 +86,7 @@ class CompositeRenderer:
         self.cam = mujoco.MjvCamera()
         mujoco.mjv_defaultCamera(self.cam)
         mujoco.mjv_defaultOption(self.opt)
-        self.cam.distance, self.cam.elevation, self.cam.azimuth = CAM_DISTANCE, CAM_ELEVATION, 90
+        setup_follow_camera(self.cam)
         self.scene = mujoco.MjvScene(model, maxgeom=10_000)
         self.scene.flags[mujoco.mjtRndFlag.mjRND_SHADOW] = 1
         self.scene.flags[mujoco.mjtRndFlag.mjRND_REFLECTION] = 1
@@ -126,13 +123,10 @@ class CompositeRenderer:
             numpy.ndarray: Frame of shape (H, W, 3), dtype uint8, in
             red-green-blue (RGB) order, row 0 at the top.
         """
-        S = lambda v: int(round(v * self.s))
         model, W, H = self.model, self.W, self.H
         # --- the three cameras, then the follow view ---
         self.rig.render(data)
-        yaw_deg = math.degrees(base_yaw(data))
-        self.cam.lookat[:] = data.xpos[self.base_body]
-        self.cam.azimuth = yaw_deg + 90
+        yaw_deg = update_follow_camera(self.cam, data, self.base_body)
         mujoco.mjr_setBuffer(mujoco.mjtFramebuffer.mjFB_OFFSCREEN, self.context)
         viewport = mujoco.MjrRect(0, 0, W, H)
         mujoco.mjv_updateScene(model, data, self.opt, None, self.cam, mujoco.mjtCatBit.mjCAT_ALL, self.scene)
@@ -143,36 +137,18 @@ class CompositeRenderer:
         frame = np.ascontiguousarray(np.flipud(rgb))
 
         # --- the status panel, top left ---
-        vx, vy, wz = info["base_vel"]
         lin, ang = info["twist"]
-        rows = [("sim time", f"{info['time']:.2f} s"),
-                ("base speed (m/s)", f"{math.hypot(vx, vy):.2f}"),
-                ("base vx, vy (m/s)", f"{vx:+.2f}, {vy:+.2f}"),
-                ("yaw rate (rad/s)", f"{wz:+.2f}"),
-                ("yaw (deg)", f"{yaw_deg:+.1f}"),
-                ("position x, y, z (m)", f"{data.qpos[0]:.2f}, {data.qpos[1]:.2f}, {data.qpos[2]:.3f}"),
-                ("video (ms, fps)", f"{1000.0 / info['fps']:.0f}, {info['fps']:.1f}"),
-                ("twist lin, ang", f"{lin:+.2f}, {ang:+.2f}")]
-        if info.get("status"):
-            rows.append(("episode", info["status"]))
-        if info.get("mode"):
-            rows.append(("controller", info["mode"].upper()))
-        if self.neck is not None:
-            rows.append(("neck pan,lift,elb,wrist", ", ".join(f"{math.degrees(float(data.qpos[a])):+.0f}" for a in self.neck["qadr"])))
-        hud = text_bitmap(rows, S(400), S(180), self.keys, self.s)
-        m = S(8)
-        frame[m:m + hud.shape[0], m:m + hud.shape[1]] = hud
+        neck_deg = [math.degrees(float(data.qpos[a])) for a in self.neck["qadr"]] if self.neck is not None else None
+        hud = hud_bitmap(hud_rows(info["time"], info["base_vel"], yaw_deg, data.qpos[0:3],
+                                  middle_rows=[("video (ms, fps)", f"{1000.0 / info['fps']:.0f}, {info['fps']:.1f}"),
+                                               ("twist lin, ang", f"{lin:+.2f}, {ang:+.2f}")],
+                                  status=info.get("status"), mode=info.get("mode"), neck_deg=neck_deg), self.keys, self.s)
+        left, top = hud_position(self.s)
+        frame[top:top + hud.shape[0], left:left + hud.shape[1]] = hud
 
         # --- the camera tiles, along the bottom ---
         tiles = list(self.rig.images.items())
-        gap = S(8)
-        iw = min(S(320), (W - gap * (len(tiles) + 1)) // len(tiles))
-        ih = iw * 3 // 4
-        x = gap
-        for name, img in tiles:
-            small = cv2.resize(img, (iw, ih), interpolation=cv2.INTER_AREA)
-            cv2.rectangle(small, (0, 0), (S(len(name) * 9 + 10), S(20)), (45, 45, 45), -1)
-            cv2.putText(small, name, (S(5), S(15)), cv2.FONT_HERSHEY_SIMPLEX, 0.5 * self.s, (255, 255, 255), max(1, int(round(self.s))), cv2.LINE_AA)
-            frame[H - gap - ih:H - gap, x:x + iw] = small
-            x += iw + gap
+        iw, ih, gap, xs = inset_layout(W, len(tiles), self.s)
+        for (name, img), x in zip(tiles, xs):
+            frame[H - gap - ih:H - gap, x:x + iw] = inset_tile(name, img, iw, ih, self.s)
         return frame

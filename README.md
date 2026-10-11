@@ -103,6 +103,7 @@ openarm-tracer-sim/
 │   ├── run_record.py, replay.py   # record a live run's physics inputs; replay it exactly (state check) and render its cameras to video
 │   ├── rate_limit.py, alert_sound.py   # joint-target rate limiter (snap-back safety); the operator alert beep
 │   ├── viewer_composite.py  # The live viewer's picture rendered offscreen from a state (replay --video viewer)
+│   ├── viewer_layout.py     # The viewer's layout as plain functions (follow camera, status panel, banner, camera tiles), shared by the live window and the offscreen renderer
 │   ├── robot_specs.py       # Rates, motor gains, camera specs (placeholders marked)
 │   ├── safety_filter.py     # Arm joint angles through geo_kin's collision filter (starting point for the planned safety filter)
 │   └── logger.py            # Trajectory logging

@@ -10,8 +10,9 @@ is a plain dictionary of callables, created by the launcher and passed to contro
     viewer["frame"](info)
 
 The keys of that dictionary are listed in the Returns section of make_glfw_viewer(). The module also provides
-ViewerRecorder (video and comma-separated values (CSV) recording), hud_key_list() and text_bitmap() (the panel drawing,
-reused by src/viewer_composite.py) and the camera constants CAM_DISTANCE, CAM_ELEVATION and FOVY_DEG.
+ViewerRecorder (video and comma-separated values (CSV) recording). The layout itself (the follow camera, the status panel,
+the banner and the camera tiles) is in src/viewer_layout.py, shared with the offscreen renderer in src/viewer_composite.py;
+this module only places those bitmaps with OpenGL.
 
 The loop calls the viewer on every tick but asks for a redraw only every few ticks (its setting viewer_draw_hz is
 30 Hz, rounded to a whole number of 62.5 Hz ticks, which gives 31.25 Hz); on the other ticks the viewer only polls
@@ -22,7 +23,6 @@ wall-clock time whenever the machine keeps up.
 """
 
 import csv
-import math
 import time
 import time as _time
 from pathlib import Path
@@ -34,13 +34,11 @@ import numpy as np
 
 from src import robot_specs
 from src.alert_sound import play_alert
-from src.base_control import base_yaw
+from src.viewer_layout import (FOVY_DEG, banner_bitmap, hud_bitmap, hud_key_list, hud_position, hud_rows, inset_layout, inset_tile,
+                               setup_follow_camera, update_follow_camera)
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 CAMERA_SNAPSHOT_DIR = "data/camera_snapshots"
-CAM_DISTANCE = 3.5
-CAM_ELEVATION = -45
-FOVY_DEG = 90
 
 
 class ViewerRecorder:
@@ -164,85 +162,6 @@ class ViewerRecorder:
         self.csv_file.close()
         self.writer = self.csv_file = self.csv = None
         return (*self.paths, self.frames)
-
-
-def hud_key_list(has_teleop, legend_extra=()):
-    """Build the key legend shown under the status panel.
-
-    Args:
-        has_teleop (bool): Whether the run has webcam teleoperation. If true,
-            the F2 entry (switch the arms between manual and teleoperation) is
-            included.
-        legend_extra (Sequence[tuple[str, str]]): Further (key, label) entries,
-            inserted after the F2 entry and before the F3 entry. Defaults to
-            an empty tuple.
-
-    Returns:
-        list[tuple[str, str]]: (key cap text, short label) pairs, in display
-        order. The fixed entries are the base, arm, pedestal and neck keys,
-        F7 and F8 (neck), then F3 (camera images), F4 (snapshot), F5 (log),
-        F6 (record video) and Esc (quit).
-    """
-    return [("Arrows", "drive"), ("Spc", "stop"),
-            ("1-8", "L arm +"), ("Q-I", "L arm -"),
-            ("A-K", "R arm +"), ("Z-,", "R arm -"),
-            ("PgUp/Dn", "pedestal"), ("9 0 - =", "neck +"), ("O P [ ]", "neck -"), ("F7", "frame"), ("F8", "neck home")] + \
-        ([("F2", "man/tele")] if has_teleop else []) + \
-        list(legend_extra) + \
-        [("F3", "cam imgs"), ("F4", "snap"), ("F5", "log"),
-         ("F6", "rec video"), ("Esc", "quit")]
-
-
-def text_bitmap(rows, w, label_w, keys=(), scale=1.0):
-    """Draw the status panel as an image.
-
-    The panel has one text row per (label, value) pair, then the key legend:
-    each entry is a key cap icon with a short label, laid out left to right
-    and wrapped at the panel width so that the legend uses as little height as
-    possible. The panel height follows from the number of rows and legend lines.
-
-    Args:
-        rows (Sequence[tuple[str, str]]): (label, value) text rows.
-        w (int): Panel width in pixels, already multiplied by `scale`.
-        label_w (int): Pixel offset of the value column from the left edge,
-            already multiplied by `scale`.
-        keys (Sequence[tuple[str, str]]): (key, label) legend entries, as
-            returned by hud_key_list(). Defaults to an empty tuple (no legend).
-        scale (float): Factor applied to every other size (row height, font
-            size, line thickness, margins). Defaults to 1.0, which is the live
-            viewer.
-
-    Returns:
-        numpy.ndarray: Image of shape (height, w, 3), dtype uint8, in
-        red-green-blue (RGB) order, top row first.
-    """
-    S = lambda v: int(round(v * scale))
-    line_h, key_h, font = S(20), S(24), cv2.FONT_HERSHEY_SIMPLEX
-    fs_row, fs_key, thick = 0.45 * scale, 0.4 * scale, max(1, int(round(scale)))
-    layout, x, line = [], S(6), 0
-    for key, label in keys:
-        kw = cv2.getTextSize(key, font, fs_key, thick)[0][0] + S(8)
-        lw = cv2.getTextSize(label, font, fs_key, thick)[0][0]
-        if x + kw + S(4) + lw > w - S(6) and x > S(6):
-            x, line = S(6), line + 1
-        layout.append((key, label, x, line, kw))
-        x += kw + S(4) + lw + S(12)
-    top = line_h * len(rows) + S(8)
-    h = top + (key_h * (line + 1) + S(6) if keys else 0)
-    bmp = np.full((h, w, 3), 45, np.uint8)
-    for i, (lab, val) in enumerate(rows):
-        y = line_h * (i + 1) - S(3)
-        cv2.putText(bmp, lab, (S(6), y), font, fs_row, (190, 190, 190), thick, cv2.LINE_AA)
-        cv2.putText(bmp, val, (label_w, y), font, fs_row, (255, 255, 255), thick, cv2.LINE_AA)
-    if keys:
-        cv2.line(bmp, (S(6), top - S(2)), (w - S(6), top - S(2)), (110, 110, 110), thick)
-    for key, label, kx, ln, kw in layout:
-        y = top + key_h * ln + S(17)
-        cv2.rectangle(bmp, (kx, y - S(14)), (kx + kw, y + S(4)), (80, 80, 80), -1)
-        cv2.rectangle(bmp, (kx, y - S(14)), (kx + kw, y + S(4)), (200, 200, 200), thick)
-        cv2.putText(bmp, key, (kx + S(4), y), font, fs_key, (255, 255, 255), thick, cv2.LINE_AA)
-        cv2.putText(bmp, label, (kx + kw + S(4), y), font, fs_key, (150, 220, 150), thick, cv2.LINE_AA)
-    return bmp
 
 
 def make_glfw_viewer(model, data, vcfg):
@@ -373,9 +292,7 @@ def make_glfw_viewer(model, data, vcfg):
     opt = mujoco.MjvOption()
     mujoco.mjv_defaultCamera(cam)
     mujoco.mjv_defaultOption(opt)
-    cam.distance  = CAM_DISTANCE
-    cam.elevation = CAM_ELEVATION
-    cam.azimuth   = 90
+    setup_follow_camera(cam)
 
     scene_vis = mujoco.MjvScene(model, maxgeom=10_000)
     if not vcfg["view_shadows"]:
@@ -572,9 +489,7 @@ def make_glfw_viewer(model, data, vcfg):
         state["prev_c"] = cur_c
 
         # Camera follow
-        cam.lookat[:] = data.xpos[base_body_id]
-        yaw_deg = math.degrees(base_yaw(data))
-        cam.azimuth = yaw_deg + 90
+        yaw_deg = update_follow_camera(cam, data, base_body_id)
         state["yaw_deg"] = yaw_deg
 
         # Render
@@ -595,13 +510,8 @@ def make_glfw_viewer(model, data, vcfg):
         banner_h = 0
         if info.get("banner"):
             # A full-width bar along the top: red for a request nobody has answered, blue while the operator has control.
-            text, kind = info["banner"]
-            banner_h, scale = 56, 0.9
-            while cv2.getTextSize(text, cv2.FONT_HERSHEY_DUPLEX, scale, 2)[0][0] > width - 40 and scale > 0.4:
-                scale -= 0.05
-            bar = np.full((banner_h, width, 3), (200, 30, 30) if kind == "needed" else (30, 90, 200), np.uint8)
-            tw, th = cv2.getTextSize(text, cv2.FONT_HERSHEY_DUPLEX, scale, 2)[0]
-            cv2.putText(bar, text, ((width - tw) // 2, (banner_h + th) // 2), cv2.FONT_HERSHEY_DUPLEX, scale, (255, 255, 255), 2, cv2.LINE_AA)
+            bar = banner_bitmap(*info["banner"], width)
+            banner_h = bar.shape[0]
             blit(bar, 0, height - banner_h)
         if show_hud:
             now = _time.time()
@@ -611,27 +521,20 @@ def make_glfw_viewer(model, data, vcfg):
             # fast frames between camera ticks and overstates the rate.
             hud_state["ms"] += 0.1 * (1000.0 * dt_wall - hud_state["ms"])
             ds = info["drive_state"]
-            speed = math.hypot(base_vx, base_vy)
             teleop_status = info.get("teleop_status")
-            hud = text_bitmap([
-                ("sim time", f"{t:.2f} s"),
-                ("base speed (m/s)", f"{speed:.2f}"),
-                ("base vx, vy (m/s)", f"{base_vx:+.2f}, {base_vy:+.2f}"),
-                ("yaw rate (rad/s)", f"{base_wz:+.2f}"),
-                ("yaw (deg)", f"{yaw_deg:+.1f}"),
-                ("position x, y, z (m)", f"{data.qpos[0]:.2f}, "
-                 f"{data.qpos[1]:.2f}, {data.qpos[2]:.3f}"),
-                ("frame (ms, fps)", f"{hud_state['ms']:.0f}, "
-                 f"{1000.0 / max(hud_state['ms'], 1e-6):.1f}"),
-                ("cmd lin, ang", f"{ds.get('linear', 0):+.2f}, "
-                 f"{ds.get('angular', 0):+.2f}"),
-                ("recording (F6)", "off" if not recorder.active else
-                 f"REC {recorder.frames} frames, {recorder.frames / recorder.fps:.1f} s"),
-            ] + ([("episode", info["status"])] if info.get("status") else [])
-              + ([("controller", info["mode"].upper())] if info.get("mode") else []) + ([("neck pan,lift,elb,wrist", ", ".join(f"{v:+.0f}" for v in info["neck_deg"]))] if info.get("neck_deg") else [])
-              + ([("arms (F2 toggles)", teleop_status)] if teleop_status is not None else []),
-                400, 180, hud_keys)
-            blit(hud, 8, height - hud.shape[0] - 8 - banner_h)
+            hud = hud_bitmap(hud_rows(
+                t, (base_vx, base_vy, base_wz), yaw_deg, data.qpos[0:3],
+                middle_rows=[
+                    ("frame (ms, fps)", f"{hud_state['ms']:.0f}, "
+                     f"{1000.0 / max(hud_state['ms'], 1e-6):.1f}"),
+                    ("cmd lin, ang", f"{ds.get('linear', 0):+.2f}, "
+                     f"{ds.get('angular', 0):+.2f}"),
+                    ("recording (F6)", "off" if not recorder.active else
+                     f"REC {recorder.frames} frames, {recorder.frames / recorder.fps:.1f} s")],
+                status=info.get("status"), mode=info.get("mode"), neck_deg=info.get("neck_deg"),
+                extra_rows=([("arms (F2 toggles)", teleop_status)] if teleop_status is not None else [])), hud_keys)
+            hud_left, hud_top = hud_position(1.0, banner_h)
+            blit(hud, hud_left, height - hud.shape[0] - hud_top)
         if show_insets:
             # One row of insets along the bottom: the simulated cameras, plus
             # the operator webcam in teleop runs. Each is scaled to fit the
@@ -642,11 +545,8 @@ def make_glfw_viewer(model, data, vcfg):
                 pf = info.get("preview_frame")
                 tiles.append(("operator_cam", None if pf is None else
                               cv2.cvtColor(pf, cv2.COLOR_BGR2RGB)))
-            gap = 8
-            iw = min(320, (width - gap * (len(tiles) + 1)) // len(tiles))
-            ih = iw * 3 // 4
-            x = gap
-            for cname, img in tiles:
+            iw, ih, gap, xs = inset_layout(width, len(tiles))
+            for (cname, img), x in zip(tiles, xs):
                 # The simulated cameras only change on their render ticks, so
                 # keep the scaled, labelled tile until the source array does.
                 cached = inset_cache.get(cname)
@@ -654,19 +554,9 @@ def make_glfw_viewer(model, data, vcfg):
                         and cached[0] is img and cached[1].shape[1] == iw:
                     small = cached[1]
                 else:
-                    if img is None:  # operator camera: no frame delivered yet
-                        small = np.full((ih, iw, 3), 40, np.uint8)
-                    else:
-                        small = cv2.resize(img, (iw, ih),
-                                           interpolation=cv2.INTER_AREA)
-                    cv2.rectangle(small, (0, 0), (len(cname) * 9 + 10, 20),
-                                  (45, 45, 45), -1)
-                    cv2.putText(small, cname, (5, 15),
-                                cv2.FONT_HERSHEY_SIMPLEX, 0.5,
-                                (255, 255, 255), 1, cv2.LINE_AA)
+                    small = inset_tile(cname, img, iw, ih)
                     inset_cache[cname] = (img, small)
                 blit(small, x, gap)
-                x += iw + gap
         tm["hud_insets"] += pc() - t_r1
         p_now = held(glfw.KEY_F4)
         due = snapshot_every > 0 and \

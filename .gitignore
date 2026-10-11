@@ -36,3 +36,4 @@ Thumbs.db
 *.whl
 *license*.toml
 snapshots/
+MUJOCO_LOG.TXT

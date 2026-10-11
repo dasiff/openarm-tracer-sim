@@ -131,6 +131,7 @@ openarm-tracer-sim/
 ├── data/                    # Logged trajectories, camera snapshots, diagnostics
 ├── docs/
 │   ├── TODO.md              # Roadmap and open items
+│   ├── robot_reference.md   # Reference values no code reads (Tracer base figures, OpenArm summary, calibration status and to-do)
 │   └── session_log.md       # Decisions, findings and problems, by session
 └── README.md
 ```

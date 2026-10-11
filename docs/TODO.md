@@ -1,6 +1,6 @@
 # Project TODO List
 
-Consolidated 2026-10-09. "Waiting on" says who has to answer or act before an item can move; items with no name are ours.
+Consolidated 2026-10-11. "Waiting on" says who has to answer or act before an item can move; items with no name are ours.
 The original roadmap (from before this work, partly out of date) is kept at the end, unchanged.
 
 ## HAND TESTS (need a real keyboard / display; waiting on: you)
@@ -16,6 +16,8 @@ Everything below was only exercised with injected keys (scripted `held()` functi
 
 ## QUESTIONS FOR THE TEAM
 
+- [ ] **Planner** (waiting on: Dan): the algorithmic approach; what MPVI stands for; whether the approach is decided; any paper or draft. Then the inputs and outputs of the planner
+  (including how it chooses the base placement, and what it takes from the scene and the camera).
 - [ ] **Neck** (waiting on: the team, via Slack): which 4 SO-101 joints are active (assumed shoulder pan / lift / elbow flex / wrist flex), the real mount location and height
   (now the top of the torso plate, `NECK_SPECS`), and the camera mass. The STS3215 gains and the camera module on the end are placeholders; the neck adds 0.655 kg, which already
   changes the arm-swing transient when the base starts (see the base yaw transient below).
@@ -23,21 +25,25 @@ Everything below was only exercised with injected keys (scripted `held()` functi
   cameras; their poses, field of view and resolution in `CAMERA_SPECS` are all placeholders.
 - [ ] **Gripper** (waiting on: the hardware team): the real force limit (replaces the 10 N per finger placeholder ceiling, `ARM_ACTUATOR_SPECS["fingers"]["force_limit"]`),
   stiffness (the placeholder `kp` = 100 N/m means a finger cannot push harder than `kp` times its distance from the commanded position, 3.7 N on the 70 mm beaker, so caps above
-  that do nothing), current limit, and whether the real gripper supports force / current readback. **On real hardware the operator's gripper commands (keyboard, teleop)
-  should also carry a force cap**: today they carry no `max_force`, so they reset the cap to the ceiling.
+  that do nothing), current limit, and whether the real gripper supports force / current readback.
 - [ ] **Base** (waiting on: Michael): how the real Tracer holds position when stopped. Also check the sim's turn rate and acceleration against the real Tracer before tuning the arm
   swing (the arms swing ~20 cm during fast turns at 2 rad/s and end ~2 cm off after stopping).
 - [ ] **Pedestal** (waiting on: Dan): the real lift specs. The actuator is a placeholder (travel, 0.05 m/s jog speed, the lowest command is a torso-contact stop).
-- [ ] **Planner** (waiting on: Dan): the MPVI interface, base placement, and the reachability map (see the follow-up below).
-- [ ] **Compute** (waiting on: the PACE GPU allocation): a GPU allocation for openpi.
 - [ ] (original questions to the team: see the archive at the end: the learned IL model format, the control interface.)
+
+## INVESTIGATE
+
+- [ ] **The robot leans while driving straight.** The base height rises from 0.153 m to 0.190 m during the 0.3 m/s cruise and settles back over 7+ s, overlapping the PEDESTAL and
+  ARMS phases. Likely causes: the velocity-based base driving (`src/base_control.py` writes the free-joint velocity), floor friction, and a high centre of mass. It may explain part of
+  the staging drift (the base moves about 3 mm / 0.9 degrees during PEDESTAL and 6 mm during ARMS before the corrections; the HANDOFF error is now 8.5 mm / 0.36 degrees). The episode log
+  has no base height column, so start by logging `qpos[2]` and the base roll and pitch during DRIVE.
 
 ## SIM DECISIONS PENDING (waiting on: you)
 
 - [ ] **5 mm post-ARMS correction trigger.** The closed-loop base correction this list used to ask for exists (after PEDESTAL with the full controller, after ARMS creep-only
-  with clearance checks; `correction_*` in `STAGING_CFG`), but it only fires outside 1 cm / 1 degree. The HANDOFF error is now 8.5 mm / 0.36 degrees, about 8 mm of it along the
+  with clearance checks; `correction_*` in `STAGING_CFG`), but it only fires outside 1 cm / 1 degree. The HANDOFF error is 8.5 mm / 0.36 degrees, about 8 mm of it along the
   heading and away from the bench (clearance a little larger, reach a little shorter: it uses about half of the grasp slack). Enabling the trigger at `correction_aim_frac` x the
-  tolerance (5 mm) would correct it; not enabled. (Before the corrections the base drifted about 3 mm / 0.9 degrees during PEDESTAL and 6 mm during ARMS, and 4 mm over a 60 s hold.)
+  tolerance (5 mm) would correct it; not enabled.
 - [ ] **Crush check:** fail the episode if the beaker's contact force exceeds a threshold.
 - [ ] **Exclusivity during teleop:** key it on actual motion, not on commands (today it is on in episodes and applies to the operator's keys too).
 - [ ] **Launcher:** rename `experiments/combined_controller.py` (it is no longer the controller; the loop is `src/control_loop.py`), and whether the launcher gets an auto mode
@@ -49,32 +55,44 @@ Everything below was only exercised with injected keys (scripted `held()` functi
   `--quality` is ignored); VP9 (`--codec VP90`) is ~15% smaller; H.264 needs an ffmpeg dependency (imageio-ffmpeg). The preview videos are lossy: do not train from them
   (`--video training` writes lossless PNG frames named by tick, ~230 MB per sim minute) until the format is decided.
 
+## REALISM (planner independent)
+
+- [ ] **Estimated base position** (noise, drift) instead of ground truth: the staging stage and the pose corrections use the true base pose today.
+- [ ] **Object positions from camera images or noisy estimates** instead of reading them from the model.
+- [ ] **Randomized object positions, with the parking spot chosen per episode** (today the scene and the staging pose are fixed and nothing is randomized).
+- [ ] **Policy response time:** the simulation keeps running while a policy thinks (it does not wait for the policy's inference).
+- [ ] **Camera image realism.** The floor and lighting wash out to white; consider lower floor reflectance and lighting for the camera views.
+
 ## SIM FOLLOW UPS
 
-- [ ] **Lift test:** does a gentle grip (~1 N) hold the beaker while lifting? Needs a pick stage (the grasp test only closes on the beaker, `experiments/gripper_force_test.py`).
+- [ ] **Lift test:** does a gentle (~1 N) grip hold the beaker while lifting? Needs a pick stage (the grasp test only closes on the beaker, `experiments/gripper_force_test.py`).
 - [ ] **Base yaw transient on drive start; sensitive to torso mass.** The arms swing when the base starts (re-test now that the PD loop runs at 750 Hz every physics step; other
   leads: mixed actuator gain / bias settings and the 3.5 mm finger overlap at the zero pose); the neck's 0.655 kg already changed it by up to 4.6 degrees of yaw in the manual baseline.
   The arm hold itself is fixed (MuJoCo position actuators + upstream armature + gravcomp, `data/arm_hold/suite_summary.txt`); what remains is the ~20 cm swing during fast turns
   (91% force on left j1) and the ~2 cm offset after stopping.
-- [ ] **Stiffer stopped base in sim** (waiting on: Michael, once the real base behaviour is known).
+- [ ] **Teleop speed cap divides by 60, but the loop runs at 62.5 Hz.** `TELEOP_MAX_JOINT_VEL` (3.0 rad/s) is applied as `TELEOP_MAX_JOINT_VEL / 60` radians per tick in `src/teleop_source.py`,
+  so the real cap is 3.125 rad/s. Use the tick period.
 - [ ] **Snap-back: the arm's way back is not collision checked.** After a hand-back the arm and gripper glide back to their path in a straight line in joint space / finger travel
   (`arm_max_speed` 1.0 rad/s, `gripper_max_speed` 0.05 m/s), which is not checked against the bench; the operator may have left the arm anywhere. The neck's look-ahead aim during
   DRIVE..ARMS is not restored (NECK frames it later anyway). A later stage should plan the way back, or ask the operator to return the arm to a safe pose first.
-- [ ] **Remove the test-only switches** `RESTORE_ON_RESUME` and `COMPENSATE_PAUSES` from `src/staging_source.py` into config if they cause confusion (they exist for the control runs of the tests).
+- [ ] **Real hardware: the operator's gripper commands should carry a force cap.** The keyboard and teleop gripper commands carry no `max_force`, so they reset the cap to the
+  ceiling (10 N per finger, a placeholder).
 - [ ] **Reachability map for the planner** (back burner).
+- [ ] **Stiffer stopped base in sim** (waiting on: Michael, once the real base behaviour is known).
+- [ ] **Remove the test-only switches** `RESTORE_ON_RESUME` and `COMPENSATE_PAUSES` from `src/staging_source.py` into config if they cause confusion (they exist for the control runs of the tests).
 - [ ] **Drive the grippers in teleop.** The solver outputs only the 7 arm joints per side, so the grippers stay on the keyboard in teleop.
 - [ ] **Teleop could follow the operator's head** instead of the grippers once a head pose is available from the webcam path.
 - [ ] **Viewer speed on the VM.** The window redraws at 30 Hz and the operator insets are their own cheap render (shadows off, 320x240, each camera at 1 Hz): a viewer episode runs at
   ~0.9x real time (was 0.11x), the launcher at ~0.95x. A camera render costs ~25-40 ms on this VM whatever its size (insets at 2 Hz: ~0.75x, 5 Hz: ~0.65x). Open: the VM's 3D acceleration
   and video memory settings; why physics is ~2x slower per tick with the viewer open than headless (0.7 vs 0.4 ms per step).
-- [ ] **Camera image realism.** The floor and lighting wash out to white; consider lower floor reflectance and lighting for the camera views.
 - [ ] **Do not draw per-frame text with `mjr_overlay`** on this VM (a caution, not a task): its driver leaks a resource per glyph and aborts the process after about 250 frames. Use bitmap text (see the viewer HUD).
 - [ ] Housekeeping: report the provisioner problem upstream (it rejects the openarm product); finish checking for Windows-side commits that never reached GitHub.
 
 ## NEXT PHASES
 
+- [ ] **openpi on PACE** (approved, $1000 budget). Needs the dataset format decision above (what the training frames look like) and a planner-independent policy interface.
 - [ ] **Teleop demos** once a working teleop arm exists (record with `--record-run`, render offline with `experiments/replay_run.py`).
-- [ ] **openpi integration** (waiting on: the dataset format decision and the PACE GPU allocation above).
+- [ ] **RAIL safety filter:** `src/safety_filter.py` (arm joint angles through geo_kin's collision filter) is the starting point.
 
 ---
 

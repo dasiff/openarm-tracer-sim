@@ -4,13 +4,17 @@ Tests of the controller modes (auto / teleop) with the beaker-on-hotplate task p
 
     MUJOCO_GL=egl python experiments/cc_mode_tests.py [A B C1 C2]
 
+Timing: the controller's tick is 150 Hz (src/control_loop.py). The scenarios were written for the old 62.5 Hz tick and keep their key timings
+in those "old ticks" (a key window of 15 old ticks is 0.24 s): held() converts the tick number with old(), and the array offsets that look at
+a recording use n(old ticks) = the same instant in 150 Hz ticks. DT is the tick length used by the per-tick speed limit checks.
+
 K   the keys: Enter, the abort key (Delete) and the F9 take-over key are not used by any other key of the controller (the keyboard source's
     drive / jog / pedestal / neck keys, the viewer's F2-F7 and Esc).
 A   auto / hold stage. At handoff + 100 ticks F9 (operator takes over), the operator drives the base back a little (arrow key, then SPACE),
     at handoff + 200 Enter (control returns to auto, the policy continues its stage). Enter and Delete pressed earlier, in auto mode, do nothing;
     F9 pressed in teleop mode does not hand back. With timeout_after_handoff = 5 s:
     the switches are logged with cause operator_key, the base moved under the operator, the auto clock was paused while the operator had
-    control (auto time 5.008 s = 313 ticks, operator time 1.6 s = 100 ticks) and the episode ends as an AUTO timeout.
+    control (auto time 5.0 s, operator time 1.6 s) and the episode ends as an AUTO timeout.
 B   auto / request_operator stage + a test source that teleports the beaker onto the hotplate at 46 s (after the request, so under teleop):
     the policy's request switches to teleop at the handoff (cause policy_request), the auto clock stays at 0, and the episode is
     SUCCESS with operator_assisted true.
@@ -21,7 +25,7 @@ S   snap-back: F9 during ARMS, the operator jogs the arm ~0.6 rad away, Enter: t
     tick); with the limiter disabled the same run jumps.
 G   snap-back of the gripper: F9 during ARMS, the operator opens the gripper, Enter: the gripper target moves at most gripper_max_speed * dt per
     tick (control run: limit disabled, it jumps).
-B2  snap-back of the base: F9 while the base drives at cruise speed, Enter 78 ticks later: the applied Twist rises from rest at the controller's
+B2  snap-back of the base: F9 while the base drives at cruise speed, Enter 78 old ticks later: the applied Twist rises from rest at the controller's
     acceleration (control run: the controller's stale memory of its speed is used, as before, and the Twist steps to the old speed).
 P   the pedestal: F9 during PEDESTAL, the operator moves it, Enter: no step (the phase already ramps from the applied height; no control run).
 R1  restore the pedestal: F9 during ARMS, the operator holds control for 35 s (longer than the ARMS timeout) and moves the pedestal, Enter: staging re-ramps
@@ -51,6 +55,19 @@ from src.task_config import EPISODE_CFG, STAGING_CFG, TASK_CFG  # noqa: E402
 from src.sequential_policy import make_request_operator_stage  # noqa: E402
 
 results = []
+K = 2.4                     # 150 Hz ticks per old (62.5 Hz) tick
+DT = 1.0 / 150              # the tick length, s
+OLD_DT = 0.016              # the old tick length, s
+
+
+def n(old_ticks):
+    """The same instant as `old_ticks` old ticks, in 150 Hz ticks."""
+    return int(round(old_ticks * K))
+
+
+def old(ticks):
+    """The number of whole old ticks in `ticks` 150 Hz ticks (exact: 2.4 = 12 / 5)."""
+    return (5 * ticks) // 12
 
 
 def check(name, ok, detail=""):
@@ -79,7 +96,7 @@ def scenario_A(model, data):
         H = probe["H"]
         if H is None:
             return False
-        k = tick[0] - H
+        k = old(tick[0] - H)
         if code == glfw.KEY_F9:
             return k in (100, 101, 150, 151)          # take over; the second press (in teleop) must not hand back
         if code in (glfw.KEY_ENTER, glfw.KEY_DELETE):
@@ -96,9 +113,9 @@ def scenario_A(model, data):
     check("switch log: initial auto, operator_key to teleop, operator_key back (Enter / Delete in auto and F9 in teleop did nothing)", [(m["from"], m["to"], m["cause"]) for m in sw] ==
           [("teleop", "auto", "initial"), ("auto", "teleop", "operator_key"), ("teleop", "auto", "operator_key")], str([m["cause"] for m in sw]))
     H = probe["H"]
-    moved = np.hypot(*(np.array(probe["poses"][H + 150][:2]) - np.array(probe["poses"][H + 105][:2])))
+    moved = np.hypot(*(np.array(probe["poses"][H + n(150)][:2]) - np.array(probe["poses"][H + n(105)][:2])))
     check("the base moved under the operator", moved > 0.03, f"{1000 * moved:.0f} mm between handoff+105 and +150")
-    still = np.hypot(*(np.array(probe["poses"][H + 100][:2]) - np.array(probe["poses"][H + 5][:2])))
+    still = np.hypot(*(np.array(probe["poses"][H + n(100)][:2]) - np.array(probe["poses"][H + n(5)][:2])))
     check("the base did not move under auto (hold stage)", still < 0.002, f"{1000 * still:.1f} mm")
     check("auto clock paused during operator control", abs(s["auto_time_after_handoff_s"] - 5.0) < 0.02 and abs(s["operator_time_s"] - 1.6) < 0.05,
           f"auto {s['auto_time_after_handoff_s']:.3f} s, operator {s['operator_time_s']:.3f} s")
@@ -150,13 +167,13 @@ def scenario_D(model, data):
         H = probe["H"]
         if H is None:
             return False
-        k = tick[0] - H
+        k = old(tick[0] - H)
         return (code == glfw.KEY_F9 and k in (20, 21)) or (code == glfw.KEY_DELETE and k in (60, 61))
 
     s = run_episode(None, model, data, held=held, loop_cfg={"tick_ref": tick}, extra_sources=lambda m, d: {"probe": src})
     H = probe["H"]
-    check("outcome ABORTED_BY_OPERATOR, ended 40 ticks after the take-over", s["outcome"] == "ABORTED_BY_OPERATOR" and s["sim_time_end"] is not None
-          and abs((s["sim_time_end"] - s["handoff_time"]) - 60 * 0.016) < 0.05, f"{s['outcome']} at handoff + {s['sim_time_end'] - s['handoff_time']:.2f} s")
+    check("outcome ABORTED_BY_OPERATOR, ended 40 old ticks (0.64 s) after the take-over", s["outcome"] == "ABORTED_BY_OPERATOR" and s["sim_time_end"] is not None
+          and abs((s["sim_time_end"] - s["handoff_time"]) - 60 * OLD_DT) < 0.05, f"{s['outcome']} at handoff + {s['sim_time_end'] - s['handoff_time']:.2f} s")
 
 
 def scenario_E(model, data):
@@ -164,10 +181,10 @@ def scenario_E(model, data):
     s = run_episode(lambda m, d: make_request_operator_stage(), model, data, episode_cfg={**EPISODE_CFG, "operator_timeout": 5.0})
     check("OPERATOR_NO_RESPONSE after 5.0 s of operator time", s["outcome"] == "OPERATOR_NO_RESPONSE" and abs(s["operator_time_s"] - 5.0) < 0.02,
           f"{s['outcome']} operator {s['operator_time_s']:.3f} s")
-    print("E2: the same, but a key is pressed (SPACE) 50 ticks after the request")
+    print("E2: the same, but a key is pressed (SPACE) 50 old ticks (0.8 s) after the request")
     tick = [0]
     src, probe = make_probe()
-    held = lambda code: probe["H"] is not None and code == glfw.KEY_SPACE and tick[0] - probe["H"] in (50, 51)
+    held = lambda code: probe["H"] is not None and code == glfw.KEY_SPACE and old(tick[0] - probe["H"]) in (50, 51)
     s = run_episode(lambda m, d: make_request_operator_stage(), model, data, episode_cfg={**EPISODE_CFG, "operator_timeout": 5.0}, held=held,
                     loop_cfg={"tick_ref": tick}, extra_sources=lambda m, d: {"probe": src})
     check("TIMEOUT (operator), not OPERATOR_NO_RESPONSE", s["outcome"] == "TIMEOUT" and s["timeout_kind"] == "operator", f"{s['outcome']} {s['timeout_kind']}")
@@ -187,10 +204,10 @@ def _snapback_run(model, data, max_speed):
     def held(code):
         if pr["A"] is None:
             return False
-        k = tick[0] - pr["A"]
+        k = old(tick[0] - pr["A"])
         if code == glfw.KEY_F9:
             return k in (150, 151)
-        if code == glfw.KEY_2:                      # left joint 2 up (0.05 rad per tick while held)
+        if code == glfw.KEY_2:                      # left joint 2 up (3.125 rad/s while held)
             return 160 <= k <= 179
         if code == glfw.KEY_4:                      # and joint 4
             return 160 <= k <= 171
@@ -211,16 +228,16 @@ def scenario_S(model, data):
     out = {}
     for label, v in (("with the limiter (arm_max_speed 1.0 rad/s)", STAGING_CFG["arm_max_speed"]), ("limiter disabled (control run)", 1e9)):
         s, A, q = _snapback_run(model, data, v)
-        away = np.abs(q[A + 160] - q[A + 259]).max()                      # how far the operator moved the arm (largest joint)
-        after = np.abs(np.diff(q[A + 259:A + 259 + 400], axis=0)).max()   # largest per-tick change of any joint's target from just before the hand-back (tick A+260) on
-        first = np.abs(q[A + 261] - q[A + 260]).max()                     # the first tick after the hand-back
+        away = np.abs(q[A + n(160)] - q[A + n(259)]).max()                      # how far the operator moved the arm (largest joint)
+        after = np.abs(np.diff(q[A + n(260) - 1:A + n(260) - 1 + n(400)], axis=0)).max()   # largest per-tick change of any joint's target from just before the hand-back on
+        first = np.abs(q[A + n(260) + 1] - q[A + n(260)]).max()                            # the first tick after the hand-back
         out[label] = (s, away, after, first)
         print(f"  {label}: the operator moved the arm {away:.2f} rad; after the hand-back the largest per-tick change of a target is {after:.4f} rad "
-              f"({after / 0.016:.2f} rad/s), the first tick {first:.4f} rad; outcome {s['outcome']}, staging error {s['staging_error']}")
+              f"({after / DT:.2f} rad/s), the first tick {first:.4f} rad; outcome {s['outcome']}, staging error {s['staging_error']}")
     s, away, after, first = out["with the limiter (arm_max_speed 1.0 rad/s)"]
     jump = out["limiter disabled (control run)"][2]
     check("the operator moved the arm well away", away > 0.5, f"{away:.2f} rad")
-    check("after the hand-back no target moves more than arm_max_speed * dt = 0.016 rad per tick", after <= 0.016 + 1e-9, f"{after:.4f} rad")
+    check("after the hand-back no target moves more than arm_max_speed * dt = 0.0067 rad per tick", after <= 1.0 * DT + 1e-9, f"{after:.4f} rad")
     check("without the limiter the same run jumps (so the test can tell)", jump > 0.3, f"{jump:.3f} rad in one tick")
     check("staging still completes and hands off", s["handoff_time"] is not None and not s["staging_error"], f"outcome {s['outcome']}")
 
@@ -247,7 +264,7 @@ def _resume_run(model, data, trigger, keys, staging_cfg=STAGING_CFG, record=("tw
     def held(code):
         if pr["T"] is None:
             return False
-        k = tick[0] - pr["T"]
+        k = old(tick[0] - pr["T"])
         if code == glfw.KEY_F9 and end <= k <= end + 1:
             return True
         if code == glfw.KEY_DELETE and end + 3 <= k <= end + 4:
@@ -266,19 +283,19 @@ def scenario_G(model, data):
         T, rec, s = _resume_run(model, data, lambda o: o["policy"]["phase"] == "ARMS", {glfw.KEY_F9: [(150, 151)], glfw.KEY_8: [(160, 169)], glfw.KEY_ENTER: [(200, 201)]},
                                 {**STAGING_CFG, "gripper_max_speed": v})
         g = rec["gripper"]
-        moved = abs(g[T + 175] - g[T + 155])
-        after = np.abs(np.diff(g[T + 199:T + 199 + 100])).max()
+        moved = abs(g[T + n(175)] - g[T + n(155)])
+        after = np.abs(np.diff(g[T + n(200) - 1:T + n(200) - 1 + n(100)])).max()
         res[label] = (moved, after)
         print(f"  {label}: the operator moved the gripper target {1000 * moved:.1f} mm; after the hand-back the largest per-tick change is {1000 * after:.3f} mm "
-              f"({after / 0.016:.3f} m/s); outcome {s['outcome']}")
+              f"({after / DT:.3f} m/s); outcome {s['outcome']}")
     check("the operator moved the gripper well away from the path", res["with the limiter (gripper_max_speed 0.05 m/s)"][0] > 0.02, f"{1000 * res['with the limiter (gripper_max_speed 0.05 m/s)'][0]:.1f} mm")
-    check("after the hand-back the gripper target moves at most gripper_max_speed * dt = 0.8 mm per tick", res["with the limiter (gripper_max_speed 0.05 m/s)"][1] <= 0.05 * 0.016 + 1e-9,
+    check("after the hand-back the gripper target moves at most gripper_max_speed * dt = 0.33 mm per tick", res["with the limiter (gripper_max_speed 0.05 m/s)"][1] <= 0.05 * DT + 1e-9,
           f"{1000 * res['with the limiter (gripper_max_speed 0.05 m/s)'][1]:.3f} mm")
     check("without the limiter the same run jumps", res["limiter disabled (control run)"][1] > 0.01, f"{1000 * res['limiter disabled (control run)'][1]:.1f} mm in one tick")
 
 
 def scenario_B2(model, data):
-    print("\nB2: snap-back of the base. F9 while the base drives at cruise speed, Enter 78 ticks later")
+    print("\nB2: snap-back of the base. F9 while the base drives at cruise speed, Enter 78 old ticks later")
     import src.staging_source as ss
     res = {}
     real = ss._start_from_applied
@@ -290,15 +307,15 @@ def scenario_B2(model, data):
         finally:
             ss._start_from_applied = real
         tw = rec["twist"]
-        speed_before = tw[T + 1][0]
-        rest = abs(tw[T + 79][0])
-        d = np.abs(np.diff(tw[T + 80:T + 80 + 50], axis=0))
+        speed_before = tw[T + n(1)][0]
+        rest = abs(tw[T + n(79)][0])
+        d = np.abs(np.diff(tw[T + n(80) - 1:T + n(80) - 1 + n(50)], axis=0))
         res[label] = (rest, d[:, 0].max(), d[:, 1].max(), speed_before)
         print(f"  {label}: speed when the operator took over {speed_before:.3f} m/s, at rest before the hand-back ({rest:.4f} m/s); after it the largest per-tick change of "
               f"the Twist is {d[:, 0].max():.4f} m/s and {d[:, 1].max():.4f} rad/s")
     k1, k2 = list(res)
     check("the base was at rest when control came back", res[k1][0] < 1e-9, f"{res[k1][0]:.4f} m/s")
-    check("with the fix the Twist changes at most accel * dt per tick (0.0016 m/s, 0.0032 rad/s)", res[k1][1] <= 0.1 * 0.016 + 1e-9 and res[k1][2] <= 0.2 * 0.016 + 1e-9,
+    check("with the fix the Twist changes at most accel * dt per tick (0.00067 m/s, 0.0013 rad/s)", res[k1][1] <= 0.1 * DT + 1e-9 and res[k1][2] <= 0.2 * DT + 1e-9,
           f"{res[k1][1]:.4f} m/s, {res[k1][2]:.4f} rad/s")
     check("the control run steps the Twist to the old speed", res[k2][1] > 0.1, f"{res[k2][1]:.3f} m/s in one tick")
 
@@ -307,10 +324,10 @@ def scenario_P(model, data):
     print("\nP: the pedestal. F9 during PEDESTAL, the operator moves it (Page Up), Enter")
     T, rec, s = _resume_run(model, data, lambda o: o["policy"]["phase"] == "PEDESTAL", {glfw.KEY_F9: [(50, 51)], glfw.KEY_PAGE_UP: [(60, 69)], glfw.KEY_ENTER: [(100, 101)]}, end=200)
     p = rec["pedestal"]
-    after = np.abs(np.diff(p[T + 99:T + 99 + 60])).max()
-    moved = abs(p[T + 99] - p[T + 55])
+    after = np.abs(np.diff(p[T + n(100) - 1:T + n(100) - 1 + n(60)])).max()
+    moved = abs(p[T + n(99)] - p[T + n(55)])
     check("the operator moved the pedestal", moved > 0.005, f"{1000 * moved:.1f} mm")
-    check("after the hand-back the pedestal target moves at most pedestal_speed * dt = 0.8 mm per tick", after <= 0.05 * 0.016 + 1e-9, f"{1000 * after:.3f} mm")
+    check("after the hand-back the pedestal target moves at most pedestal_speed * dt = 0.33 mm per tick", after <= 0.05 * DT + 1e-9, f"{1000 * after:.3f} mm")
 
 
 def _final_value(rec, s, name):
@@ -330,17 +347,17 @@ def scenario_R1(model, data):
         finally:
             ss.RESTORE_ON_RESUME, ss.COMPENSATE_PAUSES = True, True
         p = rec["pedestal"]
-        h = int(round((s["handoff_time"] - 1.4) / 0.016)) if s["handoff_time"] is not None else None
+        h = int(round((s["handoff_time"] - 1.4) / DT)) if s["handoff_time"] is not None else None
         runs[label] = (s, p, T, h)
-        print(f"  {label}: operator moved the pedestal to {1000 * (p[T + 2340] - target):+.0f} mm from its height; outcome {s['outcome']}, staging error {s['staging_error']}; "
+        print(f"  {label}: operator moved the pedestal to {1000 * (p[T + n(2340)] - target):+.0f} mm from its height; outcome {s['outcome']}, staging error {s['staging_error']}; "
               + (f"pedestal target at the handoff {1000 * (p[h] - target):+.1f} mm from its height" if h is not None else "no handoff"))
     s, p, T, h = runs["restoring on"]
-    check("the operator moved the pedestal away from the staging height", abs(p[T + 2340] - target) > 0.03, f"{1000 * (p[T + 2340] - target):+.0f} mm")
+    check("the operator moved the pedestal away from the staging height", abs(p[T + n(2340)] - target) > 0.03, f"{1000 * (p[T + n(2340)] - target):+.0f} mm")
     check("staging completes: no STAGING_FAILED, handoff reached (ARMS did not time out although the operator had control for 35 s)", not s["staging_error"] and s["handoff_time"] is not None,
           f"{s['staging_error']}")
     check("the pedestal is back at the staging height at the handoff", abs(p[h] - target) < 1e-6, f"{1000 * (p[h] - target):+.3f} mm")
-    check("and it was re-ramped smoothly (no tick changes the target by more than pedestal_speed * dt = 0.8 mm)", np.abs(np.diff(p[T + 2349:h])).max() <= 0.05 * 0.016 + 1e-9,
-          f"{1000 * np.abs(np.diff(p[T + 2349:h])).max():.3f} mm")
+    check("and it was re-ramped smoothly (no tick changes the target by more than pedestal_speed * dt = 0.33 mm)", np.abs(np.diff(p[T + n(2350) - 1:h])).max() <= 0.05 * DT + 1e-9,
+          f"{1000 * np.abs(np.diff(p[T + n(2350) - 1:h])).max():.3f} mm")
     check("the ARMS duration in the report does not include the operator's 35 s", s["phase_durations_s"]["ARMS"] < 30.0, f"{s['phase_durations_s']['ARMS']:.1f} s")
     s2, p2, T2, h2 = runs["control: restoring off"]
     check("control: without restoring the pedestal stays where the operator left it", h2 is not None and abs(p2[h2] - target) > 0.03, f"{1000 * (p2[h2] - target):+.0f} mm" if h2 else "")
@@ -349,7 +366,7 @@ def scenario_R1(model, data):
 
 
 def scenario_R2(model, data):
-    print("\nR2: restore the neck during NECK. F9 20 ticks into NECK, the operator pans the neck (key 9), Enter at +60")
+    print("\nR2: restore the neck during NECK. F9 20 old ticks into NECK, the operator pans the neck (key 9), Enter at +60")
     import src.staging_source as ss
     runs = {}
     for label, restore in (("restoring on", True), ("control: restoring off", False)):
@@ -364,17 +381,17 @@ def scenario_R2(model, data):
         print(f"  {label}: outcome {s['outcome']}, staging error {s['staging_error']}")
     s, nk, T = runs["restoring on"]
     goal = np.array(list(s["neck_framing_report"]["neck_targets"].values()))
-    check("the operator moved the neck away", np.abs(nk[T + 59] - nk[T + 25]).max() > 0.1, f"{np.abs(nk[T + 59] - nk[T + 25]).max():.2f} rad")
+    check("the operator moved the neck away", np.abs(nk[T + n(59)] - nk[T + n(25)]).max() > 0.1, f"{np.abs(nk[T + n(59)] - nk[T + n(25)]).max():.2f} rad")
     check("staging completes (no STAGING_FAILED, handoff reached)", not s["staging_error"] and s["handoff_time"] is not None, f"{s['staging_error']}")
-    check("the neck ended at the (re-run) framing", np.abs(nk[T + 600] - goal).max() < 1e-6, f"{np.abs(nk[T + 600] - goal).max():.2e} rad")
-    check("at the neck speed (no tick changes a neck target by more than 1.5 rad/s * dt = 0.024 rad)", np.abs(np.diff(nk[T + 59:T + 600], axis=0)).max() <= 1.5 * 0.016 + 1e-9,
-          f"{np.abs(np.diff(nk[T + 59:T + 600], axis=0)).max():.4f} rad")
+    check("the neck ended at the (re-run) framing", np.abs(nk[T + n(600)] - goal).max() < 1e-6, f"{np.abs(nk[T + n(600)] - goal).max():.2e} rad")
+    check("at the neck speed (no tick changes a neck target by more than 1.5 rad/s * dt = 0.01 rad)", np.abs(np.diff(nk[T + n(60) - 1:T + n(600)], axis=0)).max() <= 1.5 * DT + 1e-9,
+          f"{np.abs(np.diff(nk[T + n(60) - 1:T + n(600)], axis=0)).max():.4f} rad")
     s2 = runs["control: restoring off"][0]
     check("control: without restoring NECK stalls and fails", s2["outcome"] == "STAGING_FAILED" and "NECK" in (s2["staging_error"] or ""), f"{s2['staging_error']}")
 
 
 def scenario_R3(model, data):
-    print("\nR3: restore the neck after DONE. F9 20 ticks after the handoff (hold stage), the operator pans the neck, Enter at +80")
+    print("\nR3: restore the neck after DONE. F9 20 old ticks after the handoff (hold stage), the operator pans the neck, Enter at +80")
     import src.staging_source as ss
     runs = {}
     for label, restore in (("restoring on", True), ("control: restoring off", False)):
@@ -387,12 +404,12 @@ def scenario_R3(model, data):
         runs[label] = (s, rec["neck"], T)
     s, nk, T = runs["restoring on"]
     goal = np.array(list(s["neck_framing_report"]["neck_targets"].values()))
-    away = np.abs(nk[T + 79] - goal).max()
+    away = np.abs(nk[T + n(79)] - goal).max()
     check("the operator moved the neck away from the framing", away > 0.1, f"{away:.2f} rad")
-    check("restoring on: the neck is back at the framing", np.abs(nk[T + 350] - goal).max() < 1e-6, f"{np.abs(nk[T + 350] - goal).max():.2e} rad")
-    check("at the neck speed (<= 0.024 rad per tick)", np.abs(np.diff(nk[T + 79:T + 350], axis=0)).max() <= 1.5 * 0.016 + 1e-9, f"{np.abs(np.diff(nk[T + 79:T + 350], axis=0)).max():.4f} rad")
+    check("restoring on: the neck is back at the framing", np.abs(nk[T + n(350)] - goal).max() < 1e-6, f"{np.abs(nk[T + n(350)] - goal).max():.2e} rad")
+    check("at the neck speed (<= 0.01 rad per tick)", np.abs(np.diff(nk[T + n(80) - 1:T + n(350)], axis=0)).max() <= 1.5 * DT + 1e-9, f"{np.abs(np.diff(nk[T + n(80) - 1:T + n(350)], axis=0)).max():.4f} rad")
     s2, nk2, T2 = runs["control: restoring off"]
-    check("control: without restoring the neck stays away", np.abs(nk2[T2 + 350] - goal).max() > 0.1, f"{np.abs(nk2[T2 + 350] - goal).max():.2f} rad")
+    check("control: without restoring the neck stays away", np.abs(nk2[T2 + n(350)] - goal).max() > 0.1, f"{np.abs(nk2[T2 + n(350)] - goal).max():.2f} rad")
 
 
 def main():

@@ -26,8 +26,8 @@ that is held back by the hold rule does not wind up while it waits.
 import glfw
 import numpy as np
 
-JOG_JOINT_STEP = 0.05   # rad per control tick while a jog key is held
-JOG_GRIP_STEP = 0.003   # m per control tick (finger travel is 0 closed .. 0.044 open)
+JOG_JOINT_SPEED = 3.125   # rad/s while a jog key is held (the command moves this much per second of sim time, whatever the tick rate)
+JOG_GRIP_SPEED = 0.1875   # m/s (finger travel is 0 closed .. 0.044 open)
 GRIP_IDX = 7            # item 0-6 = joints 1-7, 7 = gripper
 
 # One fixed key pair per joint, shoulder (j1) to wrist (j7) then gripper,
@@ -62,9 +62,8 @@ DRIVE_CFG = {
     "drive_params": {
         "max_linear_vel":  1.5,   # m/s (real Tracer max ~1.6 m/s)
         "max_angular_vel": 2.0,   # rad/s
-        "incr":            0.02,  # gentle ramp — fast incr flings the arms
-                                   # because velocity control decouples
-                                   # base from arm inertia
+        "ramp_rate":       1.25,  # 1/s: change of the normalised command per second (full speed in 0.8 s). A gentle
+                                   # ramp: a fast one flings the arms because velocity control decouples base from arm inertia
     },
 }
 
@@ -102,11 +101,11 @@ def build_jog_tables(model, mujoco):
 
     Returns:
         dict[str, list[tuple]]: Maps "left" and "right" to a list of 8 items.
-        Each item is (actuator_ids, (lo, hi), step): the list of actuator ids
+        Each item is (actuator_ids, (lo, hi), speed): the list of actuator ids
         driven together (one for a joint, two for the gripper), the joint
         range in radians (metres for the gripper) taken from the first
-        actuator's joint, and the jog step per tick (JOG_JOINT_STEP radians
-        or JOG_GRIP_STEP metres).
+        actuator's joint, and the jog speed (JOG_JOINT_SPEED radians per
+        second or JOG_GRIP_SPEED metres per second).
 
     Raises:
         RuntimeError: If one of the actuators is not in the model.
@@ -125,9 +124,9 @@ def build_jog_tables(model, mujoco):
         items = []
         for i in range(1, 8):
             a = aid(f"{side}_joint{i}_ctrl")
-            items.append(([a], jrange(a), JOG_JOINT_STEP))
+            items.append(([a], jrange(a), JOG_JOINT_SPEED))
         f = [aid(f"{side}_finger1_ctrl"), aid(f"{side}_finger2_ctrl")]
-        items.append((f, jrange(f[0]), JOG_GRIP_STEP))
+        items.append((f, jrange(f[0]), JOG_GRIP_SPEED))
         tables[side] = items
     return tables
 
@@ -142,17 +141,17 @@ def make_keyboard_source(model, held, drive_cfg, ped_step, ped_range, data=None,
         drive_cfg (dict | None): Base keys and ramp, shaped like DRIVE_CFG:
             {"keys": {"forward" | "backward" | "left" | "right" | "stop":
             [key names]}, "drive_params": {"max_linear_vel" (m/s, default 1.5),
-            "max_angular_vel" (rad/s, default 2.0), "incr" (change of the
-            normalised command per tick, default 0.1)}}. None means no base
+            "max_angular_vel" (rad/s, default 2.0), "ramp_rate" (change of the
+            normalised command per second, default 6.25)}}. None means no base
             keys.
         ped_step (float): Change of the pedestal height command per tick while
-            a pedestal key is held, in metres.
+            a pedestal key is held, in metres (the caller multiplies the jog speed by the tick length).
         ped_range (tuple[float, float]): (lowest, highest) pedestal height
             command in metres.
         data (mujoco.MjData | None): Simulation state, needed only to frame the
             task points with F7. Defaults to None.
         neck_specs (dict | None): Neck settings (robot_specs.NECK_SPECS: joint
-            names, "jog_step" in radians per tick, "drive_pose" in radians).
+            names, "jog_speed" in radians per second, "drive_pose" in radians).
             None means no neck keys. Defaults to None.
         points_fn (Callable | None): Called as points_fn(model, data) and
             returns a dictionary of world points (metres) that F7 should frame,
@@ -186,7 +185,7 @@ def make_keyboard_source(model, held, drive_cfg, ped_step, ped_range, data=None,
     for action in ("forward", "backward", "left", "right", "stop"):
         drive_keys.setdefault(action, [])
     dp = (drive_cfg or {}).get("drive_params", {})
-    incr = dp.get("incr", 0.1)
+    ramp_rate = dp.get("ramp_rate", 6.25)
     max_lin_vel = dp.get("max_linear_vel", 1.5)
     max_ang_vel = dp.get("max_angular_vel", 2.0)
     ds = {"linear": 0.0, "angular": 0.0}
@@ -217,6 +216,8 @@ def make_keyboard_source(model, held, drive_cfg, ped_step, ped_range, data=None,
         Args:
             obs (dict): Observation from the control loop. Uses:
                 "time" (float): Simulated time in seconds.
+                "timestep" and "steps_per_frame": the tick length in seconds is their product; the per-second jog speeds and the
+                  drive ramp rate are multiplied by it.
                 "applied" (dict): The targets the loop holds: "pedestal"
                   (height in metres), "arm_targets" ({side: 7 joint angles in
                   radians}), "gripper" ({side: finger travel in metres}) and,
@@ -234,6 +235,8 @@ def make_keyboard_source(model, held, drive_cfg, ped_step, ped_range, data=None,
         """
         applied = obs["applied"]
         cmds = []
+        dt = obs["timestep"] * obs["steps_per_frame"]
+        incr = ramp_rate * dt
 
         # --- Drive: ramp linear/angular commands (cruise control) ---
         drive_key_down = any(held(k) for ks in drive_keys.values() for k in ks)
@@ -246,7 +249,7 @@ def make_keyboard_source(model, held, drive_cfg, ped_step, ped_range, data=None,
 
         if any(held(k) for k in drive_keys.get("stop", [])):
             # Ramp back to zero at the same rate as the accel
-            # ramp (incr/step) instead of snapping instantly —
+            # ramp (ramp_rate) instead of snapping instantly —
             # avoids a velocity discontinuity at stop, the same
             # kind of instant-stop artifact investigated for the
             # scripted test scenario (see
@@ -281,7 +284,8 @@ def make_keyboard_source(model, held, drive_cfg, ped_step, ped_range, data=None,
                 d = int(held(k_plus)) - int(held(k_minus))
                 if d == 0:
                     continue
-                ids, (lo, hi), step_ = jog_tables[side][idx]
+                ids, (lo, hi), speed = jog_tables[side][idx]
+                step_ = speed * dt
                 if idx == GRIP_IDX:
                     grip[side] = float(np.clip(applied["gripper"][side] + d * step_, lo, hi))
                 else:
@@ -302,7 +306,7 @@ def make_keyboard_source(model, held, drive_cfg, ped_step, ped_range, data=None,
             for j, (k_plus, k_minus) in enumerate(neck_pairs):
                 d = int(held(k_plus)) - int(held(k_minus))
                 if d:
-                    moved[nk["names"][j]] = float(np.clip(goal[nk["names"][j]] + d * neck_specs["jog_step"], nk["lo"][j], nk["hi"][j]))
+                    moved[nk["names"][j]] = float(np.clip(goal[nk["names"][j]] + d * neck_specs["jog_speed"] * dt, nk["lo"][j], nk["hi"][j]))
             if moved:
                 cmds.append({"mode": "neck", "neck_targets": moved})
                 state["neck_active_t"] = obs["time"]

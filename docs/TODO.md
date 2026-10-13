@@ -70,8 +70,6 @@ Everything below was only exercised with injected keys (scripted `held()` functi
   leads: mixed actuator gain / bias settings and the 3.5 mm finger overlap at the zero pose); the neck's 0.655 kg already changed it by up to 4.6 degrees of yaw in the manual baseline.
   The arm hold itself is fixed (MuJoCo position actuators + upstream armature + gravcomp, `data/arm_hold/suite_summary.txt`); what remains is the ~20 cm swing during fast turns
   (91% force on left j1) and the ~2 cm offset after stopping.
-- [ ] **Teleop speed cap divides by 60, but the loop runs at 62.5 Hz.** `TELEOP_MAX_JOINT_VEL` (3.0 rad/s) is applied as `TELEOP_MAX_JOINT_VEL / 60` radians per tick in `src/teleop_source.py`,
-  so the real cap is 3.125 rad/s. Use the tick period.
 - [ ] **Snap-back: the arm's way back is not collision checked.** After a hand-back the arm and gripper glide back to their path in a straight line in joint space / finger travel
   (`arm_max_speed` 1.0 rad/s, `gripper_max_speed` 0.05 m/s), which is not checked against the bench; the operator may have left the arm anywhere. The neck's look-ahead aim during
   DRIVE..ARMS is not restored (NECK frames it later anyway). A later stage should plan the way back, or ask the operator to return the arm to a safe pose first.
@@ -86,6 +84,10 @@ Everything below was only exercised with injected keys (scripted `held()` functi
   ~0.9x real time (was 0.11x), the launcher at ~0.95x. A camera render costs ~25-40 ms on this VM whatever its size (insets at 2 Hz: ~0.75x, 5 Hz: ~0.65x). Open: the VM's 3D acceleration
   and video memory settings; why physics is ~2x slower per tick with the viewer open than headless (0.7 vs 0.4 ms per step).
 - [ ] **Do not draw per-frame text with `mjr_overlay`** on this VM (a caution, not a task): its driver leaks a resource per glyph and aborts the process after about 250 frames. Use bitmap text (see the viewer HUD).
+- [ ] **Friction 0.05 breaks PEDESTAL settling** (cause unknown). Found in the friction sweep (0.05, 0.1, 0.2) of the lean fix; the approved value is unchanged. Investigate why the pedestal does not settle at the lowest friction.
+- [ ] **Gravity compensation experiment.** MuJoCo's body gravcomp cancels the arms' weight at each body, so arm weight never loads the pedestal, base or wheels: the floor carries 94 N less than the robot's weight.
+  Measure how the base lean, wheel contact and drive behave without arm gravcomp (the arms then need the actuators to hold their weight), and decide whether the sim should model the real load path.
+- [ ] **Recording size is now ~150 KB per sim second** (physics ctrl values per step). Watch disk space when collecting many demos; consider compressing or thinning the recordings.
 - [ ] Housekeeping: report the provisioner problem upstream (it rejects the openarm product); finish checking for Windows-side commits that never reached GitHub.
 
 ## NEXT PHASES

@@ -24,7 +24,7 @@ import numpy as np
 # Cap on how fast the arm proportional-derivative (PD) position targets may
 # move toward the solver's goal, so the first engaged frame (drooped rest
 # pose -> tracked pose) ramps instead of snapping. step() applies it as
-# TELEOP_MAX_JOINT_VEL / 60 radians per control tick.
+# TELEOP_MAX_JOINT_VEL times the tick length (obs["timestep"] * obs["steps_per_frame"]) radians per control tick.
 TELEOP_MAX_JOINT_VEL = 3.0   # rad/s
 PREVIEW_WINDOW = "MediaPipe Pose Estimation"   # title set by xrt_devices
 
@@ -307,8 +307,8 @@ def make_teleop_source(model, data, camera=0, preview=True, fake=False, simclock
         that the preview stays fresh. When it is on, calls session.solve() with
         the frame (an empty frame when no body is seen), prints a message when
         tracking starts or is lost, and for each arm moves the applied arm
-        target toward the solver's goal by at most TELEOP_MAX_JOINT_VEL / 60
-        radians per tick. A goal that is missing, has the wrong shape, is not
+        target toward the solver's goal by at most TELEOP_MAX_JOINT_VEL times
+        the tick length in radians per tick. A goal that is missing, has the wrong shape, is not
         finite or lies outside plus or minus pi is skipped for that arm (and
         warned about once); a goal outside the joint limits is clipped to them
         (and warned about once). Updates ctl["engaged"] and ctl["warned"].
@@ -362,7 +362,7 @@ def make_teleop_source(model, data, camera=0, preview=True, fake=False, simclock
                     print(f"Teleop: q_goal_{sd} clipped to joint limits "
                           f"(first seen: {goal.round(2)})")
                 cur_t = np.asarray(obs["applied"]["arm_targets"][sd], dtype=float)
-                max_d = TELEOP_MAX_JOINT_VEL / 60.0
+                max_d = TELEOP_MAX_JOINT_VEL * obs["timestep"] * obs["steps_per_frame"]
                 targets[sd] = [float(v) for v in cur_t + np.clip(clipped - cur_t, -max_d, max_d)]
         return [{"mode": "arms", "arm_targets": targets}] if targets else []
 

@@ -56,7 +56,7 @@ a generated WAV played with `aplay`, terminal bell as a fallback); once the oper
 apply ("OPERATOR CONTROL: Enter = hand back to policy, Delete = abort episode"). The keys are set in `src/episode_runner.py` (`hotkeys`).
 
 **Recording (`F6`, or `--record` to start at launch; off by default).** The video is the viewer image (status panel and camera insets included). It plays
-at the simulated rate (62.5 frames per second of sim time), however slowly the VM ran. The CSV has one
+at the simulated rate (30 frames per second of sim time: one per redraw), however slowly the VM ran. The CSV has one
 row per video frame, written as it goes: `video_frame`, `sim_time_s`, `wall_s`, the base pose, then
 every arm joint and finger as `<joint>_pos` (actual) and `<joint>_target` (PD target). Run with
 `CC_ROUNDROBIN=0` so the camera insets update at the full rate in the video.
@@ -77,7 +77,7 @@ while the base is at rest and looks ahead while the base drives; any neck key ta
 ### Performance on the VM
 
 The development VM has only a virtual GPU, so the viewer defaults to settings that keep it responsive (about 0.9x real time in a viewer
-episode, 0.95x in the launcher). The window redraws at 30 Hz (every 2nd 62.5 Hz tick; physics and control run every tick) and is paced to real time. The
+episode, 0.95x in the launcher). The window redraws at 30 Hz (every 5th tick of the 150 Hz control tick; physics and control run every tick) and is paced to real time. The
 camera insets in the window are a separate, cheap render (shadows off, 320x240, each camera at 1 Hz; `CC_INSET_HZ`, `CC_INSET_RES`, `CC_INSET_SHADOWS`,
 `CC_DRAW_HZ`); the policy cameras (shadows on, 30 Hz, one camera per tick, the eagle camera without shadows) are rendered live only in policy mode
 (`CC_POLICY_CAMS=0|1` overrides) and offline from a recording otherwise (see "Record live, render offline"). A camera render costs 25-40 ms on this VM, so
@@ -94,6 +94,7 @@ openarm-tracer-sim/
 │   ├── control_loop.py      # run_loop(): the control loop (router, command validation, optional exclusivity / hold); headless-capable
 │   ├── commands.py          # Mode-tagged command format (base / pedestal / arms / neck / idle / request_teleop; gripper position + max_force) and validate_command()
 │   ├── base_control.py      # Twist -> free-joint velocity base drive
+│   ├── base_contacts.py     # The base stands on six low-friction contact spheres (the wheel and caster meshes do not collide), added at load
 │   ├── keyboard_source.py, teleop_source.py, policy_source.py   # command sources
 │   ├── glfw_viewer.py       # Window, HUD, camera insets, recorder, snapshots
 │   ├── neck.py, neck_framing.py, neck_source.py   # camera neck: attach the SO-101 at load, frame points, auto follow / look-ahead
@@ -123,6 +124,7 @@ openarm-tracer-sim/
 │   ├── replay_run.py              # Replay a recording: state check and cameras to video / PNG frames
 │   ├── cc_mode_tests.py, gripper_force_test.py, beaker_hotplate_correction_test.py   # tests: modes / operator keys / snap-back / restore; gripper force limit; base pose corrections
 │   ├── sequential_policy_test.py  # test of the stage combiner with made-up stages (no simulation)
+│   ├── target_mode_test.py        # test of the arm / gripper target modes (interpolate / hold) and of the per-source command rate
 │   ├── viewer_profile.py          # Where the wall-clock time of a viewer run goes (cProfile)
 │   ├── camera_snapshot.py         # Render the simulated cameras once to PNGs
 │   ├── chemistry_lab_tracer_teleop.py
@@ -181,7 +183,7 @@ position-controlled; the loop writes `max_force` into the finger actuators' forc
 ## Record live, render offline
 
 `combined_controller.py --record-run DIR` (or `beaker_hotplate_episode.py --record`) records what the physics received on every
-tick (ctrl vector and base velocity, exact float64) plus state hashes, about 17 KB per sim second. `experiments/replay_run.py DIR`
+tick (the ctrl vector of every physics step and the base velocity, exact float64) plus state hashes, about 150 KB per sim second. `experiments/replay_run.py DIR`
 replays it headless: the states must match the live run bit for bit (same machine and MuJoCo version), and it renders the policy
 cameras to one MP4 per camera (`eagle_cam.mp4`, ...) at 30 Hz, 640x480, each camera with its own shadow setting, about 25 MB
 per sim minute for the three cameras. Options: `--video none|preview|training|viewer` (verify only / lossy MP4, the default / lossless PNG frames
@@ -195,7 +197,10 @@ MP4 at 30 frames per sim second with shadows on everywhere, plus a PNG of the sa
 
 - **MuJoCo physics**: 750 Hz physics and PD control, matching the OpenArm ros2_control loop.
 - **PD control**: proper actuator mapping (20 controlled joints, `right_joint1`, `left_finger2`, ...).
-- **Mobile base**: velocity-driven Tracer base (see the note in `combined_controller.py` for why).
+- **Mobile base**: velocity-driven Tracer base (see the note in `combined_controller.py` for why). It stands on six low-friction contact spheres
+  (`BASE_CONTACT_SPECS`) so the forced velocity does not tip it; a stopped base is held by the velocity servo, not by friction.
+- **150 Hz control tick** (5 physics steps). Arm and gripper targets between two commands follow `cfg["target_mode"]`: `"interpolate"` (default; a linear ramp over the
+  source's command period, 33 ms for a 30 Hz policy) or `"hold"`. A source or policy stage declares its command rate with `hz`.
 - **Simulated cameras**: eagle and wrist cameras rendered offscreen at 30 Hz.
 - **Webcam teleoperation**: MediaPipe pose to SEW-Mimic retargeting through geo_kin.
 - **Generic simulator**: works with any scene XML.

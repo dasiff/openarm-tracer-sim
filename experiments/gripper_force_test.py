@@ -100,6 +100,10 @@ def grasp():
             check("closing at the ceiling: the servo's own force, kp * (distance to the commanded 0), is below the 10 N ceiling",
                   all(abs(f - kp * e) < 0.05 * kp * e for f in r["actuator_force_N_mean"]) and kp * e < 10.0, f"kp * q = {kp * e:.2f} N")
     print("\nreplay of the recording (the limit changes mid-run: 10 -> 1 -> 10 -> 2 -> 10 -> ceiling)")
+    stage.clear()                         # the replay builds its own model (about 2 GB): free this one first
+    del sim
+    import gc
+    gc.collect()
     rep = replay_run(out / "recording", video="none", quiet=True)
     check("the replay is bit-identical", rep["ok"], f"{rep['ticks']} ticks, mismatch {rep['mismatch']}")
     import json

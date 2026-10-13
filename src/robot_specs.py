@@ -11,6 +11,7 @@ Contents and readers:
     PHYSICS_HZ, CAMERA_HZ, SIMULATION_TIMESTEP: rates in hertz (Hz) and the physics timestep in seconds. Read by src/simulator.py,
         src/control_loop.py and others.
     PEDESTAL_SPECS: the stand-in pedestal lift actuator, added by src/pedestal.py. PLACEHOLDER: every number is a guess.
+    BASE_CONTACT_SPECS: the six low-friction floor contact spheres of the base, added by src/base_contacts.py.
     NECK_SPECS: the SO-101 camera neck, attached by src/neck.py and used by src/neck_framing.py and the control loop.
         PLACEHOLDER: the mounting and the active joints are unconfirmed.
     NECK_AUTO_SPECS: settings of the automatic neck behaviour in src/neck_source.py.
@@ -67,6 +68,31 @@ PEDESTAL_SPECS = {
     "jog_speed": 0.05,                            # m/s of stage travel while a key is held
 }
 
+# Base floor contact points (src/base_contacts.py). The Tracer's wheels and casters are meshes that cannot roll in the simulation (the base is
+# velocity-driven), so with a mesh friction of 1.0 to 1.5 they dragged the base into a lean of up to 8 degrees and lifted it 38 mm. The base
+# now stands on six small low-friction spheres, one per wheel or caster, and the six wheel and caster meshes no longer collide with anything
+# (all of them lie inside the chassis mesh's footprint, so the chassis mesh meets any obstacle first). A stopped base is held by the velocity
+# servo (src/base_control.py writes zero velocity every physics step), not by friction.
+#   points: sphere centres in the base_link frame, metres: the force-weighted contact centres measured on the old mesh contacts at rest;
+#       z is chosen so that the settled base_link height is 0.1527 m (the old rest height) with almost no penetration.
+#   friction: sliding, torsional, rolling. Tipping the base needs roughly friction * (centre of mass height 0.76 m) > the support half width
+#       (0.25 to 0.29 m), i.e. a friction above about 0.3; 0.1 leaves about 3 times that margin. The sphere has a higher geom priority than the
+#       floor so MuJoCo uses its friction instead of the larger of the two.
+#   bit: the collision bit the spheres and the floor share; the spheres have contype = bit and conaffinity 0, and the floor's conaffinity
+#       gains this bit, so the spheres touch only the floor.
+BASE_CONTACT_SPECS = {
+    "body": "base_link",
+    "floor_geom": "floor",
+    "mesh_geoms": ("right_link_geom", "left_Link_geom", "right_front_link_geom", "right_rear_link_geom", "left_front_link_geom",
+                   "left_rear_link_geom"),
+    "radius": 0.010,                              # m
+    "friction": (0.1, 0.005, 0.0001),
+    "bit": 2,
+    "points": {"wheel_right": (-0.0184, -0.258, -0.1427), "wheel_left": (-0.0188, 0.259, -0.1427),
+               "caster_right_front": (0.2186, -0.200, -0.1427), "caster_left_front": (0.2186, 0.200, -0.1427),
+               "caster_right_rear": (-0.291, -0.180, -0.1427), "caster_left_rear": (-0.291, 0.180, -0.1427)},
+}
+
 # Camera neck: an SO-101 arm carrying the eagle camera -- PLACEHOLDER.
 # The team plans a 4-DOF SO-101 as the camera neck. The mounting and which joints are active are unconfirmed:
 #   * ASSUMPTION: the 4 neck DOF are shoulder_pan, shoulder_lift, elbow_flex, wrist_flex. Every other joint of the model
@@ -89,7 +115,7 @@ NECK_SPECS = {
     # horizon, straight ahead, so the operator sees where the robot is going (about 10 degrees on each flex joint).
     "drive_pose": (0.0, 0.1677, 0.1784, 0.1775),   # rad, in the order of active_joints
     "max_speed": 1.5,                        # rad/s: the loop moves the neck's position targets no faster than this
-    "jog_step": 0.02,                        # rad per command tick while a neck jog key is held
+    "jog_speed": 1.25,                       # rad/s while a neck jog key is held
 }
 
 # Automatic neck behavior (src/neck_source.py). "teleop": only while the arms are on the webcam operator (F2); "always";

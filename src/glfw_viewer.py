@@ -15,7 +15,7 @@ the banner and the camera tiles) is in src/viewer_layout.py, shared with the off
 this module only places those bitmaps with OpenGL.
 
 The loop calls the viewer on every tick but asks for a redraw only every few ticks (its setting viewer_draw_hz is
-30 Hz, rounded to a whole number of 62.5 Hz ticks, which gives 31.25 Hz); on the other ticks the viewer only polls
+30 Hz, which is every 5th tick of the 150 Hz tick); on the other ticks the viewer only polls
 the keys and paces.
 
 When vertical synchronisation (vsync) is off, each tick is held to the loop's tick period, so simulated time equals
@@ -187,7 +187,7 @@ def make_glfw_viewer(model, data, vcfg):
               "view_shadows": bool. If false, shadows and reflections are
                 switched off in the main view for speed.
               "record_fps": video frames per second of simulated time at the
-                loop's tick rate (for example 62.5). When a recording
+                loop's tick rate (for example 150). When a recording
                 starts it is divided by info["draw_every"].
             Optional keys (read with a default):
               "shadowsize": shadow map size in pixels, or None / 0 to leave

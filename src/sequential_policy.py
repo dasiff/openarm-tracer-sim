@@ -5,7 +5,7 @@
 
 The combining code knows nothing about what a stage does. A planner can replace the first stage and a learned policy (openpi) can replace the
 second without any change here. The controller (src/control_loop.py) sees a single command source named "policy" with the optional functions
-step(obs), status(), resume() and report().
+step(obs), status(), resume() and report(), and hz(): the rate of the stage that gave the latest commands.
 
 A stage is a dictionary of callables:
     name (str)                  required. Shown as the "stage" of the status.
@@ -24,6 +24,11 @@ A stage is a dictionary of callables:
     resume()                    optional. Called when the operator hands control back, for every stage up to and including the current one.
     report() -> dict            optional. Added to the episode summary.
     report_top_level (bool)     optional. If true the keys of report() are also put at the top level of the combined report.
+    hz (float)                  optional. The rate of the stage's commands in hertz; default the loop's tick rate. A stage with a lower rate (a
+                                learned policy acts at 30 Hz) has step(obs) and restore(obs) called only on its due ticks (every n-th tick,
+                                n = tick rate / hz, counted from tick 0) and gives no command on the others; so it must measure time with
+                                obs["time"], not by counting calls. The loop ramps the arm and gripper targets over this period (the
+                                "interpolate" target mode of src/control_loop.py), so the commands must come at this rate.
     state (dict)                optional. Free state, for tests.
 
 Rules the combiner keeps: the next stage takes over on the tick AFTER the previous one reports done (so a stage's last tick is its own); the
@@ -81,8 +86,8 @@ def make_sequential_policy(stages, handoff_after=0, ctx=None):
     Returns:
         dict: A command source with the keys
             "name" ("policy"), "step" (obs -> commands), "status" (() -> dict, see below), "resume" (() -> None),
-            "report" (() -> dict), "stages" (the list given), "ctx" (the shared dictionary) and "state" ({"index": the index of the stage that
-            stepped last}).
+            "report" (() -> dict), "hz" (() -> float or None, the "hz" of the stage that gave the latest commands), "stages" (the list given),
+            "ctx" (the shared dictionary) and "state" ({"index": the index of the stage that stepped last, "emit_hz": its hz}).
         status() returns {"stage": name of the current stage, "phase": the label, "handoff": bool, "error": str | None} and, when there is an
         error, "failure_outcome": the failing stage's outcome name. report() returns {"stages": {stage name: its report}} plus the keys of
         every report whose stage has report_top_level set.
@@ -95,8 +100,16 @@ def make_sequential_policy(stages, handoff_after=0, ctx=None):
     if handoff_after is not None and not 0 <= handoff_after < len(stages):
         raise ValueError(f"handoff_after {handoff_after} is not a stage index (0 to {len(stages) - 1})")
     ctx = {} if ctx is None else ctx
-    state = {"index": 0}
+    state = {"index": 0, "emit_hz": None}
     last = len(stages) - 1
+
+    def due(stage, obs):
+        """True if the stage gives commands on this tick: it has no "hz", or the tick number is a multiple of tick rate / hz."""
+        hz = stage.get("hz")
+        if not hz:
+            return True
+        n = max(1, round(1.0 / (obs["timestep"] * obs["steps_per_frame"] * hz)))
+        return obs["tick"] % n == 0
 
     def is_done(stage):
         """True if the stage has a done() and it says so."""
@@ -132,11 +145,14 @@ def make_sequential_policy(stages, handoff_after=0, ctx=None):
         while state["index"] < last and is_done(stages[state["index"]]):    # a stage is replaced on the tick after it reported done
             state["index"] += 1
         for s in stages[:state["index"]]:
-            if "restore" in s:
+            if "restore" in s and due(s, obs):
                 r = s["restore"](obs)
                 if r is not None and not r[1]:
+                    state["emit_hz"] = s.get("hz")
                     return r[0]
-        return stages[state["index"]]["step"](obs)
+        cur = stages[state["index"]]
+        state["emit_hz"] = cur.get("hz")
+        return cur["step"](obs) if due(cur, obs) else None
 
     def resume():
         """Tells every stage up to and including the current one that the operator handed control back."""
@@ -156,4 +172,5 @@ def make_sequential_policy(stages, handoff_after=0, ctx=None):
         out["stages"] = nested
         return out
 
-    return {"name": "policy", "step": step, "status": status, "resume": resume, "report": report, "stages": stages, "ctx": ctx, "state": state}
+    return {"name": "policy", "step": step, "status": status, "resume": resume, "report": report, "stages": stages, "ctx": ctx, "state": state,
+            "hz": lambda: state["emit_hz"]}

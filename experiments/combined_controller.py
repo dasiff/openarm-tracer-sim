@@ -54,7 +54,7 @@ RATES NOTE:
     run with CC_ROUNDROBIN=0 to render all three cameras on every tick, so
     each updates at the full CAMERA_HZ in sim time (the viewer then runs
     slower than real time on the VM).
-    The command tick is 62.5 Hz (12 physics steps); the viewer redraws every 2nd tick (VIEWER_DRAW_HZ = 30 -> 31.25 Hz).
+    The command tick is 150 Hz (5 physics steps); the viewer redraws every 5th tick (VIEWER_DRAW_HZ = 30).
     The camera insets in the window are a separate, cheap render (shadows off, 320x240, each camera at INSET_HZ);
     the policy cameras (shadows on, CAMERA_HZ) are rendered live only in policy mode, or with CC_POLICY_CAMS=1.
     Keys, policy and teleop targets are read once per viewer frame and held
@@ -134,8 +134,8 @@ DEFAULT_POLICY = None
 # Same real-time durations as the old 500 / 200 steps at 500 Hz.
 WARMUP_SEC     = 1.0
 RESETTLE_SEC   = 0.4
-VIEWER_HZ      = 60            # the command tick is round(750 / this) = 12 physics steps (62.5 Hz)
-VIEWER_DRAW_HZ = 30            # the window is redrawn every 2nd tick (31.25 Hz); physics and control run every tick
+TICK_HZ        = 150           # the command tick is round(750 / this) = 5 physics steps
+VIEWER_DRAW_HZ = 30            # the window is redrawn every 5th tick (30 Hz); physics and control run every tick
 INSET_HZ       = 1.0           # operator insets (shadows off, own render): update rate of each camera
 SHOW_CAMERA_INSETS = True
 SHOW_HUD = True  # sim time, base velocity, pose and viewer fps, top left
@@ -167,7 +167,7 @@ def _perf_settings():
     (about 130 ms/frame, was ~600-1000): viewer shadows/reflections off,
     one camera rendered per camera tick (take-turns, a VM performance
     setting; use CC_ROUNDROBIN=0 to record demos with every camera updating
-    at CAMERA_HZ), vsync off paced to VIEWER_HZ.
+    at CAMERA_HZ), vsync off paced to the tick rate.
     Resolution, shadow map size and window size made no measurable difference.
 
     CC_VIEW_SHADOWS=1  viewer shadows+reflections on   CC_ROUNDROBIN=0  render all cameras on every tick (demo recording)
@@ -294,7 +294,7 @@ def run(scene: str, spawn_pos, groups: list[dict], policy,
 
     # --- Rates the launcher needs: the loop runs one command / viewer tick per `steps_per_frame` physics steps ---
     physics_hz = 1.0 / model.opt.timestep
-    steps_per_frame = max(1, round(physics_hz / VIEWER_HZ))
+    steps_per_frame = max(1, round(physics_hz / TICK_HZ))
 
     # --- Viewer, keys (real keys plus the CC_BENCH_KEYS test injection) ---
     viewer = make_glfw_viewer(model, data, {

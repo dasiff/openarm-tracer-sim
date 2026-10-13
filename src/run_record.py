@@ -4,9 +4,10 @@
 src/replay.py renders the recorded cameras offline and verifies the recorded states.
 
 What is recorded is what the physics received, not what the sources decided, so a keyboard, teleop, policy or scripted run all
-replay the same way. Per control tick (62.5 hertz (Hz) by default, the loop's cfg["source_hz"]) the recorder stores, all as exact
+replay the same way. Per control tick (150 hertz (Hz) by default, the loop's cfg["source_hz"]) the recorder stores, all as exact
 64-bit floating-point numbers (float64):
-  * the full ctrl vector (MuJoCo's actuator command vector) written for the tick;
+  * the full ctrl vector (MuJoCo's actuator command vector) written before each of the tick's physics steps (shape [steps, nu]: with
+    interpolated arm targets the ctrl changes inside a tick);
   * the world-frame base velocity (vx, vy, wz) written before each of the tick's physics steps;
   * the force limit of each gripper (newtons per finger, written into the finger actuators' force range before the tick's steps).
 Verification data: the integration state right after the settle, a hash of the state after every tick, and a full state checkpoint
@@ -15,12 +16,12 @@ every `checkpoint_every` ticks (to say what differs when a hash does not match).
     run_dir/
         meta.json              recipe to rebuild the model, loop config, camera specs, rates, spawn, git commit, MuJoCo version, labels
         initial_state.npy      the state after the settle (the replay compares its own settle against it)
-        chunks/chunk_00000.npz ... ticks [start, start + n): start, ctrl[n, nu], basevel[n, 3], gripforce[n, 2] (not a number
+        chunks/chunk_00000.npz ... ticks [start, start + n): start, ctrl[n, steps, nu], basevel[n, 3], gripforce[n, 2] (not a number
                                where no force limit was given), hashes[n] (unsigned 64-bit integers), checkpoint ticks and states
 
 Here "meta.json" is a JavaScript Object Notation (JSON) file, and the ".npy" / ".npz" files are NumPy array files (one array, and
 an uncompressed bundle of named arrays). Chunks are written every `chunk_ticks` ticks while the run goes, so a crash loses at most the last
-chunk. About 17 kilobytes (KB) per simulated second (1.7 megabytes for a 98.5 s episode).
+chunk. About 150 kilobytes (KB) per simulated second (the ctrl of every physics step is stored).
 """
 
 import hashlib
@@ -208,7 +209,7 @@ class RunRecorder:
         chunk_ticks (int): Number of ticks after which a chunk file is written.
         checkpoint_every (int): A full state checkpoint is kept for every tick whose number is a multiple of this.
         buf (numpy.ndarray): Scratch buffer for the state vector.
-        ctrl (list[numpy.ndarray]): The ctrl vectors of the ticks not yet written to a chunk.
+        ctrl (list[numpy.ndarray]): The ctrl blocks (shape [steps, nu], one row per physics step) of the ticks not yet written to a chunk.
         basevel (list[numpy.ndarray]): The (vx, vy, wz) world-frame base velocities of those ticks.
         hashes (list[int]): The state hashes after those ticks.
         gripforce (list[numpy.ndarray]): The (left, right) gripper force limits of those ticks, in newtons per finger.
@@ -221,7 +222,7 @@ class RunRecorder:
         meta (dict): The contents of meta.json, apart from "labels" and "n_ticks", which are added when it is written.
     """
 
-    def __init__(self, run_dir, model, data, loop_cfg, meta_extra, source_hz, steps_per_tick, chunk_ticks=1000, checkpoint_every=62):
+    def __init__(self, run_dir, model, data, loop_cfg, meta_extra, source_hz, steps_per_tick, chunk_ticks=2400, checkpoint_every=150):
         """Creates the run directory, saves the initial state and writes the first meta.json.
 
         Args:
@@ -233,8 +234,8 @@ class RunRecorder:
                 recipe to rebuild the model: {"kind": "scene", "scene": path} or {"kind": "task", "task_cfg": {...}}.
             source_hz (float): Control tick rate in hertz.
             steps_per_tick (int): Physics steps per control tick.
-            chunk_ticks (int): Ticks per chunk file. Defaults to 1000.
-            checkpoint_every (int): Keep a full state checkpoint every this many ticks. Defaults to 62.
+            chunk_ticks (int): Ticks per chunk file (16 s at 150 Hz). Defaults to 2400.
+            checkpoint_every (int): Keep a full state checkpoint every this many ticks (1 s at 150 Hz). Defaults to 150.
 
         Raises:
             ValueError: If `meta_extra` has no "model" entry.
@@ -253,7 +254,7 @@ class RunRecorder:
         self.labels = []
         np.save(self.dir / "initial_state.npy", get_state(model, data, self.buf).copy())
         self.meta = {
-            "format": 1, "complete": False, "started": time.strftime("%Y-%m-%d %H:%M:%S"),
+            "format": 2, "complete": False, "started": time.strftime("%Y-%m-%d %H:%M:%S"),
             "model_sha256": model_hash(model), "nq": model.nq, "nv": model.nv, "nu": model.nu,
             "timestep": model.opt.timestep, "steps_per_tick": steps_per_tick, "source_hz": source_hz,
             "loop_cfg": jsonable(loop_cfg), "mujoco": mujoco.__version__, "platform": platform.platform(),
@@ -267,11 +268,11 @@ class RunRecorder:
         (self.dir / "meta.json").write_text(json.dumps({**self.meta, "labels": self.labels, "n_ticks": self.n_ticks}, indent=1))
 
     def tick(self, frame, ctrl, basevel, gripforce=None):
-        """Records the inputs of one tick, after ctrl is written and before the tick's physics steps.
+        """Records the inputs of one tick, before the tick's physics steps.
 
         Args:
             frame (int): The tick number. Not used; the ticks are stored in call order.
-            ctrl (numpy.ndarray): The ctrl vector written for this tick (length model.nu); copied.
+            ctrl (numpy.ndarray): The ctrl vector written before each physics step of this tick, shape (steps_per_tick, model.nu); copied.
             basevel (tuple[float, float, float]): The world-frame base velocity (vx, vy, wz) in metres per second, metres per
                 second and radians per second; copied.
             gripforce (list[float] or None): The force limit of the (left, right) gripper in newtons per finger. Defaults to
@@ -353,7 +354,8 @@ def load_recording(run_dir):
         dict: With T the number of recorded ticks and nu the number of actuators:
             "meta" (dict): the contents of meta.json.
             "initial_state" (numpy.ndarray): the state after the settle.
-            "ctrl" (numpy.ndarray): shape [T, nu], the ctrl vector of every tick.
+            "ctrl" (numpy.ndarray): shape [T, steps, nu], the ctrl vector of every physics step of every tick (format 1 recordings: [T, nu],
+                one vector per tick).
             "basevel" (numpy.ndarray): shape [T, 3], the world-frame base velocity (vx, vy, wz) of every tick.
             "gripforce" (numpy.ndarray or None): shape [T, 2], the (left, right) gripper force limits in newtons per finger;
                 None for older recordings made before this was recorded (the force ceiling throughout).

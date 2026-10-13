@@ -13,6 +13,7 @@ import mujoco
 import numpy as np
 from src import robot_specs
 from src.arm_actuators import add_arm_actuators
+from src.base_contacts import add_base_contacts
 from src.cameras import add_cameras, make_offscreen_big_enough
 from src.neck import add_neck
 from src.pedestal import add_pedestal_lift
@@ -80,6 +81,7 @@ class RobotSimulator:
         # in robot_specs.
         spec = mujoco.MjSpec.from_file(str(model_path))
         add_arm_actuators(spec)
+        add_base_contacts(spec, robot_specs.BASE_CONTACT_SPECS)
         if pedestal_lift:
             add_pedestal_lift(spec, pedestal_lift)
         if neck:

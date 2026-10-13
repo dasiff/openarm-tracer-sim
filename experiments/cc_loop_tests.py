@@ -35,7 +35,15 @@ from src.simulator import RobotSimulator  # noqa: E402
 
 SCENE = "models/scenes/chemistry_lab_combined.xml"
 SPAWN = [-1.0, 3.5, 0.22]
-MANUAL_KEYS = "5-45:UP,45-95:SPACE,100-140:LEFT,140-190:SPACE,200-260:PAGE_DOWN,270-330:PAGE_UP,340-370:3,390-420:E,430-470:A,480-495:8,500-520:I"
+TICK_HZ = 150.0         # the command tick (5 physics steps)
+K = 2.4                 # ticks per old (62.5 Hz) tick: the scripts below were written in old ticks
+
+
+def n(old_ticks):
+    """The same instant as `old_ticks` old ticks, in ticks of the current rate."""
+    return int(round(old_ticks * K))
+
+MANUAL_KEYS = "12-108:UP,108-228:SPACE,240-336:LEFT,336-456:SPACE,480-624:PAGE_DOWN,648-792:PAGE_UP,816-888:3,936-1008:E,1032-1128:A,1152-1188:8,1200-1248:I"      # the tick numbers of experiments/cc_bench_scenarios.sh manual
 
 
 def load(cameras):
@@ -63,7 +71,7 @@ def injected_keys(spec):
 
 
 def steps_per_frame(model):
-    return max(1, round(1.0 / model.opt.timestep / 60))
+    return max(1, round(1.0 / model.opt.timestep / TICK_HZ))
 
 
 def headless(cameras, out_csv):
@@ -76,7 +84,7 @@ def headless(cameras, out_csv):
     ped_step = robot_specs.PEDESTAL_SPECS["jog_speed"] * spf * model.opt.timestep
     kb = make_keyboard_source(model, held, DRIVE_CFG, ped_step, tuple(model.actuator_ctrlrange[ped]))
     cfg = {"source_hz": 1.0 / model.opt.timestep / spf, "spawn_pos": SPAWN, "held": held, "tick_ref": tick, "cameras": cameras,
-           "bench_frames": 520, "bench_log": out_csv}
+           "bench_frames": n(520), "bench_log": out_csv}
     t0 = time.perf_counter()
     res = run_loop(model, data, {"keyboard": kb}, cfg, viewer=None)
     wall = time.perf_counter() - t0
@@ -103,30 +111,30 @@ def hold_test(exclusive):
     model, data = load(False)
     tick = [0]
 
-    def script(n):
-        if 20 <= n < 80:
+    def script(k):
+        if n(20) <= k < n(80):
             return {"mode": "base", "twist": (0.8, 0.0)}                    # the base drives at 0.8 m/s
-        if 80 <= n < 90:
+        if n(80) <= k < n(90):
             return {"mode": "arms", "arm_targets": {"left": [0, 0, 0.6, 0, 0, 0, 0]}}      # while the base is still moving
-        if 90 <= n < 100:
+        if n(90) <= k < n(100):
             return {"mode": "arms", "arm_targets": {"left": [0, 0, 0.9, 0, 0, 0, 0]}}      # a newer arms command replaces it
         return None
     sc = Scripted(script)
     spf = steps_per_frame(model)
     cfg = {"source_hz": 1.0 / model.opt.timestep / spf, "spawn_pos": SPAWN, "tick_ref": tick, "cameras": False,
            "exclusive": exclusive, "routes": {k: "script" for k in ("base", "pedestal", "arms.left", "arms.right", "gripper.left", "gripper.right")},
-           "bench_frames": 190}
+           "bench_frames": n(190)}
     res = run_loop(model, data, {"script": sc.as_source()}, cfg, viewer=None)
     rec = np.array(sc.rec)
     tgt = rec[:, 3]
     first = int(np.argmax(tgt > 1e-9)) if (tgt > 1e-9).any() else None
     print(f"\n=== hold test, exclusive={exclusive} ===")
-    print(f"arms command first issued at tick 80 (base moving at {rec[79, 2]:.2f} m/s)")
+    print(f"arms command first issued at tick {n(80)} (base moving at {rec[n(80) - 1, 2]:.2f} m/s)")
     if first is None:
         print("  the arm target never changed")
         return
-    print(f"  arm target first applied at tick {first} (t={rec[first, 1]:.2f} s), i.e. {first - 80} ticks = {rec[first, 1] - rec[80, 1]:.2f} s after it was issued")
-    print(f"  base speed when it was applied: {rec[first, 2]:.4f} m/s (base speed at tick 80: {rec[80, 2]:.3f}); applied twist before: {rec[first - 1, 4]:.4f} m/s")
+    print(f"  arm target first applied at tick {first} (t={rec[first, 1]:.2f} s), i.e. {first - n(80)} ticks = {rec[first, 1] - rec[n(80), 1]:.2f} s after it was issued")
+    print(f"  base speed when it was applied: {rec[first, 2]:.4f} m/s (base speed at tick {n(80)}: {rec[n(80), 2]:.3f}); applied twist before: {rec[first - 1, 4]:.4f} m/s")
     print(f"  arm joint-3 target applied: {tgt[first]:.3f} (the older command asked 0.6, the newer 0.9)")
     print(f"  hold log: {res['hold_log'] or 'none'}")
     return res, rec, first
@@ -140,13 +148,13 @@ def neck_test():
     pan = ids["names"].index("shoulder_pan")
     home = np.array(robot_specs.NECK_SPECS["drive_pose"])
 
-    def script(n):
+    def script(k):
         cmds = []
-        if 20 <= n < 100:
+        if n(20) <= k < n(100):
             cmds.append({"mode": "base", "twist": (0.8, 0.0)})
-        if 40 <= n < 60:
+        if n(40) <= k < n(60):
             cmds.append({"mode": "arms", "arm_targets": {"left": [0, 0, 0.6, 0, 0, 0, 0]}})       # waits for the base (exclusive)
-        if 30 <= n < 40:
+        if n(30) <= k < n(40):
             cmds.append({"mode": "neck", "neck_targets": {"shoulder_pan": 0.6, "wrist_flex": -0.3}})   # while the base is moving
         return cmds
     rows = []
@@ -161,18 +169,18 @@ def neck_test():
     spf = steps_per_frame(model)
     cfg = {"source_hz": 1.0 / model.opt.timestep / spf, "spawn_pos": SPAWN, "tick_ref": tick, "cameras": False, "exclusive": True,
            "routes": {k: "script" for k in ("base", "pedestal", "arms.left", "arms.right", "gripper.left", "gripper.right", "neck")},
-           "bench_frames": 190}
+           "bench_frames": n(190)}
     res = run_loop(model, data, {"script": sc.as_source()}, cfg, viewer=None)
     t = np.array([r[1] for r in rows]); Q = np.array([r[2] for r in rows]); T = np.array([r[3] for r in rows])
     base_speed = np.array([r[4] for r in rows]); arm_t = np.array([r[5] for r in rows])
     print("\n=== neck test ===")
-    print(f"idle neck (ticks 0-19): drive pose {np.degrees(home).round(2)} deg; max |position - drive pose| = {np.degrees(np.abs(Q[:20] - home).max()):.3f} deg; max |target - drive pose| = {np.abs(T[:20] - home).max():.1e} rad")
+    print(f"idle neck (ticks 0-{n(20) - 1}): drive pose {np.degrees(home).round(2)} deg; max |position - drive pose| = {np.degrees(np.abs(Q[:n(20)] - home).max()):.3f} deg; max |target - drive pose| = {np.abs(T[:n(20)] - home).max():.1e} rad")
     dt = float(np.diff(t).mean())
     step_max = np.abs(np.diff(T, axis=0)).max()
     print(f"slew limit: largest per-tick target change {step_max:.4f} rad = {step_max / dt:.2f} rad/s (limit {robot_specs.NECK_SPECS['max_speed']} rad/s)")
     i_neck = int(np.argmax(np.abs(T[:, pan] - home[pan]) > 1e-6))
-    print(f"neck command sent at tick 30 (base moving at {base_speed[30]:.2f} m/s, arms command waiting since tick 40): neck target started moving at tick {i_neck}")
-    print(f"  at tick 50 (arms command still held, base speed {base_speed[50]:.2f} m/s): neck pan target {np.degrees(T[50, pan]):.1f} deg, position {np.degrees(Q[50, pan]):.1f} deg; left joint-3 arm target {arm_t[50]:.2f} (unchanged = held)")
+    print(f"neck command sent at tick {n(30)} (base moving at {base_speed[n(30)]:.2f} m/s, arms command waiting since tick {n(40)}): neck target started moving at tick {i_neck}")
+    print(f"  at tick {n(50)} (arms command still held, base speed {base_speed[n(50)]:.2f} m/s): neck pan target {np.degrees(T[n(50), pan]):.1f} deg, position {np.degrees(Q[n(50), pan]):.1f} deg; left joint-3 arm target {arm_t[n(50)]:.2f} (unchanged = held)")
     print(f"  final neck position (deg): {np.degrees(Q[-1]).round(1)} (commanded pan 34.4, wrist -17.2); hold log: {[ (round(h['t_start'],2), round(h['duration'],2)) for h in res['hold_log']]}")
 
 

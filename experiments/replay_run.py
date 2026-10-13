@@ -46,7 +46,7 @@ def main():
     ap.add_argument("--codec", default="mp4v", help="OpenCV fourcc of the videos")
     ap.add_argument("--quality", type=int, default=None, help="0-100 writer quality, if the codec honours it")
     ap.add_argument("--max-ticks", type=int, default=None, help="stop the replay after this many ticks")
-    ap.add_argument("--from-tick", type=int, default=0, help="render only from this tick (62.5 ticks per sim second; the states are still verified from tick 0)")
+    ap.add_argument("--from-tick", type=int, default=0, help="render only from this tick (150 ticks per sim second; the states are still verified from tick 0)")
     ap.add_argument("--to-tick", type=int, default=None, help="render only up to this tick, and stop the replay there")
     args = ap.parse_args()
 

@@ -148,7 +148,7 @@ STAGING_CFG = {
     "drive_ang_accel": 0.2,                # rad/s^2
     "drive_ang_decel": 0.2,                # rad/s^2
     "drive_pos_tol": 0.01,                 # m, arrival tolerance (never loosened: a miss is reported)
-    "drive_yaw_tol": math.radians(1.0),    # rad
+    "drive_yaw_tol": math.radians(0.5),    # rad (was 1.0 before the base lean fix; also the yaw trigger of the base pose corrections)
     "drive_creep_lin": 0.02,               # m/s, lowest speed while still outside the tolerance (so the base converges)
     "drive_creep_ang": 0.03,               # rad/s
     "drive_turn_first_tol": math.radians(2.0),   # the turn toward the goal ends within this; the drive steers the rest

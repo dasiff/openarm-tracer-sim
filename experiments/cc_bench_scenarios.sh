@@ -3,18 +3,19 @@
 # usage: bash experiments/cc_bench_scenarios.sh <manual|teleop|policy> <csv-out>
 # Reference results WITH the camera neck installed (valid baselines; the older pre-neck ones no longer apply): experiments/baselines/<scenario>_reference.csv.
 # Compare a new run with:  python experiments/cc_bench_compare.py experiments/baselines/manual_reference.csv <csv-out>
+# Tick numbers are for the 150 Hz tick (the scenarios were written for 62.5 Hz ticks: every tick number is 2.4 times the old one).
 # Needs a display for the controller window: DISPLAY / XAUTHORITY are taken from the desktop session if unset.
 cd "$(dirname "$0")/.."
 export DISPLAY=${DISPLAY:-:0} XAUTHORITY=${XAUTHORITY:-$(ls /run/user/$(id -u)/.mutter-Xwaylandauth.* | head -1)}
 export CC_INSETS=0 CC_HUD=0 CC_BENCH_LOG=$2
 case $1 in
- manual) export CC_BENCH_FRAMES=520
-   export CC_BENCH_KEYS="5-45:UP,45-95:SPACE,100-140:LEFT,140-190:SPACE,200-260:PAGE_DOWN,270-330:PAGE_UP,340-370:3,390-420:E,430-470:A,480-495:8,500-520:I"
+ manual) export CC_BENCH_FRAMES=1248
+   export CC_BENCH_KEYS="12-108:UP,108-228:SPACE,240-336:LEFT,336-456:SPACE,480-624:PAGE_DOWN,648-792:PAGE_UP,816-888:3,936-1008:E,1032-1128:A,1152-1188:8,1200-1248:I"
    .venv/bin/python experiments/combined_controller.py ;;
- teleop) export CC_BENCH_FRAMES=480 CC_FAKE_TELEOP=1 CC_FAKE_TELEOP_SIMCLOCK=1
-   export CC_BENCH_KEYS="20-60:UP,60-110:SPACE,120:F2,150-190:LEFT,190-240:SPACE,250-265:8,330-345:I,400:F2,410-440:3"
+ teleop) export CC_BENCH_FRAMES=1152 CC_FAKE_TELEOP=1 CC_FAKE_TELEOP_SIMCLOCK=1
+   export CC_BENCH_KEYS="48-144:UP,144-264:SPACE,288:F2,360-456:LEFT,456-576:SPACE,600-636:8,792-828:I,960:F2,984-1056:3"
    .venv/bin/python experiments/combined_controller.py --mode teleop --no-preview ;;
- policy) export CC_BENCH_FRAMES=520
-   export CC_BENCH_KEYS="20-60:UP,60-110:SPACE,130-170:LEFT,170-220:SPACE,300-330:3"
+ policy) export CC_BENCH_FRAMES=1248
+   export CC_BENCH_KEYS="48-144:UP,144-264:SPACE,312-408:LEFT,408-528:SPACE,720-792:3"
    .venv/bin/python experiments/cc_bench_policy.py ;;
 esac

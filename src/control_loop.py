@@ -11,7 +11,7 @@ a vision-language-action (VLA) model) are dicts with step(obs) -> command(s); th
 the robot's targets and executes them: arms, grippers and the pedestal are MuJoCo position actuators tracking the
 loop's targets on every physics step, the base is driven from a Twist, a forward speed and a yaw rate (src/base_control.py).
 
-Each iteration ("tick", cfg["source_hz"] = 62.5 hertz (Hz) = 12 physics steps at 750 Hz):
+Each iteration ("tick", cfg["source_hz"] = 150 hertz (Hz) = 5 physics steps at 750 Hz):
   1. build the observation (observation(), which has the keys of RobotSimulator.get_observation() except the tracked bodies, plus tick, base
      pose, pedestal height, the applied targets and the
      latest camera frames; the frames are re-rendered at 30 Hz, one camera per render tick unless
@@ -20,10 +20,19 @@ Each iteration ("tick", cfg["source_hz"] = 62.5 hertz (Hz) = 12 physics steps at
      that source; validate them
   3. apply them: at once, or, with cfg["exclusive"], one subsystem at a time with the hold rule
   3b. the neck (exempt from exclusivity) moves its position targets toward the commanded ones at cfg["neck_max_speed"]
-  4. write the position targets to data.ctrl once, then step physics 12 times, writing the base velocity before every
-     step and rendering a camera every cam_every (25) steps
+  4. step physics 5 times, writing the position targets (data.ctrl) and the base velocity before every step, and rendering a camera every
+     cam_every (25) steps (every 5th tick, 30 Hz). The arm and finger targets between two commands follow cfg["target_mode"], see below.
   5. logging, then viewer["frame"](info) if there is a viewer. The window is redrawn at cfg["viewer_draw_hz"] (30 Hz: every
-     2nd tick, 31.25 Hz); on the other ticks the viewer only polls keys and paces. Physics and control run at the full rate.
+     5th tick); on the other ticks the viewer only polls keys and paces. Physics and control run at the full rate.
+
+Target modes (cfg["target_mode"], models the real arm controller, which is not chosen yet): the arm joint and gripper targets are position
+commands that a source gives at its own rate. "interpolate" (default) moves the ctrl linearly, once per physics step, from its value when a
+command arrives to the new target over the source's command period (1 / the source's "hz", at least one tick), so the target is reached when
+the source's next command is due; a new command before that restarts the ramp from the current ctrl value. It adds up to one source period of
+delay (33 ms at 30 Hz, 6.7 ms at 150 Hz). "hold" keeps each target unchanged until the next one arrives. A source may have "hz" (a number, or a
+function returning the rate of the commands it is giving now); without it the source's period is one tick. A source that gives commands at less
+than the tick rate gives them only on its due ticks (see src/sequential_policy.py). The pedestal and the neck are not interpolated (the
+pedestal ramps itself at its own speed limit, the neck is slewed by the loop every tick), and obs["applied"] always holds the final target.
 
 Controller mode (cfg["mode"], cfg["auto_source"]): "teleop" is the router exactly as configured (keyboard, webcam teleop, a policy on some
 fields: what the manual / teleop / policy launcher modes have always been). With cfg["auto_source"] naming a task-policy source there is
@@ -86,12 +95,13 @@ from src.neck import neck_ids
 from src.run_record import RunRecorder
 
 LOOP_CFG = {
-    "source_hz": 62.5,             # command / viewer tick; the physics rate must be a whole multiple (12 steps at 750 Hz)
+    "source_hz": 150.0,            # command / viewer tick; the physics rate must be a whole multiple (5 steps at 750 Hz)
+    "target_mode": "interpolate",  # arm and gripper targets between commands: "interpolate" (ramp over the source's period) or "hold"
     "camera_hz": None,             # None = robot_specs.CAMERA_HZ (30)
     "camera_roundrobin": True,     # one camera per render tick (a virtual-machine performance setting); False renders all each tick
     "camera_shadows": True,
     "cameras": True,               # policy cameras. False: no policy rig (pure physics run, or a viewer run that only needs the insets)
-    "viewer_draw_hz": 30,          # window redraw rate; the tick is quantised to a whole number of ticks per redraw (2 -> 31.25 Hz)
+    "viewer_draw_hz": 30,          # window redraw rate; the tick is quantised to a whole number of ticks per redraw (5 -> 30 Hz)
     "inset_cameras": True,         # operator insets from their own cheap rig (used only when there is a viewer)
     "inset_hz": 1.0,               # update rate of EACH inset camera (they take turns: 3 x this many renders per second)
     "inset_res": (320, 240),       # inset render size (the viewer draws them at most this big)
@@ -113,7 +123,7 @@ LOOP_CFG = {
     "base_stop_lin_decel": 1.875,  # m/s^2, bringing the base to rest during a hold (= the keyboard's SPACE ramp rate)
     "base_stop_ang_decel": 2.5,    # rad/s^2
     # test / benchmark hooks
-    "bench_frames": 0,             # run this many ticks (after 10 warm-up ticks), print timings, then stop
+    "bench_frames": 0,             # run this many ticks (after 0.16 s of warm-up ticks), print timings, then stop
     "bench_log": None,             # comma-separated values (CSV) path: base pose, pedestal height, arm joints, fingers every 75 physics steps
     "preview": False,              # teleop: the operator preview inset is shown
     "on_tick": None,               # supervisor hook, see above
@@ -234,7 +244,8 @@ def run_loop(model, data, sources, cfg, viewer=None, logger=None):
         data (mujoco.MjData): Simulation state. It is modified: the base is spawned and settled, then stepped.
         sources (dict): Maps a source name to a source dict. A source dict has the callable "step" (obs -> a command dict, a list of them, or
             None) and may have "start" (called once after the settle), "cleanup" (called at the end, unless "started" is present and false),
-            "name" (used in messages), "state" (the keyboard source's `["state"]["drive"]` and the teleop source's `["state"]["preview_frame"]` are
+            "name" (used in messages), "hz" (the rate of its commands: a number, or a callable returning it; default the tick rate, see
+            the module docstring's target modes), "state" (the keyboard source's `["state"]["drive"]` and the teleop source's `["state"]["preview_frame"]` are
             read for the viewer), and for the teleop source "status", "enable" and "disable" callables, and for the auto source "status" and
             "resume" callables.
         cfg (dict): Settings that override the defaults in LOOP_CFG. See the comments there for each key.
@@ -255,7 +266,7 @@ def run_loop(model, data, sources, cfg, viewer=None, logger=None):
 
     Raises:
         ValueError: If the physics rate is not a whole multiple of the camera rate or of cfg["source_hz"], if cfg["mode"] is not "teleop"
-            or "auto", or if cfg["auto_source"] is not one of the sources.
+            or "auto", if cfg["target_mode"] is not "interpolate" or "hold", or if cfg["auto_source"] is not one of the sources.
         RuntimeError: If an actuator the loop needs (the wheel motors, the arm, finger and pedestal actuators) is not in the model.
     """
     cfg = {**LOOP_CFG, **cfg}
@@ -291,6 +302,9 @@ def run_loop(model, data, sources, cfg, viewer=None, logger=None):
     cam_every = _every(camera_hz, "camera")
     steps_per_frame = _every(cfg["source_hz"], "source")
     tick_dt = steps_per_frame * model.opt.timestep
+    if cfg["target_mode"] not in ("interpolate", "hold"):
+        raise ValueError(f"cfg['target_mode'] must be 'interpolate' or 'hold', not {cfg['target_mode']!r}")
+    interpolate = cfg["target_mode"] == "interpolate"
     warmup_steps = round(cfg["warmup_s"] * physics_hz)
     resettle_steps = round(cfg["resettle_s"] * physics_hz)
     print(f"Rates: physics {physics_hz:.0f} Hz (arm/finger servos every step) | cameras every {cam_every} steps "
@@ -416,6 +430,35 @@ def run_loop(model, data, sources, cfg, viewer=None, logger=None):
         mujoco.mj_step(model, data)
     print(f"Arms locked at resting pose, re-settled at z={data.qpos[2]:.4f}")
 
+    # Arm and finger targets in "interpolate" mode: the ctrl of actuator a at physics step k of its ramp is ramp_from + (target - ramp_from) * k / ramp_len
+    # (the target itself once k >= ramp_len). A command for the actuator starts a new ramp from the ctrl of the last physics step (`last_ctrl`).
+    # Actuators without a ramp (the pedestal, the neck, the wheel motors) have ramp_k huge, so their ctrl is the target.
+    last_ctrl = np.where(is_pos, hold_qpos_targets, 0.0)
+    ramp_from, ramp_len, ramp_k = last_ctrl.copy(), np.ones(model.nu), np.full(model.nu, 1e12)
+    steps_axis = np.arange(1, steps_per_frame + 1, dtype=float)[:, None]
+
+    def ctrl_block():
+        """Computes the ctrl vector of each physics step of the coming tick and moves the ramps on by one tick.
+
+        Reads `hold_qpos_targets` and the ramp state of the enclosing function; sets `last_ctrl` to the last row. Wheel motors get 0.
+
+        Returns:
+            numpy.ndarray: Shape (steps_per_frame, model.nu).
+        """
+        nonlocal last_ctrl
+        frac = np.clip((ramp_k[None, :] + steps_axis) / ramp_len[None, :], 0.0, 1.0)
+        block = np.where(frac >= 1.0, hold_qpos_targets[None, :], ramp_from[None, :] + (hold_qpos_targets - ramp_from)[None, :] * frac)
+        block = np.where(is_pos[None, :], block, 0.0)
+        ramp_k[:] += steps_per_frame
+        last_ctrl = block[-1].copy()
+        return block
+
+    def command_steps(src):
+        """Returns the command period of a source in physics steps: from its "hz" (a number or a callable), at least one tick."""
+        hz = src.get("hz")
+        hz = hz() if callable(hz) else hz
+        return steps_per_frame if not hz else max(steps_per_frame, int(round(physics_hz / hz)))
+
     replay = cfg["replay"]
     recorder = None
     if replay is not None:
@@ -514,6 +557,7 @@ def run_loop(model, data, sources, cfg, viewer=None, logger=None):
     def apply_cmd(cmd):
         """Stores a validated command in the loop's targets (nothing is moved yet).
 
+        An arms command also starts, in "interpolate" mode, the ramp of every actuator it sets (over cmd["period_steps"], one tick if absent).
         A base command sets the Twist `st["twist"]`; a pedestal command sets the pedestal entry of `hold_qpos_targets`; a neck command sets
         the entries of `neck_goal` (the neck targets then follow at the maximum speed); an arms command sets the arm and finger entries of
         `hold_qpos_targets` and the gripper force limits `grip_force` (None means the ceiling). Other modes change nothing.
@@ -531,10 +575,15 @@ def run_loop(model, data, sources, cfg, viewer=None, logger=None):
                 for n, v in cmd["neck_targets"].items():
                     neck_goal[neck["names"].index(n)] = v
         elif mode == "arms":
+            moved = []
             for s, q in cmd.get("arm_targets", {}).items():
                 hold_qpos_targets[arm_act[s]] = q
+                moved += arm_act[s]
             for s, g in cmd.get("gripper", {}).items():
                 hold_qpos_targets[fing_act[s]] = g
+                moved += fing_act[s]
+            if interpolate and moved:                       # a new ramp from where the ctrl is now to the new target
+                ramp_from[moved], ramp_k[moved], ramp_len[moved] = last_ctrl[moved], 0.0, cmd.get("period_steps", steps_per_frame)
             for s, F in cmd.get("gripper_force", {}).items():
                 grip_force[s] = ceiling if F is None else F
 
@@ -741,6 +790,7 @@ def run_loop(model, data, sources, cfg, viewer=None, logger=None):
                            + [f"{sd}_finger{k}" for sd in ("left", "right") for k in (1, 2)]
                            + ([f"neck_{n}" for n in neck["names"]] if neck is not None else []))
     tm = {"phys": 0.0, "cam": 0.0, "inset": 0.0}
+    bench_warmup = max(1, round(0.16 / tick_dt))      # ticks discarded before the benchmark timing (0.16 s: 10 ticks at 62.5 Hz)
     t_bench0 = None
     ds_state = sources["keyboard"]["state"]["drive"] if "keyboard" in sources else {}
     jog_ids = {"L3": arm_act["left"][2], "R1": arm_act["right"][0], "Lg": fing_act["left"][0], "Rg": fing_act["right"][0]}
@@ -781,8 +831,8 @@ def run_loop(model, data, sources, cfg, viewer=None, logger=None):
     loop_api = {"routes": routes, "mode": lambda: ctl["mode"], "switch_mode": switch_mode, "stop": lambda reason="stop": stop_req.__setitem__(0, reason), "render": render}
     status = None
 
-    def advance(vx, vy, wz):
-        """Runs one tick of physics: `steps_per_frame` steps, with the base velocity written before each (shared by live runs and replays).
+    def advance(vx, vy, wz, ctrl_steps):
+        """Runs one tick of physics: `steps_per_frame` steps, with the ctrl and the base velocity written before each (shared by live runs and replays).
 
         After each step it counts the step in `step_count`, writes a row to the benchmark comma-separated values file every 75 steps if
         cfg["bench_log"] is set, calls the replay's "on_step" hook if replaying, and every `cam_every` steps renders the policy cameras
@@ -792,9 +842,11 @@ def run_loop(model, data, sources, cfg, viewer=None, logger=None):
             vx (float): World-frame base x velocity in metres per second.
             vy (float): World-frame base y velocity in metres per second.
             wz (float): Base yaw rate in radians per second.
+            ctrl_steps (numpy.ndarray): The ctrl vector of each physics step, shape (steps_per_frame, model.nu).
         """
         nonlocal step_count, cam_tick
-        for _ in range(steps_per_frame):
+        for k in range(steps_per_frame):
+            data.ctrl[:] = ctrl_steps[k]
             if base_dof is not None:
                 apply_base_velocity(data, base_dof, vx, vy, wz)
             mujoco.mj_step(model, data)
@@ -834,10 +886,10 @@ def run_loop(model, data, sources, cfg, viewer=None, logger=None):
         if replay is not None:                           # inputs from a recording: the same physics step, no sources, no hooks
             if frame >= replay["n_ticks"] or replay["stop"]():
                 break
-            data.ctrl[:] = replay["ctrl"][frame]
+            blk = np.asarray(replay["ctrl"][frame])
             if replay.get("gripforce") is not None:
                 set_grip_force(replay["gripforce"][frame])
-            advance(*replay["basevel"][frame])
+            advance(*replay["basevel"][frame], np.broadcast_to(blk, (steps_per_frame, model.nu)) if blk.ndim == 1 else blk)
             replay["on_tick_end"](frame, data)
             frame += 1
             continue
@@ -917,6 +969,7 @@ def run_loop(model, data, sources, cfg, viewer=None, logger=None):
                         msgs_seen.add((name, n))
                         print(f"[{name}] {n}")
                 if clean is not None:
+                    clean["period_steps"] = command_steps(src)
                     cmds.append(clean)
         if request is not None:
             cmds = []
@@ -945,14 +998,14 @@ def run_loop(model, data, sources, cfg, viewer=None, logger=None):
 
         # --- Step physics with velocity drive ---
         t_p0 = pc()
-        # Targets are held for the whole frame: write them once as position commands; the MuJoCo
+        # The position targets are written as ctrl before every physics step (ramped between commands in "interpolate" mode); the MuJoCo
         # servos track them from the live state on every physics step.
-        data.ctrl[:] = np.where(is_pos, hold_qpos_targets, 0.0)
+        block = ctrl_block()
         set_grip_force([grip_force[s] for s in sides])
         if recorder is not None:
-            recorder.tick(frame, data.ctrl, (base_vx, base_vy, base_wz), [grip_force[s] for s in sides])
+            recorder.tick(frame, block, (base_vx, base_vy, base_wz), [grip_force[s] for s in sides])
             recorder.label(frame, status.split("  (")[0] if isinstance(status, str) else status)
-        advance(base_vx, base_vy, base_wz)
+        advance(base_vx, base_vy, base_wz, block)
         if recorder is not None:
             recorder.end_tick(frame, data)
         tm["phys"] += pc() - t_p0
@@ -995,10 +1048,10 @@ def run_loop(model, data, sources, cfg, viewer=None, logger=None):
         if tick_ref is not None:
             tick_ref[0] = frame
         if cfg["bench_frames"]:
-            if frame == 10:  # discard warm-up
+            if frame == bench_warmup:  # discard warm-up
                 tm = dict.fromkeys(tm, 0.0)
                 t_bench0 = pc()
-            elif frame >= 10 + cfg["bench_frames"]:
+            elif frame >= bench_warmup + cfg["bench_frames"]:
                 n = cfg["bench_frames"]
                 wall = pc() - t_bench0
                 extra = " ".join(f"{k}={1000 * v / n:.0f}ms" for k, v in (viewer["timers"] if viewer else {}).items())

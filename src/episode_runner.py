@@ -61,7 +61,7 @@ from src.keyboard_source import DRIVE_CFG, make_keyboard_source
 from src.neck import neck_ids
 from src.robot_helpers import arm_ids, make_contact_monitor
 
-VIEWER_HZ = 60
+TICK_HZ = 150           # the command tick: physics_hz / TICK_HZ = 5 physics steps (the window is redrawn every 5th tick, 30 Hz)
 
 
 def run_episode(task, model, data, mode="auto", viewer=None, out_dir=None, handoff_frame=None, held=None, loop_cfg=None, record_dir=None,
@@ -139,7 +139,7 @@ def run_episode(task, model, data, mode="auto", viewer=None, out_dir=None, hando
     spawn = task["reset"](model, data)
 
     physics_hz = 1.0 / model.opt.timestep
-    spf = max(1, round(physics_hz / VIEWER_HZ))
+    spf = max(1, round(physics_hz / TICK_HZ))
     tick_dt = spf * model.opt.timestep
     held_fn = held or (lambda code: False)
     ped = model.actuator(robot_specs.PEDESTAL_SPECS["actuator_name"]).id

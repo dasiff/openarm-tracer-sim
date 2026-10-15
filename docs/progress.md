@@ -2,9 +2,10 @@
 
 ## Latest: design plan section 12 (real-robot replacements for sim ground truth) added; section 11 got the localization-sensor question.
 
-## Current: renders done (merge on hold, waiting for the user)
-Rendered one at a time (log data/logs/render_20261014_235744.log), all in data/notebook/ (git-ignored): grasp_lift_5N_full_2026-10-14.mp4 (52 s, 37 MB, 1559 frames, 2246 s wall, verified bit-identical), control_2N_2026-10-14_clip.mp4 (4.7 s, 142 frames, 244 s wall), control_2N_2026-10-14_tilt.csv / _tilt.png (tilt logged every tick). Finding: in the 2 N control the beaker tilts 0.5 -> 48 deg and then topples to 90 deg at 3.5 s after the lift start (recorded in docs/TODO.md). Control recording: data/notebook/control_2N_2026-10-14_recording.
-Next: the user decides on the merge (28+ commits, fast-forward from fe8c3d8). DO NOT merge or push until the user says so.
+## Current: nothing running. Grip force table is now 8 N, merge on hold
+GRIP_FORCE_TABLE glass_beaker 5 -> 8 N (approved by David 2026-10-15; sweep docs/grip_force_sweep.md). Rerun (logs data/logs/grip8_tests_20261015_210429): grasp_lift_test 4/4 (slip 0.15 mm, no creep; the 2 N control still fails to hold), gripper_force_test 29/29, beaker_hollow_test 21/21. No baseline uses the table. Design plan 3b is DONE; open for the pour (not in the sweep) and for friction below 0.32.
+Earlier (one line): battery pack DONE (BATTERY_SPECS, src/battery.py, baselines regenerated, tests pass).
+Branch state (2026-10-15): on main, 27 commits ahead of origin/main (fe8c3d8): the 7 topic commits of squash/home-pose-hollow-beaker (same tree as the old 38-commit home-pose-hollow-beaker) plus 20 battery / grip force / docs commits (about 14 of them progress-log only). Proposed: rebuild main as clean topic commits (battery, baselines, grip force, final progress log), verify the tree is identical, then push main as a fast-forward. WAITING FOR DAVID'S APPROVAL of the plan; DO NOT rewrite main or push until then.
 
 ## Open
 - Nothing pending. docs/design_plan.md written (blockers resolved by the user: camera rates, face marked DONE, neck added to section 1, wrist camera and camera model in section 11, camera-tuned tests in LATER). Every task's commit updates the plan's status markers.

@@ -31,15 +31,17 @@ Phases, in order (one subsystem moves at a time; the neck is exempt and stays at
   PEDESTAL           the pedestal command ramps to task_cfg["pedestal_q"].
   CORRECT_PEDESTAL   the pedestal move pushes the base: if it is outside the tolerance, the same go-to-pose controller moves it back (the
                      arms are still tucked), aiming for correction_aim_frac of the tolerance. Skipped (and logged) if the pose is fine.
-  ARMS               the task arm moves (minimum jerk, arms_move_s) rest -> ready_via_q -> ready_q, the gripper opening on the way. The targets go
-                     through src/rate_limit.py from the arm's applied targets (arm_max_speed), so after an operator has moved the arm
-                     and handed back they glide back to the path instead of jumping.
-  CORRECT_ARMS       same check. With the arm extended only a creep-speed correction is allowed: a yaw turn in place and a straight move
+  ARMS               both arms move (minimum jerk, arms_move_s, straight in joint space) from where they are to the home pose (home_targets(): TASK_CFG
+                     home_q_left / home_q_right plus the optional random variation), the grippers opening on the way. The targets go through
+                     src/rate_limit.py from the arms' applied targets (arm_max_speed), so after an operator has moved an arm and handed
+                     back it glides back to the path instead of jumping. No waypoint: from the hanging pose the direct move stays >= 54 mm from
+                     the bench at the staging pose (measured with the home pose of TASK_CFG).
+  CORRECT_ARMS       same check. With the arms out only a creep-speed correction is allowed: a yaw turn in place and a straight move
                      along the heading (forward or back); a sideways error cannot be fixed without a large turn, which would sweep the
-                     arm, so it counts as too large. If the needed correction exceeds correction_arms_max_pos / _max_yaw (or the sideways
-                     error exceeds the tolerance), or the base-to-bench or arm-to-bench clearance (checked every tick) falls below its
-                     minimum, state["error"] is set (STAGING_FAILED): the extended arm is not moved further.
-  NECK               frame_points() on points_fn(model, data, task_cfg) (beaker, hotplate, the gripper at its ready pose), the result is commanded,
+                     arms, so it counts as too large. If the needed correction exceeds correction_arms_max_pos / _max_yaw (or the sideways
+                     error exceeds the tolerance), or the base-to-bench or arm-to-bench clearance (either arm, checked every tick) falls below its
+                     minimum, state["error"] is set (STAGING_FAILED): the arms are not moved further.
+  NECK               frame_points() on points_fn(model, data, task_cfg) (beaker, hotplate, both grippers at home), the result is commanded,
                      then held.
   DONE               state["done"] = True. The source stops commanding.
 Phase end = the target reached, with the moving joints below the settle velocity for the settle time. Every phase has a timeout in
@@ -58,7 +60,7 @@ from src import robot_specs
 from src.rate_limit import min_jerk, rate_limit
 from src.neck import neck_ids
 from src.neck_framing import frame_points
-from src.task_beaker_hotplate import arm_ids, framing_points, wrap
+from src.task_beaker_hotplate import arm_ids, framing_points, home_targets, wrap
 from src.task_config import STAGING_CFG, TASK_CFG
 
 
@@ -375,8 +377,9 @@ def make_staging_source(model, data, task_cfg=TASK_CFG, cfg=STAGING_CFG, points_
     Args:
         model (mujoco.MjModel): The compiled model.
         data (mujoco.MjData): The simulation data; read for clearances and for the neck framing.
-        task_cfg (dict): The task configuration (src/task_config.py); uses "arm", "staging_xy" and "staging_yaw" (the goal base pose,
-            metres and radians), "spawn_xy" (metres), "pedestal_q" (metres), "ready_q" and "ready_via_q" (joint angles in radians).
+        task_cfg (dict): The task configuration (src/task_config.py); uses "staging_xy" and "staging_yaw" (the goal base pose,
+            metres and radians), "spawn_xy" (metres), "pedestal_q" (metres), "home_q_left" and "home_q_right" (joint angles in radians) and the
+            optional "home_variation_rad" and "home_variation_seed" (see home_targets()).
             Defaults to TASK_CFG.
         cfg (dict): The staging configuration (STAGING_CFG): the speeds, ramps, tolerances, settle values and timeouts of the phases.
             Defaults to STAGING_CFG.
@@ -388,7 +391,7 @@ def make_staging_source(model, data, task_cfg=TASK_CFG, cfg=STAGING_CFG, points_
             "name" (str): "staging".
             "step" (callable): step(obs) -> list of commands, for one control tick. Returns [] once the stage is done or has an
                 error. A command is {"mode": "base", "twist": (linear metres per second, angular radians per second)}, {"mode": "pedestal", "height": metres},
-                {"mode": "arms", "arm_targets": {arm: 7 joint angles in radians}, "gripper": {arm: finger opening in metres}} or
+                {"mode": "arms", "arm_targets": {side: 7 joint angles in radians}, "gripper": {side: finger opening in metres}} or
                 {"mode": "neck", "neck_targets": {joint name: radians}}.
             "state" (dict): The public state: "phase" (str), "done" (bool), "error" (str or None; a failure message, which the runner
                 turns into STAGING_FAILED), "phases" ({name: {"start", "end", "p0", "paused_s"}}: start and end simulation times in
@@ -409,8 +412,9 @@ def make_staging_source(model, data, task_cfg=TASK_CFG, cfg=STAGING_CFG, points_
             "failure_outcome" (str): "STAGING_FAILED", the episode outcome when this stage fails.
             "report_top_level" (bool): True; the keys of report() go to the top level of the episode summary.
     """
-    arm = task_cfg["arm"]
-    arm_idx = arm_ids(model, arm)
+    sides = ("left", "right")
+    arm_idx = {sd: arm_ids(model, sd) for sd in sides}
+    home = home_targets(model, task_cfg)          # the home pose of both arms, with the random variation (if configured) drawn once here
     ped_vadr = int(model.joint(robot_specs.PEDESTAL_SPECS["joints"][0]).dofadr[0])
     neck = neck_ids(model, robot_specs.NECK_SPECS)
     gx, gy = task_cfg["staging_xy"]
@@ -420,7 +424,7 @@ def make_staging_source(model, data, task_cfg=TASK_CFG, cfg=STAGING_CFG, points_
     planned_heading = math.atan2(gy - spawn[1], gx - spawn[0])
     state = {"phase": "DRIVE", "done": False, "error": None, "phases": {}, "arrival": None, "final_turn_deg": None,
              "planned_final_turn_deg": math.degrees(wrap(gyaw - planned_heading)), "first_turn_deg": None, "reapproaches": 0,
-             "framing_report": None, "corrections": []}
+             "framing_report": None, "corrections": [], "home_q": {sd: [float(v) for v in home[sd]] for sd in sides}}
     P = {"entered": False, "still_since": None, "neck_sent": False, "u": 0.0, "last_arm": None, "path": None, "neck_targets": None,
          "corr": None, "lim_grip": False, "paused": 0.0, "last_t": None, "restore": False, "neck_resent": False}
     pos_tol, yaw_tol = cfg["drive_pos_tol"], cfg["drive_yaw_tol"]
@@ -435,17 +439,17 @@ def make_staging_source(model, data, task_cfg=TASK_CFG, cfg=STAGING_CFG, points_
     # clearances to the bench, watched every tick during the extended-arm correction
     base_names = ["base_link", "right_link", "left_Link", "right_front_link", "right_rear_link", "left_front_link", "left_rear_link"]
     base_geoms = [g for g in range(model.ngeom) if model.body(int(model.geom_bodyid[g])).name in base_names]
-    arm_geoms = [g for g in range(model.ngeom) if model.geom_group[g] == 3 and model.body(int(model.geom_bodyid[g])).name.startswith(f"openarm_{arm}_")
-                 and not model.body(int(model.geom_bodyid[g])).name.endswith("link0")]
+    arm_geoms = [g for g in range(model.ngeom) if model.geom_group[g] == 3 and model.body(int(model.geom_bodyid[g])).name.startswith("openarm_")
+                 and not model.body(int(model.geom_bodyid[g])).name.endswith("link0")]            # both arms
     bench_geoms = [g for g in range(model.ngeom) if int(model.geom_bodyid[g]) == model.body("bench").id]
     ft = np.zeros(6)
 
     def clearances():
-        """Measures how close the base and the task arm are to the bench.
+        """Measures how close the base and the arms are to the bench.
 
         Returns:
-            tuple: (base, arm) smallest distances in metres between the base geoms and the bench geoms, and between the task arm's
-            geoms (collision group 3, without link0) and the bench geoms. A negative value means penetration. Distances are looked up
+            tuple: (base, arm) smallest distances in metres between the base geoms and the bench geoms, and between the arms'
+            geoms (both arms, collision group 3, without link0) and the bench geoms. A negative value means penetration. Distances are looked up
             to 1.0 m.
         """
         d = lambda A: min(mujoco.mj_geomDistance(model, data, a, b, 1.0, ft) for a in A for b in bench_geoms)
@@ -643,7 +647,7 @@ def make_staging_source(model, data, task_cfg=TASK_CFG, cfg=STAGING_CFG, points_
         return finish_correction(obs, t, status, cmds, ped_ctl["S"]["fail"], ped_ctl["S"])
 
     def correct_arms(obs, t, dt):
-        """Runs the CORRECT_ARMS phase: correct the base pose at creep speed with the arm extended, watching the clearances.
+        """Runs the CORRECT_ARMS phase: correct the base pose at creep speed with the arms out, watching the clearances.
 
         Every tick it measures the base-to-bench and arm-to-bench clearances, keeps their minimum in the correction record, and fails
         (record status "failed (clearance)", state["error"] set) if either is below correction_arms_min_base_clearance or
@@ -658,7 +662,7 @@ def make_staging_source(model, data, task_cfg=TASK_CFG, cfg=STAGING_CFG, points_
             list: The base command from finish_correction(), or [] after a clearance failure.
         """
         rec = P["corr"]
-        bc, ac = clearances()                                     # every tick: the extended arm must stay clear of the bench
+        bc, ac = clearances()                                     # every tick: the arms must stay clear of the bench
         rec["min_base_clearance_mm"] = 1000 * bc if rec["min_base_clearance_mm"] is None else min(rec["min_base_clearance_mm"], 1000 * bc)
         rec["min_arm_clearance_mm"] = 1000 * ac if rec["min_arm_clearance_mm"] is None else min(rec["min_arm_clearance_mm"], 1000 * ac)
         if bc < cfg["correction_arms_min_base_clearance"] or ac < cfg["correction_arms_min_arm_clearance"]:
@@ -702,14 +706,13 @@ def make_staging_source(model, data, task_cfg=TASK_CFG, cfg=STAGING_CFG, points_
 
     # ------------------------------------------------------------------ ARMS
     def arms(obs, t, dt):
-        """Runs the ARMS phase: move the task arm along rest -> ready_via_q -> ready_q with minimum jerk, opening the gripper.
+        """Runs the ARMS phase: move both arms to the home pose with minimum jerk, opening the grippers.
 
-        On the first call it builds the joint-space path from the arm's applied targets through task_cfg["ready_via_q"] (if not None)
-        to task_cfg["ready_q"], with arc-length fractions in P["path"]. The time fraction P["u"] advances by dt / arms_move_s per tick,
-        but only if the last command was applied. The targets go through rate_limit() (arm_max_speed) from the applied targets, and
-        after a hand-back (P["lim_grip"]) the gripper target is rate-limited (gripper_max_speed) until it is back on the path. When
-        the time fraction has reached 1, every joint is within arms_tol of the ready pose and the joints have been slower than
-        arms_settle_vel for arms_settle_s, it starts the CORRECT_ARMS check (begin_correction) and then goes on to NECK.
+        On the first call it stores, for each arm, the path from the arm's applied targets to its home pose (straight in joint space). The time
+        fraction P["u"] advances by dt / arms_move_s per tick, but only if the last command was applied. The targets go through rate_limit()
+        (arm_max_speed) from the applied targets, and after a hand-back (P["lim_grip"]) the gripper targets are rate-limited (gripper_max_speed) until
+        they are back on the path. When the time fraction has reached 1, every joint of both arms is within arms_tol of the home pose and the
+        joints have been slower than arms_settle_vel for arms_settle_s, it starts the CORRECT_ARMS check (begin_correction) and then goes on to NECK.
 
         Args:
             obs (dict): The observation; uses "applied" ("arm_targets", "gripper"), "joint_angles" and "joint_velocities".
@@ -717,37 +720,39 @@ def make_staging_source(model, data, task_cfg=TASK_CFG, cfg=STAGING_CFG, points_
             dt (float): The control tick length in seconds.
 
         Returns:
-            list: [{"mode": "arms", "arm_targets": {arm: 7 joint angles in radians}, "gripper": {arm: finger opening in metres}}],
+            list: [{"mode": "arms", "arm_targets": {side: 7 joint angles in radians}, "gripper": {side: finger opening in metres}}] (both sides),
             or [] when a correction check was begun.
         """
-        applied = np.array(obs["applied"]["arm_targets"][arm])
-        ready = np.array(task_cfg["ready_q"], float)
+        applied = {sd: np.array(obs["applied"]["arm_targets"][sd]) for sd in sides}
         if P["path"] is None:
-            via = task_cfg["ready_via_q"]
-            pts = np.array([applied] + ([np.array(via, float)] if via is not None else []) + [ready])
-            seg = np.linalg.norm(np.diff(pts, axis=0), axis=1)
-            P["path"] = (pts, np.r_[0.0, np.cumsum(seg) / seg.sum()])
-        q_now = np.array([obs["joint_angles"][a] for a in arm_idx["qadr"]])
-        qd = max(abs(obs["joint_velocities"][v]) for v in arm_idx["vadr"])
-        if P["u"] >= 1.0 and np.abs(q_now - ready).max() < cfg["arms_tol"] and \
-                still_for(t, qd < cfg["arms_settle_vel"], cfg["arms_settle_s"]):
+            P["path"] = {sd: (applied[sd].copy(), home[sd]) for sd in sides}
+        q_now = {sd: np.array([obs["joint_angles"][a] for a in arm_idx[sd]["qadr"]]) for sd in sides}
+        qd = max(abs(obs["joint_velocities"][v]) for sd in sides for v in arm_idx[sd]["vadr"])
+        at_home = max(np.abs(q_now[sd] - home[sd]).max() for sd in sides) < cfg["arms_tol"]
+        if P["u"] >= 1.0 and at_home and still_for(t, qd < cfg["arms_settle_vel"], cfg["arms_settle_s"]):
             return begin_correction(obs, t, "CORRECT_ARMS", "NECK")
-        if P["last_arm"] is None or np.allclose(applied, P["last_arm"], atol=1e-12):      # advance only when the last command was applied
+        applied_all = np.concatenate([applied[sd] for sd in sides])
+        if P["last_arm"] is None or np.allclose(applied_all, P["last_arm"], atol=1e-12):      # advance only when the last command was applied
             P["u"] = min(1.0, P["u"] + dt / cfg["arms_move_s"])
         s = min_jerk(P["u"])
-        pts, frac_ = P["path"]
-        i = min(int(np.searchsorted(frac_, s, side="right")) - 1, len(pts) - 2)
-        q = pts[i] + (s - frac_[i]) / (frac_[i + 1] - frac_[i]) * (pts[i + 1] - pts[i])
-        # Snap-back safety: the targets start from the arm's CURRENT applied targets and move at most arm_max_speed. Normally the goal is within
-        # reach and is returned exactly as before; after the operator has moved the arm (the policy was paused) the arm glides back to the path.
-        q = rate_limit(applied, q, cfg["arm_max_speed"], dt)
-        P["last_arm"] = q
+        # Snap-back safety: the targets start from the arms' CURRENT applied targets and move at most arm_max_speed. Normally the goal is within
+        # reach and is returned exactly as before; after the operator has moved an arm (the policy was paused) it glides back to the path.
+        targets = {}
+        for sd in sides:
+            start, goal = P["path"][sd]
+            targets[sd] = rate_limit(applied[sd], start + s * (goal - start), cfg["arm_max_speed"], dt)
+        P["last_arm"] = np.concatenate([targets[sd] for sd in sides])
         g = float(cfg["finger_open"] * s)
-        if P["lim_grip"]:                  # after a hand-back: from the applied gripper target, at most gripper_max_speed, until it is back on the path
-            g_lim = float(rate_limit([obs["applied"]["gripper"][arm]], [g], cfg["gripper_max_speed"], dt)[0])
-            P["lim_grip"] = g_lim != g
-            g = g_lim
-        return [{"mode": "arms", "arm_targets": {arm: [float(v) for v in q]}, "gripper": {arm: g}}]
+        grip, still_limited = {}, False
+        for sd in sides:
+            grip[sd] = g
+            if P["lim_grip"]:              # after a hand-back: from the applied gripper target, at most gripper_max_speed, until it is back on the path
+                g_lim = float(rate_limit([obs["applied"]["gripper"][sd]], [g], cfg["gripper_max_speed"], dt)[0])
+                still_limited = still_limited or g_lim != g
+                grip[sd] = g_lim
+        if P["lim_grip"]:
+            P["lim_grip"] = still_limited
+        return [{"mode": "arms", "arm_targets": {sd: [float(v) for v in targets[sd]] for sd in sides}, "gripper": grip}]
 
     # ------------------------------------------------------------------ NECK
     def neck_phase(obs, t, dt):
@@ -866,7 +871,8 @@ def make_staging_source(model, data, task_cfg=TASK_CFG, cfg=STAGING_CFG, points_
             "lateral_mm"} or None, with the signs of pose_err()), "first_turn_deg", "final_in_place_turn_deg",
             "planned_final_turn_deg", "drive_reapproaches" (int), "pose_corrections" (the state["corrections"] records),
             "base_drift" ({phase: {"max_pos_mm", "max_yaw_deg", "net_pos_mm", "net_yaw_deg"}}, DRIVE and the CORRECT phases left
-            out), "min_base_to_bench_clearance_during_drive_mm" (float or None) and "neck_framing_report" (the framing report or None).
+            out), "min_base_to_bench_clearance_during_drive_mm" (float or None), "neck_framing_report" (the framing report or None) and "home_pose_rad"
+            ({"left": 7 joint angles, "right": 7 joint angles}: the home pose commanded, with the random variation if it is on).
         """
         phases_ = state["phases"]
         dur = {k: (v["end"] - v["start"] - v.get("paused_s", 0.0)) if v["end"] is not None else None for k, v in phases_.items() if k != "DONE"}
@@ -887,7 +893,7 @@ def make_staging_source(model, data, task_cfg=TASK_CFG, cfg=STAGING_CFG, points_
             "planned_final_turn_deg": state["planned_final_turn_deg"], "drive_reapproaches": state["reapproaches"],
             "pose_corrections": state["corrections"], "base_drift": drift,
             "min_base_to_bench_clearance_during_drive_mm": None if M["min_clearance"] is None else 1000 * M["min_clearance"],
-            "neck_framing_report": state["framing_report"]}
+            "neck_framing_report": state["framing_report"], "home_pose_rad": state["home_q"]}
 
     # ------------------------------------------------------------------ restoring what the operator moved
     AFTER_PEDESTAL = ("CORRECT_PEDESTAL", "ARMS", "CORRECT_ARMS", "NECK", "DONE")

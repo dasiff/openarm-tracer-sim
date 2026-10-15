@@ -9,6 +9,8 @@ The dictionaries and who reads them:
     TASK_CFG: scene file, object and robot poses and the start-up times of the task, read by src/task_beaker_hotplate.py,
         src/staging_source.py and src/task_policy.py (a recorded run stores its own copy, which src/replay.py uses). The staging, ready and grasp poses were found by the layout
         search and must be re-computed (experiments/beaker_hotplate_layout_search.py) if the objects, spawn or pedestal change.
+    BEAKER_CFG: the hollow glass beaker (size, wall, masses, contact friction of the fingers), built at load time by src/beaker.py.
+    GRIP_FORCE_TABLE: the gripper force cap per object, looked up by the demo generator and later the openpi adapter.
     SEARCH_CFG: settings of the offline staging pose search (experiments/beaker_hotplate_staging_search.py).
     LAYOUT_CFG: settings of the joint layout and staging search with slack at every task pose
         (experiments/beaker_hotplate_layout_search.py).
@@ -19,7 +21,7 @@ Entries marked NEW in the comments of STAGING_CFG were chosen recently and are n
 simulation, not measurements of the real hardware.
 
 Staging sequence (built in src/staging_source.py from STAGING_CFG): DRIVE to the staging pose -> PEDESTAL to pedestal_q ->
-ARMS to the ready pose -> NECK frames the task -> HANDOFF (the vision-language-action (VLA) policy takes over the arm from here).
+ARMS (both arms) to the home pose -> NECK frames the beaker, the hotplate and both grippers -> HANDOFF (the vision-language-action (VLA) policy takes over the arm from here).
 The base and the arms never move at the same time.
 
 World frame: the bench is centred on the origin (top z = 0.96, x +-2.2, y +-0.8). The robot faces its own
@@ -58,14 +60,59 @@ TASK_CFG = {
     "staging_xy": (0.7500, 1.2213),        # base_link origin, m; 8 cm from the bench edge (base front to bench top edge)
     "staging_yaw": math.radians(-90.0),    # facing the bench
     "pedestal_q": -0.2,                    # pedestal_lift command, m of stage travel (0 = raised, negative = lowered)
-    "arm": "left",                         # the arm that gets the ready pose
+    "arm": "left",                         # the arm of the task's scripted grasp poses below (LEGACY: staging now moves both arms to home)
+
+    # --- Home pose ("waiter pose"): where the staging ARMS phase puts both arms and where the handoff happens. PLACEHOLDER until the
+    # --- hardware team gives the real OpenArm home. Upper arm down at the side and swung 12.5 deg back (j1), elbow 120 deg (j4: the forearm
+    # --- points forward and 17.5 deg above horizontal), hand tilted 15 deg down from the forearm (j7), fingers open and level. The right
+    # --- arm is the mirror image: qR = (-q1, -q2, -q3, q4, -q5, -q6, -q7) (exact to ~1 cm: the model's right elbow offset differs by 3 cm).
+    # --- At the staging pose and pedestal height the TCP is 34 cm in front of the base (the bench edge is 42 cm), 99 mm above the bench top.
+    "home_q_left": (math.radians(12.5), 0.0, 0.0, math.radians(120.0), 0.0, 0.0, math.radians(15.0)),     # rad
+    "home_q_right": (math.radians(-12.5), 0.0, 0.0, math.radians(120.0), 0.0, 0.0, math.radians(-15.0)),  # rad
+    "home_variation_rad": (0.0,) * 7,      # per joint (the same for both arms): the home pose is drawn uniformly within +-this around the values above, clipped to
+                                           # the joint limits. All zeros = off (the default); the demo generator will set it. The right arm gets its own draw.
+    "home_variation_seed": 0,              # seed of that draw (one draw per episode, both arms)
+    "framing_arms": ("left", "right"),     # the grippers the neck camera frames at the handoff, next to the beaker and the hotplate
+
+    # --- LEGACY (not used by the staging any more; still read by the layout / staging searches, the pose check and the grasp force test source):
+    # --- the task-specific ready pose of the left arm, found by the layout search, and the waypoint of its path from the hanging pose.
     "ready_q": (-1.00748, -0.70464, 0.47191, 1.24247, -0.77442, -0.08043, 0.61180),   # that arm's 7 joints, rad (margin 40 deg)
-    "ready_tcp": (1.0000, 0.7100, 1.1750), # world xyz of the TCP at ready_q when the base is at the staging pose
+    "ready_tcp": (1.0000, 0.7100, 1.1750), # LEGACY. world xyz of the TCP at ready_q when the base is at the staging pose
     "ready_via_q": (-0.64235, -1.42671, -0.28301, 0.51899, 0.02738, 0.07867, 0.21018),  # waypoint hanging pose -> via -> ready (joint margin 29.7 deg; 16 cm from the bench along the staging path, re-planned with a 12 cm path margin because the arm's servo lag plus base drift used up the earlier 6.5 cm); a straight move hits the bench
     # Left-arm joint solutions of the other task poses (from the layout search; the beaker is held upright for the last two)
     "grasp_q": (-1.07325, -0.36123, 0.79668, 0.53576, -1.02172, 0.19696, 0.19506),        # TCP at beaker mid-height, fingers open (margin 30.7 deg)
     "above_plate_q": (-1.36316, -0.26016, 1.13214, 0.74114, -0.94935, -0.13076, 0.37412), # TCP 10 cm above hotplate_top, beaker held (24.9 deg)
     "setdown_q": (-1.25683, -0.23374, 1.16252, 0.69941, -1.15110, -0.01193, 0.24228),      # beaker bottom 2 mm above the hotplate top, beaker held (23.4 deg)
+}
+
+# ----------------------------------------------------------------------------------------------------------
+# The beaker and the grip force (src/beaker.py builds the beaker into the model at load time)
+# ----------------------------------------------------------------------------------------------------------
+BEAKER_CFG = {
+    "body": "task_beaker",                 # the body in models/objects/beaker.xml (free joint and the site "beaker_base" at its origin, the bottom centre)
+    "outer_diameter": 0.070,               # m. The gripper opens to ~84 mm between the finger pads (7 mm of margin a side)
+    "height": 0.100,                       # m
+    "wall": 0.002,                         # m, glass wall thickness (also the bottom disk's thickness)
+    "n_segments": 24,                      # thin box geoms in the wall ring; 24 keeps the polygon 0.29 mm from a circle (16: 0.65 mm, 32: 0.16 mm)
+    "glass_mass": 0.100,                   # kg, shared by the wall and the bottom by volume (a 250 ml borosilicate beaker of this size)
+    "liquid_mass": 0.100,                  # kg, a rigid mass inside, low in the beaker (100 g of water fills 29 mm); 0 = an empty beaker. No visuals yet
+    "liquid_density": 1000.0,              # kg/m^3, gives the height of the liquid column (where its mass sits)
+    "rgba": (0.55, 0.85, 0.95, 0.35),      # translucent glass
+    "friction": (1.0, 0.005, 0.0001),      # the beaker's own (sliding, torsional, rolling), against the bench and the hotplate: unchanged from the solid beaker
+    # Contact of the beaker with the gripper. The finger / palm geoms have priority 1 in the robot model, so their own friction (1.0) wins over
+    # the beaker's: setting the beaker's friction would do nothing. Explicit contact pairs set it instead (finger and palm geoms of both hands
+    # against every beaker geom); everything else the beaker touches (bench, hotplate) keeps its own friction.
+    "contact_friction": (0.4, 0.005, 0.0001),   # sliding, torsional, rolling: glass on the gripper pads
+    "contact_solref": (0.005, 1.0),        # the same softness the finger geoms have in the robot model, so only the friction changes
+    "contact_solimp": (0.9, 0.95, 0.001, 0.5, 2.0),
+    "gripper_geoms": ("hand_collision", "left_finger_collision", "right_finger_collision"),   # per hand: "openarm_<side>_" + these
+}
+
+# Gripper force cap per object, N per finger (the loop's "max_force" of a gripper command, at most robot_specs.ARM_ACTUATOR_SPECS["fingers"]["force_limit"]).
+# The policy only ever outputs a finger position; whoever builds the command (the demo generator, later the openpi adapter) looks the force up here.
+# 5 N per finger at a glass friction of 0.4 holds 2x the 0.2 kg beaker's weight.
+GRIP_FORCE_TABLE = {
+    "glass_beaker": 5.0,
 }
 
 # ----------------------------------------------------------------------------------------------------------

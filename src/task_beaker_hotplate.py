@@ -22,8 +22,9 @@ import numpy as np
 from src import robot_specs
 from src.neck import neck_ids, set_neck_pose
 from src.robot_helpers import arm_ids  # noqa: F401  (the experiments import it from here)
+from src.beaker import add_hollow_beaker
 from src.simulator import RobotSimulator
-from src.task_config import EPISODE_CFG, STAGING_CFG, SUCCESS_CFG, TASK_CFG
+from src.task_config import BEAKER_CFG, EPISODE_CFG, STAGING_CFG, SUCCESS_CFG, TASK_CFG
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
@@ -90,7 +91,7 @@ def apply_task_poses(model, data, cfg=TASK_CFG):
     mujoco.mj_forward(model, data)
 
 
-def load_task(cfg=TASK_CFG, cameras=True):
+def load_task(cfg=TASK_CFG, cameras=True, beaker_cfg=BEAKER_CFG):
     """Creates a RobotSimulator on the task scene, with the pedestal lift, and places the objects.
 
     The camera neck is on, as RobotSimulator does by default.
@@ -100,6 +101,8 @@ def load_task(cfg=TASK_CFG, cameras=True):
             applied with apply_task_poses. Defaults to task_config.TASK_CFG.
         cameras (bool or list of dict or None): True means robot_specs.CAMERA_SPECS, False or None means no cameras, a list is
             used as the camera specification dictionaries. Defaults to True.
+        beaker_cfg (dict): The hollow beaker's configuration (src/beaker.py builds it into the model before compiling). Defaults to
+            task_config.BEAKER_CFG.
 
     Returns:
         RobotSimulator: The simulator with the pedestal lift (robot_specs.PEDESTAL_SPECS) and the objects placed.
@@ -107,7 +110,8 @@ def load_task(cfg=TASK_CFG, cameras=True):
     cams = robot_specs.CAMERA_SPECS if cameras is True else (cameras or None)
     sim = RobotSimulator(model_path=str(PROJECT_ROOT / cfg["scene"]),
                          cameras=cams,
-                         pedestal_lift=robot_specs.PEDESTAL_SPECS)
+                         pedestal_lift=robot_specs.PEDESTAL_SPECS,
+                         spec_hooks=[lambda spec: add_hollow_beaker(spec, beaker_cfg)])
     apply_task_poses(sim.model, sim.data, cfg)
     return sim
 
@@ -227,22 +231,22 @@ def check_success(model, data, cfg=SUCCESS_CFG):
 # ----------------------------------------------------------------------------------------------------------
 # What the neck camera should frame
 # ----------------------------------------------------------------------------------------------------------
-def framing_points(model, data, cfg=TASK_CFG):
-    """Returns the world points the neck camera has to keep in view for this task: the beaker, the hotplate and the arm's gripper.
+def framing_points(model, data, cfg=TASK_CFG, beaker_cfg=BEAKER_CFG):
+    """Returns the world points the neck camera has to keep in view for this task: the beaker, the hotplate and both grippers.
 
-    Corners of the beaker's and the hotplate's bounding boxes (so their whole bodies fit, not just their centres) and the
-    gripper's tool centre point (TCP), hand origin and finger tips of the arm that carries the task (cfg["arm"], at whatever pose
-    it is in).
+    Corners of the beaker's and the hotplate's bounding boxes (so their whole bodies fit, not just their centres) and, for each arm of
+    cfg["framing_arms"], the gripper's tool centre point (TCP), hand origin and finger tips (at whatever pose the arm is in).
 
     Args:
         model (mujoco.MjModel): The task model.
         data (mujoco.MjData): Its current data (the points follow the current poses).
-        cfg (dict): Task configuration; "arm" ("left" or "right") picks the gripper. Defaults to task_config.TASK_CFG.
+        cfg (dict): Task configuration; "framing_arms" (tuple of "left" / "right"; both if missing) picks the grippers. Defaults to task_config.TASK_CFG.
+        beaker_cfg (dict): The beaker's configuration, for its size (the box is outer_diameter wide and height tall). Defaults to task_config.BEAKER_CFG.
 
     Returns:
         dict: Maps a point name to its world position (numpy.ndarray of 3 values, metres): "beaker_corner0" to "beaker_corner7",
-        "hotplate_corner0" to "hotplate_corner7", "<side>_gripper_tcp", "<side>_gripper_hand", "<side>_gripper_tip0" and
-        "<side>_gripper_tip1", where <side> is cfg["arm"]. Empty if the scene has no body "task_beaker".
+        "hotplate_corner0" to "hotplate_corner7", and for every side "<side>_gripper_tcp", "<side>_gripper_hand", "<side>_gripper_tip0" and
+        "<side>_gripper_tip1". Empty if the scene has no body "task_beaker".
     """
     if mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, "task_beaker") < 0:
         return {}
@@ -259,30 +263,52 @@ def framing_points(model, data, cfg=TASK_CFG):
         for i, (sx, sy, sz) in enumerate(((a, b, c) for a in (-1, 1) for b in (-1, 1) for c in (-1, 1))):
             pts[f"{name}_corner{i}"] = np.array(center) + np.array([sx, sy, sz]) * np.array(half)
 
-    top = bench_top_z(model)
-    g = model.geom("task_beaker_glass")
-    r, hh = float(model.geom_size[g.id][0]), float(model.geom_size[g.id][1])
+    r, hh = beaker_cfg["outer_diameter"] / 2, beaker_cfg["height"] / 2
     bpos = data.body("task_beaker").xpos
     box("beaker", bpos + [0, 0, hh], [r, r, hh])
     hot = data.body("task_hotplate").xpos
     base = model.geom("task_hotplate_base")
     box("hotplate", hot + [0, 0, float(model.geom_size[base.id][2])], [float(model.geom_size[base.id][0]), float(model.geom_size[base.id][1]),
                                                                        float(model.geom_size[base.id][2])])
-    side = cfg["arm"]
-    hand = data.body(f"openarm_{side}_hand")
-    R = hand.xmat.reshape(3, 3)
-    tcp = data.body(f"openarm_{side}_hand_tcp").xpos
-    pts[f"{side}_gripper_tcp"] = tcp.copy()
-    pts[f"{side}_gripper_hand"] = hand.xpos.copy()
-    for k, sgn in enumerate((-1, 1)):                                      # the finger tips: 1.5 cm past the TCP, +-4.5 cm across
-        pts[f"{side}_gripper_tip{k}"] = tcp + R @ np.array([0.0, sgn * 0.045, 0.015])
+    for side in cfg.get("framing_arms", ("left", "right")):
+        hand = data.body(f"openarm_{side}_hand")
+        R = hand.xmat.reshape(3, 3)
+        tcp = data.body(f"openarm_{side}_hand_tcp").xpos
+        pts[f"{side}_gripper_tcp"] = tcp.copy()
+        pts[f"{side}_gripper_hand"] = hand.xpos.copy()
+        for k, sgn in enumerate((-1, 1)):                                  # the finger tips: 1.5 cm past the TCP, +-4.5 cm across
+            pts[f"{side}_gripper_tip{k}"] = tcp + R @ np.array([0.0, sgn * 0.045, 0.015])
     return pts
+
+
+def home_targets(model, cfg=TASK_CFG):
+    """Gives the joint targets of both arms' home pose, with the random variation applied.
+
+    The values of cfg["home_q_left"] and cfg["home_q_right"] plus a uniform draw within +-cfg["home_variation_rad"] per joint (a separate draw for each arm,
+    from a generator seeded with cfg["home_variation_seed"]), clipped to the joint limits. With the variation all zeros (the default) it returns the
+    configured poses exactly.
+
+    Args:
+        model (mujoco.MjModel): The model, for the joint limits of the arms.
+        cfg (dict): Task configuration. Defaults to task_config.TASK_CFG.
+
+    Returns:
+        dict: {"left": numpy.ndarray of 7 joint angles in radians, "right": the same}.
+    """
+    rng = np.random.default_rng(cfg.get("home_variation_seed", 0))
+    spread = np.array(cfg.get("home_variation_rad", (0.0,) * 7), float)
+    out = {}
+    for side in ("left", "right"):
+        q = np.array(cfg[f"home_q_{side}"], float) + rng.uniform(-spread, spread)
+        lim = model.jnt_range[arm_ids(model, side)["jnt"]]
+        out[side] = np.clip(q, lim[:, 0], lim[:, 1])
+    return out
 
 
 # ----------------------------------------------------------------------------------------------------------
 # The task for the generic episode runner
 # ----------------------------------------------------------------------------------------------------------
-def make_task(arm_stage=None, task_cfg=TASK_CFG, staging_cfg=STAGING_CFG, episode_cfg=EPISODE_CFG, success_cfg=SUCCESS_CFG):
+def make_task(arm_stage=None, task_cfg=TASK_CFG, staging_cfg=STAGING_CFG, episode_cfg=EPISODE_CFG, success_cfg=SUCCESS_CFG, beaker_cfg=BEAKER_CFG):
     """Packages the beaker task for src/episode_runner.run_episode().
 
     Args:
@@ -293,6 +319,8 @@ def make_task(arm_stage=None, task_cfg=TASK_CFG, staging_cfg=STAGING_CFG, episod
         episode_cfg (dict): Time limits and run settings: "timeout_after_handoff" and "operator_timeout" (seconds), "log_hz", "exclusive"
             and "spawn_z" (metres). Defaults to EPISODE_CFG.
         success_cfg (dict): Success check thresholds. Defaults to SUCCESS_CFG.
+        beaker_cfg (dict): The beaker configuration the model was built with (load_task); saved in the recipe so that replay builds the same one.
+            Defaults to BEAKER_CFG.
 
     Returns:
         dict: The task, with the keys the runner reads: "name", "reset" (model, data -> spawn dict), "make_policy" (model, data -> policy source),
@@ -319,9 +347,9 @@ def make_task(arm_stage=None, task_cfg=TASK_CFG, staging_cfg=STAGING_CFG, episod
     return {"name": "beaker_hotplate", "reset": reset, "make_policy": make_policy,
             "check_success": lambda model, data: check_success(model, data, success_cfg),
             "limits": dict(episode_cfg), "log_extras": log_extras,
-            "framing_points": lambda model, data: framing_points(model, data, task_cfg),
+            "framing_points": lambda model, data: framing_points(model, data, task_cfg, beaker_cfg),
             "handoff_camera": "eagle_cam", "handoff_label": "DONE",
-            "recipe": {"entry": "src.task_beaker_hotplate:rebuild_task", "cfg": {"task_cfg": task_cfg}},
+            "recipe": {"entry": "src.task_beaker_hotplate:rebuild_task", "cfg": {"task_cfg": task_cfg, "beaker_cfg": beaker_cfg}},
             "meta": {"task_cfg": task_cfg, "staging_cfg": staging_cfg, "episode_cfg": episode_cfg}}
 
 
@@ -329,14 +357,15 @@ def rebuild_task(cfg, meta):
     """Rebuilds the model of a recorded beaker episode (called by src/replay.py from a recording's recipe).
 
     Args:
-        cfg (dict): The recipe's configuration: {"task_cfg": the task poses used by the recorded run}.
+        cfg (dict): The recipe's configuration: {"task_cfg": the task poses used by the recorded run, "beaker_cfg": its beaker (BEAKER_CFG if missing:
+            recordings made before the hollow beaker have none and cannot be replayed with this model)}.
         meta (dict): The recording's meta.json, whose "robot_specs"/"CAMERA_SPECS" gives the cameras the model was built with.
 
     Returns:
         tuple: (model, data, reset), where reset(model, data) repeats what the live run did to the state before the loop started.
     """
     task_cfg = cfg["task_cfg"]
-    sim = load_task(cfg=task_cfg, cameras=meta["robot_specs"]["CAMERA_SPECS"])
+    sim = load_task(cfg=task_cfg, cameras=meta["robot_specs"]["CAMERA_SPECS"], beaker_cfg=cfg.get("beaker_cfg", BEAKER_CFG))
 
     def reset(model, data):
         """Resets the state and places the task objects, as the task's reset does."""

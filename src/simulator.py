@@ -37,10 +37,11 @@ class RobotSimulator:
 
     def __init__(self, model_path: str = None, track_bodies: list[str] = None,
                  cameras: list[dict] = None, pedestal_lift: dict = None,
-                 neck=True):
+                 neck=True, spec_hooks: list = None):
         """Loads the scene, adds the actuators, neck and cameras, compiles the model and creates its data.
 
-        The parts are added in this order: the arm and finger position actuators, the pedestal lift, the neck, the cameras. The
+        The parts are added in this order: the arm and finger position actuators, the base contacts, the pedestal lift, the neck, the cameras, then
+        the scene's own `spec_hooks` (the beaker task builds its beaker this way). The
         physics timestep is then set to robot_specs.SIMULATION_TIMESTEP (a note is printed if the XML had another one). A summary
         of the loaded model is printed.
 
@@ -62,6 +63,8 @@ class RobotSimulator:
                 the pedestal lift and before the cameras (the eagle camera is on the neck). True means robot_specs.NECK_SPECS,
                 a dict means those specifications, None or False means no neck (then the eagle camera has no body to sit on:
                 pass cameras without it). Defaults to True.
+            spec_hooks (list of callable or None): Functions hook(spec) that change the mujoco.MjSpec after everything above has been added and before it is
+                compiled; for parts that belong to one scene, not to the robot (src/beaker.add_hollow_beaker). Defaults to None (none).
 
         Raises:
             FileNotFoundError: If the model file does not exist.
@@ -88,6 +91,8 @@ class RobotSimulator:
             add_neck(spec, robot_specs.NECK_SPECS if neck is True else neck)
         if cameras:
             add_cameras(spec, cameras)
+        for hook in spec_hooks or []:
+            hook(spec)
         self.model = spec.compile()
         if cameras:
             make_offscreen_big_enough(self.model, cameras)
@@ -104,6 +109,7 @@ class RobotSimulator:
             print(f"  Note: overriding XML timestep {xml_dt:.6g} s with "
                   f"{robot_specs.SIMULATION_TIMESTEP:.6g} s "
                   f"({robot_specs.PHYSICS_HZ} Hz) from robot_specs")
+        self.model.opt.noslip_iterations = robot_specs.NOSLIP_ITERATIONS     # no creep of gripped bodies (see robot_specs)
         self.data = mujoco.MjData(self.model)
         self.model_path = model_path
         self.track_bodies = track_bodies or []

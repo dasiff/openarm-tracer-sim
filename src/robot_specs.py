@@ -10,6 +10,7 @@ The values are used in the MuJoCo simulation as they are, and are to be calibrat
 Contents and readers:
     PHYSICS_HZ, CAMERA_HZ, SIMULATION_TIMESTEP: rates in hertz (Hz) and the physics timestep in seconds. Read by src/simulator.py,
         src/control_loop.py and others.
+    NOSLIP_ITERATIONS: the solver's no-slip post-processing iterations (opt.noslip_iterations), set by src/simulator.py.
     PEDESTAL_SPECS: the stand-in pedestal lift actuator, added by src/pedestal.py. PLACEHOLDER: every number is a guess.
     BASE_CONTACT_SPECS: the six low-friction floor contact spheres of the base, added by src/base_contacts.py.
     NECK_SPECS: the SO-101 camera neck, attached by src/neck.py and used by src/neck_framing.py and the control loop.
@@ -34,6 +35,14 @@ calibration to-do list) are in docs/robot_reference.md.
 PHYSICS_HZ = 750
 CAMERA_HZ = 30  # camera tick rate; set CC_ROUNDROBIN=0 in the viewer so every camera updates at this rate
 SIMULATION_TIMESTEP = 1 / PHYSICS_HZ  # seconds (sim choice: one physics step per PD step)
+
+# MuJoCo's soft friction contacts act like a viscous damper, so a steady load makes a gripped body creep even far below the friction limit (a contact-model
+# artifact: real glass would not). The no-slip post-processing pass removes it. A global solver option: it applies to every scene and costs step time
+# (physics only, task scene, this VM, whose absolute times vary about 2x from run to run: 0.95 ms per step with 3 or 10 iterations against 0.49 ms with 0, i.e. 1.9x;
+# real time at 750 Hz is 1.33 ms). Measured on the 5 N grasp of the 200 g beaker, 2 s lift then a 10 s hold: 0 -> 10.3 mm of slip and creeping at 3.8 mm/s;
+# 3 -> 3.9 mm and still creeping 0.03 mm/s (3.6 mm after 2 s, +0.3 mm in the next 8 s); 10 -> 2.7 mm, no creep at all. 3 costs the same as 10 and does not stop the creep: 10 it is.
+# A side effect: with it on, the two fingers' normal forces differ by up to ~1 N at the 10 N ceiling (9.5 and 10.5 N; the mean is still the cap). 0 turns it off.
+NOSLIP_ITERATIONS = 10
 
 # Pedestal lift actuator -- PLACEHOLDER
 # The real lift hardware is unconfirmed (waiting on Dan's answer), and the pedestal model
@@ -163,14 +172,16 @@ ARM_ACTUATOR_SPECS = {
     # Fingers (all 4, position actuators; the travel is the joint range, 0-0.044 m). PLACEHOLDER gains.
     # The XML had the right fingers as position servos (kp 100 N/m, +-333 N, combined_robot.xml line 40) and
     # the left fingers as torque motors with no force limit, driven by the Python PD at kp 100, kd 10.
-    #   kp 100 N/m   unchanged from both of those, so existing grasps are unchanged: closing on an object
-    #                that stops the finger 20 mm short of the command gives 2 N per finger (4.4 N at the
-    #                full 44 mm), enough to hold ~0.4 kg of glassware at a friction coefficient of 1.
-    #   kv 2 N s/m   with the joint's own 2 N s/m damping the total is ~4 N s/m, about critical for a 36 g
-    #                finger on a 100 N/m servo (2*sqrt(kp*m) = 3.8). The old left kd of 10 was overdamped.
-    #   force 10 N   above the 4.4 N the servo can ask for at full travel, so it only clips contact spikes
-    #                (the XML's +-333 N was no limit at all). A choice of ours, not a motor datasheet value.
-    "fingers": {"kp": 100.0, "kv": 2.0, "force_limit": 10.0},
+    #   kp 300 N/m   was 100. A finger closed on the 70 mm beaker stops at 36.8 mm from its zero, so the servo
+    #                asks for 300 * 0.0368 = 11 N (100 gave only 3.7 N, so a force cap above that did nothing).
+    #                Now the caps up to the 10 N ceiling take effect: the per-object caps are GRIP_FORCE_TABLE in
+    #                src/task_config.py.
+    #   kv 4.6 N s/m with the joint's own 2 N s/m damping the total is 6.6 N s/m, about critical for a 36 g
+    #                finger on a 300 N/m servo (2*sqrt(kp*m) = 6.6; kv 2 would overshoot by ~9 %).
+    #   force 10 N   the ceiling: below the 11 N the servo asks for at the beaker's width and the 13.2 N at the
+    #                full 44 mm travel, so it is a real limit (the XML's +-333 N was no limit at all). A choice of
+    #                ours, not a motor datasheet value.
+    "fingers": {"kp": 300.0, "kv": 4.6, "force_limit": 10.0},
 }
 
 # Cameras

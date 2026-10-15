@@ -12,6 +12,12 @@ geoms (collision shapes) must be at least cfg["contact_margin"] from the other c
 pose touches something, the next best collision-free one is used, and if there is none the best attempt is returned with its
 contacts listed.
 
+The answer must be repeatable, because the eagle camera is a policy input and the neck frames once per skill: the camera has more neck joints (shoulder lift,
+elbow and wrist all pitch it) than the aim and the margin need, so many poses frame equally well. A weak posture term (cfg["posture_weight"], 0.003, towards
+cfg["posture_pose"], by default the drive pose) picks one of them, move_weight is 0 so the start pose does not matter, and the refinement's initial simplex is wide.
+Measured at the recorded handoff: 0.1 degree of noise on the arms moved the lift and elbow of the old solver by 1.0 rad and the camera by 9 cm; the new one moves
+them by under 0.05 rad (3.6 mm) at about 0.5 degree of aim error. There is no randomness: the same points give the same answer, bit for bit.
+
 `points`: {name: (x, y, z)} in the world (or a list of xyz). Only kinematics are used (scratch MjData, `data` is not
 modified), so it can run while the simulation runs. `start` = a joint vector (default: the current neck pose) from which the
 cost of moving is measured and from which one refinement always begins. local=True skips the coarse search and refines only
@@ -37,10 +43,14 @@ FRAMING_CFG = {
     "margin": 0.10,            # fraction of the image width / height kept free on every side
     "coarse_steps": 7,         # grid points per joint for the coarse search
     "n_refine": 6,             # best coarse candidates refined
-    "refine_evals": 250,
+    "refine_evals": 1500,
+    "simplex_step": 0.1,       # rad: the initial simplex of the refinement steps this far along every joint (scipy's default is 5 % of the value, which is
+                               # 0.00025 for a joint at zero, so such a joint barely moves); 0 gives scipy's default
     "contact_margin": 0.005,   # m, neck geoms stay this far from everything that is not the neck
     "aim_weight": 1.0,         # cost of the aim error (rad^2) next to the fit violation
-    "move_weight": 1e-3,       # cost of moving away from the start pose (rad^2): no needless motion
+    "move_weight": 0.0,        # cost of moving away from the start pose (rad^2). 0: the answer does not depend on where the neck was, only on the points
+    "posture_weight": 0.003,   # cost of leaving the posture pose (rad^2): the weak term that picks one answer among the poses that aim and fit equally well
+    "posture_pose": None,      # the posture pose, in the order of the active joints; None = the neck's default aim (NECK_SPECS["drive_pose"])
     "near_depth": 0.05,        # m, points closer to the camera than this count as not visible
 }
 
@@ -101,6 +111,7 @@ class _Scratch:
         root (int): Id of the neck's base body.
         neck_geoms (list of int): Ids of the collidable geoms on the neck.
         other_geoms (list of int): Ids of the collidable geoms that are neither on the neck nor on the world body.
+        posture (numpy.ndarray): The posture pose of the cost (joint angles, radians).
     """
 
     def __init__(self, model, data, cfg, neck_specs):
@@ -109,7 +120,7 @@ class _Scratch:
         Args:
             model (mujoco.MjModel): A model with the neck and the camera cfg["camera"].
             data (mujoco.MjData): Data whose qpos is the starting configuration of everything but the neck.
-            cfg (dict): The framing configuration; "camera" is used here.
+            cfg (dict): The framing configuration; "camera" and "posture_pose" are used here.
             neck_specs (dict): Neck specification (robot_specs.NECK_SPECS).
 
         Raises:
@@ -121,6 +132,7 @@ class _Scratch:
         self.ids = neck_ids(model, neck_specs)
         if self.ids is None:
             raise ValueError("the model has no neck")
+        self.posture = np.array(neck_specs["drive_pose"] if cfg.get("posture_pose") is None else cfg["posture_pose"], float)
         self.cam = model.camera(cfg["camera"]).id
         self.res = model.cam_resolution[self.cam]
         self.aspect = float(self.res[0]) / float(self.res[1])
@@ -189,7 +201,7 @@ def _evaluate(sc, q, pts, center, q0):
     """Scores a neck configuration: how badly the points miss the margin frame, how far off-aim, how far from the start pose.
 
     The cost is 100 * the largest violation + 10 * the summed violation + aim_weight * aim error^2 + move_weight * the squared
-    distance of `q` from `q0`. The violation of a point is its largest |u| or |v| beyond 1 - 2 * margin (so a point that
+    distance of `q` from `q0` + posture_weight * the squared distance of `q` from the posture pose. The violation of a point is its largest |u| or |v| beyond 1 - 2 * margin (so a point that
     keeps the margin has none), or 10 if it is closer than near_depth to the camera.
 
     Args:
@@ -213,7 +225,8 @@ def _evaluate(sc, q, pts, center, q0):
     axis = -R[:, 2]
     to_c = center - pos
     aim = float(np.arccos(np.clip(axis @ to_c / max(np.linalg.norm(to_c), 1e-9), -1, 1)))
-    cost = 100.0 * float(viol.max()) + 10.0 * float(viol.sum()) + cfg["aim_weight"] * aim ** 2 + cfg["move_weight"] * float(np.sum((q - q0) ** 2))
+    cost = 100.0 * float(viol.max()) + 10.0 * float(viol.sum()) + cfg["aim_weight"] * aim ** 2 + cfg["move_weight"] * float(np.sum((q - q0) ** 2)) \
+        + cfg["posture_weight"] * float(np.sum((q - sc.posture) ** 2))
     return cost, (pos, R, u, v, depth, aim)
 
 
@@ -221,7 +234,8 @@ def frame_points(model, data, points, cfg=FRAMING_CFG, neck_specs=robot_specs.NE
     """Finds the neck joint targets that frame world points in the neck camera's image.
 
     The search minimizes the cost of _evaluate. Unless `local`, it first scores a grid of cfg["coarse_steps"] values per active
-    joint over the joint ranges and refines the best cfg["n_refine"] grid points; the start pose is always refined too. The
+    joint over the joint ranges and refines the best cfg["n_refine"] grid points; the start pose is always refined too (with move_weight 0 the
+    start only adds one more candidate, so the answer does not depend on it). The
     refinement is the Nelder-Mead simplex method with at most cfg["refine_evals"] cost evaluations, within the joint limits.
     The candidates are then taken in order of cost and the first without a collision is returned; if all collide, the best one is
     returned with its contacts. The caller's `data` is not modified.
@@ -232,7 +246,8 @@ def frame_points(model, data, points, cfg=FRAMING_CFG, neck_specs=robot_specs.NE
         points (dict or array-like): The world points to frame: {name: (x, y, z)} or a sequence of (x, y, z), in metres.
         cfg (dict): Framing configuration. Keys left out are taken from FRAMING_CFG: "camera" (name), "margin" (fraction of the
             image kept free on every side), "coarse_steps", "n_refine", "refine_evals", "contact_margin" (metres), "aim_weight"
-            (per radian squared), "move_weight" (per radian squared) and "near_depth" (metres). Defaults to FRAMING_CFG.
+            (per radian squared), "move_weight" (per radian squared), "posture_weight" (per radian squared), "posture_pose", "simplex_step"
+            (radians) and "near_depth" (metres). Defaults to FRAMING_CFG.
         neck_specs (dict): Neck specification. Defaults to robot_specs.NECK_SPECS.
         start (sequence of float or None): Neck joint angles in radians, in the order of the active joints, from which the cost of
             moving is measured. Defaults to None, which means the current neck angles in `data`.
@@ -276,7 +291,10 @@ def frame_points(model, data, points, cfg=FRAMING_CFG, neck_specs=robot_specs.NE
     else:
         starts = [q0]
     for s in starts + ([q0] if not local else []):
-        r = minimize(f, s, method="Nelder-Mead", bounds=list(zip(lo, hi)), options={"maxfev": cfg["refine_evals"], "xatol": 1e-4, "fatol": 1e-8})
+        opts = {"maxfev": cfg["refine_evals"], "xatol": 1e-4, "fatol": 1e-8}
+        if cfg["simplex_step"]:
+            opts["initial_simplex"] = np.vstack([s, s + cfg["simplex_step"] * np.eye(len(s))])
+        r = minimize(f, s, method="Nelder-Mead", bounds=list(zip(lo, hi)), options=opts)
         cands.append((float(r.fun), np.clip(r.x, lo, hi)))
     cands.sort(key=lambda t: t[0])
 

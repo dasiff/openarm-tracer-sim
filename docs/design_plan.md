@@ -86,7 +86,7 @@ Built once per arm and approach direction, saved.
 
 Fast queries, no brute-force floor search.
 
-- Inputs: task points (the sampled skill path points), each labeled left / right / either (either prefers both), optional required approach direction; furniture map. The VLA chooses the hand itself (prompts do not name the arm), so a skill's points are normally labeled "either"; "left" or "right" only when the arm is fixed (Phase A is left only).
+- Inputs: task points (the sampled skill path points), each labeled left / right / either (either prefers both), optional required approach direction; furniture map. The VLA chooses the hand itself (prompts do not name the arm), so a skill's points are normally labeled "either"; "left" or "right" only when the arm is fixed (Phase A is left only). The output includes each arm's reach score for each point at each stance, because the demo generator picks the arm from it (section 5).
 - For each pedestal height and robot heading (every 5 deg): take each point's required map's horizontal cross-section at the point's height, flip it around the point, overlap all flipped outlines; subtract furniture enlarged by the robot footprint at that heading.
 - Heading robustness: intersect with the regions at neighboring headings (+/-1 deg).
 - Score each floor spot by distance to the nearest edge of the valid region (distance transform); real-hole islands count as edges. Combine multi-point scores by minimum; rank "either" points reachable by both arms higher: a stance where both arms can reach is preferred to one where only one can, because the VLA picks the hand and the stance must work for either.
@@ -94,7 +94,7 @@ Fast queries, no brute-force floor search.
 - Pre-filter: drop stances whose path segments pass through furniture enlarged by an arm's thickness.
 - Verification: check the top ~5 stances with inverse kinematics along the whole sampled path, checking all arm links against furniture and the other arm; keep the best that passes. (RAIL safety filter comes later on top.)
 - Output: ranked stances (position, heading, pedestal height and range, score), top-down picture, and the verification result.
-- Staging: Phase A uses one hand-picked stance per bench end, fixed. Phase B draws each demo's stance at random from the top candidates above a score threshold. The scripted staging of the orchestrator (section 8) later takes its stance from the same map.
+- Staging: Phase A uses one hand-picked stance per bench end, fixed. Phase B draws each demo's stance at random from the top candidates above a score threshold, then the generator picks the arm with the better reach score at that stance (section 5). The scripted staging of the orchestrator (section 8) later takes its stance from the same map.
 - Supersedes the old layout/staging search scripts.
 
 ## 4. Test task and scenes
@@ -117,7 +117,8 @@ Second hollow beaker; liquid stand-in of a few dozen small balls (low bounce, so
 - Every skill ends with the arms at home.
 - Grip force from the per-object table.
 - Phase A variation: incidental only (start pose via home variation, object positions, speed, recovery nudges during free motion recording the clean corrective command, never the noisy one). Left arm only. One fixed hand-picked stance per bench end.
-- Phase B variation: everything in Phase A, plus arm randomized per demo (the prompt does not name it: the VLA chooses the hand itself), elbow posture randomized per episode (mink posture setting), path variation, grasp style within side grasps (grasp height on the body band, wrist rotation), stance drawn from the map's top candidates above a score threshold, domain randomization on.
+- Phase B variation: everything in Phase A, plus the arm chosen by a deterministic rule (below), elbow posture randomized per episode (mink posture setting), path variation, grasp style within side grasps (grasp height on the body band, wrist rotation), stance drawn from the map's top candidates above a score threshold, domain randomization on.
+- Arm choice: a deterministic rule, not a random draw: the arm with the better reach score for the grasp (from the reachability map, section 3, at the demo's stance); ties go to left. Variety comes from the object positions. For the pour, apply the rule to each pick (among the arms still free). The prompt does not name the arm and the VLA chooses the hand itself. Reason: random arms with identical prompts would teach the VLA two equally likely hands, so it might switch between action chunks. [DECIDED]
 - Domain randomization (generator settings, off in Phase A, on in Phase B): physics (friction and masses +/-10-20%, friction also biased lower for wet glass; liquid mass via its setting) and visual (lighting, colors, textures, beaker sizes). Beaker sizes must fit the gripper opening with margin; grasp band scales with height. All randomized values logged per episode.
   - Friction lower limit 0.32 (20 % below the nominal 0.4) for the gripper on glass, unless the grasp is rechecked lower: the 8 N grip force is verified down to 0.32 only (docs/grip_force_sweep.md; 8 N has a static safety factor of 2.6 there).
 - Log every attempt: seed, all randomized settings, outcome, and for failures the failing phase and reason. Discard failures.
@@ -134,7 +135,7 @@ Second hollow beaker; liquid stand-in of a few dozen small balls (low bounce, so
   - Completion trigger: arms only after the beaker has tilted past about 30 deg; fires when it is back upright and still. Timeout if it never fires.
   - Success (sim): >=90% of balls transferred and zero spilled; log both counts every episode; discard any spill.
   - **[PENDING]** Recheck the grip force during the pour: the 8 N glass-beaker force was verified on the grasp-and-lift only, and the pour tilts the beaker and changes the load. 9 N is the fallback (verified on the lift down to friction 0.32; the finger ceiling is 10 N).
-- Prompts are plain task language and do not name the arm: naming the hand is out of distribution for the VLA, which chooses the hand itself. Phase B still randomizes which arm does each demo. Keep every generated dataset forever.
+- Prompts are plain task language and do not name the arm: naming the hand is out of distribution for the VLA, which chooses the hand itself. Which arm does each demo follows the deterministic reach-score rule of section 5. Keep every generated dataset forever.
 
 ## 7. Data pipeline, training, openpi integration
 
@@ -154,7 +155,7 @@ Second hollow beaker; liquid stand-in of a few dozen small balls (low bounce, so
 - Fixed evaluation set per skill (same scenes and seeds), success rate per skill tracked across models, to catch forgetting.
 - Every model records its recipe, dataset versions, base checkpoint.
 - Phase A (pipeline proof): left-arm pick only, about 50 demos, low variation, short pi0.5 fine-tune on PACE. Measure inference time and cost per training hour. In evaluation, test chunk execution of 5, 10, and 25 steps on the same model.
-- Phase B: pick, place, pour, both arms (randomized per demo; the prompts are the same plain task language, so the VLA chooses the hand), full randomization, hundreds of demos per skill plus all earlier data; retrain from the base pi0.5 checkpoint. Include whatever skills are ready; don't wait.
+- Phase B: pick, place, pour, both arms (the arm of each demo follows the reach-score rule of section 5, not a random draw; the prompts are plain task language, so the VLA learns the hand choice from where the objects are), full randomization, hundreds of demos per skill plus all earlier data; retrain from the base pi0.5 checkpoint. Include whatever skills are ready; don't wait.
 - Later retrains: from base on everything, or continue from the latest model with new data plus sampled old data.
 - PACE also for headless demo generation and rendering (fixes VM speed and disk); check offscreen rendering works there. PACE account pending (Shreyas).
 
@@ -171,14 +172,14 @@ Second hollow beaker; liquid stand-in of a few dozen small balls (low bounce, so
 
 Built after Phase B training (build order step 7). Implement MPVI as in the paper first; our own planning extensions (the A* task-level search) are in section 10 (LATER), with their design text kept.
 
-- LLM: breaks the instruction into steps and decides their order, as in the paper. [DECIDED] Prompts to the VLA are plain task language and do not name the arm (section 6). **[PENDING]** The plan said "no LLM fine-tuning"; whether the paper fine-tunes its LLM is not recorded here, so confirm with Dan.
+- LLM: breaks the instruction into steps and decides their order, as in the paper. [DECIDED] Prompts to the VLA are plain task language and do not name the arm (section 6). No LLM fine-tuning here (see the differences below). The question whether the paper fine-tunes its LLM is resolved: it does, on human-annotated BEHAVIOR task plans (Appendix C.1); no annotated lab plans exist for us.
 - Orchestrator: small state machine; runs each step, checks it, updates the world model. Built in layers, starting with a hand-written plan.
 - World model: its own module; object positions and hand contents; sim ground truth now, perception later (section 13).
-- Navigation: the scripted staging (drive, pedestal, arms to home, neck framing; `src/staging_source.py`) stands in for the paper's navigation module for now. It stops at a stance from the reachability map (section 3.4) instead of the paper's handoff distance, because our VLA is arm-only (the paper's is whole-body). Until the stance finder exists the staging pose is a fixed config value (`TASK_CFG`). A* path planning comes with exploration (section 13).
+- Navigation: the scripted staging (drive, pedestal, arms to home, neck framing; `src/staging_source.py`) stands in for the paper's navigation module for now. It stops at a stance from the reachability map (section 3.4) instead of the paper's handoff distance, because our VLA is arm-only (the paper's is whole-body). Until the stance finder exists the staging pose is a fixed config value (`TASK_CFG`); the staging must accept a stance as an input by build order step 4 (section 9), not only by step 7. A* path planning comes with exploration (section 13).
 - Completion: sim success checks for now. Pick and place triggered by gripper events (close-and-hold, open), following the paper's proprioceptive trigger idea; pour uses its tilt-based trigger (section 6).
 - Objects: fixtures from the lab map; small objects from best-known positions (later the knowledge base of section 13); replan when something new or moved is found.
 - Failure: replan from the current state; operator as fallback; never skip a failed step.
-- Differences from the MPVI paper, on record: the only remaining one is that staging uses a reachability-map stance instead of a handoff distance, because our VLA is arm-only. (Temporary stand-ins, not differences by design: scripted staging as the navigation module and sim ground truth for perception, until section 13.)
+- Differences from the MPVI paper, on record: (1) staging uses a reachability-map stance instead of a handoff distance, because our VLA is arm-only; (2) no LLM fine-tuning (the paper fine-tunes on human-annotated BEHAVIOR task plans, Appendix C.1; no annotated lab plans exist). (Temporary stand-ins, not differences by design: scripted staging as the navigation module and sim ground truth for perception, until section 13.)
 
 ## 9. Build order
 
@@ -187,7 +188,7 @@ Built after Phase B training (build order step 7). Implement MPVI as in the pape
 2. Reachability map and stance finder.
 3. Pouring scene and timing test.
 3b. **[DONE]** Grip force: grasp robustness, before demo generation (before step 4). The 5 N grasp (glass beaker, friction 0.4) has a safety factor of about 2 and is marginal: its slip flips between 2.5 mm with no creep and 4.2 mm creeping 0.5 mm/s when an unrelated mass changes by 0.3 kg (11.0 to 11.3 kg battery; docs/TODO.md). Domain randomization lowers the friction, and the pour stresses the grasp more. Steps: (1) a grip force sweep on the grasp-and-lift, 5 to 9 N, with the battery mass at 11.0, 11.3 and 11.6 kg and the friction at 0.4 and 0.32. DONE 2026-10-15 (docs/grip_force_sweep.md): 5 N is marginal at friction 0.4 and loses the beaker at 0.32; 6 N and 7 N fail at 0.32; 8 N and 9 N hold at every perturbation. (2) Recommendation: 8 N per finger (slip 0.1 to 0.6 mm and no creep in all six perturbations; static safety factor 3.3 at friction 0.4 and 2.6 at 0.32, against 2.0 and 1.6 now). (3) David approved 2026-10-15; `GRIP_FORCE_TABLE["glass_beaker"]` is now 8 N. Rerun with 8 N: grasp_lift_test 4/4 (slip 0.15 mm, creep 0), gripper_force_test 29/29, beaker_hollow_test 21/21. Still open for the pour (section 6): it tilts the beaker and was not part of the sweep; recheck the force there, and recheck if the domain randomization goes below friction 0.32.
-4. Demo generator: pick and place first, then pour.
+4. Demo generator: pick and place first, then pour. The staging must accept a stance input by this step (Phase B demos draw their stances from the map), not only by step 7.
 5. Data pipeline and Phase A training.
 6. Phase B training.
 7. MPVI as in the paper (section 8): LLM step order, orchestrator, completion checks, scripted staging as navigation, VLA for manipulation.

@@ -16,8 +16,7 @@ Everything below was only exercised with injected keys (scripted `held()` functi
 
 ## QUESTIONS FOR THE TEAM
 
-- [ ] **Planner** (waiting on: Dan): the algorithmic approach; what MPVI stands for; whether the approach is decided; any paper or draft. Then the inputs and outputs of the planner
-  (including how it chooses the base placement, and what it takes from the scene and the camera).
+- [x] **Planner** (answered by Dan, 2026-10-15): implement MPVI as in the paper first: the LLM decides the step order, the scripted staging stands in for its navigation module, the VLA does the manipulation, no LLM fine-tuning (no annotated lab plans). The A* task-level search is our own extension, LATER. Staging takes a reachability-map stance instead of the paper's handoff distance. Details and build order: `docs/design_plan.md` sections 8 and 9. Still to build (step 7): the LLM step order, the orchestrator and the world model; staging must accept a stance input by build order step 4.
 - [ ] **Neck** (waiting on: the team, via Slack): which 4 SO-101 joints are active (assumed shoulder pan / lift / elbow flex / wrist flex), the real mount location and height
   (now the top of the torso plate, `NECK_SPECS`), and the camera mass. The STS3215 gains and the camera module on the end are placeholders; the neck adds 0.655 kg, which already
   changes the arm-swing transient when the base starts (see the base yaw transient below).
@@ -82,7 +81,7 @@ Everything below was only exercised with injected keys (scripted `held()` functi
   DRIVE..ARMS is not restored (NECK frames it later anyway). A later stage should plan the way back, or ask the operator to return the arm to a safe pose first.
 - [ ] **Real hardware: the operator's gripper commands should carry a force cap.** The keyboard and teleop gripper commands carry no `max_force`, so they reset the cap to the
   ceiling (10 N per finger, a placeholder).
-- [ ] **Reachability map for the planner** (back burner).
+- [ ] **Reachability map and stance finder** (`docs/design_plan.md` section 3, build order step 2): needed by the demo generator's arm rule (the arm with the better reach score for the grasp), by the staging's stance input (step 4) and by MPVI (step 7).
 - [ ] **Stiffer stopped base in sim** (waiting on: Michael, once the real base behaviour is known).
 - [ ] **Remove the test-only switches** `RESTORE_ON_RESUME` and `COMPENSATE_PAUSES` from `src/staging_source.py` into config if they cause confusion (they exist for the control runs of the tests).
 - [ ] **Drive the grippers in teleop.** The solver outputs only the 7 arm joints per side, so the grippers stay on the keyboard in teleop.

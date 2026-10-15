@@ -4,10 +4,11 @@ Test src/neck_framing.frame_points at the beaker task's HANDOFF pose.
 
     MUJOCO_GL=egl python experiments/neck_framing_test.py      (a display is used if there is one)
 
-The robot is placed at the staging pose with the pedestal at its task height and the task arm at its ready pose (set
-directly: the staging sequence does not exist yet). The neck starts at its default aim (drive pose); the framing function
-frames the beaker, the hotplate and the gripper; the eagle frame is rendered before and after and saved to
-data/beaker_hotplate_eagle/. Prints every framed point's pixel position and its margin to the nearest edge.
+The robot is placed at the staging pose with the pedestal at its task height and both arms at the home pose (set
+directly, without running the staging). The neck starts at its default aim (drive pose); the framing function
+frames the beaker, the hotplate and both grippers; the eagle frame is rendered before and after and saved to
+data/beaker_hotplate_eagle/ (or to the folder in the environment variable NECK_FRAMING_OUT). Prints every framed point's pixel position and its margin
+to the nearest edge.
 """
 
 import math
@@ -29,10 +30,10 @@ from src import robot_specs  # noqa: E402
 from src.cameras import CameraRig  # noqa: E402
 from src.neck import neck_ids, set_neck_pose  # noqa: E402
 from src.neck_framing import frame_points, summarize  # noqa: E402
-from src.task_beaker_hotplate import load_task, spawn_and_settle, arm_ids, yaw_to_quat, framing_points  # noqa: E402
+from src.task_beaker_hotplate import load_task, spawn_and_settle, arm_ids, home_targets, yaw_to_quat, framing_points  # noqa: E402
 from src.task_config import TASK_CFG  # noqa: E402
 
-OUT = PROJECT_ROOT / "data" / "beaker_hotplate_eagle"
+OUT = Path(os.environ.get("NECK_FRAMING_OUT", PROJECT_ROOT / "data" / "beaker_hotplate_eagle"))
 
 
 def place_handoff(sim):
@@ -41,11 +42,13 @@ def place_handoff(sim):
     data.qpos[0:7] = [*TASK_CFG["staging_xy"], z, *yaw_to_quat(TASK_CFG["staging_yaw"])]
     for jn in robot_specs.PEDESTAL_SPECS["joints"]:
         data.qpos[model.joint(jn).qposadr[0]] = TASK_CFG["pedestal_q"]
-    ids = arm_ids(model, TASK_CFG["arm"])
-    for a, q in zip(ids["qadr"], TASK_CFG["ready_q"]):
-        data.qpos[a] = q
-    for a in ids["fingers"]:
-        data.qpos[model.jnt_qposadr[model.actuator_trnid[a, 0]]] = 0.044
+    home = home_targets(model, TASK_CFG)
+    for side in ("left", "right"):
+        ids = arm_ids(model, side)
+        for a, q in zip(ids["qadr"], home[side]):
+            data.qpos[a] = q
+        for a in ids["fingers"]:
+            data.qpos[model.jnt_qposadr[model.actuator_trnid[a, 0]]] = 0.044
     set_neck_pose(model, data, robot_specs.NECK_SPECS)
 
 
@@ -73,7 +76,7 @@ def main():
         return img
 
     pts = framing_points(model, data)
-    print(f"{len(pts)} points to frame: beaker and hotplate bounding-box corners, left gripper TCP / hand / finger tips")
+    print(f"{len(pts)} points to frame: beaker and hotplate bounding-box corners, both grippers' TCP / hand / finger tips")
     shot("handoff_neck_drive_pose.png")
     t = time.perf_counter()
     targets, report = frame_points(model, data, pts)
@@ -89,7 +92,8 @@ def main():
     print(f"\n{'point':26s} {'pixel (x, y)':>14s} {'margin to the nearest edge':>28s}")
     for n, p in report["points"].items():
         print(f"{n:26s} ({p['px']:5.0f}, {p['py']:5.0f})   {100 * p['margin']:6.1f}% of the image   {'ok' if p['inside'] else 'OUTSIDE by %.1f%%' % (100 * p['outside_by'])}")
-    print(f"\nsaved {OUT.relative_to(PROJECT_ROOT)}/handoff_neck_framed.png (+ _annotated, and the drive-pose view handoff_neck_drive_pose.png)")
+    shown = OUT.relative_to(PROJECT_ROOT) if OUT.is_relative_to(PROJECT_ROOT) else OUT
+    print(f"\nsaved {shown}/handoff_neck_framed.png (+ _annotated, and the drive-pose view handoff_neck_drive_pose.png)")
 
 
 if __name__ == "__main__":

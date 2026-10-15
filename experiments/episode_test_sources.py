@@ -7,10 +7,17 @@
         runner's success path. Expected episode outcome: SUCCESS. (The hold stage lives in src/task_policy.py.)
     make_grasp_force_stage(model, data, forces=(1.0, 2.0, None), task_cfg=TASK_CFG, move_s=4.0, settle_s=1.0, close_s=3.0, open_s=2.0,
                            measure_s=1.0)
-        An ARM STAGE (test only) for experiments/gripper_force_test.py: from the ready pose it moves the arm to the grasp pose (the
+        An ARM STAGE (test only) for experiments/gripper_force_test.py: from where the arm is (home) it moves via the legacy ready pose to the grasp pose (the
         open fingers straddle the beaker), then closes the gripper on the beaker once per entry of `forces` with
         {"position": 0, "max_force": F} (None = a plain 0: the ceiling), measuring the finger-on-beaker normal force, and opens
         again between the closings. state["results"] has the settled numbers per closing.
+    make_grasp_lift_stage(model, data, force, lift_m=0.10, task_cfg=TASK_CFG)
+        An ARM STAGE (test only) for experiments/grasp_lift_test.py: from home it moves the left arm to the grasp pose (via the legacy ready pose), closes the
+        gripper on the beaker with {"position": 0, "max_force": force}, lifts the closed hand by about lift_m with a scripted joint-space move (the target from a
+        small damped-least-squares IK that keeps the hand's orientation), and measures whether the beaker follows (slip, finger forces). state["summary"] when done.
+    make_clearance_monitor(model, data, every=5)
+        A SOURCE (it commands nothing) that measures, every `every` ticks, the smallest distance from the moving parts of each arm to the bench, the beaker and
+        hotplate, the torso, the pedestal, the base, the neck and the other arm, per staging phase (state["min"]). For the home-pose verification.
     make_kick_source(model, data, phase, delay_s, along_mm, lateral_mm, yaw_deg, task_cfg=TASK_CFG)
         A SOURCE (it commands nothing) that displaces the base once (teleports it by along_mm along the staging heading, lateral_mm
         to the left, and yaw_deg of rotation) delay_s seconds into a staging phase. It was added with the base pose corrections to
@@ -74,7 +81,7 @@ def make_cheat_arm_stage(model, data, delay_s=2.0, task_cfg=TASK_CFG):
     return {"name": "cheat", "step": step, "state": state}
 
 
-def make_grasp_force_stage(model, data, forces=(1.0, 2.0, None), task_cfg=TASK_CFG, move_s=4.0, settle_s=1.0, close_s=3.0, open_s=2.0, measure_s=1.0):
+def make_grasp_force_stage(model, data, forces=(1.0, 2.0, None), task_cfg=TASK_CFG, move_s=6.0, settle_s=1.0, close_s=3.0, open_s=2.0, measure_s=1.0):
     """Makes an arm stage that measures how hard the gripper presses on the beaker for several force limits.
 
     The timeline is: move (ready pose to grasp pose, minimum-jerk interpolation, gripper open), settle (gripper open), then for
@@ -90,7 +97,7 @@ def make_grasp_force_stage(model, data, forces=(1.0, 2.0, None), task_cfg=TASK_C
             position 0 command, i.e. the force ceiling. Defaults to (1.0, 2.0, None).
         task_cfg (dict): The task configuration; uses "arm", "ready_q", "grasp_q" (radians) and "finger_open" (metres, 0.044 if
             missing). Defaults to TASK_CFG.
-        move_s (float): Duration of the move to the grasp pose, in seconds. Defaults to 4.0.
+        move_s (float): Duration of the move to the grasp pose, in seconds. Defaults to 6.0.
         settle_s (float): Pause after the move, in seconds. Defaults to 1.0.
         close_s (float): Duration of each closing, in seconds. Defaults to 3.0.
         open_s (float): Duration of each opening, in seconds. Defaults to 2.0.
@@ -104,7 +111,8 @@ def make_grasp_force_stage(model, data, forces=(1.0, 2.0, None), task_cfg=TASK_C
         values from contact_forces()).
     """
     arm = task_cfg["arm"]
-    ready, grasp = np.array(task_cfg["ready_q"], float), np.array(task_cfg["grasp_q"], float)
+    ready, grasp = np.array(task_cfg["ready_q"], float), np.array(task_cfg["grasp_q"], float)          # the legacy ready pose is the waypoint from home
+    path = {}
     open_g = task_cfg["finger_open"] if "finger_open" in task_cfg else 0.044
     fingers = {b for b in range(model.nbody) if model.body(b).name.startswith(f"openarm_{arm}_") and model.body(b).name.endswith("finger")}
     beaker = model.body("task_beaker").id
@@ -174,7 +182,7 @@ def make_grasp_force_stage(model, data, forces=(1.0, 2.0, None), task_cfg=TASK_C
             return None
         local = el - start
         if kind == "move":
-            q = ready + (grasp - ready) * min_jerk(local / move_s)
+            q = _along(path, obs, arm, ready, grasp, min_jerk(local / move_s))
             return {"mode": "arms", "arm_targets": {arm: [float(v) for v in q]}, "gripper": {arm: open_g}}
         if kind in ("settle", "open"):
             if kind == "open" and state["samples"]:
@@ -218,6 +226,235 @@ def _summarise(samples, segs, state):
             "contact_normal_N_peak": float(max((max(sm["contact"].values()) if sm["contact"] else 0.0) for sm in samples)),
             "actuator_force_N_mean": [float(np.mean([sm["actuator"][i] for sm in samples])) for i in range(2)],
             "finger_q_mm": [1000 * float(np.mean([sm["q"][i] for sm in samples])) for i in range(2)], "n_fingers_in_contact": nf}
+
+
+def _along(path, obs, arm, via, goal, s):
+    """Interpolates the arm's joint targets along start -> via -> goal, by arc length in joint space, for a time fraction already shaped by min_jerk.
+
+    The start is the arm's applied targets at the first call (the home pose when the stage runs after the handoff).
+
+    Args:
+        path (dict): The stage's cache; "pts" and "frac" are set on the first call.
+        obs (dict): The loop's observation; uses obs["applied"]["arm_targets"][arm].
+        arm (str): "left" or "right".
+        via (numpy.ndarray): The waypoint, 7 joint angles in radians.
+        goal (numpy.ndarray): The goal, 7 joint angles in radians.
+        s (float): Fraction 0 to 1 of the path.
+
+    Returns:
+        numpy.ndarray: 7 joint angles in radians.
+    """
+    if "pts" not in path:
+        pts = np.array([np.array(obs["applied"]["arm_targets"][arm], float), via, goal])
+        seg = np.linalg.norm(np.diff(pts, axis=0), axis=1)
+        path["pts"], path["frac"] = pts, np.r_[0.0, np.cumsum(seg) / seg.sum()]
+    pts, frac = path["pts"], path["frac"]
+    i = min(int(np.searchsorted(frac, s, side="right")) - 1, len(pts) - 2)
+    return pts[i] + (s - frac[i]) / (frac[i + 1] - frac[i]) * (pts[i + 1] - pts[i])
+
+
+def make_clearance_monitor(model, data, every=5):
+    """Makes a test source that records the smallest distances of the arms to their surroundings, per staging phase.
+
+    Every `every` ticks, for each arm's moving parts (collision geoms without link0, link1 and link2, which are the fixed shoulder), the smallest distance
+    (mujoco.mj_geomDistance, looked up to 0.3 m) to the geoms of: "bench", "hotplate+beaker", "torso" (openarm_body_link0), "pedestal", "base", "neck",
+    and for "other arm" the geoms of the other arm. Negative means penetration.
+
+    Args:
+        model (mujoco.MjModel): The compiled model (with the neck).
+        data (mujoco.MjData): The simulation data, read.
+        every (int): Measure on every this many calls. Defaults to 5.
+
+    Returns:
+        dict: A source {"name": "clearance", "step": step(obs) -> None, "state": state}. state["min"] is {phase: {group: (smallest distance in metres, the arm
+        geom name, the other geom's body name)}} over the ticks seen in that phase (obs["policy"]["phase"]).
+    """
+    body = lambda g: model.body(int(model.geom_bodyid[g])).name
+    col = [g for g in range(model.ngeom) if model.geom_contype[g] or model.geom_conaffinity[g]]
+    groups = {"bench": [g for g in col if body(g) == "bench"], "hotplate+beaker": [g for g in col if body(g) in ("task_hotplate", "task_beaker")],
+              "torso": [g for g in col if body(g) == "openarm_body_link0"], "pedestal": [g for g in col if body(g).startswith("pedestal_")],
+              "base": [g for g in col if body(g) == "base_link" or body(g).endswith(("_link", "_Link"))], "neck": [g for g in col if body(g).startswith("neck_")]}
+    moving = {sd: [g for g in col if body(g).startswith(f"openarm_{sd}_") and not body(g).endswith(("link0", "link1", "link2"))] for sd in ("left", "right")}
+    state = {"min": {}, "n": 0}
+    ft = np.zeros(6)
+
+    def step(obs):
+        """Measures on every `every`-th call, in every phase after the pedestal one (the arms are tucked before).
+
+        Args:
+            obs (dict): The loop's observation; uses obs["policy"]["phase"].
+
+        Returns:
+            None: This source never commands anything.
+        """
+        state["n"] += 1
+        ep = obs.get("policy")
+        if not ep or state["n"] % every:
+            return None
+        rec = state["min"].setdefault(ep["phase"], {})
+        for sd, other in (("left", "right"), ("right", "left")):
+            for name, targets in list(groups.items()) + [("other arm", moving[other])]:
+                for a in moving[sd]:
+                    for b in targets:
+                        if model.geom_bodyid[a] == model.geom_bodyid[b]:
+                            continue
+                        d = mujoco.mj_geomDistance(model, data, a, b, 0.3, ft)
+                        if name not in rec or d < rec[name][0]:
+                            rec[name] = (float(d), model.geom(a).name, body(b))
+        return None
+
+    return {"name": "clearance", "step": step, "state": state}
+
+
+def make_grasp_lift_stage(model, data, force, lift_m=0.10, task_cfg=TASK_CFG, move_s=6.0, close_s=2.0, hold_s=1.0, lift_s=2.0, end_s=1.5):
+    """Makes an arm stage that grasps the beaker at a force limit and lifts it, and measures whether it holds. Test only.
+
+    Timeline (seconds): move (home -> legacy ready pose -> grasp pose, gripper open) move_s, settle 1, close (position 0 with max_force=force) close_s,
+    hold hold_s (reference), lift (the joint targets move to the IK solution for the hand raised by lift_m, orientation kept) lift_s, end end_s. The stage
+    returns None afterwards. During hold, lift and end it records the beaker's and the hand's heights and the finger and palm normal forces on the beaker.
+
+    Args:
+        model (mujoco.MjModel): The compiled model (the bodies "task_beaker", "openarm_<arm>_hand", "openarm_<arm>_hand_tcp" and the fingers).
+        data (mujoco.MjData): The simulation data, read; the IK works on a copy.
+        force (float): The gripper force limit in newtons per finger (the grip force table's value for the object).
+        lift_m (float): How far to raise the hand, in metres. Defaults to 0.10.
+        task_cfg (dict): The task configuration; uses "arm", "ready_q", "grasp_q" and "finger_open". Defaults to TASK_CFG.
+        move_s (float): Seconds of the move to the grasp pose. Defaults to 6.0.
+        close_s (float): Seconds of the closing. Defaults to 2.0.
+        hold_s (float): Seconds of holding before the lift. Defaults to 1.0.
+        lift_s (float): Seconds of the lift. Defaults to 2.0.
+        end_s (float): Seconds of holding after the lift. Defaults to 1.5.
+
+    Returns:
+        dict: An arm stage {"name": "grasp_lift", "step": step(obs) -> command or None, "state": state}. state["trace"] is a list of rows (time, phase name,
+        beaker z, hand TCP z, finger normal forces) and state["summary"] (set when the timeline ends) has: "force" (N), "lift_commanded_m",
+        "beaker_rise_m" (beaker z at the end minus before the lift), "hand_rise_m", "slip_mm" (how far the beaker slid down in the hand during the lift: hand rise
+        minus beaker rise), "creep_mm_per_s" (how fast it still slides in the last second, the hand standing still), "held" (bool: slip under 3 mm and the
+        beaker follows), "gap_mm_by_s" (the slip in mm at the start of the end hold and once a second after), "finger_normal_N" (mean of each finger's normal force over the end hold), "min_beaker_z" (lowest beaker height from
+        the lift on, to see a drop) and "q_lift" (the IK result, radians).
+    """
+    arm = task_cfg["arm"]
+    ready, grasp = np.array(task_cfg["ready_q"], float), np.array(task_cfg["grasp_q"], float)
+    open_g = task_cfg.get("finger_open", 0.044)
+    arm_ids_ = [model.joint(f"openarm_{arm}_joint{i}").id for i in range(1, 8)]
+    qadr = [int(model.jnt_qposadr[j]) for j in arm_ids_]
+    dadr = [int(model.jnt_dofadr[j]) for j in arm_ids_]
+    lim = model.jnt_range[arm_ids_]
+    tcp, hand = model.body(f"openarm_{arm}_hand_tcp").id, model.body(f"openarm_{arm}_hand").id
+    beaker = model.body("task_beaker").id
+    hand_bodies = {b for b in range(model.nbody) if model.body(b).name.startswith(f"openarm_{arm}_") and model.body(b).name.endswith(("finger", "hand"))}
+    segs = [("move", move_s), ("settle", 1.0), ("close", close_s), ("hold", hold_s), ("lift", lift_s), ("end", end_s)]
+    total = sum(d for _, d in segs)
+    state = {"t0": None, "trace": [], "summary": None, "q_lift": None, "segments": segs, "total_s": total}
+    path, f6 = {}, np.zeros(6)
+
+    def ik_lift():
+        """Joint angles that raise the hand's TCP by lift_m with the same orientation, from the current arm pose (damped least squares on a copy)."""
+        d2 = mujoco.MjData(model)
+        d2.qpos[:] = data.qpos
+        mujoco.mj_kinematics(model, d2)
+        target = d2.xpos[tcp] + np.array([0.0, 0.0, lift_m])
+        R0 = d2.xmat[tcp].reshape(3, 3).copy()
+        jp, jr = np.zeros((3, model.nv)), np.zeros((3, model.nv))
+        for _ in range(200):
+            mujoco.mj_kinematics(model, d2)
+            mujoco.mj_comPos(model, d2)
+            mujoco.mj_jac(model, d2, jp, jr, d2.xpos[tcp], tcp)
+            dR = R0 @ d2.xmat[tcp].reshape(3, 3).T                      # the rotation still to apply
+            rot_err = 0.5 * np.array([dR[2, 1] - dR[1, 2], dR[0, 2] - dR[2, 0], dR[1, 0] - dR[0, 1]])
+            err = np.r_[target - d2.xpos[tcp], rot_err]
+            if np.linalg.norm(err[:3]) < 1e-5 and np.linalg.norm(rot_err) < 1e-4:
+                break
+            J = np.vstack([jp[:, dadr], jr[:, dadr]])
+            dq = J.T @ np.linalg.solve(J @ J.T + 1e-4 * np.eye(6), err)
+            for a, dqi, (lo, hi) in zip(qadr, dq, lim):
+                d2.qpos[a] = float(np.clip(d2.qpos[a] + dqi, lo, hi))
+        return np.array([d2.qpos[a] for a in qadr])
+
+    def normals():
+        """Normal force of each finger / palm body on the beaker, summed over its contacts, in newtons: {body name: N}."""
+        out = {}
+        for i in range(data.ncon):
+            c = data.contact[i]
+            b1, b2 = int(model.geom_bodyid[c.geom1]), int(model.geom_bodyid[c.geom2])
+            if b1 == beaker and b2 in hand_bodies or b2 == beaker and b1 in hand_bodies:
+                mujoco.mj_contactForce(model, data, i, f6)
+                name = model.body(b2 if b1 == beaker else b1).name
+                out[name] = out.get(name, 0.0) + abs(float(f6[0]))
+        return out
+
+    def step(obs):
+        """Returns the command of the current point of the timeline, records the measurements, and sets state["summary"] at the end.
+
+        Args:
+            obs (dict): The loop's observation; uses obs["time"].
+
+        Returns:
+            dict or None: An arms command, or None once the timeline is over.
+        """
+        t = obs["time"]
+        if state["t0"] is None:
+            state["t0"] = t
+        el = t - state["t0"]
+        start = 0.0
+        for kind, dur in segs:
+            if el < start + dur:
+                break
+            start += dur
+        else:
+            return None
+        local = el - start
+        if kind == "move":
+            return {"mode": "arms", "arm_targets": {arm: [float(v) for v in _along(path, obs, arm, ready, grasp, min_jerk(local / move_s))]}, "gripper": {arm: open_g}}
+        if kind == "settle":
+            return {"mode": "arms", "gripper": {arm: open_g}}
+        close_cmd = {"position": 0.0, "max_force": float(force)}
+        if kind == "close":
+            return {"mode": "arms", "gripper": {arm: close_cmd}}
+        state["trace"].append((t, kind, float(data.xpos[beaker][2]), float(data.xpos[tcp][2]), normals()))
+        if kind == "hold":
+            return {"mode": "arms", "gripper": {arm: close_cmd}}
+        if state["q_lift"] is None:
+            state["q_lift"] = ik_lift()
+        q = grasp + (state["q_lift"] - grasp) * (min_jerk(local / lift_s) if kind == "lift" else 1.0)
+        if kind == "end" and local >= end_s - 0.05 and state["summary"] is None:
+            state["summary"] = _lift_summary(state, force, lift_m)
+        return {"mode": "arms", "arm_targets": {arm: [float(v) for v in q]}, "gripper": {arm: close_cmd}}
+
+    return {"name": "grasp_lift", "step": step, "state": state}
+
+
+def _lift_summary(state, force, lift_m):
+    """Condenses the trace of make_grasp_lift_stage into the numbers experiments/grasp_lift_test.py reports.
+
+    Args:
+        state (dict): The stage's state; uses "trace" and "q_lift".
+        force (float): The force limit of the run, newtons.
+        lift_m (float): The commanded lift, metres.
+
+    Returns:
+        dict: See make_grasp_lift_stage.
+    """
+    tr = state["trace"]
+    hold = [r for r in tr if r[1] == "hold"]
+    end = [r for r in tr if r[1] == "end"]
+    z_b0, z_h0 = np.mean([r[2] for r in hold[-20:]]), np.mean([r[3] for r in hold[-20:]])
+    z_b1, z_h1 = np.mean([r[2] for r in end[-20:]]), np.mean([r[3] for r in end[-20:]])
+    names = sorted({k for r in end for k in r[4]})
+    fing = {k: float(np.mean([r[4].get(k, 0.0) for r in end[-20:]])) for k in names}
+    rise_b, rise_h = z_b1 - z_b0, z_h1 - z_h0
+    slip = rise_h - rise_b
+    tail = [r for r in end if r[0] >= end[-1][0] - 1.0]                       # the last second, the hand standing still: the creep of the beaker in the hand
+    creep = float(np.polyfit([r[0] for r in tail], [1000 * (r[3] - r[2]) for r in tail], 1)[0]) if len(tail) > 5 else float("nan")
+    gap0 = np.mean([1000 * (r[3] - r[2]) for r in hold[-20:]])                  # hand-to-beaker height difference before the lift, the reference for the slip
+    gap_series, nxt = [], end[0][0]
+    for r in end:                                                               # the slip (mm) at the start of the end hold and then once a second
+        if r[0] >= nxt:
+            gap_series.append(float(1000 * (r[3] - r[2]) - gap0))
+            nxt += 1.0
+    return {"force": force, "lift_commanded_m": lift_m, "beaker_rise_m": float(rise_b), "hand_rise_m": float(rise_h), "slip_mm": float(1000 * slip),
+            "creep_mm_per_s": creep, "gap_mm_by_s": gap_series, "held": bool(slip < 0.003 and rise_b > 0.9 * rise_h), "finger_normal_N": fing,
+            "min_beaker_z": float(min(r[2] for r in tr if r[1] in ("lift", "end"))), "q_lift": [float(v) for v in state["q_lift"]]}
 
 
 def make_kick_source(model, data, phase, delay_s, along_mm, lateral_mm, yaw_deg, task_cfg=TASK_CFG):

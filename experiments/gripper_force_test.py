@@ -8,7 +8,9 @@ Tests of the gripper force limit (the "max_force" of a gripper command).
    (10 N per finger) it is clipped, omitted it is the ceiling.
 2. The beaker held between the fingers: the arm goes to the grasp pose (the open fingers straddle the beaker) and the gripper is commanded closed three times
    with max_force 1 N, 2 N and none (the ceiling), opening in between. For each, the finger-on-beaker normal force (MuJoCo contact forces) settles at the limit
-   (or, for the ceiling, at what the servo itself gives: kp times the finger's distance from the commanded 0).
+   (or, for the ceiling, at what the servo itself gives: kp times the finger's distance from the commanded 0, clipped at the ceiling).
+   At the ceiling the no-slip solver splits the load unevenly between the fingers, so the mean of the two is checked against the cap tightly (3%) and each
+   finger loosely (10%).
 3. The episode is recorded; max_force changes mid-run. Its replay must be bit-identical.
 """
 
@@ -31,10 +33,10 @@ from src.task_beaker_hotplate import run_beaker_episode as run_episode  # noqa: 
 from episode_test_sources import make_grasp_force_stage  # noqa: E402
 from src.replay import replay_run  # noqa: E402
 from src.task_beaker_hotplate import load_task  # noqa: E402
-from src.task_config import EPISODE_CFG  # noqa: E402
+from src.task_config import BEAKER_CFG, EPISODE_CFG  # noqa: E402
 
 results = []
-BEAKER_KG = 0.15
+BEAKER_KG = BEAKER_CFG["glass_mass"] + BEAKER_CFG["liquid_mass"]        # 0.2 kg: the hollow beaker's glass and liquid
 
 
 def check(name, ok, detail=""):
@@ -89,16 +91,22 @@ def grasp():
         check(f"closing {F}: each finger actuator applies at most the limit ({limit:.2f} N)", all(f <= limit + 1e-6 for f in r["actuator_force_N_mean"]), f"{np.round(r['actuator_force_N_mean'], 4)} N")
         cf = r["contact_normal_N_per_finger_mean"]
         weight_axial = BEAKER_KG * 9.81 * abs(r["closing_axis_z"])        # the beaker's weight along the (slightly tilted) closing axis loads one finger and unloads the other
-        check(f"closing {F}: each finger's contact force is the limit within the beaker's weight along the closing axis (+-{weight_axial:.2f} N)",
-              all(abs(f - limit) <= weight_axial + 0.02 for f in cf) if F is not None else all(abs(f - r["actuator_force_N_mean"][0]) <= weight_axial + 0.02 for f in cf), f"{np.round(cf, 3)} N")
-        check(f"closing {F}: the two fingers' mean contact force is the limit (within 3%)" if F is not None else "closing at the ceiling: the mean contact force equals the servo's own force (within 3%)",
-              abs(np.mean(cf) - (limit if F is not None else np.mean(r["actuator_force_N_mean"]))) <= 0.03 * (limit if F is not None else np.mean(r["actuator_force_N_mean"])), f"mean {np.mean(cf):.3f} N")
+        if F is not None:
+            check(f"closing {F}: each finger's contact force is the limit within the beaker's weight along the closing axis (+-{weight_axial:.2f} N)",
+                  all(abs(f - limit) <= weight_axial + 0.02 for f in cf), f"{np.round(cf, 3)} N")
+            check(f"closing {F}: the two fingers' mean contact force is the limit (within 3%)", abs(np.mean(cf) - limit) <= 0.03 * limit, f"mean {np.mean(cf):.3f} N")
+        else:
+            # At the ceiling the no-slip solver (robot_specs.NOSLIP_ITERATIONS) splits the load unevenly between the fingers (about 1 N at 10 N), so the mean
+            # is held to the cap tightly and each finger loosely.
+            check("closing at the ceiling: the two fingers' mean contact force is the cap (within 3%)", abs(np.mean(cf) - limit) <= 0.03 * limit, f"mean {np.mean(cf):.3f} N of {limit:.2f} N")
+            check("closing at the ceiling: each finger's contact force is within 10% of the cap", all(abs(f - limit) <= 0.10 * limit for f in cf), f"{np.round(cf, 3)} N")
         if F is not None:
             check(f"closing {F}: and the limit binds (the actuators sit at it)", all(abs(f - limit) < 1e-3 for f in r["actuator_force_N_mean"]))
         else:
             e = np.mean(r["finger_q_mm"]) / 1000
-            check("closing at the ceiling: the servo's own force, kp * (distance to the commanded 0), is below the 10 N ceiling",
-                  all(abs(f - kp * e) < 0.05 * kp * e for f in r["actuator_force_N_mean"]) and kp * e < 10.0, f"kp * q = {kp * e:.2f} N")
+            want = min(kp * e, robot_specs.ARM_ACTUATOR_SPECS["fingers"]["force_limit"])
+            check("closing at the ceiling: the servo's own force, kp * (distance to the commanded 0), clipped at the 10 N ceiling (kp 300 asks for 11 N at the beaker's width)",
+                  all(abs(f - want) < 0.05 * want for f in r["actuator_force_N_mean"]) and kp * e > 10.0, f"kp * q = {kp * e:.2f} N, applied {want:.2f} N")
     print("\nreplay of the recording (the limit changes mid-run: 10 -> 1 -> 10 -> 2 -> 10 -> ceiling)")
     stage.clear()                         # the replay builds its own model (about 2 GB): free this one first
     del sim

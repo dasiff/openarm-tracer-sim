@@ -13,6 +13,8 @@ Contents and readers:
     NOSLIP_ITERATIONS: the solver's no-slip post-processing iterations (opt.noslip_iterations), set by src/simulator.py.
     PEDESTAL_SPECS: the stand-in pedestal lift actuator, added by src/pedestal.py. PLACEHOLDER: every number is a guess.
     BASE_CONTACT_SPECS: the six low-friction floor contact spheres of the base, added by src/base_contacts.py.
+    BATTERY_SPECS: the battery pack (Anker SOLIX C800) strapped to the Tracer deck, a box with mass and collisions, added by
+        src/battery.py. PLACEHOLDER: the mount is unconfirmed.
     NECK_SPECS: the SO-101 camera neck, attached by src/neck.py and used by src/neck_framing.py and the control loop.
         PLACEHOLDER: the mounting and the active joints are unconfirmed.
     NECK_AUTO_SPECS: settings of the automatic neck behaviour in src/neck_source.py.
@@ -101,6 +103,30 @@ BASE_CONTACT_SPECS = {
     "points": {"wheel_right": (-0.0184, -0.258, -0.1427), "wheel_left": (-0.0188, 0.259, -0.1427),
                "caster_right_front": (0.2186, -0.200, -0.1427), "caster_left_front": (0.2186, 0.200, -0.1427),
                "caster_right_rear": (-0.291, -0.180, -0.1427), "caster_left_rear": (-0.291, 0.180, -0.1427)},
+}
+
+# Battery pack: Anker SOLIX C800 portable power station (model A1753), strapped to the robot -- PLACEHOLDER MOUNT
+# The pack is an obstacle the arms could hit and 11.3 kg of load on the base, so it is part of the model (src/battery.py adds it at load time). It is a box with
+# uniform density and collisions on. The size and mass are Anker's specification (the size includes the handles; the mass is the net weight, 24.9 lb).
+# The mount is NOT confirmed (asked of the team); the placeholder is on the Tracer deck behind the pedestal, flat (resting on its 384 x 208 mm base), the long side
+# across the robot's width, the front panel (the ports) facing backward. Measured on the model (base_link frame, x forward, y left, z up):
+#   * the pedestal's bottom section is 150 x 150 mm around the origin, so its rear face is at x = -0.075;
+#   * the deck is flat from x = -0.295 forward, then a bevel drops 30 mm to the rear tip at x = -0.363; two rails (16-18 mm high) run front to back at y = -0.10
+#     and +0.11, so the pack rests on the rail tops (z = 0.0177);
+#   * the pack lies fully on the flat deck: front face 8 mm behind the pedestal (x = -0.083), rear face 4 mm inside the end of the flat deck (x = -0.291),
+#     which makes the centre x = -0.083 - 0.208 / 2 = -0.187.
+# Nothing in the model comes closer than 138 mm (arms, hanging at rest at the lowest pedestal) or 81 mm (torso at the lowest pedestal).
+#   name: the body's and the geom's name.   mount_body: the body it is welded to (a child body of its own: base_link has an explicit inertial, so a geom mass on it
+#   would be ignored).   size: length, depth, height in metres along the box's own x, y, z axes.   mass: kg.   pos, quat: the box centre and orientation in
+#   the mount body's frame (the quaternion is a 90 degree turn about z, so the length runs across the robot and the box's +y face, the front panel, faces -x).
+BATTERY_SPECS = {
+    "name": "battery",
+    "mount_body": "base_link",
+    "size": (0.384, 0.208, 0.244),
+    "mass": 11.3,
+    "pos": (-0.187, 0.0, 0.1397),
+    "quat": (0.7071067811865476, 0.0, 0.0, 0.7071067811865476),
+    "rgba": (0.15, 0.55, 0.30, 1.0),
 }
 
 # Camera neck: an SO-101 arm carrying the eagle camera -- PLACEHOLDER.

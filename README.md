@@ -109,6 +109,7 @@ openarm-tracer-sim/
 │   ├── keyboard_source.py, teleop_source.py, policy_source.py   # command sources
 │   ├── glfw_viewer.py       # Window, HUD, camera insets, recorder, snapshots
 │   ├── neck.py, neck_framing.py, neck_source.py   # camera neck: attach the SO-101 at load, frame points, auto follow / look-ahead
+│   ├── battery.py           # The battery pack (Anker SOLIX C800, 11.3 kg box on the deck behind the pedestal, BATTERY_SPECS; mount is a placeholder)
 │   ├── face.py              # The robot's face: a visual-only head at the end of the neck, neutral / smile images from assets/private/face/ (git-ignored)
 │   ├── staging_source.py    # Scripted staging: DRIVE -> PEDESTAL -> ARMS -> NECK -> DONE (HANDOFF), beaker-on-hotplate task
 │   ├── sequential_policy.py # Generic policy of stages that run one after the other (any navigation stage, then any manipulation stage); hold / request-operator stages

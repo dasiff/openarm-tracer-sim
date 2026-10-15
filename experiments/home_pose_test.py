@@ -6,9 +6,10 @@ hotplate and both grippers, and the optional random variation of the home pose.
     MUJOCO_GL=egl python experiments/home_pose_test.py [--out DIR]
 
 1. A headless staging episode with the hold arm stage and the clearance monitor (experiments/episode_test_sources.make_clearance_monitor):
-   - the staging finishes without an error and nothing but the intended things touches (no contacts in any phase);
+   - the staging finishes without an error and nothing but the intended things touches (no contacts in any phase, and an explicit check that nothing
+     touches the battery pack);
    - at the handoff both arms are within the ARMS tolerance of the configured home pose, with the fingers open;
-   - the smallest distances of the moving arm parts to the bench, the beaker and hotplate, the torso, the pedestal, the base, the neck and the other arm
+   - the smallest distances of the moving arm parts to the bench, the beaker and hotplate, the torso, the pedestal, the base, the neck, the battery pack and the other arm
      over ARMS, CORRECT_ARMS, NECK and DONE stay above the minimums below (they are printed);
    - the neck framing: all points (beaker and hotplate corners, both grippers' TCP, hand and finger tips) are inside the image with the 10 % margin;
      rays from the eagle camera to the beaker's and the hotplate's corners and centres are not blocked by any part of the robot.
@@ -48,7 +49,7 @@ from src.task_beaker_hotplate import framing_points, home_targets, load_task, ru
 from src.task_config import EPISODE_CFG, STAGING_CFG, TASK_CFG  # noqa: E402
 
 results = []
-MIN_CLEARANCE = {"bench": 0.040, "hotplate+beaker": 0.040, "torso": 0.030, "pedestal": 0.030, "base": 0.030, "neck": 0.040, "other arm": 0.040}   # m, in ARMS and after
+MIN_CLEARANCE = {"bench": 0.040, "hotplate+beaker": 0.040, "torso": 0.030, "pedestal": 0.030, "base": 0.030, "neck": 0.040, "battery": 0.040, "other arm": 0.040}   # m, in ARMS and after
 # (the torso value is 30 mm because the first ARMS tick is the old hanging rest pose, 39 mm from the torso; the home pose itself is 84 mm)
 PHASES = ("ARMS", "CORRECT_ARMS", "NECK", "DONE")
 
@@ -111,6 +112,8 @@ def staging(sim):
     s, snap, mins = episode(sim, TASK_CFG, "home")
     check("the staging finished without an error", s["staging_error"] is None and s["handoff_time"] is not None, str(s["staging_error"]))
     check("no contacts in any phase", not s["contacts_by_phase"], str({k: [c["pair"] for c in v] for k, v in s["contacts_by_phase"].items()}))
+    bat = {k: [c["pair"] for c in v if any(robot_specs.BATTERY_SPECS["name"] in n for n in c["pair"])] for k, v in s["contacts_by_phase"].items()}
+    check("nothing touches the battery pack in any phase", not any(bat.values()), str({k: v for k, v in bat.items() if v}))
     for sd in ("left", "right"):
         err = np.abs(snap["q"][sd] - np.array(TASK_CFG[f"home_q_{sd}"])).max()
         check(f"{sd} arm within the ARMS tolerance ({STAGING_CFG['arms_tol']} rad) of home at the handoff", err < STAGING_CFG["arms_tol"], f"max joint error {math.degrees(err):.2f} deg")
@@ -232,6 +235,7 @@ def varied_episode(sim, deg=3.0):
     s, snap, mins = episode(sim, cfg, "varied home")
     check("the staging finished without an error", s["staging_error"] is None and s["handoff_time"] is not None, str(s["staging_error"]))
     check("no contacts in any phase", not s["contacts_by_phase"], str(s["contacts_by_phase"]))
+    check("nothing touches the battery pack in any phase", not any(robot_specs.BATTERY_SPECS["name"] in n for v in s["contacts_by_phase"].values() for c in v for n in c["pair"]))
     drawn = home_targets(sim.model, cfg)
     for sd in ("left", "right"):
         err = np.abs(snap["q"][sd] - drawn[sd]).max()

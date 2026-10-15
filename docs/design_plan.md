@@ -26,6 +26,10 @@ Status markers:
 - Arms on MuJoCo position actuators.
 - Arm targets between commands: "interpolate" (default) or "hold" setting; arms and grippers only.
 - Placeholder pedestal lift actuator, passed by every task, launcher and replay entry point (constructor default is off). [DONE]
+- Battery pack: Anker SOLIX C800 (model A1753) strapped to the robot, a box in the model (`src/battery.py`, `BATTERY_SPECS` in `src/robot_specs.py`). [DONE]
+  - 384 x 208 x 244 mm (Anker spec, includes handles), 11.3 kg uniform density (Anker net weight), collisions on, its own welded body on base_link (base_link has an explicit inertial, so a geom mass on it is ignored). On by default (`RobotSimulator(battery=True)`); in the recordings' specs snapshot.
+  - Mount: [PENDING] the team (section 11). Placeholder: fully on the flat part of the Tracer deck behind the pedestal, flat, long side across the width, front panel facing backward. The flat deck runs 220 mm behind the pedestal's rear face (x = -0.075 to -0.295 in the base_link frame), then a 60 mm bevel drops 30 mm to the rear tip; the pack's front face is 8 mm behind the pedestal and its rear face 4 mm inside the end of the flat deck.
+  - Checked with the placeholder mount: arms never closer than 138 mm (rest pose, lowest pedestal; 490 mm or more at home); 20,000 random arm and pedestal configurations within the joint limits, none within 40 mm; the torso 81 mm at the lowest pedestal; not in any of the three camera views (rendered); centre of mass 26 mm rearward and 23 to 60 mm lower; base lean unchanged (0.00 deg; rear caster load 90 -> 128 N). `home_pose_test` has a battery clearance group (40 mm) and a no-contact check. Recheck all of it if the real mount differs.
 - Base lean fix: low-friction contact spheres at wheels and casters (supersedes the old cylinder-wheel plan).
 - Home pose ("waiter pose"): left (12.5, 0, 0, 120, 0, 0, 15) deg, right mirrored; staging ends at home; neck frames beaker, hotplate, both grippers. Home variation setting, off by default.
 - Hollow beaker built at load time from config (24 segments, 100 g glass + 100 g liquid mass setting); fingers and palm against beaker at friction 0.4 via explicit contact pairs.
@@ -57,7 +61,7 @@ Built once per arm and approach direction, saved.
 
 - Stored as cubes, relative to that arm's shoulder (pedestal height shifts it vertically). Left and right computed separately (not mirrored; they differ about 1 cm).
 - Grasps that count: gripper within about 5 deg of level, upright beaker, side grasp. Approach directions every 30 deg, each accepting +/-15 deg.
-- Only configurations with >=10 deg margin from every joint limit and no self-collision.
+- Only configurations with >=10 deg margin from every joint limit and no self-collision, and no collision with the battery pack (with the placeholder mount no arm configuration comes near it).
 - Build steps:
   - a. Sample configurations with the batch forward-kinematics engine; keep those meeting the grasp rules.
   - b. Mark 1 cm cubes containing kept samples.
@@ -182,6 +186,7 @@ Built after training Phase A.
 
 0. Finish current branch (baselines, merge). Baselines done (ab903d0); merge pending.
 1. Robot face. [DONE]
+1b. Battery pack on the deck (an obstacle for the reachability map, so it comes first). [DONE]
 2. Reachability map and stance finder.
 3. Pouring scene and timing test.
 4. Demo generator: pick and place first, then pour.
@@ -217,6 +222,11 @@ Built after training Phase A.
 - Base: how the real Tracer holds position when stopped
 - Base stopping accuracy, position and heading (Michael)
 - Pedestal: real lift specs
+- Pedestal base plate: real size, and whether it mounts on the Tracer deck. The sim has no base plate (only the 150 x 150 mm bottom section); a larger plate may leave no room behind the pedestal for the battery (the placeholder has 220 mm of flat deck behind the pedestal for the 208 mm pack)
+- Pedestal lift: real travel (the sim has 456 mm of top travel from a 0.8 m raised mast top)
+- Pedestal: shoulder height above the top plate (the sim has the shoulder joint axis 698 mm above the torso origin, which sits 750 mm above the deck when raised)
+- Pedestal: the lift column model (the sim's three nested sections, their sizes and masses are estimates)
+- Battery: real mount (position, orientation, strap hardware) and the pack's real clearance to the pedestal and the deck edge
 - Localization sensors: which the robot will have (lidar, depth cameras, wheel odometry access)
 - Finger pad torsional (twisting) friction on the real gripper (sim currently 0.005)
 

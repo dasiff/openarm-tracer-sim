@@ -1,7 +1,7 @@
 """Generic MuJoCo robot simulator — single environment controller for any scene.
 
 RobotSimulator loads a scene file that includes the Tracer mobile base with the OpenArm bimanual arms, adds the parts that are
-not in the robot XML at load time (arm and finger position actuators, the optional pedestal lift, the camera neck and the
+not in the robot XML at load time (arm and finger position actuators, the battery pack, the optional pedestal lift, the camera neck and the
 cameras, all through MjSpec and configured by src/robot_specs.py), compiles the model and offers stepping, resetting and
 observation methods. Scene-specific logic does not belong here.
 
@@ -14,6 +14,7 @@ import numpy as np
 from src import robot_specs
 from src.arm_actuators import add_arm_actuators
 from src.base_contacts import add_base_contacts
+from src.battery import add_battery
 from src.cameras import add_cameras, make_offscreen_big_enough
 from src.face import Face, add_face, is_enabled
 from src.neck import add_neck
@@ -39,10 +40,10 @@ class RobotSimulator:
 
     def __init__(self, model_path: str = None, track_bodies: list[str] = None,
                  cameras: list[dict] = None, pedestal_lift: dict = None,
-                 neck=True, spec_hooks: list = None, face=None):
+                 neck=True, spec_hooks: list = None, face=None, battery=True):
         """Loads the scene, adds the actuators, neck and cameras, compiles the model and creates its data.
 
-        The parts are added in this order: the arm and finger position actuators, the base contacts, the pedestal lift, the neck, the cameras, the face (src/face.py), then
+        The parts are added in this order: the arm and finger position actuators, the base contacts, the battery pack, the pedestal lift, the neck, the cameras, the face (src/face.py), then
         the scene's own `spec_hooks` (the beaker task builds its beaker this way). The
         physics timestep is then set to robot_specs.SIMULATION_TIMESTEP (a note is printed if the XML had another one). A summary
         of the loaded model is printed.
@@ -67,6 +68,8 @@ class RobotSimulator:
                 pass cameras without it). Defaults to True.
             face (bool or None): Whether to add the visual-only head with the face at the end of the neck (src/face.py, robot_specs.FACE_CFG). None follows
                 face.is_enabled() (FACE_CFG["enabled"], or the --no-face switch); it needs the neck. Defaults to None.
+            battery (bool or dict or None): The battery pack on the deck (src/battery.py, robot_specs.BATTERY_SPECS): True means BATTERY_SPECS, a dict means
+                those specifications, None or False means no battery. It adds a body and no joint or actuator. Defaults to True.
             spec_hooks (list of callable or None): Functions hook(spec) that change the mujoco.MjSpec after everything above has been added and before it is
                 compiled; for parts that belong to one scene, not to the robot (src/beaker.add_hollow_beaker). Defaults to None (none).
 
@@ -89,6 +92,8 @@ class RobotSimulator:
         spec = mujoco.MjSpec.from_file(str(model_path))
         add_arm_actuators(spec)
         add_base_contacts(spec, robot_specs.BASE_CONTACT_SPECS)
+        if battery:
+            add_battery(spec, robot_specs.BATTERY_SPECS if battery is True else battery)
         if pedestal_lift:
             add_pedestal_lift(spec, pedestal_lift)
         if neck:

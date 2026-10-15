@@ -203,11 +203,11 @@ def specs_snapshot():
     """Collects the robot_specs values that a replay needs or should notice a change in.
 
     Returns:
-        dict: The JSON-ready (see jsonable()) values of "CAMERA_SPECS", "PEDESTAL_SPECS", "NECK_SPECS", "CAMERA_HZ" (camera
+        dict: The JSON-ready (see jsonable()) values of "CAMERA_SPECS", "PEDESTAL_SPECS", "NECK_SPECS", "BATTERY_SPECS", "CAMERA_HZ" (camera
         frame rate in hertz) and "PHYSICS_HZ" (physics step rate in hertz) from src/robot_specs.py.
     """
     return jsonable({"CAMERA_SPECS": robot_specs.CAMERA_SPECS, "PEDESTAL_SPECS": robot_specs.PEDESTAL_SPECS,
-                     "NECK_SPECS": robot_specs.NECK_SPECS, "CAMERA_HZ": robot_specs.CAMERA_HZ, "PHYSICS_HZ": robot_specs.PHYSICS_HZ})
+                     "NECK_SPECS": robot_specs.NECK_SPECS, "BATTERY_SPECS": robot_specs.BATTERY_SPECS, "CAMERA_HZ": robot_specs.CAMERA_HZ, "PHYSICS_HZ": robot_specs.PHYSICS_HZ})
 
 
 def _git_info():

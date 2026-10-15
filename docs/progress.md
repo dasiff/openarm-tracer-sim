@@ -7,6 +7,9 @@ GRIP_FORCE_TABLE glass_beaker 5 -> 8 N (approved by David 2026-10-15; sweep docs
 Earlier (one line): battery pack DONE (BATTERY_SPECS, src/battery.py, baselines regenerated, tests pass).
 Merge DONE and pushed 2026-10-15: origin/main = main = b884ea6 (plain fast-forward from fe8c3d8; 11 commits: the 7 topic commits of the home pose / hollow beaker / face / neck work, then battery pack, new baselines, grip force 8 N, progress log). The local branches home-pose-hollow-beaker and squash/home-pose-hollow-beaker are deleted; local tags kept and NOT pushed: backup/main-before-cleanup-2026-10-15 (6213de1, the old 27-commit main) and backup/home-pose-hollow-beaker-full (b18e933, the original 38 commits).
 
+## Done (docs only, local commit, NOT pushed): design plan updated for Dan's direction
+Section 8 is now MPVI as in the paper (LLM decides the order; scripted staging stands in for navigation; the A* task-level search moved to section 10 LATER with its text); prompts no longer name the arm (sections 3.4, 5, 6, 7, 8); new section 13 (exploration and object localization; numbered 13 to avoid renumbering 9-12); VLA arm-only (7.3) with the base-adjustment option in LATER; build order (section 9) revised. Conflicts found are listed in the chat summary (planner timing, random arm vs VLA choice, fixed staging stance in the code, stale docs/TODO.md planner item).
+
 ## Open
 - Nothing pending. docs/design_plan.md written (blockers resolved by the user: camera rates, face marked DONE, neck added to section 1, wrist camera and camera model in section 11, camera-tuned tests in LATER). Every task's commit updates the plan's status markers.
 - Camera parameters check answered in chat: all three policy cameras are in CAMERA_SPECS (+ ORBBEC_RESOLUTION / ORBBEC_FOVY_DEG) in src/robot_specs.py; the eagle camera's real pose also depends on NECK_SPECS and the vendored SO-101 XML; names are hard-coded in a few places.

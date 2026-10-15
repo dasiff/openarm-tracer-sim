@@ -43,7 +43,7 @@ Status markers:
   - Look-ahead while driving.
   - Follow only in unrecorded runs.
   - Neck keys disabled when recording.
-  - New baselines (ab903d0) are the reference.
+  - New baselines (regenerated 2026-10-15 with the battery pack; the earlier set was ab903d0) are the reference.
 
 ## 2. Robot face [DONE]
 
@@ -184,7 +184,7 @@ Built after training Phase A.
 
 ## 9. Build order
 
-0. Finish current branch (baselines, merge). Baselines done (ab903d0); merge pending.
+0. Finish current branch (baselines, merge). Baselines done (regenerated with the battery pack, 2026-10-15); merge pending.
 1. Robot face. [DONE]
 1b. Battery pack on the deck (an obstacle for the reachability map, so it comes first). [DONE]
 2. Reachability map and stance finder.

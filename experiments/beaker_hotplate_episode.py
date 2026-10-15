@@ -16,6 +16,9 @@ Run beaker-on-hotplate episodes (src/episode_runner.py): the controller in auto 
 --repeat N      N episodes in a row on the SAME model (reset by mj_resetData); the logs are compared byte for byte.
 --cross-check   also run one episode on a freshly loaded model (the first model is dropped first, to save memory) and compare it as well.
 --record        record each episode (physics inputs + verification hashes) in DIR/run<k>/recording, for experiments/replay_run.py.
+--no-face       leave out the robot's head and face (visual only: the viewer shows it, the policy cameras never do; it smiles when the success check passes).
+--stop-after-handoff S   end S seconds after the handoff (outcome STAGING_COMPLETE); the default is 2 s with --viewer and the hold arm stage in auto mode.
+                After a success the episode runs 2 more seconds (EPISODE_CFG["success_linger_s"]) so the smile shows, then stops.
 --out DIR       default data/beaker_hotplate_episodes/<auto_<arm stage> | teleop>[_viewer]; each episode goes to DIR/run<k>.
 The HANDOFF eagle frame of the first episode is also copied to data/beaker_hotplate_eagle/episode_handoff.png.
 """
@@ -37,6 +40,7 @@ if "--viewer" not in sys.argv and not os.environ.get("DISPLAY"):
 
 import glfw  # noqa: E402
 
+from src import face as face_mod  # noqa: E402
 from src.episode_runner import run_episode  # noqa: E402
 from episode_test_sources import make_cheat_arm_stage  # noqa: E402
 from src.sequential_policy import make_request_operator_stage  # noqa: E402
@@ -105,20 +109,29 @@ def main():
     ap.add_argument("--repeat", type=int, default=1)
     ap.add_argument("--cross-check", action="store_true")
     ap.add_argument("--out")
+    ap.add_argument("--no-face", action="store_true", help="leave the robot's head and face out of the model (it is visual only; it shows in the viewer, never to a policy camera)")
+    ap.add_argument("--stop-after-handoff", type=float, default=None, metavar="S",
+                    help="end the episode S seconds after the handoff (outcome STAGING_COMPLETE). Default: 2 with --viewer and the hold arm stage in auto mode, else the episode runs on")
     ap.add_argument("--record", action="store_true", help="record each episode (physics inputs + verification hashes) in DIR/run<k>/recording for experiments/replay_run.py")
     args = ap.parse_args()
+    if args.stop_after_handoff is None and args.viewer and args.mode == "auto" and args.arm_stage == "hold":
+        args.stop_after_handoff = 2.0                       # the hold stage never finishes by itself: stop shortly after the staging is done
+    if args.no_face:
+        face_mod.set_enabled(False)
     out = Path(args.out) if args.out else PROJECT_ROOT / "data" / "beaker_hotplate_episodes" / (("teleop" if args.mode == "teleop" else "auto_" + args.arm_stage) + ("_viewer" if args.viewer else ""))
     runs = []
+    model_face = [None]                                   # the model's Face (None without a head), given to the runner
 
     def one(model, data, k, viewer=None, held=None):
         d = out / f"run{k}"
         summary = run_episode(make_task(ARM_STAGES[args.arm_stage]), model, data, mode=args.mode, viewer=viewer, out_dir=d, handoff_frame=d / "handoff_eagle.png", held=held,
-                              record_dir=d / "recording" if args.record else None)
+                              record_dir=d / "recording" if args.record else None, face=model_face[0], stop_after_handoff_s=args.stop_after_handoff)
         show(summary, f"{args.mode}{'/' + args.arm_stage if args.mode == 'auto' else ''} episode {k}" + (" (viewer)" if viewer else " (headless)"))
         runs.append(d)
 
     sim = load_task(cameras=True)
     model, data = sim.model, sim.data
+    model_face[0] = sim.face if sim.face.present else None
     viewer = held = None
     if args.viewer:
         viewer = make_glfw_viewer(model, data, {"win": (1280, 960), "vsync": 0, "view_shadows": False, "shadowsize": None, "hud": True, "insets": True,
@@ -136,6 +149,7 @@ def main():
             del sim, model, data
             gc.collect()
             sim = load_task(cameras=True)
+            model_face[0] = sim.face if sim.face.present else None
             one(sim.model, sim.data, len(runs) + 1)
     if viewer is not None:
         viewer["close"]()

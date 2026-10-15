@@ -349,7 +349,8 @@ def make_task(arm_stage=None, task_cfg=TASK_CFG, staging_cfg=STAGING_CFG, episod
             "limits": dict(episode_cfg), "log_extras": log_extras,
             "framing_points": lambda model, data: framing_points(model, data, task_cfg, beaker_cfg),
             "handoff_camera": "eagle_cam", "handoff_label": "DONE",
-            "recipe": {"entry": "src.task_beaker_hotplate:rebuild_task", "cfg": {"task_cfg": task_cfg, "beaker_cfg": beaker_cfg}},
+            "recipe": {"entry": "src.task_beaker_hotplate:rebuild_task", "cfg": {"task_cfg": task_cfg, "beaker_cfg": beaker_cfg},
+                       "success": "src.task_beaker_hotplate:check_success"},       # replay: the success check that switches the face to the smile
             "meta": {"task_cfg": task_cfg, "staging_cfg": staging_cfg, "episode_cfg": episode_cfg}}
 
 

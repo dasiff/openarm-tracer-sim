@@ -45,11 +45,27 @@ from src import robot_specs
 from src.base_control import base_yaw
 from src.cameras import CameraRig
 from src.control_loop import _headless_context, run_loop
+from src import face as face_mod
 from src.run_record import (describe_state_diff, get_state, jsonable, load_recording, model_hash, new_state_buffer, specs_snapshot,
                             state_hash)
 from src.simulator import RobotSimulator
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
+
+
+def _load_entry(spec):
+    """Imports the function named "module:function".
+
+    Args:
+        spec (str or None): The name, or None.
+
+    Returns:
+        callable or None: The function; None if `spec` is None.
+    """
+    if not spec:
+        return None
+    module, func = spec.split(":")
+    return getattr(__import__(module, fromlist=[func]), func)
 
 
 def build_model(meta):
@@ -162,7 +178,7 @@ class PngFrames:
 
 
 def replay_run(run_dir, out_dir=None, cameras=None, video="preview", hz=30.0, size=None, shadows="policy", codec="mp4v", quality=None,
-               verify=True, max_ticks=None, render_ticks=None, quiet=False, name="viewer", after_handoff_s=None, legend_extra=None):
+               verify=True, max_ticks=None, render_ticks=None, quiet=False, name="viewer", after_handoff_s=None, legend_extra=None, face=None):
     """Replays a recorded run: verifies its states and optionally renders its cameras.
 
     The recording is rebuilt and re-simulated through src/control_loop.run_loop (see the module docstring for what is checked and
@@ -194,6 +210,9 @@ def replay_run(run_dir, out_dir=None, cameras=None, video="preview", hz=30.0, si
         name (str): "viewer" mode only: the file stem of the MP4, the handoff PNG, the frame table and the report. Defaults to "viewer".
         after_handoff_s (float or None): Stop the replay (and the video) this many seconds of sim time after the handoff, which is the
             first label of the recording that equals its meta "handoff_label" ("DONE" for older recordings); combined with `max_ticks` by taking the smaller. Defaults to None.
+        face (bool or None): Whether the rebuilt model has the robot's head and face (src/face.py), which only the "viewer" video shows (it smiles from the tick
+            at which the task's success check first passes, if the recording's recipe names one). None follows FACE_CFG / the --no-face switch. The model hash that
+            verifies the replay does not depend on it. Defaults to None.
         legend_extra (list or None): "viewer" mode only: extra (key, label) pairs for the key legend of the status panel; None
             means the keys of the episode viewer for the recorded mode. Defaults to None.
 
@@ -239,7 +258,15 @@ def replay_run(run_dir, out_dir=None, cameras=None, video="preview", hz=30.0, si
 
     if specs_snapshot() != meta["robot_specs"]:
         report["warnings"].append("robot_specs differ from the recording's (the model hash below says whether the model changed)")
-    model, data, reset = build_model(meta)
+    previous_face = face_mod.get_override()
+    if face is not None:
+        face_mod.set_enabled(face)
+    try:
+        model, data, reset = build_model(meta)
+    finally:
+        face_mod.set_enabled(previous_face)
+    head = face_mod.Face(model)
+    smile_check = _load_entry(meta["model"].get("success")) if head.textured and isinstance(meta.get("model"), dict) else None
     if model_hash(model) != meta["model_sha256"]:
         raise ReplayMismatch("the rebuilt model differs from the recorded one (model_sha256): the scene, robot specs or MuJoCo changed")
     if mujoco.__version__ != meta["mujoco"] or meta["machine"] != __import__("platform").machine():
@@ -404,6 +431,8 @@ def replay_run(run_dir, out_dir=None, cameras=None, video="preview", hz=30.0, si
             frame (int): The control tick that just finished, counted from 0.
             data_ (mujoco.MjData): Data after that tick's physics steps.
         """
+        if smile_check is not None and not head.smiling and (handoff_tick is None or frame >= handoff_tick) and smile_check(model, data_)[0]:
+            head.set_smile(True)                                     # as the live episode did, on the tick the success check first passed
         if not verify:
             return
         get_state(model, data_, buf)

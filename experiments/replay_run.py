@@ -43,6 +43,7 @@ def main():
     ap.add_argument("--size", help="WxH override of the camera resolution (default: as recorded, 640x480)")
     ap.add_argument("--shadows", choices=["policy", "on", "off"], default="policy",
                     help="policy: each camera as the policy sees it (robot_specs.CAMERA_SPECS); on / off: force")
+    ap.add_argument("--no-face", action="store_true", help="leave the robot's head and face out of the rebuilt model (only the viewer video shows them)")
     ap.add_argument("--codec", default="mp4v", help="OpenCV fourcc of the videos")
     ap.add_argument("--quality", type=int, default=None, help="0-100 writer quality, if the codec honours it")
     ap.add_argument("--max-ticks", type=int, default=None, help="stop the replay after this many ticks")
@@ -55,7 +56,7 @@ def main():
     size = tuple(int(v) for v in args.size.lower().split("x")) if args.size else None
     rep = replay_run(run_dir, out_dir=out, cameras=args.cameras, video=args.video, hz=args.hz, size=size, shadows=args.shadows, codec=args.codec,
                      quality=args.quality, max_ticks=args.to_tick + 1 if args.to_tick is not None and args.max_ticks is None else args.max_ticks,
-                     render_ticks=(args.from_tick, args.to_tick if args.to_tick is not None else 10 ** 12), name=args.name, after_handoff_s=args.after_handoff)
+                     render_ticks=(args.from_tick, args.to_tick if args.to_tick is not None else 10 ** 12), name=args.name, after_handoff_s=args.after_handoff, face=False if args.no_face else None)
     sys.exit(0 if rep["ok"] else 1)
 
 

@@ -389,7 +389,12 @@ def main():
                              "with experiments/replay_run.py (video of the policy cameras, state check)")
     parser.add_argument("--no-preview", action="store_true",
                         help="teleop: don't show the live camera window")
+    parser.add_argument("--no-face", action="store_true",
+                        help="leave the robot's head and face out of the model (visual only: the viewer shows it, the policy cameras never do)")
     args = parser.parse_args()
+    if args.no_face:
+        from src import face
+        face.set_enabled(False)
     if args.mode == "auto":
         parser.error("--mode auto is a placeholder for a future policy and "
                      "is not implemented yet")

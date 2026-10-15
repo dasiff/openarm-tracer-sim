@@ -34,7 +34,8 @@ import numpy as np
 
 from src import robot_specs
 from src.alert_sound import play_alert
-from src.viewer_layout import (FOVY_DEG, banner_bitmap, hud_bitmap, hud_key_list, hud_position, hud_rows, inset_layout, inset_tile,
+from src.face import settle_renderer, show_face_group
+from src.viewer_layout import (FOVY_DEG, banner_bitmap, hud_bitmap, hud_key_list, hud_position, hud_rows, inset_layout, inset_tile, order_tiles,
                                setup_follow_camera, update_follow_camera)
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -292,6 +293,7 @@ def make_glfw_viewer(model, data, vcfg):
     opt = mujoco.MjvOption()
     mujoco.mjv_defaultCamera(cam)
     mujoco.mjv_defaultOption(opt)
+    show_face_group(opt)                      # the head is drawn here only, never in a policy camera or an inset
     setup_follow_camera(cam)
 
     scene_vis = mujoco.MjvScene(model, maxgeom=10_000)
@@ -500,6 +502,7 @@ def make_glfw_viewer(model, data, vcfg):
             model, data, opt, None, cam,
             mujoco.mjtCatBit.mjCAT_ALL, scene_vis)
         mujoco.mjr_render(viewport, scene_vis, context)
+        settle_renderer(context, scene_vis)  # the hangover of drawing the textured head (src/face.py)
         t_r1 = pc()
         tm["render"] += t_r1 - t_r0
 
@@ -540,7 +543,7 @@ def make_glfw_viewer(model, data, vcfg):
             # the operator webcam in teleop runs. Each is scaled to fit the
             # window width (at most half size), with its name burned into the
             # top-left corner. Images are top-down; blit flips them.
-            tiles = list(images.items())
+            tiles = order_tiles(list(images.items()))
             if info.get("teleop_status") is not None and info.get("preview"):
                 pf = info.get("preview_frame")
                 tiles.append(("operator_cam", None if pf is None else

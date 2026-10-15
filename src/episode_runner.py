@@ -65,7 +65,7 @@ TICK_HZ = 150           # the command tick: physics_hz / TICK_HZ = 5 physics ste
 
 
 def run_episode(task, model, data, mode="auto", viewer=None, out_dir=None, handoff_frame=None, held=None, loop_cfg=None, record_dir=None,
-                extra_sources=None):
+                extra_sources=None, face=None, stop_after_handoff_s=None):
     """Runs one episode of a task and returns its summary.
 
     Resets the scene, builds the sources (the policy in "auto" mode, the keyboard source, and any extra sources), runs the control loop
@@ -102,10 +102,14 @@ def run_episode(task, model, data, mode="auto", viewer=None, out_dir=None, hando
             src/replay.py); the labels are the policy's phases. Defaults to None, which records nothing.
         extra_sources (callable or None): Test only. A factory make(model, data) -> {name: source} of additional sources. Defaults to
             None.
+        face (src.face.Face or None): The robot's face (RobotSimulator.face). It shows the neutral image from the start and switches to the smile when the success
+            check passes. Defaults to None (no face is driven).
+        stop_after_handoff_s (float or None): End the episode this many seconds after the handoff with the outcome "STAGING_COMPLETE" (the staging is the whole
+            point of the run), unless it has ended already. Defaults to None (the episode runs until success, a timeout or a failure).
 
     Returns:
         dict: The summary, also written to episode_summary.json when `out_dir` is given. Keys:
-            "outcome" (str): "SUCCESS", "TIMEOUT", "OPERATOR_NO_RESPONSE", the failing stage's outcome name (for the beaker task
+            "outcome" (str): "SUCCESS" (the episode runs on for limits["success_linger_s"] after it, then stops), "STAGING_COMPLETE" (stop_after_handoff_s), "TIMEOUT", "OPERATOR_NO_RESPONSE", the failing stage's outcome name (for the beaker task
                 "STAGING_FAILED"; "POLICY_FAILED" if the stage names none), "ABORTED_BY_OPERATOR", "ABORTED" (the loop ended with no
                 stop reason, for example the viewer's quit key), or any other stop reason of the loop in capitals.
             "timeout_kind" (str or None): "auto" or "operator" for the timeouts, else None.
@@ -137,6 +141,9 @@ def run_episode(task, model, data, mode="auto", viewer=None, out_dir=None, hando
         raise ValueError(f"mode must be 'auto' or 'teleop', not {mode!r}")
     lim = task["limits"]
     spawn = task["reset"](model, data)
+    if face is not None:
+        face.set_smile(False)
+    linger = float(lim.get("success_linger_s", 0.0))          # after a success the episode runs on this long (the smile shows), then stops
 
     physics_hz = 1.0 / model.opt.timestep
     spf = max(1, round(physics_hz / TICK_HZ))
@@ -219,11 +226,20 @@ def run_episode(task, model, data, mode="auto", viewer=None, out_dir=None, hando
             R["outcome"], R["t_end"] = ps.get("failure_outcome", "POLICY_FAILED"), t
             loop["stop"](R["outcome"].lower())
         elif R["handoff_time"] is not None:
-            ok, diag = task["check_success"](model, data)
-            R["diag"] = diag
-            if ok:
-                R["outcome"], R["success_time"], R["t_end"] = "SUCCESS", t, t
-                loop["stop"]("success")
+            if R["success_time"] is None:
+                ok, diag = task["check_success"](model, data)
+                R["diag"] = diag
+                if ok:
+                    R["outcome"], R["success_time"] = "SUCCESS", t
+                    if face is not None:
+                        face.set_smile(True)
+            if R["success_time"] is not None:
+                if t >= R["success_time"] + linger - 1e-6:
+                    R["t_end"] = t
+                    loop["stop"]("success")
+            elif stop_after_handoff_s is not None and t >= R["handoff_time"] + stop_after_handoff_s - 1e-6:
+                R["outcome"], R["t_end"] = "STAGING_COMPLETE", t
+                loop["stop"]("staging_complete")
             elif cur == "auto" and auto_t >= lim["timeout_after_handoff"] - 1e-6:
                 R["outcome"], R["t_end"], R["timeout_kind"] = "TIMEOUT", t, "auto"
                 loop["stop"]("timeout")
@@ -254,6 +270,8 @@ def run_episode(task, model, data, mode="auto", viewer=None, out_dir=None, hando
         log_file.close()
     if R["outcome"] is None:
         R["outcome"], R["t_end"] = ("ABORTED" if result["stopped_by"] is None else result["stopped_by"].upper()), data.time
+    elif R["t_end"] is None:                                  # a success whose lingering time was cut short (the window was closed)
+        R["t_end"] = data.time
 
     # --- the summary ---
     summary = {

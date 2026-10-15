@@ -15,7 +15,7 @@ The dictionaries and who reads them:
     LAYOUT_CFG: settings of the joint layout and staging search with slack at every task pose
         (experiments/beaker_hotplate_layout_search.py).
     STAGING_CFG: speeds, ramps, tolerances and time limits of the scripted staging source (src/staging_source.py).
-    EPISODE_CFG: time limits, logging rate and spawn height of the episode runner (src/episode_runner.py).
+    EPISODE_CFG: time limits, the 2 s after a success, logging rate and spawn height of the episode runner (src/episode_runner.py).
     SUCCESS_CFG: site, geom and body names and tolerances of the success check (task_beaker_hotplate.check_success()).
 Entries marked NEW in the comments of STAGING_CFG were chosen recently and are not yet approved. All numbers are choices for this
 simulation, not measurements of the real hardware.
@@ -241,6 +241,7 @@ STAGING_CFG = {
 EPISODE_CFG = {
     "timeout_after_handoff": 60.0,         # s of sim time under AUTO control after HANDOFF with no success -> outcome TIMEOUT (paused while the operator has control)
     "operator_timeout": 300.0,             # s of sim time under operator (teleop) control with no success -> outcome TIMEOUT (also the budget of a teleop-start episode)
+    "success_linger_s": 2.0,               # s the episode runs on after the success check passes (the face smiles), then stops
     "log_hz": 10.0,                        # state / command log, written on the first tick of every 1/log_hz s of sim time
     "exclusive": True,                     # one subsystem moves at a time (the neck is exempt); off by default elsewhere
     "spawn_z": 0.22,                       # m, height the base is dropped from at spawn (it settles onto its wheels)

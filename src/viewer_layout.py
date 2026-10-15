@@ -221,6 +221,24 @@ def banner_bitmap(text, kind, width):
     return bar
 
 
+TILE_ORDER = ("eagle_cam", "left_wrist_cam", "right_wrist_cam")      # left to right in the row of camera tiles; any other tile (the operator webcam) follows
+
+
+def order_tiles(tiles):
+    """Puts the camera tiles in display order: the eagle camera, then the left hand's view on the left and the right hand's on the right.
+
+    Display only: the policy's cameras keep the order of robot_specs.CAMERA_SPECS (the recordings and the observations depend on it).
+
+    Args:
+        tiles (list[tuple]): (camera name, image) pairs in any order.
+
+    Returns:
+        list[tuple]: The same pairs, ordered by TILE_ORDER; names not in it keep their relative order after the others.
+    """
+    rank = {n: i for i, n in enumerate(TILE_ORDER)}
+    return sorted(tiles, key=lambda t: rank.get(t[0], len(TILE_ORDER)))
+
+
 def inset_layout(width, n_tiles, scale=1.0):
     """Gives the size and horizontal positions of the row of camera tiles along the bottom edge.
 

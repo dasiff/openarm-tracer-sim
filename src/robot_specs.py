@@ -18,6 +18,7 @@ Contents and readers:
     NECK_AUTO_SPECS: settings of the automatic neck behaviour in src/neck_source.py.
     ARM_ACTUATOR_SPECS: per-joint motor, armature, gains and torque limits of the arms, the finger actuator gains and the gravity
         compensation bodies, read by src/arm_actuators.py and legacy/controller.py. The gains are PLACEHOLDERS.
+    FACE_CFG: the visual-only face at the end of the neck (src/face.py).
     ORBBEC_RESOLUTION, ORBBEC_FOVY_DEG, CAMERA_SPECS: the camera resolution, the vertical field of view (FOV) in degrees and the
         list of camera specifications (name, parent body, pose, FOV, resolution, shadows) added by src/cameras.py. PLACEHOLDER:
         the Orbbec camera model and every camera pose are unconfirmed.
@@ -125,6 +126,25 @@ NECK_SPECS = {
     "drive_pose": (0.0, 0.1677, 0.1784, 0.1775),   # rad, in the order of active_joints
     "max_speed": 1.5,                        # rad/s: the loop moves the neck's position targets no faster than this
     "jog_speed": 1.25,                       # rad/s while a neck jog key is held
+}
+
+# The robot's face (visual only; src/face.py): a head-sized ellipsoid at the end of the neck with a face image on its front. The eagle camera looks out from the
+# forehead. It sits in geom group "group" (5), which every policy camera and operator inset leaves out (MuJoCo's default shows groups 0-2), so the head and the face
+# never appear in an image the policy sees, and only the viewer and the rendered notebook videos turn the group on. No mass, no collision. The images are private
+# (assets/private/ is git-ignored): if one is missing the head is plain and a one-line notice is printed. "enabled" False (or --no-face) leaves the head out altogether.
+FACE_CFG = {
+    "enabled": True,
+    "image_dir": "assets/private/face",    # relative to the project root
+    "neutral": "neutral.png",              # shown normally
+    "smile": "smile.png",                  # shown when the success check passes
+    "group": 5,                            # geom group of the head (hidden from the policy cameras)
+    "head_radii": (0.075, 0.09, 0.08),     # m: half width, half height, half depth of the head ellipsoid
+    "camera_above_center": 0.055,          # m: the eagle camera is this far above the head's centre ...
+    "camera_forward_of_center": 0.075,     # ... and this far in front of it, so it sits just outside the forehead (the head never covers it)
+    "face_size": (0.125, 0.156),           # m: width and height the face image covers on the front of the head
+    "face_center_up": -0.01,               # m: the centre of the face image relative to the head's centre, up (eyes a little above the centre)
+    "color": (138, 143, 150),              # RGB of the plain head: the grey of the face images' margin, so the image blends into the head
+    "texture_size": (2048, 1024),          # pixels of the head's texture (longitude x latitude): the face covers a quarter of the width
 }
 
 # Automatic neck behavior (src/neck_source.py). "teleop": only while the arms are on the webcam operator (F2); "always";

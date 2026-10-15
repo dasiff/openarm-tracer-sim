@@ -27,7 +27,8 @@ import numpy as np
 
 from src import robot_specs
 from src.cameras import CameraRig
-from src.viewer_layout import (FOVY_DEG, REFERENCE_HEIGHT, hud_bitmap, hud_key_list, hud_position, hud_rows, inset_layout, inset_tile,
+from src.face import settle_renderer, show_face_group
+from src.viewer_layout import (FOVY_DEG, REFERENCE_HEIGHT, hud_bitmap, hud_key_list, hud_position, hud_rows, inset_layout, inset_tile, order_tiles,
                                setup_follow_camera, update_follow_camera)
 from src.neck import neck_ids
 
@@ -86,6 +87,7 @@ class CompositeRenderer:
         self.cam = mujoco.MjvCamera()
         mujoco.mjv_defaultCamera(self.cam)
         mujoco.mjv_defaultOption(self.opt)
+        show_face_group(self.opt)                                      # the head is drawn here only, never in a policy camera or an inset
         setup_follow_camera(self.cam)
         self.scene = mujoco.MjvScene(model, maxgeom=10_000)
         self.scene.flags[mujoco.mjtRndFlag.mjRND_SHADOW] = 1
@@ -135,6 +137,7 @@ class CompositeRenderer:
         mujoco.mjr_readPixels(rgb, None, viewport, self.context)
         mujoco.mjr_setBuffer(mujoco.mjtFramebuffer.mjFB_WINDOW, self.context)
         frame = np.ascontiguousarray(np.flipud(rgb))
+        settle_renderer(self.context, self.scene)                      # the hangover of drawing the textured head (src/face.py)
 
         # --- the status panel, top left ---
         lin, ang = info["twist"]
@@ -147,7 +150,7 @@ class CompositeRenderer:
         frame[top:top + hud.shape[0], left:left + hud.shape[1]] = hud
 
         # --- the camera tiles, along the bottom ---
-        tiles = list(self.rig.images.items())
+        tiles = order_tiles(list(self.rig.images.items()))
         iw, ih, gap, xs = inset_layout(W, len(tiles), self.s)
         for (name, img), x in zip(tiles, xs):
             frame[H - gap - ih:H - gap, x:x + iw] = inset_tile(name, img, iw, ih, self.s)

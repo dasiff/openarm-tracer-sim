@@ -37,3 +37,6 @@ Thumbs.db
 *license*.toml
 snapshots/
 MUJOCO_LOG.TXT
+
+# Private assets (face images etc.), never committed
+assets/private/

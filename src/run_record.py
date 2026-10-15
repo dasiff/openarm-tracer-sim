@@ -116,30 +116,58 @@ def describe_state_diff(model, a, b):
     return out or ["identical"]
 
 
+# What the hash leaves out because it is only how the model looks or how it is stored: materials, textures, names and bounding volumes, and the byte and
+# element counts of those. The face (src/face.py) adds a head geom, two materials and two textures; none of them is physics.
+_HASH_SKIP_PREFIXES = ("tex_", "mat_", "name_", "names_map", "bvh_")
+_HASH_SKIP_COUNTS = ("nbuffer", "nmat", "nnames", "nnames_map", "ntex", "ntexdata", "nbvh", "nbvhstatic", "nbvhdynamic", "ngeom")
+
+
 def model_hash(model):
-    """Hashes the compiled model's arrays, counts and solver options, so a different scene, camera set or edit shows.
+    """Hashes the compiled model's physics arrays, counts and solver options, so a different scene, camera set or edit shows.
 
     The display settings (model.vis: field of view (FOV), shadow size and so on) are left out: the Graphics Library Framework
-    (GLFW) viewer changes those after loading, and they do not affect the physics. model.stat is left out too.
+    (GLFW) viewer changes those after loading, and they do not affect the physics. model.stat is left out too. So are the things that
+    are only how the model looks or is stored (materials, textures, names, bounding volumes and their counts) and the face's head
+    geom (src/face.HEAD_GEOM): the geoms after it are renumbered as if it were not there. The hash is therefore the same whether the
+    face is on, off, or a plain head for lack of images.
 
     Args:
         model (mujoco.MjModel): The compiled model.
 
     Returns:
-        str: The hexadecimal Secure Hash Algorithm 256-bit (SHA-256) digest over the names and values of every array and
-        count attribute of `model`, and every non-callable attribute of model.opt.
+        str: The hexadecimal Secure Hash Algorithm 256-bit (SHA-256) digest over the names and values of the physics arrays and
+        counts of `model`, and every non-callable attribute of model.opt.
     """
+    from src.face import HEAD_GEOM
     h = hashlib.sha256()
 
     def add(name, v):
         h.update(name.encode())
         h.update(np.ascontiguousarray(v).tobytes() if isinstance(v, np.ndarray) else repr(v).encode())
+    head = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_GEOM, HEAD_GEOM)
+    keep = np.ones(model.ngeom, bool)
+    if head >= 0:
+        keep[head] = False
+    renumber = np.cumsum(keep) - 1                                      # geom id -> id without the head
+    add("ngeom_physics", int(keep.sum()))
+    geom_sensor = (model.sensor_objtype == mujoco.mjtObj.mjOBJ_GEOM) if model.nsensor else np.zeros(0, bool)
     for name in sorted(dir(model)):
-        if name.startswith("_") or name in ("vis", "opt", "stat"):
+        if name.startswith("_") or name in ("vis", "opt", "stat") or name.startswith(_HASH_SKIP_PREFIXES) or name in _HASH_SKIP_COUNTS:
             continue
         v = getattr(model, name)
-        if isinstance(v, np.ndarray) or (name.startswith("n") and isinstance(v, int)):
-            add(name, v)
+        if not (isinstance(v, np.ndarray) or (name.startswith("n") and isinstance(v, int))):
+            continue
+        if name == "body_geomadr":
+            continue                                                    # a start address into the geom list; body_geomnum below says what matters
+        if name == "body_geomnum":
+            v = np.bincount(model.geom_bodyid[keep], minlength=model.nbody)
+        elif name.startswith("geom_") and isinstance(v, np.ndarray) and len(v) == model.ngeom:
+            v = v[keep]
+        elif name in ("pair_geom1", "pair_geom2"):
+            v = renumber[v]
+        elif name in ("sensor_objid", "sensor_refid") and geom_sensor.any():
+            v = np.where(geom_sensor, renumber[np.clip(v, 0, model.ngeom - 1)], v)
+        add(name, v)
     for name in sorted(dir(model.opt)):
         if not name.startswith("_") and not callable(getattr(model.opt, name)):
             add("opt." + name, getattr(model.opt, name))

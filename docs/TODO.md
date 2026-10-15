@@ -23,9 +23,16 @@ Everything below was only exercised with injected keys (scripted `held()` functi
   changes the arm-swing transient when the base starts (see the base yaw transient below).
 - [ ] **Eagle camera** (waiting on: Luke / whoever owns mounting): the real mount position. Also the real Orbbec model, field of view and resolution of the eagle and wrist
   cameras; their poses, field of view and resolution in `CAMERA_SPECS` are all placeholders.
+- [ ] **Wrist cameras and the camera model** (waiting on: the hardware team): where each wrist camera is mounted on the hand (position and angle; the sim has the same placeholder
+  offset on both hands, `CAMERA_SPECS`), and the camera model: field of view and resolution (the sim uses one placeholder, `ORBBEC_FOVY_DEG` 58 and `ORBBEC_RESOLUTION` 640 x 480,
+  for all three cameras). Once known, matching them is an edit of `CAMERA_SPECS` (plus the neck's mount in `NECK_SPECS` for the eagle camera) and regenerating the demos.
+  Also goes into section 11 of docs/design_plan.md once that exists.
 - [ ] **Gripper** (waiting on: the hardware team): the real force limit (replaces the 10 N per finger placeholder ceiling, `ARM_ACTUATOR_SPECS["fingers"]["force_limit"]`),
-  stiffness (the placeholder `kp` = 100 N/m means a finger cannot push harder than `kp` times its distance from the commanded position, 3.7 N on the 70 mm beaker, so caps above
-  that do nothing), current limit, and whether the real gripper supports force / current readback.
+  stiffness (the placeholder `kp` is now 300 N/m: a finger pushes `kp` times its distance from the commanded position, 11 N on the 70 mm beaker, so caps up to the 10 N ceiling
+  take effect; it was 100 N/m, 3.7 N), current limit, and whether the real gripper supports force / current readback.
+- [ ] **Finger pad torsional (twisting) friction** (waiting on: the hardware team): the real gripper's value; the sim uses 0.005 (`BEAKER_CFG["contact_friction"]`). It decides how freely a pinched beaker pivots about the pinch axis (see the weak-grip item below).
+- [ ] **Home pose** (waiting on: the hardware team): the real OpenArm home pose (`home_q_left` / `home_q_right` in `TASK_CFG` is a placeholder "waiter pose"), and where the
+  wrist cameras should look from it.
 - [ ] **Base** (waiting on: Michael): how the real Tracer holds position when stopped. Also check the sim's turn rate and acceleration against the real Tracer before tuning the arm
   swing (the arms swing ~20 cm during fast turns at 2 rad/s and end ~2 cm off after stopping).
 - [ ] **Pedestal** (waiting on: Dan): the real lift specs. The actuator is a placeholder (travel, 0.05 m/s jog speed, the lowest command is a torso-contact stop).
@@ -33,7 +40,7 @@ Everything below was only exercised with injected keys (scripted `held()` functi
 
 ## INVESTIGATE
 
-- [ ] **The robot leans while driving straight.** The base height rises from 0.153 m to 0.190 m during the 0.3 m/s cruise and settles back over 7+ s, overlapping the PEDESTAL and
+- [x] **RESOLVED (merge fe8c3d8): the robot leans while driving straight.** Fixed by the low-friction contact points of the base (`src/base_contacts.py`). Original report: the base height rises from 0.153 m to 0.190 m during the 0.3 m/s cruise and settles back over 7+ s, overlapping the PEDESTAL and
   ARMS phases. Likely causes: the velocity-based base driving (`src/base_control.py` writes the free-joint velocity), floor friction, and a high centre of mass. It may explain part of
   the staging drift (the base moves about 3 mm / 0.9 degrees during PEDESTAL and 6 mm during ARMS before the corrections; the HANDOFF error is now 8.5 mm / 0.36 degrees). The episode log
   has no base height column, so start by logging `qpos[2]` and the base roll and pitch during DRIVE.
@@ -88,6 +95,20 @@ Everything below was only exercised with injected keys (scripted `held()` functi
 - [ ] **Gravity compensation experiment.** MuJoCo's body gravcomp cancels the arms' weight at each body, so arm weight never loads the pedestal, base or wheels: the floor carries 94 N less than the robot's weight.
   Measure how the base lean, wheel contact and drive behave without arm gravcomp (the arms then need the actuators to hold their weight), and decide whether the sim should model the real load path.
 - [ ] **Recording size is now ~150 KB per sim second** (physics ctrl values per step). Watch disk space when collecting many demos; consider compressing or thinning the recordings.
+- [x] **A grasped beaker creeps in the gripper** (decided: noslip on, `NOSLIP_ITERATIONS = 10` in `src/robot_specs.py`, enabled on this branch). At 5 N per finger (friction 0.4, capacity 4 N against
+  the 1.96 N weight) the 100 g + 100 g beaker slid 10.3 mm in a 2 s lift and kept creeping 3.8 mm/s (MuJoCo's soft friction contacts act like a viscous damper). With 10 no-slip iterations:
+  2.7 mm of slip, no creep over a 10 s hold (3 iterations: 3.9 mm and still creeping 0.03 mm/s, at the same step cost, so 10 stays). Cost: physics steps take ~1.9x as long (0.95 against 0.49 ms
+  on this VM; real time at 750 Hz is 1.33 ms). Side effect: at the 10 N ceiling the two
+  fingers' forces on the beaker are 9.5 and 10.5 N (mean 10.0), so `gripper_force_test.py` checks the ceiling closing's mean against the cap (3%) and each finger within 10%.
+- [ ] **The arm sags under the beaker's weight** (placeholder arm gains): a lift commanded 100 mm moves the hand 90 mm with the beaker in the gripper. Part of the grasp test's numbers;
+  it goes away with the real controller gains.
+- [ ] **The right wrist camera does not see the beaker from home** (it sees the hotplate at the left image edge): the objects are on the robot's left, the beaker is ~48 degrees off the
+  right camera's axis, and a wrist pitch cannot fix that. Matters only if the policy needs the right wrist view of the beaker.
+- [ ] **Search and view scripts read the old solid beaker** (`model.geom("task_beaker_glass")`): `beaker_hotplate_layout_search.py`, `beaker_hotplate_staging_search.py`,
+  `beaker_hotplate_eagle_views.py` and `beaker_hotplate_pose_check.py` fail with the hollow beaker (they are design-time tools for the legacy `ready_q`, `ready_via_q`, `grasp_q`
+  poses, which are kept). Update them to `BEAKER_CFG` (and to the many-geom beaker) when the layout is next re-searched.
+- [ ] **`beaker_hotplate_episode.py` writes a fixed path under `data/`** (`data/beaker_hotplate_eagle/episode_handoff.png`), so a test run overwrites that reference picture; and
+  its printed "arrival ... (tolerance 10 mm / 1 deg)" is stale (the yaw tolerance is 0.5 degrees now). Give it an output option / read the tolerance from `STAGING_CFG`.
 - [ ] Housekeeping: report the provisioner problem upstream (it rejects the openarm product); finish checking for Windows-side commits that never reached GitHub.
 
 ## NEXT PHASES
@@ -247,4 +268,8 @@ Everything below was only exercised with injected keys (scripted `held()` functi
   - [ ] ROS 2 topics or Python API?
   - [ ] Expected latency?
   - [ ] Communication protocol?
-
+- [ ] **The face's size and look are a first guess** (`FACE_CFG`: a 15 x 18 x 16 cm ellipsoid, the face image 12.5 x 15.6 cm on its front): adjust to taste. It has no neck-joint animation, only
+  neutral / smile; a recording made before the face existed cannot be replayed (the replay fingerprint changed to leave the face out, which also drops the materials, textures and names).
+- [x] **Neck: frame once per skill, then hold** (decision 2026-10-14, built 2026-10-14; the eagle camera is a policy input, so its behaviour must be the same in demos, recorded teleop and policy runs, and a following neck is a feedback loop with the policy). Repeatable solve, staging NECK solves once and a hand-back re-sends the stored targets, `neck_auto` frames once per stop, the operator's neck keys are off while a replayable recording is written (`neck_once_test.py`). Left to do: the free teleop's own `follow` mode (`NECK_AUTO_SPECS["follow"]`, off) is untested in a real unrecorded session; the decision goes into docs/design_plan.md when that is written; the neck's real mount and the real camera (questions above) change what the framing sees.
+- [ ] **Weak (2 N) grip: the beaker creeps upward about 15 mm/s while the hand stands still.** Is it real pinch ejection from the beaker's tilt, or a contact solver artifact? Check before demo generation (the 2 N control of `grasp_lift_test.py`; the clip with the beaker's tilt logged is in `data/notebook/`). Finding (2026-10-15, `data/notebook/control_2N_2026-10-14_tilt.csv` / `_tilt.png` / `_clip.mp4`): the "creep" is the beaker tilting, not rising: its tilt grows from 0.5 deg at the start of the lift to 23 deg when the hand stops (2.0 s), 48 deg at 3.2 s, then it topples to 90 deg at 3.5 s and lies on its side (its height 35 mm = its radius). So it pivots about the pinch axis and then falls over. Still open: whether a real glass beaker pinched at two points pivots this freely (the sim's torsional friction at the pads is 0.005) or it is a contact artifact.
+- [ ] **PENDING: grasp height vs the beaker's centre of mass.** Compute the centre of mass height (empty, and with the liquid mass setting) and where it falls in the 1/4 to 60 % grasp band; grips below it are unstable about the pinch axis; decide whether to limit the band, at least for pouring. Computed 2026-10-15: centre of mass 43.3 mm above the bottom (43 % of the 100 mm height) for the empty beaker (100 g glass) and 29.9 mm (30 %) with the 100 g liquid setting (200 g in all); both are inside the 25 to 60 % band, so the part of the band below the centre of mass is 25 to 43 % empty (18 of the band's 35 mm) and 25 to 30 % with the liquid (5 mm). The grasp test pinches at 50 % (measured: force-weighted pad contact height 50.1 mm), above the centre of mass in both cases, so the 2 N run was a grip above it: its tilt and topple (docs/TODO.md) is a weak grip losing the beaker, not yet shown to be the below-centre-of-mass instability. A grasp below the centre of mass has not been tested.

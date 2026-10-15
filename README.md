@@ -195,7 +195,7 @@ position-controlled; the loop writes `max_force` into the finger actuators' forc
 `experiments/gripper_force_test.py` closes the gripper on the beaker at 1 N, 2 N and the ceiling and measures the contact force. The beaker is hollow glass
 (70 mm, 100 mm tall, 2 mm walls: a ring of 24 thin boxes and a bottom disk, 100 g of glass plus a 100 g rigid "liquid" mass low inside), built into the model at load
 time from `BEAKER_CFG` (`src/beaker.py`); its friction against the gripper is 0.4 (explicit contact pairs: the finger geoms' priority would otherwise win), and the
-per-object gripper force cap is `GRIP_FORCE_TABLE` (glass beaker 5 N). `experiments/beaker_hollow_test.py`, `home_pose_test.py` and `grasp_lift_test.py` test them.
+per-object gripper force cap is `GRIP_FORCE_TABLE` (glass beaker 8 N). `experiments/beaker_hollow_test.py`, `home_pose_test.py` and `grasp_lift_test.py` test them.
 
 **The robot's face** (`src/face.py`, `FACE_CFG` in `src/robot_specs.py`; visual only). The neck carries a head-sized ellipsoid with a face image on its front, and the eagle camera
 sits on its forehead, outside the surface. The two images (`neutral.png`, `smile.png`) are loaded from `assets/private/face/`, which is git-ignored; if one is missing the

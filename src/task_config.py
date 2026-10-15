@@ -110,9 +110,11 @@ BEAKER_CFG = {
 
 # Gripper force cap per object, N per finger (the loop's "max_force" of a gripper command, at most robot_specs.ARM_ACTUATOR_SPECS["fingers"]["force_limit"]).
 # The policy only ever outputs a finger position; whoever builds the command (the demo generator, later the openpi adapter) looks the force up here.
-# 5 N per finger at a glass friction of 0.4 holds 2x the 0.2 kg beaker's weight.
+# 8 N per finger (was 5 N until 2026-10-15). The 5 N grasp had a static safety factor of 2.0 at a glass friction of 0.4 and was marginal (its slip flipped between 2.5 mm and 4.7 mm
+# with creep for tiny changes, and it lost the beaker at friction 0.32). The grip force sweep (docs/grip_force_sweep.md: 5 to 9 N, three battery masses, friction 0.4 and 0.32) found 8 N
+# the lowest force that holds in all six cases (slip 0.1 to 0.6 mm, no creep): safety factor 3.3 at friction 0.4 and 2.6 at 0.32 (2 x force x friction / the 0.2 kg beaker's weight).
 GRIP_FORCE_TABLE = {
-    "glass_beaker": 5.0,
+    "glass_beaker": 8.0,
 }
 
 # ----------------------------------------------------------------------------------------------------------

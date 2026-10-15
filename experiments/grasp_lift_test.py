@@ -6,19 +6,19 @@ Grasp test of the hollow beaker: close the left gripper on it at the grip force 
 
 Test-only scripted moves (experiments/episode_test_sources.make_grasp_lift_stage), not a policy. After the staging (the arms at home) the left arm goes
 (via the legacy ready pose) to the grasp pose with the open fingers straddling the beaker, the gripper closes on it with {"position": 0, "max_force": F}
-where F = GRIP_FORCE_TABLE["glass_beaker"] (5 N per finger), the closed hand rises by 10 cm (joint targets from a small IK, the hand's orientation kept), and the
+where F = GRIP_FORCE_TABLE["glass_beaker"] (8 N per finger since 2026-10-15, 5 N before), the closed hand rises by 10 cm (joint targets from a small IK, the hand's orientation kept), and the
 test reports whether the beaker follows: how far it slid down in the hand (slip), how high it ended, and the force each finger and the palm put on it.
 The beaker has its 100 g of glass and 100 g of liquid, and the gripper friction is 0.4.
 
 The model has robot_specs.NOSLIP_ITERATIONS (the solver option that suppresses the creep of soft friction contacts). --noslip N sets noslip_iterations to N
 in the loaded model for this run only (--noslip 0 turns it off, to see the creep); without it the configured value is used. --no-control skips the control run. --end-s S holds the lifted beaker for S seconds (default 1.5) and prints the slip once a second, to see creep.
 
---record DIR records the 5 N run (physics inputs and verification hashes) in DIR, for experiments/replay_run.py (the video of the grasp).
+--record DIR records the table-force run (physics inputs and verification hashes) in DIR, for experiments/replay_run.py (the video of the grasp).
 
 A control run at a force that cannot hold it (2 N: 2 fingers x 2 N x 0.4 = 1.6 N of friction against the 1.96 N weight) shows the test can see a slip. The control is
 judged by its purpose, that the weak grip does not hold, not by how high the beaker happens to ride: it must be reported not held, slip more than 20 mm beyond the
-5 N run's slip, and end less than half as high as the hand rose. (Measured: the control's final rise was 8.0 mm, then 31.8 mm after the neck solver change moved the
-handoff, of the hand's 100 mm, i.e. 8 % and 32 %, against 97 % for the held 5 N run; its slip was 92 and 68 mm against 2.5 to 2.7 mm. The beaker's final height of a
+held run's slip, and end less than half as high as the hand rose. (Measured: the control's final rise was 8.0 mm, then 31.8 mm after the neck solver change moved the
+handoff, of the hand's 100 mm, i.e. 8 % and 32 %, against 97 % for the held run; its slip was 92 and 68 mm against 2.5 to 2.7 mm (at the old 5 N). The beaker's final height of a
 failed weak grip is marginal contact behaviour, so it is not a fixed bar.)
 """
 
@@ -85,7 +85,7 @@ def main(args):
     print(f"    holds without the 3 mm slip bar: {r['held']}")
     check("the beaker is carried up with the hand (7 cm or more above where it stood; it does not drop)", r["beaker_rise_m"] > 0.07, f"{1000 * r['beaker_rise_m']:.1f} mm")
     fn = [v for k, v in fing.items() if "finger" in k]
-    check("each finger presses at the 5 N cap (+-10 %): the cap binds", len(fn) == 2 and all(abs(v - F) < 0.1 * F for v in fn), f"{[round(v, 2) for v in fn]}")
+    check(f"each finger presses at the {F:g} N cap (+-10 %): the cap binds", len(fn) == 2 and all(abs(v - F) < 0.1 * F for v in fn), f"{[round(v, 2) for v in fn]}")
     print(f"    contacts of the episode (by phase): {({k: sorted({tuple(c['pair']) for c in v})[:3] for k, v in s['contacts_by_phase'].items()})}")
     if args.no_control:
         print(f"\n{sum(results)}/{len(results)} checks passed")
@@ -95,7 +95,7 @@ def main(args):
     r2 = st2["summary"]
     if r2 is not None:
         print(f"    beaker rose {1000 * r2['beaker_rise_m']:.1f} mm, hand {1000 * r2['hand_rise_m']:.1f} mm, slip {r2['slip_mm']:.1f} mm, held {r2['held']}; lowest beaker z {r2['min_beaker_z']:.4f} m")
-        check("the control does not hold (the test can see a failed grasp): not held, slip 20 mm beyond the 5 N run's, final rise under half the hand's",
+        check("the control does not hold (the test can see a failed grasp): not held, slip 20 mm beyond the held run's, final rise under half the hand's",
               not r2["held"] and r2["slip_mm"] > r["slip_mm"] + 20.0 and r2["beaker_rise_m"] < 0.5 * r2["hand_rise_m"],
               f"held {r2['held']}, slip {r2['slip_mm']:.1f} mm vs {r['slip_mm']:.2f} mm, final rise {1000 * r2['beaker_rise_m']:.1f} mm of the hand's {1000 * r2['hand_rise_m']:.1f} mm ({100 * r2['beaker_rise_m'] / r2['hand_rise_m']:.0f} %)")
     else:
@@ -109,5 +109,5 @@ if __name__ == "__main__":
     ap.add_argument("--noslip", type=int, default=None)
     ap.add_argument("--no-control", action="store_true")
     ap.add_argument("--end-s", type=float, default=1.5)
-    ap.add_argument("--record", default=None, help="directory to record the 5 N run in (for replay_run.py)")
+    ap.add_argument("--record", default=None, help="directory to record the table-force run in (for replay_run.py)")
     sys.exit(0 if main(ap.parse_args()) else 1)

@@ -33,7 +33,7 @@ Status markers:
 - Base lean fix: low-friction contact spheres at wheels and casters (supersedes the old cylinder-wheel plan).
 - Home pose ("waiter pose"): left (12.5, 0, 0, 120, 0, 0, 15) deg, right mirrored; staging ends at home; neck frames beaker, hotplate, both grippers. Home variation setting, off by default.
 - Hollow beaker built at load time from config (24 segments, 100 g glass + 100 g liquid mass setting); fingers and palm against beaker at friction 0.4 via explicit contact pairs.
-- All four finger actuators built identically. Fingers kp 300, kv 4.6, 10 N ceiling; grip force table (glass beaker 5 N); gripper command = position + max force.
+- All four finger actuators built identically. Fingers kp 300, kv 4.6, 10 N ceiling; grip force table (glass beaker 8 N, was 5 N until 2026-10-15); gripper command = position + max force.
 - Noslip 10 iterations (stops creep; costs about 2x per step).
 - Controller modes auto/teleop; operator handoff keys; snap-back protection; generic episode runner; sequential policy; record and exact replay; video none/preview/training.
 - Camera neck:
@@ -119,6 +119,7 @@ Second hollow beaker; liquid stand-in of a few dozen small balls (low bounce, so
 - Phase A variation: incidental only (start pose via home variation, object positions, speed, recovery nudges during free motion recording the clean corrective command, never the noisy one). Left arm only. One fixed hand-picked stance per bench end.
 - Phase B variation: everything in Phase A, plus arm randomized per demo and named in the prompt ("... with the left hand"), elbow posture randomized per episode (mink posture setting), path variation, grasp style within side grasps (grasp height on the body band, wrist rotation), stance drawn from the map's top candidates above a score threshold, domain randomization on.
 - Domain randomization (generator settings, off in Phase A, on in Phase B): physics (friction and masses +/-10-20%, friction also biased lower for wet glass; liquid mass via its setting) and visual (lighting, colors, textures, beaker sizes). Beaker sizes must fit the gripper opening with margin; grasp band scales with height. All randomized values logged per episode.
+  - Friction lower limit 0.32 (20 % below the nominal 0.4) for the gripper on glass, unless the grasp is rechecked lower: the 8 N grip force is verified down to 0.32 only (docs/grip_force_sweep.md; 8 N has a static safety factor of 2.6 there).
 - Log every attempt: seed, all randomized settings, outcome, and for failures the failing phase and reason. Discard failures.
 - Recorded: action = commanded joint and gripper targets (clean); state = measured joint angles; three camera images; all 30 Hz.
 - Gripper configuration: stock MuJoCo gripper is a placeholder. All gripper-specific numbers live in one config block (max opening, kp/kv, force ceiling, grip force table, beaker friction, 0-1 mapping, finger closing geometry, grasp band). No code refers to finger names or positions directly.
@@ -132,6 +133,7 @@ Second hollow beaker; liquid stand-in of a few dozen small balls (low bounce, so
   - **[PENDING]** Whether a fixed dwell at the final tilt remains when 120 deg is reached with balls still flowing.
   - Completion trigger: arms only after the beaker has tilted past about 30 deg; fires when it is back upright and still. Timeout if it never fires.
   - Success (sim): >=90% of balls transferred and zero spilled; log both counts every episode; discard any spill.
+  - **[PENDING]** Recheck the grip force during the pour: the 8 N glass-beaker force was verified on the grasp-and-lift only, and the pour tilts the beaker and changes the load. 9 N is the fallback (verified on the lift down to friction 0.32; the finger ceiling is 10 N).
 - Prompts name the arm. Keep every generated dataset forever.
 
 ## 7. Data pipeline, training, openpi integration
@@ -189,6 +191,7 @@ Built after training Phase A.
 1b. Battery pack on the deck (an obstacle for the reachability map, so it comes first). [DONE]
 2. Reachability map and stance finder.
 3. Pouring scene and timing test.
+3b. **[DONE]** Grasp robustness, before demo generation (before step 4). The 5 N grasp (glass beaker, friction 0.4) has a safety factor of about 2 and is marginal: its slip flips between 2.5 mm with no creep and 4.2 mm creeping 0.5 mm/s when an unrelated mass changes by 0.3 kg (11.0 to 11.3 kg battery; docs/TODO.md). Domain randomization lowers the friction, and the pour stresses the grasp more. Steps: (1) a grip force sweep on the grasp-and-lift, 5 to 9 N, with the battery mass at 11.0, 11.3 and 11.6 kg and the friction at 0.4 and 0.32. DONE 2026-10-15 (docs/grip_force_sweep.md): 5 N is marginal at friction 0.4 and loses the beaker at 0.32; 6 N and 7 N fail at 0.32; 8 N and 9 N hold at every perturbation. (2) Recommendation: 8 N per finger (slip 0.1 to 0.6 mm and no creep in all six perturbations; static safety factor 3.3 at friction 0.4 and 2.6 at 0.32, against 2.0 and 1.6 now). (3) David approved 2026-10-15; `GRIP_FORCE_TABLE["glass_beaker"]` is now 8 N. Rerun with 8 N: grasp_lift_test 4/4 (slip 0.15 mm, creep 0), gripper_force_test 29/29, beaker_hollow_test 21/21. Still open for the pour (section 6): it tilts the beaker and was not part of the sweep; recheck the force there, and recheck if the domain randomization goes below friction 0.32.
 4. Demo generator: pick and place first, then pour.
 5. Data pipeline and Phase A training.
 6. Phase B training.

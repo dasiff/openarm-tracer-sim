@@ -319,15 +319,18 @@ def run(scene: str, spawn_pos, groups: list[dict], policy,
     ped_aid = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_ACTUATOR, robot_specs.PEDESTAL_SPECS["actuator_name"])
     ped_step = robot_specs.PEDESTAL_SPECS["jog_speed"] * steps_per_frame * model.opt.timestep
     sources = {"keyboard": make_keyboard_source(model, held, drive_cfg, ped_step, tuple(model.actuator_ctrlrange[ped_aid]),
-                                                data=data, neck_specs=robot_specs.NECK_SPECS, points_fn=framing_points)}
+                                                data=data, neck_specs=robot_specs.NECK_SPECS, points_fn=framing_points,
+                                                neck_locked=bool(record_run))}
     routes = {}
     if mode == "teleop":
         sources["teleop"] = make_teleop_source(model, data, camera=camera, preview=preview,
                                                fake=bench["fake_teleop"], simclock=bench["fake_simclock"])
     auto = robot_specs.NECK_AUTO_SPECS["mode"]
     if auto != "off" and (mode == "teleop" or auto == "always"):
-        # the neck follows the grippers (teleop) and looks ahead while driving; the keyboard still commands it and wins
-        sources["neck_auto"] = make_neck_auto_source(model, data, sources.get("teleop"), sources["keyboard"])
+        # the neck looks ahead while driving and frames the task once each time the base stops, then holds (it follows the grippers only if
+        # NECK_AUTO_SPECS["follow"] and nothing is recorded); the keyboard still commands it and wins (its neck keys are off while recording)
+        sources["neck_auto"] = make_neck_auto_source(model, data, sources.get("teleop"), sources["keyboard"], points_fn=framing_points,
+                                                     recording=bool(record_run))
         routes["neck"] = ("keyboard", "neck_auto")
     if policy is not None and auto_ids:
         sources["policy"] = make_policy_source(model, policy, auto_ids)

@@ -131,7 +131,7 @@ def build_jog_tables(model, mujoco):
     return tables
 
 
-def make_keyboard_source(model, held, drive_cfg, ped_step, ped_range, data=None, neck_specs=None, points_fn=None, framing_cfg=None):
+def make_keyboard_source(model, held, drive_cfg, ped_step, ped_range, data=None, neck_specs=None, points_fn=None, framing_cfg=None, neck_locked=False):
     """Create the keyboard source.
 
     Args:
@@ -160,6 +160,9 @@ def make_keyboard_source(model, held, drive_cfg, ped_step, ped_range, data=None,
         framing_cfg (dict | None): Settings passed to
             src.neck_framing.frame_points when F7 is pressed. Defaults to None
             (an empty dictionary, so the framing defaults apply).
+        neck_locked (bool): True while a replayable recording is being written (--record / --record-run): the neck keys (jog, F7, F8)
+            do nothing and each key press prints one line saying so. The eagle camera is a policy input, so in a recorded run only the
+            scripted framing may aim it. Defaults to False (the keys work).
 
     Returns:
         dict: The source, with these keys:
@@ -203,7 +206,7 @@ def make_keyboard_source(model, held, drive_cfg, ped_step, ped_range, data=None,
     if nk is not None:
         neck_pairs = list(zip([key_code(k) for k in NECK_KEYS["plus"]], [key_code(k) for k in NECK_KEYS["minus"]]))
         k_frame, k_home = key_code(NECK_KEYS["frame"]), key_code(NECK_KEYS["home"])
-        state.update(neck_active_t=-1e9, prev_f7=False, prev_f8=False)
+        state.update(neck_active_t=-1e9, prev_f7=False, prev_f8=False, prev_neck_locked_press=frozenset())
 
     def step(obs):
         """Read the keys and return this tick's commands.
@@ -300,7 +303,12 @@ def make_keyboard_source(model, held, drive_cfg, ped_step, ped_range, data=None,
             cmds.append(cmd)
 
         # --- Camera neck: jog, frame the task points (F7), default aim (F8). Exempt from exclusivity. ---
-        if nk is not None:
+        if nk is not None and neck_locked:
+            pressed = frozenset(k for k in [k for pair in neck_pairs for k in pair] + [k_frame, k_home] if held(k))
+            if pressed - state["prev_neck_locked_press"]:          # a neck key that was not down on the last tick: one line per press
+                print("Neck keys are disabled while a replayable recording is being written (--record / --record-run).")
+            state["prev_neck_locked_press"] = pressed
+        elif nk is not None:
             goal = applied["neck_goal"]
             moved = {}
             for j, (k_plus, k_minus) in enumerate(neck_pairs):

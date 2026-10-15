@@ -156,7 +156,7 @@ def run_episode(task, model, data, mode="auto", viewer=None, out_dir=None, hando
         sources["policy"] = policy
     sources["keyboard"] = make_keyboard_source(model, held_fn, DRIVE_CFG, robot_specs.PEDESTAL_SPECS["jog_speed"] * tick_dt,
                                                tuple(model.actuator_ctrlrange[ped]), data=data, neck_specs=robot_specs.NECK_SPECS,
-                                               points_fn=task.get("framing_points"))
+                                               points_fn=task.get("framing_points"), neck_locked=record_dir is not None)
     sources.update(extra_sources(model, data) if extra_sources else {})
 
     contacts_now = make_contact_monitor(model)

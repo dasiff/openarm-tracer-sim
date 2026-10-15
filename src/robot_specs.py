@@ -148,12 +148,15 @@ FACE_CFG = {
 }
 
 # Automatic neck behavior (src/neck_source.py). "teleop": only while the arms are on the webcam operator (F2); "always";
-# "off". While active: the neck frames the grippers when the base is at rest, and returns to the drive pose (looks
-# ahead) while the base is driving. A neck key press pauses it.
+# "off". While active: the neck returns to the drive pose (looks ahead) while the base is driving, and frames the task once each
+# time the base comes to rest, then holds (the eagle camera is a policy input: no following, which would be a feedback loop with the
+# policy). "follow" True makes it follow the grippers instead, but only where nothing is recorded (never while --record / --record-run
+# is on). A neck key press pauses it.
 NECK_AUTO_SPECS = {
     "mode": "teleop",
-    "follow_period": 0.5,         # s between framing updates
-    "deadband": 0.03,             # rad: smaller changes are not sent (no jitter)
+    "follow": False,              # True: follow the grippers (unrecorded runs only); False: frame once per stop, then hold
+    "follow_period": 0.5,         # s between framing updates (follow only)
+    "deadband": 0.03,             # rad: smaller changes are not sent (no jitter; follow only)
     "pause_after_key": 3.0,       # s the keyboard has the neck after any neck key
     "drive_lin": 0.05,            # m/s: the base counts as driving above this commanded speed
     "drive_ang": 0.10,            # rad/s

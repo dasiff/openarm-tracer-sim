@@ -42,7 +42,7 @@ Phases, in order (one subsystem moves at a time; the neck is exempt and stays at
                      error exceeds the tolerance), or the base-to-bench or arm-to-bench clearance (either arm, checked every tick) falls below its
                      minimum, state["error"] is set (STAGING_FAILED): the arms are not moved further.
   NECK               frame_points() on points_fn(model, data, task_cfg) (beaker, hotplate, both grippers at home), the result is commanded,
-                     then held.
+                     then held. Solved once per episode: after a hand-back the same stored targets are sent again.
   DONE               state["done"] = True. The source stops commanding.
 Phase end = the target reached, with the moving joints below the settle velocity for the settle time. Every phase has a timeout in
 STAGING_CFG (drive_timeout, pedestal_timeout, correction_timeout, arms_timeout, neck_timeout) that does not count the time an operator had
@@ -758,8 +758,9 @@ def make_staging_source(model, data, task_cfg=TASK_CFG, cfg=STAGING_CFG, points_
     def neck_phase(obs, t, dt):
         """Runs the NECK phase: frame the task points with the neck camera, then hold until the neck has settled.
 
-        On the first call it runs frame_points() on points_fn(model, data, task_cfg), stores the report in state["framing_report"] and
-        the targets in P["neck_targets"], and commands them. Afterwards it waits until every neck joint is within neck_tol of its
+        On the first call it runs frame_points() on points_fn(model, data, task_cfg) ONCE per episode, stores the report in
+        state["framing_report"] and the targets in P["neck_targets"], and commands them (after a hand-back it commands the stored targets again,
+        with no new solve: the eagle camera is a policy input, so the framing is made once and the neck then holds it). Afterwards it waits until every neck joint is within neck_tol of its
         target and slower than neck_settle_vel for neck_settle_s, then enters DONE and sets state["done"].
 
         Args:
@@ -771,10 +772,10 @@ def make_staging_source(model, data, task_cfg=TASK_CFG, cfg=STAGING_CFG, points_
             list: [{"mode": "neck", "neck_targets": {joint name: radians}}] on the first call, otherwise [].
         """
         if not P["neck_sent"]:
-            targets, report = frame_points(model, data, points_fn(model, data, task_cfg))
-            state["framing_report"] = report
-            P["neck_targets"], P["neck_sent"] = targets, True
-            return [{"mode": "neck", "neck_targets": targets}]
+            if P["neck_targets"] is None:
+                P["neck_targets"], state["framing_report"] = frame_points(model, data, points_fn(model, data, task_cfg))
+            P["neck_sent"] = True
+            return [{"mode": "neck", "neck_targets": dict(P["neck_targets"])}]
         q = np.array([obs["joint_angles"][a] for a in neck["qadr"]])
         goal_q = np.array([P["neck_targets"][n] for n in neck["names"]])
         qd = max(abs(obs["joint_velocities"][v]) for v in neck["vadr"])
@@ -902,9 +903,9 @@ def make_staging_source(model, data, task_cfg=TASK_CFG, cfg=STAGING_CFG, points_
         """After a hand-back, puts back what this stage still needs and an operator may have moved, smoothly and one thing at a time.
 
         pedestal: once the PEDESTAL phase is over it must be at the staging height; it is re-ramped from the applied height at
-        pedestal_speed and waited for until settled. neck: in NECK the framing is re-run (the phase does it when neck_sent is cleared);
-        after the stage is DONE the framing is re-run here and the neck moves there at the loop's neck speed. Before NECK the neck is not
-        needed (NECK frames it anyway). When everything is back it clears P["restore"] and P["neck_resent"].
+        pedestal_speed and waited for until settled. neck: in NECK the stored targets are sent again (the phase does it when neck_sent is
+        cleared; framed once, never re-solved); after the stage is DONE they are sent again here and the neck moves there at the loop's neck
+        speed. Before NECK the neck is not needed (NECK frames it anyway). When everything is back it clears P["restore"] and P["neck_resent"].
 
         Args:
             obs (dict): The observation; uses "applied" ("pedestal"), "pedestal_height", "joint_angles" and "joint_velocities".
@@ -929,10 +930,8 @@ def make_staging_source(model, data, task_cfg=TASK_CFG, cfg=STAGING_CFG, points_
             P["neck_sent"] = False
         elif phase == "DONE" and neck is not None:
             if not P["neck_resent"]:
-                targets, report = frame_points(model, data, points_fn(model, data, task_cfg))
-                state["framing_report"] = report
-                P["neck_targets"], P["neck_resent"] = targets, True
-                return [{"mode": "neck", "neck_targets": targets}], False
+                P["neck_resent"] = True
+                return [{"mode": "neck", "neck_targets": dict(P["neck_targets"])}], False
             q = np.array([obs["joint_angles"][a] for a in neck["qadr"]])
             goal_q = np.array([P["neck_targets"][n] for n in neck["names"]])
             qd = max(abs(obs["joint_velocities"][v]) for v in neck["vadr"])

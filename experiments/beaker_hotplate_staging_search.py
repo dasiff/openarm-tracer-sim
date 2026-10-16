@@ -59,6 +59,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
 from src import robot_specs  # noqa: E402
+from src.arm_kinematics import arm_chain, batch_fk  # noqa: E402  (moved from this file; the other search script still reaches them as S.arm_chain / S.batch_fk)
 from src.task_config import TASK_CFG, SEARCH_CFG  # noqa: E402
 from src.task_beaker_hotplate import (  # noqa: E402
     load_task, spawn_and_settle, bench_top_z, yaw_to_quat, wrap, arm_ids)
@@ -69,45 +70,7 @@ C = SEARCH_CFG
 SIDES = ("right", "left")
 
 
-# ----------------------------------------------------------------------------------------------------------
-# Batch forward kinematics of one arm, in the openarm_body_link0 frame
-# ----------------------------------------------------------------------------------------------------------
-def _quat2mat(model, q):
-    R = np.zeros(9)
-    mujoco.mju_quat2Mat(R, np.asarray(q, float))
-    return R.reshape(3, 3)
-
-
-def arm_chain(model, side):
-    """Static transforms and hinge axes from openarm_body_link0 down to the TCP, read from the model."""
-    out = []
-    for n in ("link0", "link1", "link2", "link3", "link4", "link5", "link6", "link7", "link8", "hand", "hand_tcp"):
-        b = model.body(f"openarm_{side}_{n}")
-        axis = None
-        if b.jntnum[0] > 0:
-            jid = int(b.jntadr[0])
-            assert model.jnt_type[jid] == mujoco.mjtJoint.mjJNT_HINGE and np.allclose(model.jnt_pos[jid], 0)
-            axis = model.jnt_axis[jid].copy()
-        out.append((model.body_pos[b.id].copy(), _quat2mat(model, model.body_quat[b.id]), axis))
-    return out
-
-
-def batch_fk(chain, Q):
-    """Q (N, 7) -> TCP position (N, 3) and rotation (N, 3, 3) in the body_link0 frame."""
-    N = len(Q)
-    R = np.tile(np.eye(3), (N, 1, 1))
-    p = np.zeros((N, 3))
-    k = 0
-    for pos, Rs, ax in chain:
-        p = p + np.einsum("nij,j->ni", R, pos)
-        R = R @ Rs
-        if ax is not None:
-            q = Q[:, k]
-            k += 1
-            K = np.array([[0, -ax[2], ax[1]], [ax[2], 0, -ax[0]], [-ax[1], ax[0], 0]])
-            c, s = np.cos(q)[:, None, None], np.sin(q)[:, None, None]
-            R = R @ (c * np.eye(3) + s * K + (1 - c) * np.outer(ax, ax))
-    return p, R
+# Batch forward kinematics of one arm, in the openarm_body_link0 frame: moved to src/arm_kinematics.py (B2.1), imported above as arm_chain and batch_fk.
 
 
 def usable_samples(model, side, rng):

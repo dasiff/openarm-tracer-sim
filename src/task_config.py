@@ -11,6 +11,7 @@ The dictionaries and who reads them:
         search and must be re-computed (experiments/beaker_hotplate_layout_search.py) if the objects, spawn or pedestal change.
     BEAKER_CFG: the hollow glass beaker (size, wall, masses, contact friction of the fingers), built at load time by src/beaker.py.
     GRIP_FORCE_TABLE: the gripper force cap per object, looked up by the demo generator and later the openpi adapter.
+    GRASP_MAP_CFG: build settings of the grasp reachability map (design plan §3.1; src/grasp_rules.py, src/reach_map.py). Map files are not committed, only these settings.
     SEARCH_CFG: settings of the offline staging pose search (experiments/beaker_hotplate_staging_search.py).
     LAYOUT_CFG: settings of the joint layout and staging search with slack at every task pose
         (experiments/beaker_hotplate_layout_search.py).
@@ -115,6 +116,45 @@ BEAKER_CFG = {
 # the lowest force that holds in all six cases (slip 0.1 to 0.6 mm, no creep): safety factor 3.3 at friction 0.4 and 2.6 at 0.32 (2 x force x friction / the 0.2 kg beaker's weight).
 GRIP_FORCE_TABLE = {
     "glass_beaker": 8.0,
+}
+
+# ----------------------------------------------------------------------------------------------------------
+# Grasp reachability map (design plan §3.1), built by src/reach_map.py with the rules of src/grasp_rules.py
+# ----------------------------------------------------------------------------------------------------------
+GRASP_MAP_CFG = {
+    # The mapped point is the pad centre, the centre of the finger pads' contact patch, and the rule's axes are the hand's approach axis and finger-closing axis. None of these is
+    # a setting: src/gripper_geometry.py derives them from the compiled model (the finger joints, the tool point and the finger collision geometry), and grasp_cfg() adds them to this dict
+    # as "pad_center_in_tcp", "approach_axis", "closing_axis" (all in the tool point frame) and "finger_open_max". On the current model: pad centre (0.0002, 0.006, 0.009) m (a small
+    # patch near the fingertips, 9 mm beyond the tool point and 6 mm off its y axis, because the fingers are not symmetric about the hand's origin), approach +z, closing +y.
+    # What counts as a grasp: level and a side grasp. Both the approach axis (hand z) and the finger-closing axis (hand y) within level_deg of horizontal. If the pilot shows
+    # the map is too small, David decides whether to loosen it to 10 deg.
+    "level_deg": 5.0,
+    # Approach directions: n_bins bins that tile the circle, bin k centred at k * 360 / n_bins deg measured from the robot's forward axis (+x of the torso frame) towards its left
+    # (+y), each accepting +-bin_half_deg around its centre.
+    "n_bins": 12,
+    "bin_half_deg": 15.0,
+    "joint_margin_deg": 10.0,           # every joint at least this far from both of its limits
+    # The map: 5 mm voxels in the shoulder frame (the origin of the arm's link0 frame, axes parallel to the torso's: x forward, y left, z up); a 1 cm cube counts only if
+    # all 8 of its voxels are reachable.
+    "voxel": 0.005,                     # m
+    "cube": 0.010,                      # m
+    # Inverse kinematics of one voxel centre (damped least squares with the analytic Jacobian, joint bounds shrunk by the margin).
+    "ik_pos_tol": 0.0005,               # m, a voxel centre counts as reached within this
+    "ik_max_iter": 40,
+    "ik_damping": 0.02,
+    "ik_max_step": 0.3,                 # rad, largest joint change of one iteration
+    "ik_soft": 0.8,                     # the rule rows push back only past this fraction of the tolerance, so solutions end inside it
+    "ik_retries": 5,                    # retries before a voxel is marked unreachable (IK failed, or the pose collides)
+    "ik_neighbour_rounds": 3,           # of those, the first rounds start from other reached neighbours' joint angles, the rest from random vectors
+    # Flood fill: the quick random sample that gives the convex outer bound and the extra seeds
+    "quick_samples": 10_000_000,
+    "hull_margin": 0.03,                # m, the convex outer bound is grown by this
+    "n_seeds": 8,                       # spread-out seed points from the quick sample (plus the home pose point)
+    "grid_margin": 0.03,                # m, the voxel grid extends this far beyond the outer bound's box
+    "seed": 0,
+    # Stand-in for the base's stopping error (the real value is a hardware question, design plan §11): the sim's own pose-correction thresholds
+    "stop_error_xy": 0.01,              # m
+    "stop_error_yaw_deg": 1.0,          # deg
 }
 
 # ----------------------------------------------------------------------------------------------------------

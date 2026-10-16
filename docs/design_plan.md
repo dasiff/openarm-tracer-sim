@@ -28,7 +28,7 @@ Status markers:
 - Placeholder pedestal lift actuator, passed by every task, launcher and replay entry point (constructor default is off). [DONE]
 - Battery pack: Anker SOLIX C800 (model A1753) strapped to the robot, a box in the model (`src/battery.py`, `BATTERY_SPECS` in `src/robot_specs.py`). [DONE]
   - 384 x 208 x 244 mm (Anker spec, includes handles), 11.3 kg uniform density (Anker net weight), collisions on, its own welded body on base_link (base_link has an explicit inertial, so a geom mass on it is ignored). On by default (`RobotSimulator(battery=True)`); in the recordings' specs snapshot.
-  - Mount: [PENDING] the team (section 11). Placeholder: fully on the flat part of the Tracer deck behind the pedestal, flat, long side across the width, front panel facing backward. The flat deck runs 220 mm behind the pedestal's rear face (x = -0.075 to -0.295 in the base_link frame), then a 60 mm bevel drops 30 mm to the rear tip; the pack's front face is 8 mm behind the pedestal and its rear face 4 mm inside the end of the flat deck.
+  - Mount: [PENDING] the team (§11). Placeholder: fully on the flat part of the Tracer deck behind the pedestal, flat, long side across the width, front panel facing backward. The flat deck runs 220 mm behind the pedestal's rear face (x = -0.075 to -0.295 in the base_link frame), then a 60 mm bevel drops 30 mm to the rear tip; the pack's front face is 8 mm behind the pedestal and its rear face 4 mm inside the end of the flat deck.
   - Checked with the placeholder mount: arms never closer than 138 mm (rest pose, lowest pedestal; 490 mm or more at home); 20,000 random arm and pedestal configurations within the joint limits, none within 40 mm; the torso 81 mm at the lowest pedestal; not in any of the three camera views (rendered); centre of mass 26 mm rearward and 23 to 60 mm lower; base lean unchanged (0.00 deg; rear caster load 90 -> 128 N). `home_pose_test` has a battery clearance group (40 mm) and a no-contact check. Recheck all of it if the real mount differs.
 - Base lean fix: low-friction contact spheres at wheels and casters (supersedes the old cylinder-wheel plan).
 - Home pose ("waiter pose"): left (12.5, 0, 0, 120, 0, 0, 15) deg, right mirrored; staging ends at home; neck frames beaker, hotplate, both grippers. Home variation setting, off by default.
@@ -55,47 +55,57 @@ Status markers:
 
 ## 3. Reachability map and stance finder
 
+**[PAUSED 2026-10-16]** B2 waits for B1c (import of the updated robot URDF, §9): anything built on the current arm geometry will be redone. Done so far: B2.1 to B2.4 as code with tests (the arm FK / IK, the grasp rules, the flood fill, the collision filter) and pilot maps (left and right arm, bin 0, without collisions; left with collisions, one run), all for the current geometry.
+
 ### 3.1 The grasp map [DECIDED]
 
 Built once per arm and approach direction, saved.
 
-- Stored as cubes, relative to that arm's shoulder (pedestal height shifts it vertically). Left and right computed separately (not mirrored; they differ about 1 cm).
-- Grasps that count: gripper within about 5 deg of level, upright beaker, side grasp. Approach directions every 30 deg, each accepting +/-15 deg.
-- Only configurations with >=10 deg margin from every joint limit and no self-collision, and no collision with the battery pack (with the placeholder mount no arm configuration comes near it).
+- Stored as 1 cm cubes (built from 5 mm voxels, see b and e), relative to that arm's actual shoulder mount (the origin of its link0 frame; pedestal height shifts it vertically). The mapped point is the pad centre (the centre of the finger pads' contact patch), not the tool point. The pad centre, the approach axis and the finger-closing axis are derived from the compiled model (`src/gripper_geometry.py`: the finger joints, the tool point and the finger collision geometry), not assumed, so a new robot description changes them without a code change (2026-10-16). Each arm is built separately (not mirrored; the small mirror difference does not matter). [DECIDED 2026-10-16]
+- Grasps that count: level, side grasp, upright beaker: the approach axis and the finger-closing axis both within 5 deg of horizontal. If the B2.3 pilot shows the map is too small, report it; David decides whether to loosen to 10 deg. Approach directions every 30 deg (12 bins that tile the circle), each accepting +/-15 deg. [DECIDED 2026-10-16]
+- Only configurations with >=10 deg margin from every joint limit and no self-collision, and no collision with the battery pack (with the placeholder mount no arm configuration comes near it). Collisions include the neck at its drive pose, and self-collision is built at the lowest pedestal (the worst case). [DECIDED 2026-10-16]
 - Build steps:
-  - a. Sample configurations with the batch forward-kinematics engine; keep those meeting the grasp rules.
-  - b. Mark 1 cm cubes containing kept samples.
-  - c. Holes: find every small empty pocket enclosed by reachable cubes. Test each with inverse kinematics: about 5 starting guesses (including the configuration that reached a neighboring cube, plus random ones) and a few orientations within the tolerance. Any success -> sampling gap, fill it. All fail -> REAL hole, keep it. Never fill holes blindly (no blind morphological closing).
-  - d. If many gaps needed filling, sample more instead.
-  - e. Enclosure rule: a cube counts only if entirely reachable.
-  - f. Margins: erode horizontally by the base's stopping error, plus a 1 cm margin in all directions for pedestal settling and arm tracking error. Erosion also grows every real interior hole by the same margin. Heading error is handled in the stance finder (3.4). Vertical travel is handled by path sampling (3.3), not margins.
-  - g. Keep the cubes as the map; the stance finder slices cubes. Wrap a surface only for visualization.
+  - a. IK flood fill (revised 2026-10-16, replaces random sampling of the whole joint space, which yields only 0.49 % level poses): a quick random sample of joint vectors that meet the rules gives a convex outer bound and spread-out seeds; with the home pose point as one more seed, each frontier voxel centre is solved by IK with the grasp rule (analytic Jacobian, `src/arm_kinematics.py`, `src/reach_map.py`), warm-started from its reachable neighbour; a success queues the neighbours, a failure is retried from 5 fresh random starts and then marked unreachable. Voxels outside the outer bound are skipped. Validation: random level poses must land in reachable voxels.
+  - b. Mark the 5 mm voxels containing kept samples.
+  - c. Holes: find every small empty pocket enclosed by reachable cubes. Test each with more inverse kinematics: starting guesses from the configurations that reached the neighbouring voxels (with noise), plus random ones, and a few orientations within the tolerance. Any success -> flood fill gap, fill it. All fail -> REAL hole, keep it. Never fill holes blindly (no blind morphological closing). The B2.3 pilot found 2744 enclosed pockets (4470 voxels) in one map, most of them single voxels.
+  - d. If many gaps needed filling, raise the number of retries and the outer bound's sample size instead.
+  - e. Cube rule: a 1 cm cube counts only if all 8 of its 5 mm sub-voxels are reachable. [DECIDED 2026-10-16]
+  - f. Margins: erode horizontally by the base's stopping error, plus a 1 cm margin in all directions for pedestal settling and arm tracking error. Stand-in for the stopping error: 1 cm and 1 deg (the sim's own pose-correction thresholds); the real value is a hardware question (§11). Erosion also grows every real interior hole by the same margin. Heading error is handled in the stance finder (3.4). Vertical travel is handled by path sampling (3.3), not margins.
+  - g. Keep the cubes as the map; the stance finder slices cubes. Wrap a surface only for visualization. Map files live in git-ignored data/ with a staleness hash (model, settings, sampler version); only the build settings are committed (`GRASP_MAP_CFG` in `src/task_config.py`). [DECIDED 2026-10-16]
 
 ### 3.2 Pour map [DECIDED]
 
 - Built like the grasp maps, but a cube counts only if reachable at every tilt from 0 to 120 deg (checked every 15 deg), tilt relative to the approach direction.
 - Sample both arms together: pouring arm across the tilt range, holding arm in its holding pose. Count only cubes with no arm-arm collision.
+- **[PENDING]** Open definitions, deferred to B2.14: the tilt axis and its sign (the pinch axis is the natural one: the beaker pivots about it), the holding arm's pose, and how the grasp height enters (the lip position depends on it).
 
 ### 3.3 Skill paths [DECIDED]
 
 - Each skill's motion is described as segments, sampled every 1 to 2 cm. Every sample must be reachable from the stance.
 - Over-the-top approach: each skill's path includes a point at a clearance height above the target, then descends to grasp height, then moves in sideways.
+- The grasp is a vertical segment of points through the grasp band (§5), not a single point, so the stance supports any grasp height the generator picks. [DECIDED 2026-10-16]
 - Clearance height is ONE global config setting, default 20 cm above the surface the target sits on, overridable per task (later by the orchestrator).
 
 ### 3.4 Stance finder [DECIDED]
 
 Fast queries, no brute-force floor search.
 
-- Inputs: task points (the sampled skill path points), each labeled left / right / either (either prefers both), optional required approach direction; furniture map. The VLA chooses the hand itself (prompts do not name the arm), so a skill's points are normally labeled "either"; "left" or "right" only when the arm is fixed (Phase A is left only). The output includes each arm's reach score for each point at each stance, because the demo generator picks the arm from it (section 5).
+- Inputs: task points (the sampled skill path points), each labeled left / right / either (either prefers both), optional required approach direction; furniture map in two layers (base height and arm height), built from the scene geometry; the room walls get collision in the scene (they have none now). [DECIDED 2026-10-16] The VLA chooses the hand itself (prompts do not name the arm), so a skill's points are normally labeled "either"; "left" or "right" only when the arm is fixed (Phase A is left only). The output includes each arm's reach score for each point at each stance, because the demo generator picks the arm from it (§5).
 - For each pedestal height and robot heading (every 5 deg): take each point's required map's horizontal cross-section at the point's height, flip it around the point, overlap all flipped outlines; subtract furniture enlarged by the robot footprint at that heading.
 - Heading robustness: intersect with the regions at neighboring headings (+/-1 deg).
-- Score each floor spot by distance to the nearest edge of the valid region (distance transform); real-hole islands count as edges. Combine multi-point scores by minimum; rank "either" points reachable by both arms higher: a stance where both arms can reach is preferred to one where only one can, because the VLA picks the hand and the stance must work for either.
+- Score each floor spot by distance to the nearest edge of the valid region (distance transform); real-hole islands count as edges. Scores are distances to the edge of the valid region; combine multi-point scores by minimum (for the arm rule of §5 each arm's score is rounded to 1 cm, so near-ties go to left); rank "either" points reachable by both arms higher: a stance where both arms can reach is preferred to one where only one can, because the VLA picks the hand and the stance must work for either.
 - For each spot, record the valid pedestal height range; prefer spots valid across a range; choose a height mid-range.
 - Pre-filter: drop stances whose path segments pass through furniture enlarged by an arm's thickness.
 - Verification: check the top ~5 stances with inverse kinematics along the whole sampled path, checking all arm links against furniture and the other arm; keep the best that passes. (RAIL safety filter comes later on top.)
 - Output: ranked stances (position, heading, pedestal height and range, score), top-down picture, and the verification result.
-- Staging: Phase A uses one hand-picked stance per bench end, fixed. Phase B draws each demo's stance at random from the top candidates above a score threshold, then the generator picks the arm with the better reach score at that stance (section 5). The scripted staging of the orchestrator (section 8) later takes its stance from the same map.
+- Staging: Phase A uses one hand-picked stance per bench end, fixed. Phase B draws each demo's stance at random from the top candidates above a score threshold, then the generator picks the arm with the better reach score at that stance (§5). Demo generation places the robot at the stance, with a random offset matching the stopping error (1 cm, 1 deg); it does not drive. Driving and the swept check of the final turn apply to full episodes and MPVI (§8). [DECIDED 2026-10-16] The scripted staging of the orchestrator (§8) later takes its stance from the same map.
 - Supersedes the old layout/staging search scripts.
+
+### 3.5 B2 breakdown (B2.1 to B2.14, each separately testable)
+
+B2.1 move the arm FK and IK from the old search scripts into `src/` (test: FK against MuJoCo). B2.2 grasp-rule module. B2.3 sampler pilot (yield, cubes found vs samples, time for full coverage, is the current staging stance inside the map). B2.4 collision filter (reduced model: arm, torso, pedestal, base with battery, neck, other arm). B2.5 the full flood fill for all 12 bins and both arms. B2.6 holes (flood fill, IK fill test). B2.7 cube rule and erosion. B2.8 map file, staleness hash, pictures. B2.9 furniture layers (and collision for the room walls). B2.10 stance finder core. B2.11 skill paths. B2.12 verification of the top stances. B2.13 output, delete the old search scripts, docs. B2.14 pour map (§3.2 open definitions). The flood fill (B2.5) and the pour map (B2.14) are the expensive builds: the VM or PACE.
+
+B2.3 pilot result (2026-10-16, current arm geometry, to be redone after B1c; left arm, bin 0, `experiments/reach_map_pilot.py`, no collisions yet): 1.54 M voxels reached in 244 s (1.94 M IK solves, 126 us each including retries; 113 waves), 181,609 cubes (0.182 m^3), 62,729 failed voxels, 4470 enclosed unreached voxels in 2744 pockets; the quick sample (10 M vectors, 32 s) gave 48,696 level poses (0.487 %), 4614 in bin 0. Validation: of 2597 random level poses in bin 0, 99.65 % land in a reached voxel (9 disagreements: 3 outside the outer bound, 4 failed voxels, 2 never tried; 5 of the 9 are flood fill misses, the pose's own joints reach the voxel centre) and 98.15 % in a reachable cube (the cube rule drops edge cubes by design). Projection: the 12 bins of one arm take about 45 min and both arms about 90 min on this VM (flood fill only; peak memory 2.1 GB, almost all of it the loaded scene), the collision filter (B2.4) comes on top. The current staging stance (`TASK_CFG`) is at the edge of the map: the beaker's grasp points are 0.63 to 0.64 m from the left shoulder, the voxels are reached at all 8 heights of the 25 to 60 % band but cubes at only 6, the distance to the nearest unreachable cube is 0 to 1.4 cm, and with the margins of step f it is outside the map at every height. A direct IK check (no map) finds level grasps there only for the left arm and only in the two forward bins (0 and 1); the right arm found none.
 
 ## 4. Test task and scenes
 
@@ -105,11 +115,11 @@ Beaker and hotplate at opposite ends of the same central bench; same surface hei
 
 ### 4.2 Pouring scene [DECIDED]
 
-Second hollow beaker; liquid stand-in of a few dozen small balls (low bounce, some friction, sized to flow through the about 66 mm mouth without jamming); starting count randomized. Run a timing test early (balls + noslip on the VM).
+Second hollow beaker (which of the two starts with the liquid stand-in is randomized per demo, §6); liquid stand-in of a few dozen small balls (low bounce, some friction, sized to flow through the about 66 mm mouth without jamming); starting count randomized. Run a timing test early (balls + noslip on the VM).
 
 ## 5. Demo generator [DECIDED]
 
-- Closed loop at 30 Hz with receding horizon: plan a smooth path to the current goal, execute the first step, replan from the actual state. Inverse kinematics via mink. Hand-made safe waypoints for bench clearance.
+- Closed loop at 30 Hz with receding horizon: plan a smooth path to the current goal, execute the first step, replan from the actual state. Inverse kinematics via mink (added at B4, not before). Hand-made safe waypoints for bench clearance.
 - Executes through the real controller and position actuators.
 - Side grasps only, on the band from 1/4 to about 60% of beaker height; never the rim.
   - **[PENDING]** Grasp height vs center of mass: compute the beaker's center of mass height (empty, and with the liquid mass setting) and report where it falls in the 1/4-60% grasp band. Grips below it are unstable about the pinch axis. Decide whether to limit the band, at least for pour.
@@ -118,7 +128,7 @@ Second hollow beaker; liquid stand-in of a few dozen small balls (low bounce, so
 - Grip force from the per-object table.
 - Phase A variation: incidental only (start pose via home variation, object positions, speed, recovery nudges during free motion recording the clean corrective command, never the noisy one). Left arm only. One fixed hand-picked stance per bench end.
 - Phase B variation: everything in Phase A, plus the arm chosen by a deterministic rule (below), elbow posture randomized per episode (mink posture setting), path variation, grasp style within side grasps (grasp height on the body band, wrist rotation), stance drawn from the map's top candidates above a score threshold, domain randomization on.
-- Arm choice: a deterministic rule, not a random draw: the arm with the better reach score for the grasp (from the reachability map, section 3, at the demo's stance); ties go to left. Variety comes from the object positions. For the pour, apply the rule to each pick (among the arms still free). The prompt does not name the arm and the VLA chooses the hand itself. Reason: random arms with identical prompts would teach the VLA two equally likely hands, so it might switch between action chunks. [DECIDED]
+- Arm choice: a deterministic rule, not a random draw: the arm with the better reach score for the grasp (from the reachability map, §3, at the demo's stance); ties go to left (reach scores rounded to 1 cm, §3.4, so near-ties go to left). Variety comes from the object positions. For the pour, apply the rule to each pick (among the arms still free). The prompt does not name the arm and the VLA chooses the hand itself. Reason: random arms with identical prompts would teach the VLA two equally likely hands, so it might switch between action chunks. [DECIDED]
 - Domain randomization (generator settings, off in Phase A, on in Phase B): physics (friction and masses +/-10-20%, friction also biased lower for wet glass; liquid mass via its setting) and visual (lighting, colors, textures, beaker sizes). Beaker sizes must fit the gripper opening with margin; grasp band scales with height. All randomized values logged per episode.
   - Friction lower limit 0.32 (20 % below the nominal 0.4) for the gripper on glass, unless the grasp is rechecked lower: the 8 N grip force is verified down to 0.32 only (docs/grip_force_sweep.md; 8 N has a static safety factor of 2.6 there).
 - Log every attempt: seed, all randomized settings, outcome, and for failures the failing phase and reason. Discard failures.
@@ -129,13 +139,14 @@ Second hollow beaker; liquid stand-in of a few dozen small balls (low bounce, so
 
 - Pick: start at home, grasp, lift, end at home holding the beaker. Success: held, lifted, upright, arm at home.
 - Place: start at home holding something (run pick first, record only the place), place on the hotplate, release, end at home. Success: existing on-hotplate check, gripper open, arm at home.
-- Pour: start with both beakers held (chain left pick and right pick, record only the pour). Receiving beaker stays upright and still.
-  - Motion: bring the pouring lip a few cm above the receiving opening (small randomized variation); tip gently until balls flow; keep tipping to hold a steady outflow rate (averaged over a short window), adjusting the lip so the average landing spot stays centered. Stop tipping when outflow stops for a short window or at 120 deg, whichever comes first; then return upright and let settle.
+- Pour: start with both beakers held (chain the two picks, the full beaker first, then the empty one with the free arm; record only the pour). The destination beaker stays upright and still.
+  - Source and destination: the source is the beaker with the contents, the destination the empty one. Which of the two beakers starts full is randomized per demo. The pouring hand follows from which arm picked the full beaker (by the arm rule of §5, applied to that first pick). Prompts refer to the contents, not the arm or the beaker's position: "pour the beads into the empty beaker". [DECIDED]
+  - Motion: bring the pouring lip a few cm above the destination opening (small randomized variation); tip gently until balls flow; keep tipping to hold a steady outflow rate (averaged over a short window), adjusting the lip so the average landing spot stays centered. Stop tipping when outflow stops for a short window or at 120 deg, whichever comes first; then return upright and let settle.
   - **[PENDING]** Whether a fixed dwell at the final tilt remains when 120 deg is reached with balls still flowing.
   - Completion trigger: arms only after the beaker has tilted past about 30 deg; fires when it is back upright and still. Timeout if it never fires.
   - Success (sim): >=90% of balls transferred and zero spilled; log both counts every episode; discard any spill.
   - **[PENDING]** Recheck the grip force during the pour: the 8 N glass-beaker force was verified on the grasp-and-lift only, and the pour tilts the beaker and changes the load. 9 N is the fallback (verified on the lift down to friction 0.32; the finger ceiling is 10 N).
-- Prompts are plain task language and do not name the arm: naming the hand is out of distribution for the VLA, which chooses the hand itself. Which arm does each demo follows the deterministic reach-score rule of section 5. Keep every generated dataset forever.
+- Prompts are plain task language and do not name the arm: naming the hand is out of distribution for the VLA, which chooses the hand itself. Which arm does each demo follows the deterministic reach-score rule of §5. Keep every generated dataset forever.
 
 ## 7. Data pipeline, training, openpi integration
 
@@ -155,7 +166,7 @@ Second hollow beaker; liquid stand-in of a few dozen small balls (low bounce, so
 - Fixed evaluation set per skill (same scenes and seeds), success rate per skill tracked across models, to catch forgetting.
 - Every model records its recipe, dataset versions, base checkpoint.
 - Phase A (pipeline proof): left-arm pick only, about 50 demos, low variation, short pi0.5 fine-tune on PACE. Measure inference time and cost per training hour. In evaluation, test chunk execution of 5, 10, and 25 steps on the same model.
-- Phase B: pick, place, pour, both arms (the arm of each demo follows the reach-score rule of section 5, not a random draw; the prompts are plain task language, so the VLA learns the hand choice from where the objects are), full randomization, hundreds of demos per skill plus all earlier data; retrain from the base pi0.5 checkpoint. Include whatever skills are ready; don't wait.
+- Phase B: pick, place, pour, both arms (the arm of each demo follows the reach-score rule of §5, not a random draw; the prompts are plain task language, so the VLA learns the hand choice from where the objects are), full randomization, hundreds of demos per skill plus all earlier data; retrain from the base pi0.5 checkpoint. Include whatever skills are ready; don't wait.
 - Later retrains: from base on everything, or continue from the latest model with new data plus sampled old data.
 - PACE also for headless demo generation and rendering (fixes VM speed and disk); check offscreen rendering works there. PACE account pending (Shreyas).
 
@@ -166,34 +177,38 @@ Second hollow beaker; liquid stand-in of a few dozen small balls (low bounce, so
 - Policy server on PACE; openpi client as a command source in the control loop; SSH tunnel if PACE requires it.
 - Pause physics while the policy thinks: a setting, default on.
 - Chunk execution: a setting, default about 10 of 50 steps.
-- The VLA is arm-only: it outputs arm and gripper targets, never base commands; the base is driven by the staging (and later the navigation of section 13). [DECIDED] Letting it make small base adjustments is a LATER option (section 10).
+- The VLA is arm-only: it outputs arm and gripper targets, never base commands; the base is driven by the staging (and later the navigation of §13). [DECIDED] Letting it make small base adjustments is a LATER option (§10).
 
 ## 8. Planner: MPVI as in the paper [DECIDED]
 
-Built after Phase B training (build order step 7). Implement MPVI as in the paper first; our own planning extensions (the A* task-level search) are in section 10 (LATER), with their design text kept.
+Built after Phase B training (B7). Implement MPVI as in the paper first; our own planning extensions (the A* task-level search) are in §10 (LATER), with their design text kept.
 
-- LLM: breaks the instruction into steps and decides their order, as in the paper. [DECIDED] Prompts to the VLA are plain task language and do not name the arm (section 6). No LLM fine-tuning here (see the differences below). The question whether the paper fine-tunes its LLM is resolved: it does, on human-annotated BEHAVIOR task plans (Appendix C.1); no annotated lab plans exist for us.
+- LLM: breaks the instruction into steps and decides their order, as in the paper. [DECIDED] Prompts to the VLA are plain task language and do not name the arm (§6). No LLM fine-tuning here (see the differences below). The question whether the paper fine-tunes its LLM is resolved: it does, on human-annotated BEHAVIOR task plans (Appendix C.1); no annotated lab plans exist for us.
 - Orchestrator: small state machine; runs each step, checks it, updates the world model. Built in layers, starting with a hand-written plan.
-- World model: its own module; object positions and hand contents; sim ground truth now, perception later (section 13).
-- Navigation: the scripted staging (drive, pedestal, arms to home, neck framing; `src/staging_source.py`) stands in for the paper's navigation module for now. It stops at a stance from the reachability map (section 3.4) instead of the paper's handoff distance, because our VLA is arm-only (the paper's is whole-body). Until the stance finder exists the staging pose is a fixed config value (`TASK_CFG`); the staging must accept a stance as an input by build order step 4 (section 9), not only by step 7. A* path planning comes with exploration (section 13).
-- Completion: sim success checks for now. Pick and place triggered by gripper events (close-and-hold, open), following the paper's proprioceptive trigger idea; pour uses its tilt-based trigger (section 6).
-- Objects: fixtures from the lab map; small objects from best-known positions (later the knowledge base of section 13); replan when something new or moved is found.
+- World model: its own module; object positions and hand contents; sim ground truth now, perception later (§13).
+- Navigation: the scripted staging (drive, pedestal, arms to home, neck framing; `src/staging_source.py`) stands in for the paper's navigation module for now. It stops at a stance from the reachability map (§3.4) instead of the paper's handoff distance, because our VLA is arm-only (the paper's is whole-body). Until the stance finder exists the staging pose is a fixed config value (`TASK_CFG`); the staging must accept a stance as an input by B4 (§9), not only by B7. A* path planning comes with exploration (§13).
+- Completion: sim success checks for now. Pick and place triggered by gripper events (close-and-hold, open), following the paper's proprioceptive trigger idea; pour uses its tilt-based trigger (§6).
+- Objects: fixtures from the lab map; small objects from best-known positions (later the knowledge base of §13); replan when something new or moved is found.
 - Failure: replan from the current state; operator as fallback; never skip a failed step.
-- Differences from the MPVI paper, on record: (1) staging uses a reachability-map stance instead of a handoff distance, because our VLA is arm-only; (2) no LLM fine-tuning (the paper fine-tunes on human-annotated BEHAVIOR task plans, Appendix C.1; no annotated lab plans exist). (Temporary stand-ins, not differences by design: scripted staging as the navigation module and sim ground truth for perception, until section 13.)
+- Differences from the MPVI paper, on record: (1) staging uses a reachability-map stance instead of a handoff distance, because our VLA is arm-only; (2) no LLM fine-tuning (the paper fine-tunes on human-annotated BEHAVIOR task plans, Appendix C.1; no annotated lab plans exist). (Temporary stand-ins, not differences by design: scripted staging as the navigation module and sim ground truth for perception, until §13.)
 
 ## 9. Build order
 
-0. Merge and push. [DONE] (pushed 2026-10-15, b884ea6; baselines regenerated with the battery pack)
-1. Robot face. [DONE]; 1b. Battery pack on the deck (an obstacle for the reachability map, so it comes first). [DONE]
-2. Reachability map and stance finder.
-3. Pouring scene and timing test.
-3b. **[DONE]** Grip force: grasp robustness, before demo generation (before step 4). The 5 N grasp (glass beaker, friction 0.4) has a safety factor of about 2 and is marginal: its slip flips between 2.5 mm with no creep and 4.2 mm creeping 0.5 mm/s when an unrelated mass changes by 0.3 kg (11.0 to 11.3 kg battery; docs/TODO.md). Domain randomization lowers the friction, and the pour stresses the grasp more. Steps: (1) a grip force sweep on the grasp-and-lift, 5 to 9 N, with the battery mass at 11.0, 11.3 and 11.6 kg and the friction at 0.4 and 0.32. DONE 2026-10-15 (docs/grip_force_sweep.md): 5 N is marginal at friction 0.4 and loses the beaker at 0.32; 6 N and 7 N fail at 0.32; 8 N and 9 N hold at every perturbation. (2) Recommendation: 8 N per finger (slip 0.1 to 0.6 mm and no creep in all six perturbations; static safety factor 3.3 at friction 0.4 and 2.6 at 0.32, against 2.0 and 1.6 now). (3) David approved 2026-10-15; `GRIP_FORCE_TABLE["glass_beaker"]` is now 8 N. Rerun with 8 N: grasp_lift_test 4/4 (slip 0.15 mm, creep 0), gripper_force_test 29/29, beaker_hollow_test 21/21. Still open for the pour (section 6): it tilts the beaker and was not part of the sweep; recheck the force there, and recheck if the domain randomization goes below friction 0.32.
-4. Demo generator: pick and place first, then pour. The staging must accept a stance input by this step (Phase B demos draw their stances from the map), not only by step 7.
-5. Data pipeline and Phase A training.
-6. Phase B training.
-7. MPVI as in the paper (section 8): LLM step order, orchestrator, completion checks, scripted staging as navigation, VLA for manipulation.
-8. Exploration and object localization (section 13).
-LATER: the A* task-level planner extension (section 10).
+Build steps are referred to only as B-numbers. Each step shows the section that describes it.
+
+- B0: Merge and push. [DONE] (pushed 2026-10-15; baselines regenerated with the battery pack)
+- B1: Robot face (§2). [DONE]
+- B1b: Battery pack on the deck (§1; an obstacle for the reachability map, so it comes first). [DONE]
+- B1c: Import updated URDF (§1). **[PENDING]** The updated robot URDF is coming (2026-10-16); its scope (arms only, or the whole robot) is not known yet. Before it is imported nothing that depends on the arm geometry should be built: B2 is paused until B1c is done.
+- B2: Reachability map and stance finder (§3). **[PAUSED 2026-10-16]** pending B1c. The code written so far (B2.1 to B2.4) reads the arm from the compiled model and stays; the maps built from it (the pilots) are for the current arm geometry and will be redone.
+- B3: Pouring scene and timing test (§4.2).
+- B3b: Grip force: grasp robustness (§5, §6; docs/grip_force_sweep.md). **[DONE]** Before demo generation (before B4). The 5 N grasp (glass beaker, friction 0.4) has a safety factor of about 2 and is marginal: its slip flips between 2.5 mm with no creep and 4.2 mm creeping 0.5 mm/s when an unrelated mass changes by 0.3 kg (11.0 to 11.3 kg battery; docs/TODO.md). Domain randomization lowers the friction, and the pour stresses the grasp more. Steps: (1) a grip force sweep on the grasp-and-lift, 5 to 9 N, with the battery mass at 11.0, 11.3 and 11.6 kg and the friction at 0.4 and 0.32. DONE 2026-10-15 (docs/grip_force_sweep.md): 5 N is marginal at friction 0.4 and loses the beaker at 0.32; 6 N and 7 N fail at 0.32; 8 N and 9 N hold at every perturbation. (2) Recommendation: 8 N per finger (slip 0.1 to 0.6 mm and no creep in all six perturbations; static safety factor 3.3 at friction 0.4 and 2.6 at 0.32, against 2.0 and 1.6 now). (3) David approved 2026-10-15; `GRIP_FORCE_TABLE["glass_beaker"]` is now 8 N. Rerun with 8 N: grasp_lift_test 4/4 (slip 0.15 mm, creep 0), gripper_force_test 29/29, beaker_hollow_test 21/21. Still open for the pour (§6): it tilts the beaker and was not part of the sweep; recheck the force there, and recheck if the domain randomization goes below friction 0.32.
+- B4: Demo generator: pick and place first, then pour (§5, §6). The staging must accept a stance input by B4 (Phase B demos draw their stances from the map; demos are placed at the stance, not driven), not only by B7. mink is added at B4.
+- B5: Data pipeline and Phase A training (§7.1, §7.2).
+- B6: Phase B training (§7.2).
+- B7: MPVI as in the paper (§8): LLM step order, orchestrator, completion checks, scripted staging as navigation, VLA for manipulation.
+- B8: Exploration and object localization (§13).
+- LATER: the A* task-level planner extension (§10).
 
 ## 10. Later list [LATER]
 
@@ -209,13 +224,13 @@ LATER: the A* task-level planner extension (section 10).
 - RAIL safety filter
 - Home pose and framing margin tests were tuned to the placeholder camera; recheck when the real camera is known
 - Weak (2 N) grip: beaker creeps upward ~15 mm/s with the hand still. Real pinch ejection from tilt, or contact solver artifact? Check before demo generation.
-- A* task-level planner, our own extension of MPVI (moved here from section 8 on Dan's direction to implement MPVI as in the paper first; the design text is kept as it was):
+- A* task-level planner, our own extension of MPVI (moved here from §8 on Dan's direction to implement MPVI as in the paper first; the design text is kept as it was):
   - The LLM marks dependencies between steps with a depends_on field (told to mark dependent when unsure); the LLM does not set the final order. Dependency-aware reordering.
-  - Task-level search: weighted A* (accepts a good-enough plan quickly) over the LLM's steps chooses order within dependencies, arm assignment, and stances. The old plan wrote the arm choice into the prompt; that is dropped (prompts do not name the arm, section 6), so arm assignment would only steer the stances.
+  - Task-level search: weighted A* (accepts a good-enough plan quickly) over the LLM's steps chooses order within dependencies, arm assignment, and stances. The old plan wrote the arm choice into the prompt; that is dropped (prompts do not name the arm, §6), so arm assignment would only steer the stances.
   - Costs: travel time; heavy penalty for driving while carrying, scaled by contents (liquid highest); penalty for low reach scores (carrying costs).
   - Actions: drive, pick, pour, place. Put-down fallback: a temporary put-down = place on a free spot, pick later; only if no plan exists without it (rerun with put-downs allowed, and flag it).
-  - Two different A* uses: this task-level search (order, arms, stances) and the path planning of section 13 (driving routes). Keep them distinct.
-- VLA small base adjustments: add base commands to the VLA's actions so it can nudge the base. Needs a hard controller interlock so the base and the arms never move at the same time; never rely on the policy to follow that rule. Until then the VLA stays arm-only (section 7.3).
+  - Two different A* uses: this task-level search (order, arms, stances) and the path planning of §13 (driving routes). Keep them distinct.
+- VLA small base adjustments: add base commands to the VLA's actions so it can nudge the base. Needs a hard controller interlock so the base and the arms never move at the same time; never rely on the policy to follow that rule. Until then the VLA stays arm-only (§7.3).
 
 ## 11. Open questions for the hardware team [PENDING]
 
@@ -225,9 +240,10 @@ LATER: the A* task-level planner extension (section 10).
 - Arm controller: interpolate between targets? (assumed yes)
 - Eagle camera / neck: real mount, which 4 SO-101 joints, camera mass
 - Wrist camera mounts and angles
-- Camera model (field of view, resolution), and whether the eagle camera gives depth (for object positions, section 13)
+- Camera model (field of view, resolution), and whether the eagle camera gives depth (for object positions, §13)
 - Base: how the real Tracer holds position when stopped
 - Base stopping accuracy, position and heading (Michael)
+- Updated robot URDF (B1c): when it arrives, whether it covers the arms only or the whole robot (Tracer, pedestal, torso, arms), what changed (links, joint limits, masses, gripper), and the mesh and unit conventions
 - Pedestal: real lift specs
 - Pedestal base plate: real size, and whether it mounts on the Tracer deck. The sim has no base plate (only the 150 x 150 mm bottom section); a larger plate may leave no room behind the pedestal for the battery (the placeholder has 220 mm of flat deck behind the pedestal for the 208 mm pack)
 - Pedestal lift: real travel (the sim has 456 mm of top travel from a 0.8 m raised mast top)
@@ -241,37 +257,37 @@ LATER: the A* task-level planner extension (section 10).
 
 The sim reads MuJoCo's true state in several places, and the plan assumes it in a few more. None of it exists on the real robot. This is the inventory, each with its real-robot replacement. Every replacement is [LATER].
 
-Rule: each replacement is first tested in sim with simulated noisy sensors. The world model module (section 8) is the swap point: everything above it asks the world model, so only its inputs change.
+Rule: each replacement is first tested in sim with simulated noisy sensors. The world model module (§8) is the swap point: everything above it asks the world model, so only its inputs change.
 
 - **Robot position** [LATER]
-  - Sim ground truth: the base pose (x, y, heading) is read straight from the simulation state into every observation (`obs["base_pose"]`). The staging drive, its pose corrections, the handoff pose error and the logs all use it. Sections 3.1 and 3.4 assume only a stopping error.
-  - Real replacement: localization with a particle filter over a lab map, likely ROS 2 navigation's AMCL rather than our own, using wheel odometry plus lidar or depth. Building the map while localizing (SLAM) instead of using a prebuilt map is an open option: section 13, [PENDING] Dan's call.
+  - Sim ground truth: the base pose (x, y, heading) is read straight from the simulation state into every observation (`obs["base_pose"]`). The staging drive, its pose corrections, the handoff pose error and the logs all use it. §§3.1 and 3.4 assume only a stopping error.
+  - Real replacement: localization with a particle filter over a lab map, likely ROS 2 navigation's AMCL rather than our own, using wheel odometry plus lidar or depth. Building the map while localizing (SLAM) instead of using a prebuilt map is an open option: §13, [PENDING] Dan's call.
   - Consequence: stance margins must cover the stopping error plus the localization error.
 - **Lab map and fixtures** [LATER]
-  - Sim ground truth: furniture and fixture geometry come from the scene model (the staging's base-to-bench and arm-to-bench clearance checks use true geometric distances; the stance finder's furniture map and the path planner's floor map (section 13) are planned the same way).
+  - Sim ground truth: furniture and fixture geometry come from the scene model (the staging's base-to-bench and arm-to-bench clearance checks use true geometric distances; the stance finder's furniture map and the path planner's floor map (§13) are planned the same way).
   - Real replacement: a built map with labeled fixtures.
 - **Object positions** [LATER]
-  - Sim ground truth: the beaker and hotplate poses are read from the model (the neck framing points, the success check, the staging's task poses, and the planner's world model in section 8).
-  - Real replacement: camera-based detection and pose estimation (open-vocabulary detection and the depth options, section 13). Fixed objects such as the hotplate come from the lab map.
+  - Sim ground truth: the beaker and hotplate poses are read from the model (the neck framing points, the success check, the staging's task poses, and the planner's world model in §8).
+  - Real replacement: camera-based detection and pose estimation (open-vocabulary detection and the depth options, §13). Fixed objects such as the hotplate come from the lab map.
 - **Skill completion** [LATER]
   - Sim ground truth: success checks read the true object pose (on-hotplate, held, lifted, upright).
   - Real replacement: gripper signals (close-and-hold, open) plus a VLM check.
-  - The pour trigger uses the beaker tilt (section 6). The beaker is in the gripper, so the tilt is probably derivable from the arm joint angles; confirm when built.
+  - The pour trigger uses the beaker tilt (§6). The beaker is in the gripper, so the tilt is probably derivable from the arm joint angles; confirm when built.
 - **Pour success** [LATER]
-  - Sim ground truth: the transferred and spilled ball counts (sections 4.2 and 6).
+  - Sim ground truth: the transferred and spilled ball counts (§§4.2 and 6).
   - Real replacement: a camera-based check.
 - **Grasp confirmation** [LATER]
   - Sim ground truth: held, lifted and slip are read from the true beaker pose, and the finger force from the true contacts (the grasp and force tests).
-  - Real replacement: gripper position and current readback (the readback itself is a hardware question, section 11).
+  - Real replacement: gripper position and current readback (the readback itself is a hardware question, §11).
 - **Contacts and clearances** [LATER]
   - Sim ground truth: the episode runner's contact monitor (contacts per phase) and the staging's distance checks that abort on low clearance.
-  - Real replacement: none of this is observable on the real robot. Use the lab map plus the arm kinematics for clearance, and the RAIL safety filter (section 10) plus force or current sensing for contact.
+  - Real replacement: none of this is observable on the real robot. Use the lab map plus the arm kinematics for clearance, and the RAIL safety filter (§10) plus force or current sensing for contact.
 - **Object identity, properties and contents** [LATER]
-  - Sim ground truth: the grip force table is looked up by the known object ("glass_beaker"), and the world model's hand contents and masses (the liquid penalty of the A* extension, section 10) come from the config.
+  - Sim ground truth: the grip force table is looked up by the known object ("glass_beaker"), and the world model's hand contents and masses (the liquid penalty of the A* extension, §10) come from the config.
   - Real replacement: detection class or the task context chooses the table entry; contents come from the plan and a VLM check.
 - **Pedestal height, neck and arm joint angles, tool points** [LATER]
   - Sim ground truth: read from the joint state (the hand tool-centre-point positions that the neck framing uses are the simulation's own kinematics).
-  - Real replacement: encoder readback and forward kinematics with calibrated kinematics. Pedestal height depends on the real lift's readback (section 11); calibration accuracy matters for the neck framing.
+  - Real replacement: encoder readback and forward kinematics with calibrated kinematics. Pedestal height depends on the real lift's readback (§11); calibration accuracy matters for the neck framing.
 - **Legacy tracked-body observation** [LATER]
   - Sim ground truth: `RobotSimulator.get_observation()` can add the true position and velocity of named bodies (`track_bodies`). Only an old example script uses it.
   - Real replacement: none. Do not use it in new code; use the world model.
@@ -280,15 +296,15 @@ Not replaced, on purpose: the demo generator and the reachability map use true o
 
 ## 13. Exploration and object localization [DECIDED unless marked]
 
-Built after VLA manipulation works (build order step 8), on top of the MPVI pipeline of section 8. It replaces the sim ground truth of the "Object positions" and "Lab map" rows of section 12 and the scripted staging's fixed targets.
+Built after VLA manipulation works (B8), on top of the MPVI pipeline of §8. It replaces the sim ground truth of the "Object positions" and "Lab map" rows of §12 and the scripted staging's fixed targets.
 
 - Object detection: an open-vocabulary detector on the eagle camera (the paper uses GroundingDINO). [DECIDED]
 - Exploration: frontier exploration when the object is not visible (drive to the edge between known and unknown floor, look, repeat). [DECIDED]
-- Knowledge base of the objects found, as in the paper: what, where, when seen. The world model (section 8) reads it; a new or moved object triggers the replan of section 8. [DECIDED]
-- Navigation: A* path planning on a floor map plus a path follower; arms fixed while driving; the robot treated as wider and driven gentler when carrying (moved here from section 8, text kept). The scripted staging stands in until then. [DECIDED]
-- Mapping and localization: a prebuilt lab map with AMCL (section 12, "Robot position") or SLAM, which builds the map while localizing. SLAM: [PENDING] Dan's call.
+- Knowledge base of the objects found, as in the paper: what, where, when seen. The world model (§8) reads it; a new or moved object triggers the replan of §8. [DECIDED]
+- Navigation: A* path planning on a floor map plus a path follower; arms fixed while driving; the robot treated as wider and driven gentler when carrying (moved here from §8, text kept). The scripted staging stands in until then. [DECIDED]
+- Mapping and localization: a prebuilt lab map with AMCL (§12, "Robot position") or SLAM, which builds the map while localizing. SLAM: [PENDING] Dan's call.
 - Depth for object positions: [PENDING] decided during this work. Options on record:
   - The known-surface trick with the eagle camera: a ray from the camera through the detection, intersected with the known bench height (needs the camera pose from the neck kinematics, which the framing already uses, and the surface heights from the map).
-  - Depth from the real camera, if it is a depth camera (hardware question, section 11).
+  - Depth from the real camera, if it is a depth camera (hardware question, §11).
   - Stereo from the hand cameras was considered and set aside.
-- As section 12 says: test each replacement in sim with simulated noisy sensors first.
+- As §12 says: test each replacement in sim with simulated noisy sensors first.

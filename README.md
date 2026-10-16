@@ -167,7 +167,7 @@ Exclusivity and the hold rule stay in the controller (on in episodes).
 The episode runner is generic: `run_episode(task, model, data, ...)` knows nothing about the beaker. A task is a dictionary (see the docstring of
 `src/episode_runner.py`): how to reset the scene, which policy to run, how to check success, the time limits, and how replay rebuilds the model. The beaker
 task is built by `make_task()` in `src/task_beaker_hotplate.py`; its policy is `src/task_policy.py`, a sequence of stages (`src/sequential_policy.py`: a
-the MPVI orchestrator of `docs/design_plan.md` section 8 will run these stages, with the scripted staging standing in for its navigation module and the learned policy (the VLA, arm-only) as the arm stage, without touching the combining code).
+the MPVI orchestrator of `docs/design_plan.md` §8 will run these stages, with the scripted staging standing in for its navigation module and the learned policy (the VLA, arm-only) as the arm stage, without touching the combining code).
 
 `experiments/beaker_hotplate_episode.py [--mode auto|teleop] [--arm-stage hold|request_operator|cheat] [--viewer] [--repeat N]
 [--cross-check] [--record] [--out DIR]` (`--mode teleop` needs `--viewer`: the operator drives from the start; `--repeat` reuses the model and compares the logs

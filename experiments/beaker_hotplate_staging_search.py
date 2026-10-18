@@ -227,8 +227,8 @@ def plan_arm_path(model, data, side, base_xy, yaw, z_rest, pedestal_q, rest_q, r
     data.qpos[0:7] = [base_xy[0], base_xy[1], z_rest, *yaw_to_quat(yaw)]
     for jn in robot_specs.PEDESTAL_SPECS["joints"]:
         data.qpos[model.joint(jn).qposadr[0]] = pedestal_q
-    for a in ids["fingers"]:
-        data.qpos[model.jnt_qposadr[model.actuator_trnid[a, 0]]] = C["finger_open"]
+    for j_ in ids["finger_jnt"]:
+        data.qpos[model.jnt_qposadr[j_]] = C["finger_open"]
     root = model.body("base_link").id
     under = lambda b: _is_under(model, b, root)
     arm_bodies = {b for b in range(model.nbody) if model.body(b).name.startswith(f"openarm_{side}_")}
@@ -435,8 +435,8 @@ def main():
             data.qpos[model.joint(jn).qposadr[0]] = r["pedestal_q"]
         for k, qa in enumerate(ik["ready"]["q"]):
             data.qpos[ids["qadr"][k]] = qa
-        for a in ids["fingers"]:
-            data.qpos[model.jnt_qposadr[model.actuator_trnid[a, 0]]] = C["finger_open"]
+        for j_ in ids["finger_jnt"]:
+            data.qpos[model.jnt_qposadr[j_]] = C["finger_open"]
         mujoco.mj_forward(model, data)
         tcp = data.body(f"openarm_{side}_hand_tcp").xpos.copy()
         arm_bodies = {b for b in range(model.nbody) if model.body(b).name.startswith(f"openarm_{side}_")}

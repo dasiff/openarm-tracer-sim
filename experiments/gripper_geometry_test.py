@@ -5,7 +5,7 @@ Tests of src/gripper_geometry.py (the approach axis, the finger-closing axis and
     MUJOCO_GL=egl python experiments/gripper_geometry_test.py
 
 1. The current model, both arms: the axes are unit vectors and perpendicular; the approach axis is the tool frame's +z and the closing axis its +y (as measured by hand before the code
-   existed); the pad centre agrees with that earlier measurement (0, 0.006, 0.009 m from the tool point) within 1 mm; the finger opening is 0.044 m.
+   existed); the pad centre is where the pads were measured before the import (0.1891 m along link7's z axis, within 1 mm) and on the hand's axis (the updated description's fingers are symmetric, the old ones were 6 mm off); the finger opening is 0.044 m.
 2. The pad centre does not depend on how far the fingers are open when it is derived (fingers at their zero or fully open: the same point within 0.1 mm).
 3. Nothing is assumed from the model's conventions. In copies of the model whose tool frame is turned (90 degrees about z; tilted 30 degrees about x; both) the derived axes and pad centre
    change with it, while for 20000 random joint vectors the pad centre's world position is the same to 1e-9 m and the rule classification (level or not, and the bin) is identical.
@@ -33,7 +33,10 @@ from src.robot_helpers import arm_ids  # noqa: E402
 from src.simulator import RobotSimulator  # noqa: E402
 
 results = []
-MEASURED_PAD = np.array([0.0, 0.006, 0.009])        # by hand, 2026-10-16, before the code existed
+# By hand, 2026-10-16, before the code existed, on the old hand: the pad centre was (0, 0.006, 0.009) from the tool point, which sat at 0.1801 m on the link7 z axis, so at 0.1891 m. The
+# old fingers were placed asymmetrically (y 0 and 0.012 from the hand's origin; the pad centre was 6 mm off the axis); the updated description's are symmetric, and the pads themselves
+# did not move along z.
+MEASURED_PAD_Z_LINK7 = 0.1801 + 0.009
 
 
 def check(name, ok, detail=""):
@@ -61,8 +64,12 @@ def main():
         a, c = g["approach_axis"], g["closing_axis"]
         check(f"{sd}: the axes are unit vectors and perpendicular", abs(np.linalg.norm(a) - 1) < 1e-9 and abs(np.linalg.norm(c) - 1) < 1e-9 and abs(a @ c) < 1e-6, f"a.c = {a @ c:.1e}")
         check(f"{sd}: the approach axis is the tool frame's +z and the closing axis its +y", np.allclose(a, [0, 0, 1], atol=1e-6) and np.allclose(c, [0, 1, 0], atol=1e-6), f"{np.round(a, 4)} {np.round(c, 4)}")
-        err = np.abs(g["pad_center_in_tcp"] - MEASURED_PAD).max()
-        check(f"{sd}: the pad centre is within 1 mm of the earlier measurement", err < 0.001, f"{np.round(g['pad_center_in_tcp'], 5)}, largest difference {1000 * err:.2f} mm")
+        pad = g["pad_center_in_tcp"]
+        tcp_in_link7 = m.body_pos[m.body(f"openarm_{sd}_hand").id] + m.body_pos[m.body(f"openarm_{sd}_hand_tcp").id]     # the hand and tool point frames are not turned
+        z_link7 = float(tcp_in_link7[2] + pad[2])
+        check(f"{sd}: the pad centre sits where the pads were measured before (z {MEASURED_PAD_Z_LINK7:.4f} m from the link7 frame, within 1 mm: the tool point moved with the import)",
+              abs(z_link7 - MEASURED_PAD_Z_LINK7) < 0.001, f"{z_link7:.5f} m, {1000 * (z_link7 - MEASURED_PAD_Z_LINK7):+.2f} mm")
+        check(f"{sd}: the pad centre is on the hand's axis (the fingers are mirror images at y = -+0.005 now: x and y within 0.5 mm of 0)", np.abs(pad[:2]).max() < 0.0005, f"{np.round(pad, 5)} from the tool point")
         check(f"{sd}: the finger opening is 0.044 m", abs(g["finger_open_max"] - 0.044) < 1e-9)
     cfg = grasp_cfg(m, "left")
     check("grasp_cfg adds the derived entries to the settings and keeps the others", {"approach_axis", "closing_axis", "pad_center_in_tcp", "level_deg", "n_bins"} <= set(cfg))
@@ -70,8 +77,7 @@ def main():
     print("\n2. independent of the finger opening")
     m_open = copy.copy(m)
     for sd in ("left", "right"):
-        for a_ in arm_ids(m, sd)["fingers"]:
-            j = int(m.actuator_trnid[a_, 0])
+        for j in arm_ids(m, sd)["finger_jnt"]:
             m_open.qpos0[m.jnt_qposadr[j]] = 0.044
     for sd in ("left", "right"):
         d_ = np.abs(gripper_frame(m, sd)["pad_center_in_tcp"] - gripper_frame(m_open, sd)["pad_center_in_tcp"]).max()
@@ -100,7 +106,7 @@ def main():
 
     print("\n4. bad input")
     m3 = copy.copy(m)
-    j1, j2 = [int(m.actuator_trnid[a_, 0]) for a_ in arm_ids(m, "left")["fingers"]]
+    j1, j2 = arm_ids(m, "left")["finger_jnt"]
     m3.jnt_axis[j2] = m3.jnt_axis[j1]
     try:
         gripper_frame(m3, "left")

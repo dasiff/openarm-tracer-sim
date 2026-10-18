@@ -53,7 +53,7 @@ def main():
     arm_g = ctx.arm_g
     other_arm = {"right" if TASK_CFG["arm"] == "left" else "left"}
     oarm_g = [i for i in range(model.ngeom) if model.body(model.geom_bodyid[i]).name.startswith(f"openarm_{list(other_arm)[0]}_") and model.geom_group[i] == 3]
-    torso_g = [i for i in range(model.ngeom) if model.body(model.geom_bodyid[i]).name in ("openarm_body_link0", "pedestal_Top", "pedestal_Middle", "pedestal_Bottom", "base_link")
+    torso_g = [i for i in range(model.ngeom) if model.body(model.geom_bodyid[i]).name in ("openarm_body_link0", "pedestal_top", "pedestal_base", "base_link")
                and (model.geom_contype[i] or model.geom_conaffinity[i])]
     world_g = ctx.static_other + [ctx.plate_g, ctx.hotbase_g]
     ft = np.zeros(6)

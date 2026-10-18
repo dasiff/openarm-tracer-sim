@@ -47,8 +47,8 @@ def place_handoff(sim):
         ids = arm_ids(model, side)
         for a, q in zip(ids["qadr"], home[side]):
             data.qpos[a] = q
-        for a in ids["fingers"]:
-            data.qpos[model.jnt_qposadr[model.actuator_trnid[a, 0]]] = 0.044
+        for j_ in ids["finger_jnt"]:
+            data.qpos[model.jnt_qposadr[j_]] = 0.044
     set_neck_pose(model, data, robot_specs.NECK_SPECS)
 
 

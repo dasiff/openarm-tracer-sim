@@ -58,9 +58,9 @@ def main():
         moving = {body(g) for g in np.nonzero(c.moving)[0]}
         static = {body(g) for g in np.nonzero(c.active & ~c.moving)[0]}
         other = "right" if sd == "left" else "left"
-        check(f"{sd}: the moving geoms are the {sd} arm's links 1 to 8, hand and fingers only", moving and all(n.startswith(f"openarm_{sd}_") and not n.endswith("link0") for n in moving), f"{len(moving)} bodies")
+        check(f"{sd}: the moving geoms are the {sd} arm's links 1 to 7, hand and fingers only", moving and all(n.startswith(f"openarm_{sd}_") and not n.endswith("link0") for n in moving), f"{len(moving)} bodies")
         check(f"{sd}: the other arm, the torso, the pedestal, the base, the battery and the neck are switched on",
-              any(n.startswith(f"openarm_{other}_") for n in static) and "openarm_body_link0" in static and {"pedestal_Bottom", "pedestal_Middle", "pedestal_Top"} <= static
+              any(n.startswith(f"openarm_{other}_") for n in static) and "openarm_body_link0" in static and {"pedestal_base", "pedestal_top"} <= static
               and "base_link" in static and "battery" in static and any(n.startswith("neck_") for n in static), f"static bodies {sorted(static)[:4]}...")
         names_on = {body(g) for g in np.nonzero(c.active)[0]}
         check(f"{sd}: the scene (bench, hotplate, beaker, floor) is switched off", not (names_on & {"bench", "task_hotplate", "task_beaker", "world"}))
@@ -112,8 +112,8 @@ def main():
     for a_, v in zip(arm_ids(m, "right")["qadr"], home["right"]):
         full.qpos[a_] = v
     for sd in ("left", "right"):
-        for a_ in arm_ids(m, sd)["fingers"]:
-            full.qpos[m.jnt_qposadr[m.actuator_trnid[a_, 0]]] = 0.044
+        for j_ in arm_ids(m, sd)["finger_jnt"]:
+            full.qpos[m.jnt_qposadr[j_]] = 0.044
     set_neck_pose(m, full, robot_specs.NECK_SPECS)
     qadr = arm_ids(m, "left")["qadr"]
     Q = rng.uniform(lo, hi, (300, 7))

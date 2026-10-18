@@ -107,8 +107,8 @@ def main():
     ids = arm_ids(model, TASK_CFG["arm"])
     for a, q in zip(ids["qadr"], TASK_CFG["ready_q"]):
         data.qpos[a] = q
-    for a in ids["fingers"]:
-        data.qpos[model.jnt_qposadr[model.actuator_trnid[a, 0]]] = 0.044
+    for j_ in ids["finger_jnt"]:
+        data.qpos[model.jnt_qposadr[j_]] = 0.044
     mujoco.mj_forward(model, data)
 
     # camera placement rule: 45 deg down along the facing direction, high enough that the optical axis meets the bench top

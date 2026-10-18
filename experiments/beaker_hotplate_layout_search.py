@@ -161,7 +161,7 @@ def make_ctx(sim, side, z_rest):
                hotbase_g=model.geom("task_hotplate_base").id, hot_body=hot, static_other=static_other,
                beaker_free=int(model.joint("task_beaker_free").qposadr[0]), top=bench_top_z(model),
                ped_adr=[int(model.joint(j).qposadr[0]) for j in robot_specs.PEDESTAL_SPECS["joints"]],
-               finger_adr=[int(model.jnt_qposadr[model.actuator_trnid[a, 0]]) for a in ids["fingers"]])
+               finger_adr=[int(model.jnt_qposadr[j]) for j in ids["finger_jnt"]])
 
 
 def set_scene(ctx, base_xy, yaw, ped_q, q_arm, finger_q, beaker_origin, hotplate_xy):

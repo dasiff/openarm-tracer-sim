@@ -68,7 +68,7 @@ def make_snapshot_stage(model, data, snap):
         if not snap:
             ids = {sd: arm_ids(model, sd) for sd in ("left", "right")}
             snap["q"] = {sd: np.array([data.qpos[a] for a in ids[sd]["qadr"]]) for sd in ids}
-            snap["fingers"] = {sd: [float(data.qpos[model.jnt_qposadr[model.actuator_trnid[a, 0]]]) for a in ids[sd]["fingers"]] for sd in ids}
+            snap["fingers"] = {sd: [float(data.qpos[model.jnt_qposadr[j]]) for j in ids[sd]["finger_jnt"]] for sd in ids}
             top = float(model.geom_pos[model.geom("bench_top").id][2] + model.geom_size[model.geom("bench_top").id][2])
             snap["tcp"] = {sd: data.body(f"openarm_{sd}_hand_tcp").xpos.copy() for sd in ids}
             snap["bench_top"] = top
@@ -187,8 +187,8 @@ def place_home(sim, q):
         ids = arm_ids(m, sd)
         for a, v in zip(ids["qadr"], q[sd]):
             d.qpos[a] = v
-        for a in ids["fingers"]:
-            d.qpos[m.jnt_qposadr[m.actuator_trnid[a, 0]]] = STAGING_CFG["finger_open"]
+        for j_ in ids["finger_jnt"]:
+            d.qpos[m.jnt_qposadr[j_]] = STAGING_CFG["finger_open"]
     set_neck_pose(m, d, robot_specs.NECK_SPECS)
     mujoco.mj_forward(m, d)
 

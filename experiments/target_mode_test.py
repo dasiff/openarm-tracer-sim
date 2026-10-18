@@ -128,14 +128,14 @@ def ramp_case(tmp):
     check("the second ramp (5 steps) starts from that value and ends at its target", np.allclose(c[23 * STEPS:23 * STEPS + 5], at23 + (0.1 - at23) * np.arange(1, 6) / 5.0, atol=1e-12, rtol=0) and c[23 * STEPS + 4] == 0.1)
 
     print("\n5. the gripper is interpolated; the pedestal and the neck are not")
-    gr = {20: {"mode": "arms", "gripper": {"left": 0.02}}, 30: {"mode": "pedestal", "height": -0.05}, 40: {"mode": "neck", "neck_targets": {"shoulder_pan": 0.02}}}
+    gr = {20: {"mode": "arms", "gripper": {"left": 0.02}}, 30: {"mode": "pedestal", "height": 0.30}, 40: {"mode": "neck", "neck_targets": {"shoulder_pan": 0.02}}}
     rec, model = run({"script": scripted(gr, hz=30)}, "interpolate", 80, tmp / "misc")
-    f1 = model.actuator("left_finger1_ctrl").id
+    f1 = model.actuator("left_gripper_ctrl").id
     cg = rec["ctrl"][:, :, f1].reshape(-1)
     g0 = cg[s0 - 1]
     check("the gripper ctrl ramps over 25 steps", np.allclose(cg[s0:s0 + 25], g0 + (0.02 - g0) * np.arange(1, 26) / 25.0, atol=1e-12, rtol=0))
     cp = rec["ctrl"][:, :, model.actuator(robot_specs.PEDESTAL_SPECS["actuator_name"]).id].reshape(-1)
-    check("the pedestal ctrl is the target on the first step", cp[30 * STEPS] == -0.05 and cp[30 * STEPS - 1] != -0.05)
+    check("the pedestal ctrl is the target on the first step", cp[30 * STEPS] == 0.30 and cp[30 * STEPS - 1] != 0.30)
     from src.neck import neck_ids
     nk = neck_ids(model, robot_specs.NECK_SPECS)
     cn = rec["ctrl"][:, :, nk["act"][nk["names"].index("shoulder_pan")]].reshape(-1)

@@ -327,7 +327,7 @@ def scenario_P(model, data):
     after = np.abs(np.diff(p[T + n(100) - 1:T + n(100) - 1 + n(60)])).max()
     moved = abs(p[T + n(99)] - p[T + n(55)])
     check("the operator moved the pedestal", moved > 0.005, f"{1000 * moved:.1f} mm")
-    check("after the hand-back the pedestal target moves at most pedestal_speed * dt = 0.33 mm per tick", after <= 0.05 * DT + 1e-9, f"{1000 * after:.3f} mm")
+    check(f"after the hand-back the pedestal target moves at most pedestal_speed * dt = {1000 * STAGING_CFG['pedestal_speed'] * DT:.2f} mm per tick", after <= STAGING_CFG["pedestal_speed"] * DT + 1e-9, f"{1000 * after:.3f} mm")
 
 
 def _final_value(rec, s, name):
@@ -356,7 +356,7 @@ def scenario_R1(model, data):
     check("staging completes: no STAGING_FAILED, handoff reached (ARMS did not time out although the operator had control for 35 s)", not s["staging_error"] and s["handoff_time"] is not None,
           f"{s['staging_error']}")
     check("the pedestal is back at the staging height at the handoff", abs(p[h] - target) < 1e-6, f"{1000 * (p[h] - target):+.3f} mm")
-    check("and it was re-ramped smoothly (no tick changes the target by more than pedestal_speed * dt = 0.33 mm)", np.abs(np.diff(p[T + n(2350) - 1:h])).max() <= 0.05 * DT + 1e-9,
+    check(f"and it was re-ramped smoothly (no tick changes the target by more than pedestal_speed * dt = {1000 * STAGING_CFG['pedestal_speed'] * DT:.2f} mm)", np.abs(np.diff(p[T + n(2350) - 1:h])).max() <= STAGING_CFG["pedestal_speed"] * DT + 1e-9,
           f"{1000 * np.abs(np.diff(p[T + n(2350) - 1:h])).max():.3f} mm")
     check("the ARMS duration in the report does not include the operator's 35 s", s["phase_durations_s"]["ARMS"] < 30.0, f"{s['phase_durations_s']['ARMS']:.1f} s")
     s2, p2, T2, h2 = runs["control: restoring off"]

@@ -92,7 +92,7 @@ def make_grasp_force_stage(model, data, forces=(1.0, 2.0, None), task_cfg=TASK_C
 
     Args:
         model (mujoco.MjModel): The compiled model; it needs the bodies "task_beaker" and "openarm_<arm>_hand", the finger bodies
-            "openarm_<arm>_*finger" and the actuators "<arm>_finger1_ctrl" and "<arm>_finger2_ctrl".
+            "openarm_<arm>_*finger" and the actuators "<arm>_gripper_ctrl".
         data (mujoco.MjData): The simulation data, read for contacts and actuator forces.
         forces (tuple): Gripper force limits to test, in newtons per finger, one closing each. An entry of None means a plain
             position 0 command, i.e. the force ceiling. Defaults to (1.0, 2.0, None).
@@ -117,8 +117,9 @@ def make_grasp_force_stage(model, data, forces=(1.0, 2.0, None), task_cfg=TASK_C
     open_g = task_cfg["finger_open"] if "finger_open" in task_cfg else 0.044
     fingers = {b for b in range(model.nbody) if model.body(b).name.startswith(f"openarm_{arm}_") and model.body(b).name.endswith("finger")}
     beaker = model.body("task_beaker").id
-    f_act = [model.actuator(f"{arm}_finger{k}_ctrl").id for k in (1, 2)]
-    f_q = [int(model.jnt_qposadr[model.actuator_trnid[a, 0]]) for a in f_act]
+    g_act = model.actuator(f"{arm}_gripper_ctrl").id                      # one actuator drives both fingers; each finger carries half of its force
+    n_per_act = robot_specs.ARM_ACTUATOR_SPECS["fingers"]["fingers_per_actuator"]
+    f_q = [int(model.jnt_qposadr[model.joint(f"openarm_{arm}_finger_joint{k}").id]) for k in (1, 2)]
     f6 = np.zeros(6)
     # timeline
     segs, t = [("move", move_s, None), ("settle", settle_s, None)], 0.0
@@ -193,7 +194,7 @@ def make_grasp_force_stage(model, data, forces=(1.0, 2.0, None), task_cfg=TASK_C
         # close
         if local >= close_s - measure_s:
             cf = contact_forces()
-            state["samples"].append({"F": F, "contact": dict(cf), "normal_sum": dict(state.get("normal_sum", {})), "axis_z": state.get("axis_z", 0.0), "actuator": [abs(float(data.actuator_force[a])) for a in f_act], "q": [float(data.qpos[a]) for a in f_q],
+            state["samples"].append({"F": F, "contact": dict(cf), "normal_sum": dict(state.get("normal_sum", {})), "axis_z": state.get("axis_z", 0.0), "actuator": [abs(float(data.actuator_force[g_act])) / n_per_act] * 2, "q": [float(data.qpos[a]) for a in f_q],
                                      "time": obs["time"], "cap": obs["applied"]["gripper_force"][arm]})
         return {"mode": "arms", "gripper": {arm: 0.0 if F is None else {"position": 0.0, "max_force": F}}}
 
@@ -205,8 +206,8 @@ def _summarise(samples, segs, state):
 
     Args:
         samples (list[dict]): The samples taken during the measuring window of one closing. Each has "F" (the force limit
-            commanded, in newtons (N), or None), "contact" and "normal_sum" (finger body id -> N), "axis_z", "actuator" (the two
-            finger actuators' absolute forces, N), "q" (the two finger joint positions, in metres (m)), "time" (seconds) and
+            commanded, in newtons (N), or None), "contact" and "normal_sum" (finger body id -> N), "axis_z", "actuator" (the gripper
+            actuator's absolute force divided by the fingers it drives, N, given once per finger), "q" (the two finger joint positions, in metres (m)), "time" (seconds) and
             "cap" (the applied force limit, N).
         segs (list): The timeline. Not used.
         state (dict): The stage's state. Not used.

@@ -50,8 +50,7 @@ def gripper_frame(model, side, patch_tol=0.001):
     Raises:
         ValueError: If the two finger joints are not opposed slide joints.
     """
-    fingers = arm_ids(model, side)["fingers"]
-    joints = [int(model.actuator_trnid[a, 0]) for a in fingers]
+    joints = arm_ids(model, side)["finger_jnt"]
     if len(joints) != 2 or any(model.jnt_type[j] != mujoco.mjtJoint.mjJNT_SLIDE for j in joints):
         raise ValueError(f"{side}: expected two finger slide joints")
     tcp = model.body(f"openarm_{side}_hand_tcp").id

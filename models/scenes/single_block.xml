@@ -1,6 +1,6 @@
 <?xml version='1.0' encoding='utf-8'?>
 <mujoco model="single_block">
-  <include file="../../deps/OpenArm-Combined/combined_robot.xml"/>
+  <include file="../robot/combined_robot.xml"/>
   
   <worldbody>
   <!-- Workbench higher, in arm's natural reach zone -->

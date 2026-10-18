@@ -1,0 +1,1727 @@
+{
+ "joints": {
+  "openarm_left_finger_joint1": {
+   "axis": [
+    0.0,
+    -1.0,
+    0.0
+   ],
+   "child": "openarm_left_right_finger",
+   "limit": [
+    0.0,
+    0.044,
+    333.0,
+    10.0
+   ],
+   "mimic": null,
+   "parent": "openarm_left_link7",
+   "rpy": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "type": "prismatic",
+   "xyz": [
+    0.0,
+    -0.005,
+    0.1025
+   ]
+  },
+  "openarm_left_finger_joint2": {
+   "axis": [
+    0.0,
+    1.0,
+    0.0
+   ],
+   "child": "openarm_left_left_finger",
+   "limit": [
+    0.0,
+    0.044,
+    333.0,
+    10.0
+   ],
+   "mimic": "openarm_left_finger_joint1",
+   "parent": "openarm_left_link7",
+   "rpy": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "type": "prismatic",
+   "xyz": [
+    0.0,
+    0.005,
+    0.1025
+   ]
+  },
+  "openarm_left_hand_joint": {
+   "axis": null,
+   "child": "openarm_left_hand",
+   "limit": null,
+   "mimic": null,
+   "parent": "openarm_left_link7",
+   "rpy": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "type": "fixed",
+   "xyz": [
+    0.0,
+    0.0,
+    0.1025
+   ]
+  },
+  "openarm_left_hand_tcp_joint": {
+   "axis": null,
+   "child": "openarm_left_hand_tcp",
+   "limit": null,
+   "mimic": null,
+   "parent": "openarm_left_hand",
+   "rpy": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "type": "fixed",
+   "xyz": [
+    0.0,
+    0.0,
+    0.0835
+   ]
+  },
+  "openarm_left_joint1": {
+   "axis": [
+    0.0,
+    0.0,
+    1.0
+   ],
+   "child": "openarm_left_link1",
+   "limit": [
+    -3.490659,
+    1.3962629999999998,
+    40.0,
+    16.754666
+   ],
+   "mimic": null,
+   "parent": "openarm_left_link0",
+   "rpy": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "type": "revolute",
+   "xyz": [
+    0.0,
+    0.0,
+    0.0625
+   ]
+  },
+  "openarm_left_joint2": {
+   "axis": [
+    -1.0,
+    0.0,
+    0.0
+   ],
+   "child": "openarm_left_link2",
+   "limit": [
+    -3.3161253267948965,
+    0.17453267320510335,
+    40.0,
+    16.754666
+   ],
+   "mimic": null,
+   "parent": "openarm_left_link1",
+   "rpy": [
+    -1.57079632679,
+    0.0,
+    0.0
+   ],
+   "type": "revolute",
+   "xyz": [
+    -0.0301,
+    0.0,
+    0.06
+   ]
+  },
+  "openarm_left_joint3": {
+   "axis": [
+    0.0,
+    0.0,
+    1.0
+   ],
+   "child": "openarm_left_link3",
+   "limit": [
+    -1.570796,
+    1.570796,
+    27.0,
+    5.445426
+   ],
+   "mimic": null,
+   "parent": "openarm_left_link2",
+   "rpy": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "type": "revolute",
+   "xyz": [
+    0.0301,
+    0.0,
+    0.06625
+   ]
+  },
+  "openarm_left_joint4": {
+   "axis": [
+    0.0,
+    1.0,
+    0.0
+   ],
+   "child": "openarm_left_link4",
+   "limit": [
+    0.0,
+    2.443461,
+    27.0,
+    5.445426
+   ],
+   "mimic": null,
+   "parent": "openarm_left_link3",
+   "rpy": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "type": "revolute",
+   "xyz": [
+    -0.0,
+    0.0315,
+    0.15375
+   ]
+  },
+  "openarm_left_joint5": {
+   "axis": [
+    0.0,
+    0.0,
+    1.0
+   ],
+   "child": "openarm_left_link5",
+   "limit": [
+    -1.570796,
+    1.570796,
+    7.0,
+    20.943946
+   ],
+   "mimic": null,
+   "parent": "openarm_left_link4",
+   "rpy": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "type": "revolute",
+   "xyz": [
+    0.0,
+    -0.0315,
+    0.0955
+   ]
+  },
+  "openarm_left_joint6": {
+   "axis": [
+    1.0,
+    0.0,
+    0.0
+   ],
+   "child": "openarm_left_link6",
+   "limit": [
+    -0.785398,
+    0.785398,
+    7.0,
+    20.943946
+   ],
+   "mimic": null,
+   "parent": "openarm_left_link5",
+   "rpy": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "type": "revolute",
+   "xyz": [
+    0.0375,
+    0.0,
+    0.1205
+   ]
+  },
+  "openarm_left_joint7": {
+   "axis": [
+    0.0,
+    -1.0,
+    0.0
+   ],
+   "child": "openarm_left_link7",
+   "limit": [
+    -1.570796,
+    1.570796,
+    7.0,
+    20.943946
+   ],
+   "mimic": null,
+   "parent": "openarm_left_link6",
+   "rpy": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "type": "revolute",
+   "xyz": [
+    -0.0375,
+    0.0,
+    0.0
+   ]
+  },
+  "openarm_left_link0": {
+   "axis": null,
+   "child": "openarm_left_link0",
+   "limit": null,
+   "mimic": null,
+   "parent": "openarm_body_link0",
+   "rpy": [
+    -1.5708,
+    0.0,
+    0.0
+   ],
+   "type": "fixed",
+   "xyz": [
+    0.0,
+    0.031,
+    0.698
+   ]
+  },
+  "openarm_right_finger_joint1": {
+   "axis": [
+    0.0,
+    -1.0,
+    0.0
+   ],
+   "child": "openarm_right_right_finger",
+   "limit": [
+    0.0,
+    0.044,
+    333.0,
+    10.0
+   ],
+   "mimic": null,
+   "parent": "openarm_right_link7",
+   "rpy": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "type": "prismatic",
+   "xyz": [
+    0.0,
+    -0.005,
+    0.1025
+   ]
+  },
+  "openarm_right_finger_joint2": {
+   "axis": [
+    0.0,
+    1.0,
+    0.0
+   ],
+   "child": "openarm_right_left_finger",
+   "limit": [
+    0.0,
+    0.044,
+    333.0,
+    10.0
+   ],
+   "mimic": "openarm_right_finger_joint1",
+   "parent": "openarm_right_link7",
+   "rpy": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "type": "prismatic",
+   "xyz": [
+    0.0,
+    0.005,
+    0.1025
+   ]
+  },
+  "openarm_right_hand_joint": {
+   "axis": null,
+   "child": "openarm_right_hand",
+   "limit": null,
+   "mimic": null,
+   "parent": "openarm_right_link7",
+   "rpy": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "type": "fixed",
+   "xyz": [
+    0.0,
+    0.0,
+    0.1025
+   ]
+  },
+  "openarm_right_hand_tcp_joint": {
+   "axis": null,
+   "child": "openarm_right_hand_tcp",
+   "limit": null,
+   "mimic": null,
+   "parent": "openarm_right_hand",
+   "rpy": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "type": "fixed",
+   "xyz": [
+    0.0,
+    0.0,
+    0.0835
+   ]
+  },
+  "openarm_right_joint1": {
+   "axis": [
+    0.0,
+    0.0,
+    1.0
+   ],
+   "child": "openarm_right_link1",
+   "limit": [
+    -1.396263,
+    3.490659,
+    40.0,
+    16.754666
+   ],
+   "mimic": null,
+   "parent": "openarm_right_link0",
+   "rpy": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "type": "revolute",
+   "xyz": [
+    0.0,
+    0.0,
+    0.0625
+   ]
+  },
+  "openarm_right_joint2": {
+   "axis": [
+    -1.0,
+    0.0,
+    0.0
+   ],
+   "child": "openarm_right_link2",
+   "limit": [
+    -0.17453267320510335,
+    3.3161253267948965,
+    40.0,
+    16.754666
+   ],
+   "mimic": null,
+   "parent": "openarm_right_link1",
+   "rpy": [
+    1.57079632679,
+    0.0,
+    0.0
+   ],
+   "type": "revolute",
+   "xyz": [
+    -0.0301,
+    0.0,
+    0.06
+   ]
+  },
+  "openarm_right_joint3": {
+   "axis": [
+    0.0,
+    0.0,
+    1.0
+   ],
+   "child": "openarm_right_link3",
+   "limit": [
+    -1.570796,
+    1.570796,
+    27.0,
+    5.445426
+   ],
+   "mimic": null,
+   "parent": "openarm_right_link2",
+   "rpy": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "type": "revolute",
+   "xyz": [
+    0.0301,
+    0.0,
+    0.06625
+   ]
+  },
+  "openarm_right_joint4": {
+   "axis": [
+    0.0,
+    1.0,
+    0.0
+   ],
+   "child": "openarm_right_link4",
+   "limit": [
+    0.0,
+    2.443461,
+    27.0,
+    5.445426
+   ],
+   "mimic": null,
+   "parent": "openarm_right_link3",
+   "rpy": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "type": "revolute",
+   "xyz": [
+    -0.0,
+    0.0315,
+    0.15375
+   ]
+  },
+  "openarm_right_joint5": {
+   "axis": [
+    0.0,
+    0.0,
+    1.0
+   ],
+   "child": "openarm_right_link5",
+   "limit": [
+    -1.570796,
+    1.570796,
+    7.0,
+    20.943946
+   ],
+   "mimic": null,
+   "parent": "openarm_right_link4",
+   "rpy": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "type": "revolute",
+   "xyz": [
+    0.0,
+    -0.0315,
+    0.0955
+   ]
+  },
+  "openarm_right_joint6": {
+   "axis": [
+    1.0,
+    0.0,
+    0.0
+   ],
+   "child": "openarm_right_link6",
+   "limit": [
+    -0.785398,
+    0.785398,
+    7.0,
+    20.943946
+   ],
+   "mimic": null,
+   "parent": "openarm_right_link5",
+   "rpy": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "type": "revolute",
+   "xyz": [
+    0.0375,
+    0.0,
+    0.1205
+   ]
+  },
+  "openarm_right_joint7": {
+   "axis": [
+    0.0,
+    1.0,
+    0.0
+   ],
+   "child": "openarm_right_link7",
+   "limit": [
+    -1.570796,
+    1.570796,
+    7.0,
+    20.943946
+   ],
+   "mimic": null,
+   "parent": "openarm_right_link6",
+   "rpy": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "type": "revolute",
+   "xyz": [
+    -0.0375,
+    0.0,
+    0.0
+   ]
+  },
+  "openarm_right_link0": {
+   "axis": null,
+   "child": "openarm_right_link0",
+   "limit": null,
+   "mimic": null,
+   "parent": "openarm_body_link0",
+   "rpy": [
+    1.5708,
+    0.0,
+    0.0
+   ],
+   "type": "fixed",
+   "xyz": [
+    0.0,
+    -0.031,
+    0.698
+   ]
+  }
+ },
+ "links": {
+  "openarm_left_hand": {
+   "collision": {
+    "mesh": "hand.stl",
+    "origin": [
+     0.0,
+     0.0,
+     -0.661001
+    ],
+    "scale": [
+     0.001,
+     0.001,
+     0.001
+    ],
+    "shape": "mesh",
+    "size": [
+     0.0
+    ]
+   },
+   "com": [
+    1e-06,
+    0.0,
+    -0.000549
+   ],
+   "inertia": [
+    0.000165558,
+    1.7466e-05,
+    0.000173524,
+    0.0,
+    0.0,
+    0.0
+   ],
+   "mass": 0.127,
+   "visual": {
+    "mesh": "hand.dae",
+    "origin": [
+     0.0,
+     0.0,
+     -0.661001
+    ],
+    "scale": [
+     0.001,
+     0.001,
+     0.001
+    ],
+    "shape": "mesh",
+    "size": [
+     0.0
+    ]
+   }
+  },
+  "openarm_left_left_finger": {
+   "collision": {
+    "mesh": "finger.stl",
+    "origin": [
+     0.0,
+     -0.05,
+     -0.661001
+    ],
+    "scale": [
+     0.001,
+     0.001,
+     0.001
+    ],
+    "shape": "mesh",
+    "size": [
+     0.0
+    ]
+   },
+   "com": [
+    0.0064528,
+    0.01702,
+    0.0219685
+   ],
+   "inertia": [
+    2.3749999999999997e-06,
+    2.3749999999999997e-06,
+    7.5e-07,
+    1e-06,
+    1e-06,
+    1e-06
+   ],
+   "mass": 0.03602545343277134,
+   "visual": {
+    "mesh": "finger.dae",
+    "origin": [
+     0.0,
+     -0.05,
+     -0.661001
+    ],
+    "scale": [
+     0.001,
+     0.001,
+     0.001
+    ],
+    "shape": "mesh",
+    "size": [
+     0.0
+    ]
+   }
+  },
+  "openarm_left_link0": {
+   "collision": {
+    "mesh": "link0_symp.stl",
+    "origin": [
+     0.0,
+     0.0,
+     0.0
+    ],
+    "scale": [
+     0.001,
+     -0.001,
+     0.001
+    ],
+    "shape": "mesh",
+    "size": [
+     0.0
+    ]
+   },
+   "com": [
+    -0.0009483362816297526,
+    -0.0001580207020448382,
+    0.03076860287587199
+   ],
+   "inertia": [
+    0.001128,
+    0.000962,
+    0.00147,
+    4e-06,
+    -3.3e-05,
+    7e-06
+   ],
+   "mass": 1.1432284943239561,
+   "visual": {
+    "mesh": "link0.dae",
+    "origin": [
+     0.0,
+     0.0,
+     0.0
+    ],
+    "scale": [
+     0.001,
+     -0.001,
+     0.001
+    ],
+    "shape": "mesh",
+    "size": [
+     0.0
+    ]
+   }
+  },
+  "openarm_left_link1": {
+   "collision": {
+    "mesh": "link1_symp.stl",
+    "origin": [
+     -0.0,
+     0.0,
+     -0.0625
+    ],
+    "scale": [
+     0.001,
+     -0.001,
+     0.001
+    ],
+    "shape": "mesh",
+    "size": [
+     0.0
+    ]
+   },
+   "com": [
+    0.0011467657911800769,
+    -3.319987657026362e-05,
+    0.05395284380736254
+   ],
+   "inertia": [
+    0.001567,
+    0.001273,
+    0.001016,
+    1e-06,
+    -2.9e-05,
+    -1e-06
+   ],
+   "mass": 1.1416684646202298,
+   "visual": {
+    "mesh": "link1.dae",
+    "origin": [
+     -0.0,
+     0.0,
+     -0.0625
+    ],
+    "scale": [
+     0.001,
+     -0.001,
+     0.001
+    ],
+    "shape": "mesh",
+    "size": [
+     0.0
+    ]
+   }
+  },
+  "openarm_left_link2": {
+   "collision": {
+    "mesh": "link2_symp.stl",
+    "origin": [
+     0.0301,
+     0.0,
+     -0.1225
+    ],
+    "scale": [
+     0.001,
+     -0.001,
+     0.001
+    ],
+    "shape": "mesh",
+    "size": [
+     0.0
+    ]
+   },
+   "com": [
+    0.00839629182351943,
+    2.0145102027597523e-08,
+    0.03256649300522363
+   ],
+   "inertia": [
+    0.000359,
+    0.000376,
+    0.000232,
+    -1e-06,
+    -0.000109,
+    -1e-06
+   ],
+   "mass": 0.2775092746011571,
+   "visual": {
+    "mesh": "link2.dae",
+    "origin": [
+     0.0301,
+     0.0,
+     -0.1225
+    ],
+    "scale": [
+     0.001,
+     -0.001,
+     0.001
+    ],
+    "shape": "mesh",
+    "size": [
+     0.0
+    ]
+   }
+  },
+  "openarm_left_link3": {
+   "collision": {
+    "mesh": "link3_symp.stl",
+    "origin": [
+     -0.0,
+     -0.0,
+     -0.18875
+    ],
+    "scale": [
+     0.001,
+     0.001,
+     0.001
+    ],
+    "shape": "mesh",
+    "size": [
+     0.0
+    ]
+   },
+   "com": [
+    -0.002104752099628911,
+    0.0005549085042607548,
+    0.09047470545721961
+   ],
+   "inertia": [
+    0.004372,
+    0.004319,
+    0.000661,
+    1e-06,
+    1.1e-05,
+    -3.6e-05
+   ],
+   "mass": 1.073863338202347,
+   "visual": {
+    "mesh": "link3.dae",
+    "origin": [
+     -0.0,
+     -0.0,
+     -0.18875
+    ],
+    "scale": [
+     0.001,
+     0.001,
+     0.001
+    ],
+    "shape": "mesh",
+    "size": [
+     0.0
+    ]
+   }
+  },
+  "openarm_left_link4": {
+   "collision": {
+    "mesh": "link4_symp.stl",
+    "origin": [
+     0.0,
+     -0.0315,
+     -0.3425
+    ],
+    "scale": [
+     0.001,
+     0.001,
+     0.001
+    ],
+    "shape": "mesh",
+    "size": [
+     0.0
+    ]
+   },
+   "com": [
+    -0.0029006831074562967,
+    -0.03030575826634669,
+    0.06339637422196209
+   ],
+   "inertia": [
+    0.000623,
+    0.000511,
+    0.000334,
+    -1e-06,
+    -1.9e-05,
+    3.8e-05
+   ],
+   "mass": 0.6348534566833373,
+   "visual": {
+    "mesh": "link4.dae",
+    "origin": [
+     0.0,
+     -0.0315,
+     -0.3425
+    ],
+    "scale": [
+     0.001,
+     0.001,
+     0.001
+    ],
+    "shape": "mesh",
+    "size": [
+     0.0
+    ]
+   }
+  },
+  "openarm_left_link5": {
+   "collision": {
+    "mesh": "link5_symp.stl",
+    "origin": [
+     -0.0,
+     -0.0,
+     -0.438
+    ],
+    "scale": [
+     0.001,
+     -0.001,
+     0.001
+    ],
+    "shape": "mesh",
+    "size": [
+     0.0
+    ]
+   },
+   "com": [
+    -0.003049665024221911,
+    -0.0008866902457326625,
+    0.043079803024980934
+   ],
+   "inertia": [
+    0.000423,
+    0.000445,
+    0.000324,
+    8e-06,
+    6e-06,
+    6e-06
+   ],
+   "mass": 0.6156588026168502,
+   "visual": {
+    "mesh": "link5.dae",
+    "origin": [
+     -0.0,
+     -0.0,
+     -0.438
+    ],
+    "scale": [
+     0.001,
+     -0.001,
+     0.001
+    ],
+    "shape": "mesh",
+    "size": [
+     0.0
+    ]
+   }
+  },
+  "openarm_left_link6": {
+   "collision": {
+    "mesh": "link6_symp.stl",
+    "origin": [
+     -0.0375,
+     -0.0,
+     -0.5585
+    ],
+    "scale": [
+     0.001,
+     -0.001,
+     0.001
+    ],
+    "shape": "mesh",
+    "size": [
+     0.0
+    ]
+   },
+   "com": [
+    -0.037136587005447405,
+    -0.00033230528343419053,
+    -9.498374522309838e-05
+   ],
+   "inertia": [
+    0.000143,
+    0.000157,
+    0.000159,
+    -1e-06,
+    1e-06,
+    -1e-06
+   ],
+   "mass": 0.475202773187987,
+   "visual": {
+    "mesh": "link6.dae",
+    "origin": [
+     -0.0375,
+     -0.0,
+     -0.5585
+    ],
+    "scale": [
+     0.001,
+     -0.001,
+     0.001
+    ],
+    "shape": "mesh",
+    "size": [
+     0.0
+    ]
+   }
+  },
+  "openarm_left_link7": {
+   "collision": {
+    "mesh": "link7_symp.stl",
+    "origin": [
+     0.0,
+     -0.0,
+     -0.5585
+    ],
+    "scale": [
+     0.001,
+     -0.001,
+     0.001
+    ],
+    "shape": "mesh",
+    "size": [
+     0.0
+    ]
+   },
+   "com": [
+    6.875510271106056e-05,
+    -0.01266175250761268,
+    0.06951945409987448
+   ],
+   "inertia": [
+    0.000639,
+    0.000497,
+    0.000342,
+    -1e-06,
+    1e-06,
+    -8.9e-05
+   ],
+   "mass": 0.4659771327380578,
+   "visual": {
+    "mesh": "link7.dae",
+    "origin": [
+     0.0,
+     -0.0,
+     -0.5585
+    ],
+    "scale": [
+     0.001,
+     -0.001,
+     0.001
+    ],
+    "shape": "mesh",
+    "size": [
+     0.0
+    ]
+   }
+  },
+  "openarm_left_right_finger": {
+   "collision": {
+    "mesh": "finger.stl",
+    "origin": [
+     0.0,
+     0.05,
+     -0.661001
+    ],
+    "scale": [
+     0.001,
+     -0.001,
+     0.001
+    ],
+    "shape": "mesh",
+    "size": [
+     0.0
+    ]
+   },
+   "com": [
+    0.0064528,
+    -0.01702,
+    0.0219685
+   ],
+   "inertia": [
+    2.3749999999999997e-06,
+    2.3749999999999997e-06,
+    7.5e-07,
+    1e-06,
+    1e-06,
+    1e-06
+   ],
+   "mass": 0.03602545343277134,
+   "visual": {
+    "mesh": "finger.dae",
+    "origin": [
+     0.0,
+     0.05,
+     -0.661001
+    ],
+    "scale": [
+     0.001,
+     -0.001,
+     0.001
+    ],
+    "shape": "mesh",
+    "size": [
+     0.0
+    ]
+   }
+  },
+  "openarm_right_hand": {
+   "collision": {
+    "mesh": "hand.stl",
+    "origin": [
+     0.0,
+     0.0,
+     -0.661001
+    ],
+    "scale": [
+     0.001,
+     0.001,
+     0.001
+    ],
+    "shape": "mesh",
+    "size": [
+     0.0
+    ]
+   },
+   "com": [
+    1e-06,
+    0.0,
+    -0.000549
+   ],
+   "inertia": [
+    0.000165558,
+    1.7466e-05,
+    0.000173524,
+    0.0,
+    0.0,
+    0.0
+   ],
+   "mass": 0.127,
+   "visual": {
+    "mesh": "hand.dae",
+    "origin": [
+     0.0,
+     0.0,
+     -0.661001
+    ],
+    "scale": [
+     0.001,
+     0.001,
+     0.001
+    ],
+    "shape": "mesh",
+    "size": [
+     0.0
+    ]
+   }
+  },
+  "openarm_right_left_finger": {
+   "collision": {
+    "mesh": "finger.stl",
+    "origin": [
+     0.0,
+     -0.05,
+     -0.661001
+    ],
+    "scale": [
+     0.001,
+     0.001,
+     0.001
+    ],
+    "shape": "mesh",
+    "size": [
+     0.0
+    ]
+   },
+   "com": [
+    0.0064528,
+    0.01702,
+    0.0219685
+   ],
+   "inertia": [
+    2.3749999999999997e-06,
+    2.3749999999999997e-06,
+    7.5e-07,
+    1e-06,
+    1e-06,
+    1e-06
+   ],
+   "mass": 0.03602545343277134,
+   "visual": {
+    "mesh": "finger.dae",
+    "origin": [
+     0.0,
+     -0.05,
+     -0.661001
+    ],
+    "scale": [
+     0.001,
+     0.001,
+     0.001
+    ],
+    "shape": "mesh",
+    "size": [
+     0.0
+    ]
+   }
+  },
+  "openarm_right_link0": {
+   "collision": {
+    "mesh": "link0_symp.stl",
+    "origin": [
+     0.0,
+     0.0,
+     0.0
+    ],
+    "scale": [
+     0.001,
+     0.001,
+     0.001
+    ],
+    "shape": "mesh",
+    "size": [
+     0.0
+    ]
+   },
+   "com": [
+    -0.0009483362816297526,
+    0.0001580207020448382,
+    0.03076860287587199
+   ],
+   "inertia": [
+    0.001128,
+    0.000962,
+    0.00147,
+    -4e-06,
+    -3.3e-05,
+    -7e-06
+   ],
+   "mass": 1.1432284943239561,
+   "visual": {
+    "mesh": "link0.dae",
+    "origin": [
+     0.0,
+     0.0,
+     0.0
+    ],
+    "scale": [
+     0.001,
+     0.001,
+     0.001
+    ],
+    "shape": "mesh",
+    "size": [
+     0.0
+    ]
+   }
+  },
+  "openarm_right_link1": {
+   "collision": {
+    "mesh": "link1_symp.stl",
+    "origin": [
+     -0.0,
+     0.0,
+     -0.0625
+    ],
+    "scale": [
+     0.001,
+     0.001,
+     0.001
+    ],
+    "shape": "mesh",
+    "size": [
+     0.0
+    ]
+   },
+   "com": [
+    0.0011467657911800769,
+    3.319987657026362e-05,
+    0.05395284380736254
+   ],
+   "inertia": [
+    0.001567,
+    0.001273,
+    0.001016,
+    -1e-06,
+    -2.9e-05,
+    1e-06
+   ],
+   "mass": 1.1416684646202298,
+   "visual": {
+    "mesh": "link1.dae",
+    "origin": [
+     -0.0,
+     0.0,
+     -0.0625
+    ],
+    "scale": [
+     0.001,
+     0.001,
+     0.001
+    ],
+    "shape": "mesh",
+    "size": [
+     0.0
+    ]
+   }
+  },
+  "openarm_right_link2": {
+   "collision": {
+    "mesh": "link2_symp.stl",
+    "origin": [
+     0.0301,
+     0.0,
+     -0.1225
+    ],
+    "scale": [
+     0.001,
+     0.001,
+     0.001
+    ],
+    "shape": "mesh",
+    "size": [
+     0.0
+    ]
+   },
+   "com": [
+    0.00839629182351943,
+    -2.0145102027597523e-08,
+    0.03256649300522363
+   ],
+   "inertia": [
+    0.000359,
+    0.000376,
+    0.000232,
+    1e-06,
+    -0.000109,
+    1e-06
+   ],
+   "mass": 0.2775092746011571,
+   "visual": {
+    "mesh": "link2.dae",
+    "origin": [
+     0.0301,
+     0.0,
+     -0.1225
+    ],
+    "scale": [
+     0.001,
+     0.001,
+     0.001
+    ],
+    "shape": "mesh",
+    "size": [
+     0.0
+    ]
+   }
+  },
+  "openarm_right_link3": {
+   "collision": {
+    "mesh": "link3_symp.stl",
+    "origin": [
+     -0.0,
+     -0.0,
+     -0.18875
+    ],
+    "scale": [
+     0.001,
+     0.001,
+     0.001
+    ],
+    "shape": "mesh",
+    "size": [
+     0.0
+    ]
+   },
+   "com": [
+    -0.002104752099628911,
+    0.0005549085042607548,
+    0.09047470545721961
+   ],
+   "inertia": [
+    0.004372,
+    0.004319,
+    0.000661,
+    1e-06,
+    1.1e-05,
+    -3.6e-05
+   ],
+   "mass": 1.073863338202347,
+   "visual": {
+    "mesh": "link3.dae",
+    "origin": [
+     -0.0,
+     -0.0,
+     -0.18875
+    ],
+    "scale": [
+     0.001,
+     0.001,
+     0.001
+    ],
+    "shape": "mesh",
+    "size": [
+     0.0
+    ]
+   }
+  },
+  "openarm_right_link4": {
+   "collision": {
+    "mesh": "link4_symp.stl",
+    "origin": [
+     0.0,
+     -0.0315,
+     -0.3425
+    ],
+    "scale": [
+     0.001,
+     0.001,
+     0.001
+    ],
+    "shape": "mesh",
+    "size": [
+     0.0
+    ]
+   },
+   "com": [
+    -0.0029006831074562967,
+    -0.03030575826634669,
+    0.06339637422196209
+   ],
+   "inertia": [
+    0.000623,
+    0.000511,
+    0.000334,
+    -1e-06,
+    -1.9e-05,
+    3.8e-05
+   ],
+   "mass": 0.6348534566833373,
+   "visual": {
+    "mesh": "link4.dae",
+    "origin": [
+     0.0,
+     -0.0315,
+     -0.3425
+    ],
+    "scale": [
+     0.001,
+     0.001,
+     0.001
+    ],
+    "shape": "mesh",
+    "size": [
+     0.0
+    ]
+   }
+  },
+  "openarm_right_link5": {
+   "collision": {
+    "mesh": "link5_symp.stl",
+    "origin": [
+     -0.0,
+     -0.0,
+     -0.438
+    ],
+    "scale": [
+     0.001,
+     0.001,
+     0.001
+    ],
+    "shape": "mesh",
+    "size": [
+     0.0
+    ]
+   },
+   "com": [
+    -0.003049665024221911,
+    0.0008866902457326625,
+    0.043079803024980934
+   ],
+   "inertia": [
+    0.000423,
+    0.000445,
+    0.000324,
+    -8e-06,
+    6e-06,
+    -6e-06
+   ],
+   "mass": 0.6156588026168502,
+   "visual": {
+    "mesh": "link5.dae",
+    "origin": [
+     -0.0,
+     -0.0,
+     -0.438
+    ],
+    "scale": [
+     0.001,
+     0.001,
+     0.001
+    ],
+    "shape": "mesh",
+    "size": [
+     0.0
+    ]
+   }
+  },
+  "openarm_right_link6": {
+   "collision": {
+    "mesh": "link6_symp.stl",
+    "origin": [
+     -0.0375,
+     -0.0,
+     -0.5585
+    ],
+    "scale": [
+     0.001,
+     0.001,
+     0.001
+    ],
+    "shape": "mesh",
+    "size": [
+     0.0
+    ]
+   },
+   "com": [
+    -0.037136587005447405,
+    0.00033230528343419053,
+    -9.498374522309838e-05
+   ],
+   "inertia": [
+    0.000143,
+    0.000157,
+    0.000159,
+    1e-06,
+    1e-06,
+    1e-06
+   ],
+   "mass": 0.475202773187987,
+   "visual": {
+    "mesh": "link6.dae",
+    "origin": [
+     -0.0375,
+     -0.0,
+     -0.5585
+    ],
+    "scale": [
+     0.001,
+     0.001,
+     0.001
+    ],
+    "shape": "mesh",
+    "size": [
+     0.0
+    ]
+   }
+  },
+  "openarm_right_link7": {
+   "collision": {
+    "mesh": "link7_symp.stl",
+    "origin": [
+     0.0,
+     -0.0,
+     -0.5585
+    ],
+    "scale": [
+     0.001,
+     0.001,
+     0.001
+    ],
+    "shape": "mesh",
+    "size": [
+     0.0
+    ]
+   },
+   "com": [
+    6.875510271106056e-05,
+    0.01266175250761268,
+    0.06951945409987448
+   ],
+   "inertia": [
+    0.000639,
+    0.000497,
+    0.000342,
+    1e-06,
+    1e-06,
+    8.9e-05
+   ],
+   "mass": 0.4659771327380578,
+   "visual": {
+    "mesh": "link7.dae",
+    "origin": [
+     0.0,
+     -0.0,
+     -0.5585
+    ],
+    "scale": [
+     0.001,
+     0.001,
+     0.001
+    ],
+    "shape": "mesh",
+    "size": [
+     0.0
+    ]
+   }
+  },
+  "openarm_right_right_finger": {
+   "collision": {
+    "mesh": "finger.stl",
+    "origin": [
+     0.0,
+     0.05,
+     -0.661001
+    ],
+    "scale": [
+     0.001,
+     -0.001,
+     0.001
+    ],
+    "shape": "mesh",
+    "size": [
+     0.0
+    ]
+   },
+   "com": [
+    0.0064528,
+    -0.01702,
+    0.0219685
+   ],
+   "inertia": [
+    2.3749999999999997e-06,
+    2.3749999999999997e-06,
+    7.5e-07,
+    1e-06,
+    1e-06,
+    1e-06
+   ],
+   "mass": 0.03602545343277134,
+   "visual": {
+    "mesh": "finger.dae",
+    "origin": [
+     0.0,
+     0.05,
+     -0.661001
+    ],
+    "scale": [
+     0.001,
+     -0.001,
+     0.001
+    ],
+    "shape": "mesh",
+    "size": [
+     0.0
+    ]
+   }
+  }
+ },
+ "pedestal": {
+  "base_box": 0.12,
+  "collapsed_height": 0.3048,
+  "com_moving": [
+   0.0,
+   0.0,
+   -0.16683483659260637
+  ],
+  "inertia_moving": [
+   0.6308439281664278,
+   0.6308439281664278,
+   0.07565,
+   0.0,
+   0.0,
+   0.0
+  ],
+  "mass_fixed": 16.1868,
+  "mass_moving": 30.047600000000003,
+  "plate_box": 0.14,
+  "plate_thickness": 0.02,
+  "raised_height": 0.7228,
+  "travel": 0.418
+ },
+ "sources": {
+  "mobile_bimanual_ros2": "74ce18e",
+  "openarm_description": "1fba2cbc05001f05b4514120b70130b4ac06f409"
+ }
+}

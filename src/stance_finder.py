@@ -41,7 +41,7 @@ def robot_geometry(model):
 
     Returns:
         dict: "shoulder" ({"left": (x, y, z), "right": ...}: each arm's shoulder in the torso frame, metres), "torso_z0" (the torso frame's height above the base origin at pedestal
-        command 0), "lift_factor" (torso height change per metre of stage command: both stages move), "base_z" (the base origin's resting height above the floor), "footprint" (convex
+        command 0, fully collapsed), "lift_factor" (torso height change per metre of pedestal command: 1 for the one slide joint), "base_z" (the base origin's resting height above the floor), "footprint" (convex
         polygon (K, 2) of the base and the battery in the base frame).
     """
     d = mujoco.MjData(model)
@@ -53,14 +53,14 @@ def robot_geometry(model):
         mujoco.mj_kinematics(model, d)
         return float(d.xpos[torso][2] - d.xpos[root][2])
 
-    z0, z1 = torso_height(0.0), torso_height(-0.1)
+    z0, z1 = torso_height(0.0), torso_height(0.1)
     for jn in robot_specs.PEDESTAL_SPECS["joints"]:
         d.qpos[model.joint(jn).qposadr[0]] = 0.0
     mujoco.mj_kinematics(model, d)
     bodies = [root] + ([model.body("battery").id] if any(model.body(b).name == "battery" for b in range(model.nbody)) else [])
     bc = robot_specs.BASE_CONTACT_SPECS
     base_z = -min(v[2] for v in bc["points"].values()) + bc["radius"]
-    return {"shoulder": {sd: shoulder_origin(arm_chain(model, sd)) for sd in ("left", "right")}, "torso_z0": z0, "lift_factor": (z0 - z1) / 0.1, "base_z": float(base_z),
+    return {"shoulder": {sd: shoulder_origin(arm_chain(model, sd)) for sd in ("left", "right")}, "torso_z0": z0, "lift_factor": (z1 - z0) / 0.1, "base_z": float(base_z),
             "footprint": footprint_polygon(model, d, bodies)}
 
 
@@ -210,7 +210,7 @@ def find_stances(points, maps, furniture, robot, cfg=STANCE_CFG, headings=None, 
     if headings is None:
         headings = np.radians(np.arange(0.0, 360.0, cfg["heading_step_deg"]))
     if pedestal_qs is None:
-        pedestal_qs = np.arange(robot_specs.PEDESTAL_SPECS["lowest_command"], 1e-9, cfg["pedestal_step"])
+        pedestal_qs = np.arange(robot_specs.PEDESTAL_SPECS["lowest_command"], robot_specs.PEDESTAL_SPECS["range"][1] + 1e-9, cfg["pedestal_step"])
     qs = np.asarray(sorted(pedestal_qs), float)
     win, X, Y = _window(furniture, points, cfg, centre)
     Xr, Yr = X.ravel(), Y.ravel()

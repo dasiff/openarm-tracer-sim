@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <mujoco model="chemistry_lab_combined">
   <!-- Full robot (Tracer + pedestal + OpenArm bimanual arms) -->
-  <include file="../../deps/OpenArm-Combined/combined_robot.xml"/>
+  <include file="../robot/combined_robot.xml"/>
 
   <!-- 1/750 s; src/robot_specs.py (PHYSICS_HZ) overrides this at load anyway -->
   <option timestep="0.0013333333333333333" gravity="0 0 -9.81" integrator="implicit"/>

@@ -163,7 +163,7 @@ def run_episode(task, model, data, mode="auto", viewer=None, out_dir=None, hando
     sides = ("left", "right")
     arm_act = {s: arm_ids(model, s) for s in sides}
     neck = neck_ids(model, robot_specs.NECK_SPECS)
-    finger_qadr = [int(model.jnt_qposadr[model.actuator_trnid[a, 0]]) for s in sides for a in arm_act[s]["fingers"]]
+    finger_qadr = [int(model.jnt_qposadr[j]) for s in sides for j in arm_act[s]["finger_jnt"]]
     extra_names, extra_row = task["log_extras"](model) if "log_extras" in task else ([], None)
 
     # --- bookkeeping ---
@@ -219,7 +219,7 @@ def run_episode(task, model, data, mode="auto", viewer=None, out_dir=None, hando
                              + [v for s in sides for v in [f"{v:.9f}" for v in ap["arm_targets"][s]] + [f"{ap['gripper'][s]:.9f}"]]
                              + ([f"{ap['neck_goal'][n]:.9f}" for n in neck["names"]] if neck else [])
                              + [v for s in sides for v in (f"{ap['gripper_force'][s]:.9f}",
-                                                           f"{float(np.mean(np.abs(data.actuator_force[arm_act[s]['fingers']]))):.9f}")])
+                                                           f"{abs(float(data.actuator_force[arm_act[s]['gripper']])) / robot_specs.ARM_ACTUATOR_SPECS['fingers']['fingers_per_actuator']:.9f}")])
         # end conditions
         auto_t, op_t = R["auto_ticks"] * tick_dt, R["operator_ticks"] * tick_dt
         if ps is not None and ps.get("error"):

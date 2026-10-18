@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <mujoco model="chemistry_lab">
   <!-- Mobile Manipulator (OpenArm + Tracer) -->
-  <include file="../../deps/OpenArm-Combined/combined_robot.xml"/>
+  <include file="../robot/combined_robot.xml"/>
 
   <option timestep="0.002" gravity="0 0 -9.81" integrator="implicit"/>
   <size njmax="4000" nconmax="2000"/>

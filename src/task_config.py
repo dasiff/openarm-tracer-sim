@@ -63,7 +63,7 @@ TASK_CFG = {
     # --- objects, spawn, pedestal or the grasp orientation constraint change ---
     "staging_xy": (0.7500, 1.2213),        # base_link origin, m; 8 cm from the bench edge (base front to bench top edge)
     "staging_yaw": math.radians(-90.0),    # facing the bench
-    "pedestal_q": -0.2,                    # pedestal_lift command, m of stage travel (0 = raised, negative = lowered)
+    "pedestal_q": 0.0452,                  # pedestal_lift command, m of height above the collapsed pedestal (0 = collapsed, 0.418 = raised); the torso is 0.3048 + 0.0452 = 0.35 m above the pedestal base (the old model's -0.2 stage command)
     "arm": "left",                         # the arm of the task's scripted grasp poses below (LEGACY: staging now moves both arms to home)
 
     # --- Home pose ("waiter pose"): where the staging ARMS phase puts both arms and where the handoff happens. PLACEHOLDER until the
@@ -152,8 +152,8 @@ POUR_CFG = {
 GRASP_MAP_CFG = {
     # The mapped point is the pad centre, the centre of the finger pads' contact patch, and the rule's axes are the hand's approach axis and finger-closing axis. None of these is
     # a setting: src/gripper_geometry.py derives them from the compiled model (the finger joints, the tool point and the finger collision geometry), and grasp_cfg() adds them to this dict
-    # as "pad_center_in_tcp", "approach_axis", "closing_axis" (all in the tool point frame) and "finger_open_max". On the current model: pad centre (0.0002, 0.006, 0.009) m (a small
-    # patch near the fingertips, 9 mm beyond the tool point and 6 mm off its y axis, because the fingers are not symmetric about the hand's origin), approach +z, closing +y.
+    # as "pad_center_in_tcp", "approach_axis", "closing_axis" (all in the tool point frame) and "finger_open_max". On the imported model (B1c): pad centre (0.0002, 0.0, 0.0025) m (a small
+    # patch near the fingertips, 2.5 mm beyond the tool point and on its axis, because the fingers are symmetric about the hand's origin now; the old model's were not), approach +z, closing +y.
     # What counts as a grasp: level and a side grasp. Both the approach axis (hand z) and the finger-closing axis (hand y) within level_deg of horizontal. If the pilot shows
     # the map is too small, David decides whether to loosen it to 10 deg.
     "level_deg": 5.0,
@@ -204,7 +204,7 @@ FURNITURE_CFG = {
 STANCE_CFG = {
     "heading_step_deg": 5.0,            # headings searched
     "heading_robust_deg": 1.0,          # a stance must also be valid at the heading +- this (the base's stopping error in yaw)
-    "pedestal_step": 0.02,              # m of stage travel between the pedestal heights searched (the lowest command to 0)
+    "pedestal_step": 0.04,              # m of height between the pedestal heights searched (the lowest command to the raised limit)
     "window": 1.3,                      # m, the floor window around the task points that is searched (the arm reaches about 0.7 m)
     "nms_distance": 0.10,               # m, ranked stances closer than this (and within nms_heading_deg) to a better one are dropped
     "nms_heading_deg": 15.0,
@@ -226,8 +226,8 @@ SEARCH_CFG = {
     # Candidate grid
     "standoffs": (0.05, 0.08, 0.11, 0.14, 0.18, 0.22),   # m, base front edge to bench edge at the final yaw
     "laterals": tuple(round(0.05 * i, 2) for i in range(-6, 7)),   # m along the bench from the objects' midpoint
-    "pedestal_qs": (0.0, -0.04, -0.08, -0.12, -0.16, -0.20, -0.228),
-    "pedestal_stop_margin": 0.01,          # m, candidates this close to the lowest command (the torso-contact stop) are skipped
+    "pedestal_qs": (0.0, 0.0452, 0.1252, 0.2052, 0.2852, 0.3652, 0.418),   # torso heights 0.305 to 0.723 m above the pedestal base (the old list's heights, 0.04 m apart, from the old 0.294 up to its raised 0.75)
+    "pedestal_stop_margin": 0.01,          # m, candidates this close to the lowest command (fully collapsed) are skipped
     "min_clearance": 0.05,                 # m, base footprint to bench at the staging pose (the requirement)
     "required_clearance": 0.08,            # m, wanted: footprint to bench at the staging pose (the hard minimum is min_clearance)
     "required_turn_clearance": 0.05,       # m, wanted: swept footprint of the final turn (hard minimum min_turn_clearance)
@@ -260,7 +260,7 @@ LAYOUT_CFG = {
     "standoffs": (0.08, 0.10, 0.12, 0.14, 0.16),
     "laterals": tuple(round(0.05 * i, 2) for i in range(-8, 3)),
     "yaw_offsets_deg": (-20.0, -10.0, 0.0, 10.0, 20.0),
-    "pedestal_qs": (0.0, -0.04, -0.08, -0.12, -0.16, -0.20),
+    "pedestal_qs": (0.0452, 0.1252, 0.2052, 0.2852, 0.3652, 0.418),
     # Requirements
     "required_clearance": 0.08,            # m, base footprint to bench at the staging pose
     "required_turn_clearance": 0.05,       # m, footprint swept by the final in-place turn
@@ -311,9 +311,9 @@ STAGING_CFG = {
     "correction_arms_min_base_clearance": 0.05,     # m: base to bench, checked every tick of the extended-arm correction (it is 0.08 at the staging pose)
     "correction_arms_min_arm_clearance": 0.03,      # m: the task arm to the bench, same check
     # PEDESTAL
-    "pedestal_speed": 0.05,                # m/s of command change (the lift's jog speed)
-    "pedestal_tol": 0.003,                 # m
-    "pedestal_settle_vel": 0.002,          # m/s
+    "pedestal_speed": 0.10,                # m/s of command change (the lift's jog speed; the command is now the height, so this moves the torso as fast as the old 0.05 m/s of stage travel)
+    "pedestal_tol": 0.006,                 # m (the old 0.003 m of stage travel)
+    "pedestal_settle_vel": 0.004,          # m/s (the old 0.002 m/s of stage travel)
     "pedestal_settle_s": 0.3,
     "pedestal_timeout": 30.0,
     # ARMS: minimum-jerk move along rest -> ready_via_q -> ready_q (joint-space arc length), gripper opening on the way

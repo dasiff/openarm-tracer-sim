@@ -6,7 +6,7 @@
          beaker is models/objects/beaker.xml
        - models/objects/beaker.xml and hotplate.xml are included at the top level, below
        The robot include MUST stay first, at top level, right after <mujoco>. -->
-  <include file="../../deps/OpenArm-Combined/combined_robot.xml"/>
+  <include file="../robot/combined_robot.xml"/>
 
   <!-- 1/750 s; src/robot_specs.py (PHYSICS_HZ) overrides this at load anyway -->
   <option timestep="0.0013333333333333333" gravity="0 0 -9.81" integrator="implicit"/>

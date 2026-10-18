@@ -15,11 +15,11 @@ import numpy as np
 
 
 def arm_ids(model, side):
-    """Looks up the actuators and joints of one arm's 7 joints, and its 2 finger actuators.
+    """Looks up the actuators and joints of one arm's 7 joints, and its gripper.
 
     Args:
         model (mujoco.MjModel): A model with the actuators "<side>_joint1_ctrl" to "<side>_joint7_ctrl" and
-            "<side>_finger1_ctrl", "<side>_finger2_ctrl".
+            "<side>_gripper_ctrl" (the one gripper actuator, on openarm_<side>_finger_joint1; finger_joint2 follows it through a joint equality).
         side (str): "left" or "right".
 
     Returns:
@@ -28,14 +28,16 @@ def arm_ids(model, side):
             "jnt" (list of int): Joint ids of those actuators.
             "qadr" (list of int): Addresses of the joints in qpos.
             "vadr" (list of int): Addresses of the joints in qvel.
-            "fingers" (list of int): Actuator ids of the 2 finger actuators.
+            "gripper" (int): Actuator id of the gripper (it moves both fingers).
+            "finger_jnt" (list of int): Joint ids of the two fingers, finger_joint1 (the actuated one) first.
     """
     act = [model.actuator(f"{side}_joint{i}_ctrl").id for i in range(1, 8)]
     jnt = [int(model.actuator_trnid[a, 0]) for a in act]
     qadr = [int(model.jnt_qposadr[j]) for j in jnt]
     vadr = [int(model.jnt_dofadr[j]) for j in jnt]
-    fingers = [model.actuator(f"{side}_finger{k}_ctrl").id for k in (1, 2)]
-    return {"act": act, "jnt": jnt, "qadr": qadr, "vadr": vadr, "fingers": fingers}
+    gripper = model.actuator(f"{side}_gripper_ctrl").id
+    finger_jnt = [model.joint(f"openarm_{side}_finger_joint{k}").id for k in (1, 2)]
+    return {"act": act, "jnt": jnt, "qadr": qadr, "vadr": vadr, "gripper": gripper, "finger_jnt": finger_jnt}
 
 
 # ----------------------------------------------------------------------------------------------------------

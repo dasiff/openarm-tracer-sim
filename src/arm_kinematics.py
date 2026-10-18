@@ -19,7 +19,7 @@ Contents:
 import mujoco
 import numpy as np
 
-LINKS = ("link0", "link1", "link2", "link3", "link4", "link5", "link6", "link7", "link8", "hand", "hand_tcp")
+LINKS = ("link0", "link1", "link2", "link3", "link4", "link5", "link6", "link7", "hand", "hand_tcp")
 
 
 def _quat2mat(q):

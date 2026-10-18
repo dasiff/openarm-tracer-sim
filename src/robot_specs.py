@@ -47,37 +47,27 @@ SIMULATION_TIMESTEP = 1 / PHYSICS_HZ  # seconds (sim choice: one physics step pe
 # A side effect: with it on, the two fingers' normal forces differ by up to ~1 N at the 10 N ceiling (9.5 and 10.5 N; the mean is still the cap). 0 turns it off.
 NOSLIP_ITERATIONS = 10
 
-# Pedestal lift actuator -- PLACEHOLDER
-# The real lift hardware is unconfirmed (waiting on Dan's answer), and the pedestal model
-# itself is marked "estimated" in the OpenArm-Combined README (Telescoping_Pedestal.xml).
-# Until then the sim gets one stand-in position actuator, added at load time by
-# src/pedestal.add_pedestal_lift(): the two sliding stages are coupled (TopMiddle follows
-# MiddleBottom) and a single height command drives MiddleBottom, like a single lift motor.
-# Every number here is a guess to be replaced when the hardware is known.
+# Pedestal lift actuator -- PLACEHOLDER hardware numbers, real geometry
+# The pedestal is the updated robot description's (Luke-kC/mobile_bimanual_ros2, pedestal_openarm): ONE prismatic joint, "pedestal_joint", from 0 (collapsed) to 0.418 m (raised); the
+# torso sits 0.3048 m above the pedestal base when collapsed. The description gives the pedestal no masses and no collision shapes: the masses are our old estimates (the README's
+# "estimated" figures of the old telescoping pedestal, summed for the moving part) and the collision shapes are boxes of the description's dimensions (see tools/import_openarm_description.py).
+# The lift hardware itself (speed, force, mass) is still unconfirmed (design plan section 11), so the one stand-in position actuator, added at load time by
+# src/pedestal.add_pedestal_lift(), keeps its old placeholder numbers. The joint value is the height above the collapsed pedestal; the torso is 0.3048 + q above the pedestal base.
 PEDESTAL_SPECS = {
     "actuator_name": "pedestal_lift",
-    "joints": ("MiddleBottom", "TopMiddle"),      # lower stage, upper stage
-    # Per-stage slide, m, from the XML joint range: 0 = fully raised, -0.25 = XML limit. The
-    # stages stack, so the top of the pedestal moves twice this.
-    "stage_range": (-0.25, 0.0),
-    # Lowest command (also the Page Down clamp). The robot's torso collision mesh first touches
-    # pedestal_Bottom at -0.2290 per stage (458 mm of total drop; measured with mj_geomDistance),
-    # and that contact is kept as the lower stop. -0.228 leaves room for the ~1 mm the stage sags
-    # under load (kp below), so the actuator settles at the touch point and never pushes into it.
-    # The real minimum height is pending Dan.
-    "lowest_command": -0.228,
-    "target_height": 0.0,                         # default command: fully raised
-    # Bodies whose collision hulls are excluded from each other, see src/pedestal.py.
-    "nested_bodies": ("pedestal_Bottom", "pedestal_Top"),
-    # Stand-in position servo on MiddleBottom. Load it must hold (from the body masses,
-    # see src/pedestal.pedestal_load): 56.0 kg above MiddleBottom + 45.0 kg above TopMiddle;
-    # with the stages coupled both loads act on the one actuator, 991 N. kp = 1e6 N/m
-    # sags ~1 mm under that. forcerange is ~5x the hold force: the XML joint damping (800 and
-    # 50000 N s/m on the two stages, not ours to change) makes the lift speed ~ force / 51 kN s/m.
+    "joints": ("pedestal_joint",),                # one slide joint (a tuple so that "for joint in joints" code works for any number of stages)
+    "range": (0.0, 0.418),                        # m: the joint range (collapsed, raised), from the description
+    "collapsed_height": 0.3048,                   # m: torso origin above the pedestal base at q = 0
+    # Lowest command (also the Page Down clamp): fully collapsed, the description's lower limit. (The old model stopped at a torso contact 458 mm below its fully raised
+    # position; the collapsed height 0.3048 m is the same 0.4452 m below the raised 0.7228 m torso height, and nothing touches there.)
+    "lowest_command": 0.0,
+    "target_height": 0.418,                       # default command: fully raised (the model starts there)
+    # Stand-in position servo on pedestal_joint. Load it must hold (from the body masses, see src/pedestal.pedestal_load): the whole robot above the joint, about 59 kg, 580 N;
+    # kp = 1e6 N/m sags ~0.6 mm under that. forcerange is ~5x the hold force: the joint damping (50000 N s/m, the old coupled pair's 800 + 50000) makes the lift speed ~ force / 50 kN s/m.
     "kp": 1.0e6,                                  # N/m
     "kv": 0.0,                                    # N s/m (joint damping already dominates)
     "force_limit": 5000.0,                        # N
-    "jog_speed": 0.05,                            # m/s of stage travel while a key is held
+    "jog_speed": 0.10,                            # m/s of height while a key is held (the old 0.05 m/s of stage travel moved the torso 0.10 m/s)
 }
 
 # Base floor contact points (src/base_contacts.py). The Tracer's wheels and casters are meshes that cannot roll in the simulation (the base is
@@ -198,39 +188,41 @@ ARM_ACTUATOR_SPECS = {
     #   armature   Rotor inertia of the motor, kg m^2. Standard OpenArm v2 configuration; armature values
     #              from the upstream openarm_mujoco v2 model, which the combined model had dropped
     #              (deps/openarm_mujoco/v2/openarm_bimanual.xml). Not measured on our hardware.
-    #   kp, kv     Position gain (N m/rad) and velocity gain (N m s/rad) of the joint servo.
-    #              Placeholder; to be fine-tuned on the real hardware.
+    #   kp, kv     Position gain (N m/rad) and velocity gain (N m s/rad) of the joint servo. The real values: the "kp" and "kd" of
+    #              assets/robot/openarm_v1.0/config/arm/control_gains.yaml in enactic/openarm_description (pinned 1fba2cb), which the real
+    #              ros2_control hardware interface runs at 750 Hz. (They replace the earlier placeholders 100/100/80/80/50/50/50 and 10/10/8/8/5/5/5.)
     #   torque_nm  Torque limit (+- N m) of the joint's force range. From the motor_DM8009 / motor_DM4340 /
     #              motor_DM4310 classes' forcerange in deps/OpenArm-Combined/combined_robot.xml
     #              (lines 26-36), the motor's peak torque.
     "joints": {
-        1: {"motor": "DM8009", "armature": 0.0081, "kp": 100.0, "kv": 10.0, "torque_nm": 40.0},
-        2: {"motor": "DM8009", "armature": 0.0081, "kp": 100.0, "kv": 10.0, "torque_nm": 40.0},
-        3: {"motor": "DM4340", "armature": 0.16, "kp": 80.0, "kv": 8.0, "torque_nm": 27.0},
-        4: {"motor": "DM4340", "armature": 0.16, "kp": 80.0, "kv": 8.0, "torque_nm": 27.0},
-        5: {"motor": "DM4310", "armature": 0.0100, "kp": 50.0, "kv": 5.0, "torque_nm": 7.0},
-        6: {"motor": "DM4310", "armature": 0.0100, "kp": 50.0, "kv": 5.0, "torque_nm": 7.0},
-        7: {"motor": "DM4310", "armature": 0.0100, "kp": 50.0, "kv": 5.0, "torque_nm": 7.0},
+        1: {"motor": "DM8009", "armature": 0.0081, "kp": 70.0, "kv": 2.75, "torque_nm": 40.0},
+        2: {"motor": "DM8009", "armature": 0.0081, "kp": 70.0, "kv": 2.5, "torque_nm": 40.0},
+        3: {"motor": "DM4340", "armature": 0.16, "kp": 70.0, "kv": 2.0, "torque_nm": 27.0},
+        4: {"motor": "DM4340", "armature": 0.16, "kp": 60.0, "kv": 2.0, "torque_nm": 27.0},
+        5: {"motor": "DM4310", "armature": 0.0100, "kp": 10.0, "kv": 0.7, "torque_nm": 7.0},
+        6: {"motor": "DM4310", "armature": 0.0100, "kp": 10.0, "kv": 0.6, "torque_nm": 7.0},
+        7: {"motor": "DM4310", "armature": 0.0100, "kp": 10.0, "kv": 0.5, "torque_nm": 7.0},
     },
 
     # Gravity compensation: on, for these bodies of both arms (link1 through the hand and fingers; link0, the
-    # fixed arm mount, is left out). Assumes the real controller compensates for gravity.
-    "gravcomp_bodies": ("link1", "link2", "link3", "link4", "link5", "link6", "link7", "link8",
+    # fixed arm mount, is left out; the updated description has no link8). Assumes the real controller compensates for gravity.
+    "gravcomp_bodies": ("link1", "link2", "link3", "link4", "link5", "link6", "link7",
                         "hand", "hand_tcp", "right_finger", "left_finger"),
 
-    # Fingers (all 4, position actuators; the travel is the joint range, 0-0.044 m). PLACEHOLDER gains.
-    # The XML had the right fingers as position servos (kp 100 N/m, +-333 N, combined_robot.xml line 40) and
-    # the left fingers as torque motors with no force limit, driven by the Python PD at kp 100, kd 10.
-    #   kp 300 N/m   was 100. A finger closed on the 70 mm beaker stops at 36.8 mm from its zero, so the servo
-    #                asks for 300 * 0.0368 = 11 N (100 gave only 3.7 N, so a force cap above that did nothing).
-    #                Now the caps up to the 10 N ceiling take effect: the per-object caps are GRIP_FORCE_TABLE in
-    #                src/task_config.py.
+    # Gripper: ONE position actuator per hand, on finger_joint1; finger_joint2 follows it through the joint equality (finger 2 = finger 1), like the real hand, whose single motor
+    # moves both fingers through a linkage. The travel is the joint range, 0-0.044 m per finger. The numbers below are PER FINGER (what each finger does on its own); the actuator
+    # drives both fingers, so src/arm_actuators.py and the control loop multiply the gain, damping and force limit by "fingers_per_actuator". PLACEHOLDER gains (see the note).
+    #   kp 300 N/m   per finger. A finger closed on the 70 mm beaker stops at 36.8 mm from its zero, so the servo
+    #                asks for 300 * 0.0368 = 11 N per finger (100 gave only 3.7 N, so a force cap above that did nothing).
+    #                The caps up to the ceiling take effect: the per-object caps are GRIP_FORCE_TABLE in src/task_config.py.
     #   kv 4.6 N s/m with the joint's own 2 N s/m damping the total is 6.6 N s/m, about critical for a 36 g
     #                finger on a 300 N/m servo (2*sqrt(kp*m) = 6.6; kv 2 would overshoot by ~9 %).
-    #   force 10 N   the ceiling: below the 11 N the servo asks for at the beaker's width and the 13.2 N at the
-    #                full 44 mm travel, so it is a real limit (the XML's +-333 N was no limit at all). A choice of
-    #                ours, not a motor datasheet value.
-    "fingers": {"kp": 300.0, "kv": 4.6, "force_limit": 10.0},
+    #   force 9 N    the ceiling, per finger: the real gripper's limit as David set it (B1c, 2026-10-18). ASSUMPTION: that the 9 N is what each finger presses with, the same meaning as
+    #                the grip force table (design plan section 11 asks the hardware team whether it is per finger or for the pair; if it is for the pair, set this to 4.5 and the
+    #                table accordingly). It is below the 11 N the servo asks for at the beaker's width, so it is a real limit.
+    # The real hand's own gains (control_gains.yaml, "hand": kp 5, kd 0.1) are in motor units (N m/rad at the gripper motor); the linkage ratio from motor angle to finger travel is
+    # not in the description repositories (it is in the hardware driver), so they cannot be converted here and the finger servo keeps the placeholder gains above.
+    "fingers": {"kp": 300.0, "kv": 4.6, "force_limit": 9.0, "fingers_per_actuator": 2},
 }
 
 # Cameras

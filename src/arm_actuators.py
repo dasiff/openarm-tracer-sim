@@ -14,17 +14,17 @@ What it does
   2. Position actuators. The 14 arm joint motors become MuJoCo position actuators, so the PD runs inside
      MuJoCo with its velocity term integrated implicitly instead of in Python from the previous step's
      state. kp and kv are the joint's, ctrlrange is the joint range, forcerange the motor's torque
-     limit. The gains are PLACEHOLDERS pending the real ros2_control values. data.ctrl for these
+     limit. The gains are the real control_gains.yaml values (see robot_specs). data.ctrl for these
      actuators is now the target angle in rad.
-  3. All 4 fingers are position actuators with ARM_ACTUATOR_SPECS["fingers"] (the right fingers
-     already were; the left ones were torque motors with no force limit).
+  3. One gripper position actuator per hand, on finger_joint1 (finger_joint2 follows through the joint equality). ARM_ACTUATOR_SPECS["fingers"] gives the numbers per finger;
+     the actuator drives both fingers, so its gain, damping and force limit are "fingers_per_actuator" (2) times those.
   4. Gravity compensation, always on: gravcomp = 1 on both arms' link1 through the fingers
      (ARM_ACTUATOR_SPECS["gravcomp_bodies"]). Assumes the real controller compensates for gravity.
   5. Integrator implicitfast. The scene XML asks for "implicit". Both integrate the actuator and joint
      damping terms implicitly, which is what makes the servo stable; they differ only in that "implicit"
      also differentiates the Coriolis terms (more cost, no visible difference here). Measured on the hold
      tests: see data/arm_hold/. implicitfast is MuJoCo's recommended choice.
-Actuator order and names are unchanged (legacy/actuator_mapping.ACTUATOR_NAMES still indexes them).
+The actuators are the Tracer's 2 wheel motors, then per arm 7 joints, with one gripper per hand (the hand's two finger actuators of the old file are one now: names "<side>_gripper_ctrl").
 """
 
 import mujoco
@@ -55,11 +55,11 @@ def add_arm_actuators(spec):
             joint.armature = j["armature"]
             _make_position(act, j["kp"], j["kv"], joint.range[0], joint.range[1], j["torque_nm"])
         f = specs["fingers"]
-        for k in (1, 2):
-            joint, act = spec.joint(f"openarm_{side}_finger_joint{k}"), spec.actuator(f"{side}_finger{k}_ctrl")
-            if joint is None or act is None:
-                raise ValueError(f"finger {k} joint/actuator for the {side} hand not found in model")
-            _make_position(act, f["kp"], f["kv"], joint.range[0], joint.range[1], f["force_limit"])
+        n = f["fingers_per_actuator"]
+        joint, act = spec.joint(f"openarm_{side}_finger_joint1"), spec.actuator(f"{side}_gripper_ctrl")
+        if joint is None or act is None:
+            raise ValueError(f"finger joint or gripper actuator for the {side} hand not found in model")
+        _make_position(act, n * f["kp"], n * f["kv"], joint.range[0], joint.range[1], n * f["force_limit"])
         for name in specs["gravcomp_bodies"]:
             body = spec.body(f"openarm_{side}_{name}")
             if body is None:

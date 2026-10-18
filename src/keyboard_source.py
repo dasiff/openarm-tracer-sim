@@ -95,8 +95,7 @@ def build_jog_tables(model, mujoco):
 
     Args:
         model (mujoco.MjModel): The robot model. Must contain the actuators
-            "<side>_joint<i>_ctrl" (i = 1..7) and "<side>_finger1_ctrl" and
-            "<side>_finger2_ctrl" for both sides.
+            "<side>_joint<i>_ctrl" (i = 1..7) and "<side>_gripper_ctrl" for both sides.
         mujoco (module): The mujoco module (passed in by the caller).
 
     Returns:
@@ -125,7 +124,7 @@ def build_jog_tables(model, mujoco):
         for i in range(1, 8):
             a = aid(f"{side}_joint{i}_ctrl")
             items.append(([a], jrange(a), JOG_JOINT_SPEED))
-        f = [aid(f"{side}_finger1_ctrl"), aid(f"{side}_finger2_ctrl")]
+        f = [aid(f"{side}_gripper_ctrl")]
         items.append((f, jrange(f[0]), JOG_GRIP_SPEED))
         tables[side] = items
     return tables

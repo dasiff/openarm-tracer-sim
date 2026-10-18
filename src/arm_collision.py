@@ -71,8 +71,7 @@ class ArmCollisionChecker:
         for a, v in zip(arm_ids(m, other)["qadr"], other_q):
             d.qpos[a] = v
         for sd in ("left", "right"):
-            for a in arm_ids(m, sd)["fingers"]:
-                j = m.actuator_trnid[a, 0]
+            for j in arm_ids(m, sd)["finger_jnt"]:
                 d.qpos[m.jnt_qposadr[j]] = m.jnt_range[j, 1] if finger_open is None else finger_open
         set_neck_pose(m, d, robot_specs.NECK_SPECS, neck_q)
         self.qadr = arm_ids(m, side)["qadr"]

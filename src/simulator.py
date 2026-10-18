@@ -51,7 +51,7 @@ class RobotSimulator:
         Args:
             model_path (str or pathlib.Path or None): Path to the MuJoCo XML (MJCF) model or scene file. A scene file should
                 <include> the robot model at the top level (see learnings-and-workflow notes on <include> placement). Defaults to
-                None, which loads the bare combined robot, deps/OpenArm-Combined/combined_robot.xml, with no scene objects.
+                None, which loads the bare combined robot, models/robot/combined_robot.xml, with no scene objects.
             track_bodies (list of str or None): Names of bodies in the scene whose position and velocity should be included in
                 get_observation() (e.g. ["block"], or ["beaker_1", "beaker_2"] for a chemistry scene). You can always query any
                 body on demand with get_body_state(), whether or not it is in this list. Defaults to None (no tracked bodies).
@@ -78,7 +78,7 @@ class RobotSimulator:
         """
         if model_path is None:
             project_root = Path(__file__).parent.parent
-            model_path = project_root / "deps/OpenArm-Combined/combined_robot.xml"
+            model_path = project_root / "models/robot/combined_robot.xml"
 
         # Sim choice: resolve to an absolute path because MjSpec mesh loading
         # fails on relative paths.

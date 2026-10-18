@@ -118,7 +118,7 @@ LOOP_CFG = {
     "exclusive": False,
     # "settled" thresholds (measured velocities below the limit for the dwell time), provisional
     "settle_base_lin": 0.01, "settle_base_ang": 0.02, "settle_base_dwell": 0.1,
-    "settle_ped_speed": 0.002, "settle_ped_dwell": 0.2,
+    "settle_ped_speed": 0.004, "settle_ped_dwell": 0.2,
     "settle_arm_speed": 0.02, "settle_finger_speed": 0.002, "settle_arm_dwell": 0.2,
     "base_stop_lin_decel": 1.875,  # m/s^2, bringing the base to rest during a hold (= the keyboard's SPACE ramp rate)
     "base_stop_ang_decel": 2.5,    # rad/s^2
@@ -354,7 +354,7 @@ def run_loop(model, data, sources, cfg, viewer=None, logger=None):
 
     sides = ("left", "right")
     arm_act = {s: [aid(f"{s}_joint{i}_ctrl") for i in range(1, 8)] for s in sides}
-    fing_act = {s: [aid(f"{s}_finger1_ctrl"), aid(f"{s}_finger2_ctrl")] for s in sides}
+    fing_act = {s: [aid(f"{s}_gripper_ctrl")] for s in sides}      # one actuator per hand: it drives both fingers (finger 2 follows finger 1)
     jr = lambda a: model.jnt_range[model.actuator_trnid[a, 0]]
     vadr = lambda a: int(model.jnt_dofadr[model.actuator_trnid[a, 0]])
     arm_vadr = {s: [vadr(a) for a in arm_act[s]] for s in sides}
@@ -415,6 +415,8 @@ def run_loop(model, data, sources, cfg, viewer=None, logger=None):
     for a in unclaimed_ids:
         qadr = model.jnt_qposadr[model.actuator_trnid[a, 0]]
         hold_qpos_targets[a] = data.qpos[qadr]  # actual drooped angle
+        if model.actuator_ctrllimited[a]:       # the settled angle can sit a hair outside a soft joint limit (e.g. -3e-5 rad on a joint whose limit is 0 at the lower real gains); a
+            hold_qpos_targets[a] = np.clip(hold_qpos_targets[a], *model.actuator_ctrlrange[a])   # target outside the range would be clipped later and look like an unapplied command
         va = model.jnt_dofadr[model.actuator_trnid[a, 0]]
         data.qvel[va] = 0.0  # kill any residual swing
     hold_qpos_targets[ped_aid] = robot_specs.PEDESTAL_SPECS["target_height"]
@@ -512,14 +514,15 @@ def run_loop(model, data, sources, cfg, viewer=None, logger=None):
     # written into the finger actuators' force range, once per tick, here and only here (policies never touch the model). The model is shared by
     # episodes, so every run starts by putting the ceiling back.
     ceiling = limits["gripper_force_ceiling"]
+    fingers_per_act = robot_specs.ARM_ACTUATOR_SPECS["fingers"]["fingers_per_actuator"]
     grip_force = {s: ceiling for s in sides}
     grip_set = {s: None for s in sides}
 
     def set_grip_force(forces):
         """Writes the finger force limits into the model's finger actuators.
 
-        Changes `model.actuator_forcerange` of the two finger actuators of a side to [-F, F], only when F differs from the value written
-        last time (kept in `grip_set` of the enclosing function).
+        Changes `model.actuator_forcerange` of the gripper actuator of a side to [-n F, n F] (the one actuator drives both fingers, n = fingers_per_actuator, so each finger
+        may press with F), only when F differs from the value written last time (kept in `grip_set` of the enclosing function).
 
         Args:
             forces (sequence of float): Force limit in newtons for each finger, one value for the left gripper and one for the right,
@@ -527,7 +530,7 @@ def run_loop(model, data, sources, cfg, viewer=None, logger=None):
         """
         for s, F in zip(sides, forces):
             if grip_set[s] != F:
-                model.actuator_forcerange[fing_act[s]] = [-F, F]
+                model.actuator_forcerange[fing_act[s]] = [-fingers_per_act * F, fingers_per_act * F]
                 grip_set[s] = F
 
     set_grip_force([ceiling, ceiling])

@@ -181,6 +181,7 @@ def _perf_settings():
     CC_FINISH=1        glFinish after each swap
     CC_BENCH_FRAMES=N  run N frames, print per-phase timings, then exit
     CC_BENCH_SNAP=dir  save main view + camera images at frame 15
+    CC_HEADLESS=1  no window: the same loop without a viewer (cameras over an EGL offscreen context), only CC_BENCH_KEYS act; for the bench scenarios without a desktop session
     CC_BENCH_LOG=file.csv  write base pose, pedestal height and every arm joint / finger to a CSV every 75 physics
                        steps (10 Hz of sim time), for before/after comparisons of the control loop
     CC_FAKE_TELEOP_SIMCLOCK=1  the fake operator and solver run on sim time instead of wall time (reproducible)
@@ -297,7 +298,11 @@ def run(scene: str, spawn_pos, groups: list[dict], policy,
     steps_per_frame = max(1, round(physics_hz / TICK_HZ))
 
     # --- Viewer, keys (real keys plus the CC_BENCH_KEYS test injection) ---
-    viewer = make_glfw_viewer(model, data, {
+    headless = os.environ.get("CC_HEADLESS") == "1"           # no window (no display needed): the loop's viewer=None path, for the bench scenarios; only the injected keys act
+    if headless:                                             # the fake operator draws its preview with cv2.imshow, which needs a display: route it to a store instead
+        from src.teleop_source import install_preview_capture
+        install_preview_capture({})
+    viewer = None if headless else make_glfw_viewer(model, data, {
         "win": bench["win"], "vsync": bench["vsync"], "view_shadows": bench["view_shadows"], "shadowsize": bench["shadowsize"],
         "hud": SHOW_HUD, "insets": SHOW_CAMERA_INSETS, "record": record, "snapshot_every": snapshot_every,
         "snapshot_dir": snapshot_dir, "bench_snap_dir": bench["snap_dir"], "bench_snap_frame": bench["snap_frame"],
@@ -312,8 +317,9 @@ def run(scene: str, spawn_pos, groups: list[dict], policy,
             lo_f, _, hi_f = fr.partition("-")
             for f_ in range(int(lo_f), int(hi_f or lo_f) + 1):
                 injected.add((f_, key_code(kname)))
-    held = lambda code: viewer["key_down"](code) or (tick[0], code) in injected
-    viewer["set_held"](held)
+    held = (lambda code: (tick[0], code) in injected) if headless else (lambda code: viewer["key_down"](code) or (tick[0], code) in injected)
+    if not headless:
+        viewer["set_held"](held)
 
     # --- Sources ---
     ped_aid = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_ACTUATOR, robot_specs.PEDESTAL_SPECS["actuator_name"])

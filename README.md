@@ -131,7 +131,9 @@ openarm-tracer-sim/
 ├── models/
 │   ├── scenes/              # chemistry_lab*.xml, single_block.xml, ...
 │   └── policies/            # Policy implementations
-├── deps/OpenArm-Combined/   # Robot model (submodule)
+├── models/robot/            # The generated robot file combined_robot.xml (Tracer, one-joint pedestal, torso, arms, hands) and the URDF numbers it was made from (tools/import_openarm_description.py; do not edit by hand)
+├── tools/                   # import_openarm_description.py: fetches the pinned updated robot description and generates models/robot/
+├── deps/OpenArm-Combined/   # Old robot model (submodule, never edited): the Tracer, materials and meshes the generated file still uses
 ├── models/so101/            # Vendored SO-101 model for the camera neck (upstream files, unmodified; see PROVENANCE.md)
 ├── experiments/
 │   ├── combined_controller.py     # Launcher for the interactive sim: keyboard, webcam teleop, policy, cameras (loop is in src/)
@@ -194,8 +196,7 @@ slew from the applied Twist, the arm and gripper targets are rate-limited from t
 `gripper_max_speed` 0.05 m/s), the pedestal and the neck are put back, and the operator's time does not count toward a phase timeout.
 
 **Gripper force limit.** A gripper command is a finger travel or `{"position": m, "max_force": N}` (per finger, like the ROS gripper command). The grippers stay
-position-controlled; the loop writes `max_force` into the finger actuators' force range each tick, clipped to the hardware ceiling (10 N, a placeholder in
-`ARM_ACTUATOR_SPECS["fingers"]["force_limit"]`). Omitted means the ceiling; `max_force <= 0` is rejected. The limit is recorded per tick and replayed.
+position-controlled; the loop writes `max_force` into the finger actuators' force range each tick, clipped to the hardware ceiling (9 N per finger, `ARM_ACTUATOR_SPECS["fingers"]["force_limit"]`; one actuator drives both fingers, so its force range is twice that). Omitted means the ceiling; `max_force <= 0` is rejected. The limit is recorded per tick and replayed.
 `experiments/gripper_force_test.py` closes the gripper on the beaker at 1 N, 2 N and the ceiling and measures the contact force. The beaker is hollow glass
 (70 mm, 100 mm tall, 2 mm walls: a ring of 24 thin boxes and a bottom disk, 100 g of glass plus a 100 g rigid "liquid" mass low inside), built into the model at load
 time from `BEAKER_CFG` (`src/beaker.py`); its friction against the gripper is 0.4 (explicit contact pairs: the finger geoms' priority would otherwise win), and the

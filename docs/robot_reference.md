@@ -13,9 +13,9 @@ they moved here. The values that the simulator does use are still in `src/robot_
 | Drive wheel gear ratio | 10 | motor to wheel |
 | Drive wheel maximum torque | 10 N m | estimated from the gearing |
 | Caster wheel friction | 0.1 | low friction for turning |
-| Pedestal, bottom joint damping | 800 | stiff |
-| Pedestal, top joint damping | 50000 | very stiff |
-| Pedestal, maximum height range | 0.5 m | plus or minus 0.25 m each joint |
+| Pedestal joint | one slide joint, 0 to 0.418 m | the updated description (B1c); 0 = collapsed, the torso is 0.3048 m + the joint value above the pedestal base |
+| Pedestal masses | 16.19 kg fixed, 30.05 kg moving | our old estimates (the description gives none) |
+| Pedestal joint damping | 50000 N s/m | the old coupled pair's 800 + 50000, so the lift speed for a given force is unchanged |
 
 (The simulated base is velocity-driven, see `src/base_control.py`; the wheels have no traction in the model.)
 
@@ -27,7 +27,7 @@ they moved here. The values that the simulator does use are still in `src/robot_
 | Arms | 2 | left and right |
 | Degrees of freedom per arm | 7 | joints |
 | Gripper motor model | DM4310 | |
-| Gripper motor type | position control | all 4 fingers (`src/arm_actuators.py` makes them position actuators) |
+| Gripper motor type | position control | one actuator per hand on finger 1, finger 2 follows it (`src/arm_actuators.py`); force ceiling 9 N per finger (assumed per finger, see design plan section 11) |
 | Gripper maximum opening | 0.044 m | per finger |
 
 The per-joint motor, gains, armature and torque limits are in `ARM_ACTUATOR_SPECS` in `src/robot_specs.py`.

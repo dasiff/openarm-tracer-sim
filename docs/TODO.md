@@ -26,7 +26,7 @@ Everything below was only exercised with injected keys (scripted `held()` functi
   offset on both hands, `CAMERA_SPECS`), and the camera model: field of view and resolution (the sim uses one placeholder, `ORBBEC_FOVY_DEG` 58 and `ORBBEC_RESOLUTION` 640 x 480,
   for all three cameras). Once known, matching them is an edit of `CAMERA_SPECS` (plus the neck's mount in `NECK_SPECS` for the eagle camera) and regenerating the demos.
   Also goes into §11 of docs/design_plan.md once that exists.
-- [ ] **Gripper** (waiting on: the hardware team): the real force limit (replaces the 10 N per finger placeholder ceiling, `ARM_ACTUATOR_SPECS["fingers"]["force_limit"]`),
+- [ ] **Gripper** (waiting on: the hardware team): the real force limit (replaces the 9 N per finger ceiling set at B1c, itself assumed per finger, `ARM_ACTUATOR_SPECS["fingers"]["force_limit"]`),
   stiffness (the placeholder `kp` is now 300 N/m: a finger pushes `kp` times its distance from the commanded position, 11 N on the 70 mm beaker, so caps up to the 10 N ceiling
   take effect; it was 100 N/m, 3.7 N), current limit, and whether the real gripper supports force / current readback.
 - [ ] **Finger pad torsional (twisting) friction** (waiting on: the hardware team): the real gripper's value; the sim uses 0.005 (`BEAKER_CFG["contact_friction"]`). It decides how freely a pinched beaker pivots about the pinch axis (see the weak-grip item below).

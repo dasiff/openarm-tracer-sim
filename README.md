@@ -109,6 +109,9 @@ openarm-tracer-sim/
 │   ├── keyboard_source.py, teleop_source.py, policy_source.py   # command sources
 │   ├── glfw_viewer.py       # Window, HUD, camera insets, recorder, snapshots
 │   ├── neck.py, neck_framing.py, neck_source.py   # camera neck: attach the SO-101 at load, frame points, auto follow / look-ahead
+│   ├── arm_kinematics.py, gripper_geometry.py, grasp_rules.py   # B2: arm FK / Jacobian / IK in numpy; the approach axis, closing axis and pad centre derived from the model; the grasp rules (level, 12 bins)
+│   ├── reach_map.py, arm_collision.py   # B2: the IK flood fill that builds the grasp reachability map (one arm, one approach bin), the collision filter, ReachMap (maps live in git-ignored data/)
+│   ├── furniture_map.py, stance_finder.py   # B2: the two-layer furniture map from the scene's geometry, the stance finder core (tested on made-up cases; real maps wait for the URDF import)
 │   ├── battery.py           # The battery pack (Anker SOLIX C800, 11.3 kg box on the deck behind the pedestal, BATTERY_SPECS; mount is a placeholder)
 │   ├── face.py              # The robot's face: a visual-only head at the end of the neck, neutral / smile images from assets/private/face/ (git-ignored)
 │   ├── staging_source.py    # Scripted staging: DRIVE -> PEDESTAL -> ARMS -> NECK -> DONE (HANDOFF), beaker-on-hotplate task

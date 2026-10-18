@@ -14,6 +14,7 @@ Contents:
     outer_bound(...) / inside_bound(...): the convex outer bound of the quick sample, grown by a margin.
     flood_fill(...): the IK flood fill.
     cubes_from_voxels(reached): the 1 cm cubes whose 8 voxels are all reachable.
+    ReachMap: a finished map (cubes, origin, cube edge) of one arm and approach bin, what the stance finder reads.
     enclosed_unreached(reached): the unreached voxels that do not connect to the outside of the grid (holes).
 """
 
@@ -286,6 +287,41 @@ def flood_fill(chain, lo, hi, grid, eq, shoulder, seeds_idx, seeds_Q, k, cfg, se
         f_idx = np.concatenate(new_idx) if new_idx else np.zeros((0, 3), int)
         f_Q = np.concatenate(new_Q) if new_Q else np.zeros((0, 7))
     return {"state": state, "store": store, "stats": stats, "waves": wave, "seconds": time.time() - t0}
+
+
+class ReachMap:
+    """A finished grasp map of one arm and one approach bin: the 1 cm cubes that can be reached, in the shoulder frame.
+
+    Attributes:
+        cubes (numpy.ndarray): Bool array (nx, ny, nz): True where the whole cube is reachable.
+        origin (numpy.ndarray): The shoulder-frame position of the corner of cube (0, 0, 0), metres.
+        cube (float): The cube edge, metres.
+        side (str or None): "left" or "right".
+        bin (int or None): The approach bin.
+    """
+
+    def __init__(self, cubes, origin, cube, side=None, bin=None):
+        self.cubes = np.asarray(cubes, bool)
+        self.origin = np.asarray(origin, float)
+        self.cube = float(cube)
+        self.side = side
+        self.bin = bin
+
+    @classmethod
+    def from_voxels(cls, reached, grid, side=None, bin=None, cube=None):
+        """Makes the map from a flood fill's reached voxels (the cube rule: all 8 voxels of a cube must be reachable).
+
+        Args:
+            reached (numpy.ndarray): Bool voxel grid.
+            grid (Grid): Its grid.
+            side (str or None): The arm. Defaults to None.
+            bin (int or None): The approach bin. Defaults to None.
+            cube (float or None): The cube edge. Defaults to None, the grid's voxel edge times 2.
+
+        Returns:
+            ReachMap: The map.
+        """
+        return cls(cubes_from_voxels(reached), grid.origin, 2 * grid.voxel if cube is None else cube, side, bin)
 
 
 def cubes_from_voxels(reached):

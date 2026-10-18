@@ -20,15 +20,15 @@
   <worldbody>
     <!-- Floorremoved--already in robot -->
 
-    <!-- Room boundary (visual walls) -->
+    <!-- Room boundary (walls: they collide, since 2026-10-16, so that the furniture map and the physics both know the room's edge) -->
     <geom name="wall_n" type="box" pos="0 6 1.5" size="6 0.08 1.5"
-          rgba="0.97 0.97 0.98 1" contype="0" conaffinity="0"/>
+          rgba="0.97 0.97 0.98 1"/>
     <geom name="wall_s" type="box" pos="0 -6 1.5" size="6 0.08 1.5"
-          rgba="0.97 0.97 0.98 1" contype="0" conaffinity="0"/>
+          rgba="0.97 0.97 0.98 1"/>
     <geom name="wall_e" type="box" pos="6 0 1.5" size="0.08 6 1.5"
-          rgba="0.97 0.97 0.98 1" contype="0" conaffinity="0"/>
+          rgba="0.97 0.97 0.98 1"/>
     <geom name="wall_w" type="box" pos="-6 0 1.5" size="0.08 6 1.5"
-          rgba="0.97 0.97 0.98 1" contype="0" conaffinity="0"/>
+          rgba="0.97 0.97 0.98 1"/>
 
     <!-- Ceiling (visual) -->
     <!-- <geom name="ceiling" type="box" pos="0 0 3.0" size="6 6 0.06"

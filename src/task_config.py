@@ -11,6 +11,8 @@ The dictionaries and who reads them:
         search and must be re-computed (experiments/beaker_hotplate_layout_search.py) if the objects, spawn or pedestal change.
     BEAKER_CFG: the hollow glass beaker (size, wall, masses, contact friction of the fingers), built at load time by src/beaker.py.
     GRIP_FORCE_TABLE: the gripper force cap per object, looked up by the demo generator and later the openpi adapter.
+    FURNITURE_CFG: the layered furniture map (design plan §3.4; src/furniture_map.py): resolution, the two height layers and the clearances of the first approximation.
+    STANCE_CFG: settings of the stance finder (src/stance_finder.py).
     GRASP_MAP_CFG: build settings of the grasp reachability map (design plan §3.1; src/grasp_rules.py, src/reach_map.py). Map files are not committed, only these settings.
     SEARCH_CFG: settings of the offline staging pose search (experiments/beaker_hotplate_staging_search.py).
     LAYOUT_CFG: settings of the joint layout and staging search with slack at every task pose
@@ -155,6 +157,33 @@ GRASP_MAP_CFG = {
     # Stand-in for the base's stopping error (the real value is a hardware question, design plan §11): the sim's own pose-correction thresholds
     "stop_error_xy": 0.01,              # m
     "stop_error_yaw_deg": 1.0,          # deg
+}
+
+# ----------------------------------------------------------------------------------------------------------
+# Layered furniture map and stance finder (design plan §3.4), src/furniture_map.py and src/stance_finder.py
+# ----------------------------------------------------------------------------------------------------------
+FURNITURE_CFG = {
+    "resolution": 0.01,                 # m, cell edge of the floor grids
+    "bounds": (-6.0, 6.0, -6.0, 6.0),   # x min, x max, y min, y max of the grid: the room's inside (its walls' inner faces are at +-5.92); everything outside the grid is blocked
+    # Two layers, by height above the floor. A piece of furniture is in a layer when its vertical extent overlaps the layer's band. The base layer is what the chassis can hit (the
+    # chassis and battery top out at 0.41 m with the base resting at 0.1527 m); the arm layer is what the torso, the pedestal and the arms can hit above that (a table top that
+    # the base can drive under is in the arm layer only).
+    "base_band": (0.0, 0.43),           # m
+    "arm_band": (0.43, 2.0),            # m
+    # First approximation of what the arms and torso sweep: obstacles in the arm layer are grown by a disc of this radius around the base origin (the torso column, the pedestal and
+    # the arms hanging at the sides reach about 0.2 m from the centre line). The real arm-to-furniture check is the verification step (B2.12).
+    "arm_layer_radius": 0.25,           # m
+}
+
+STANCE_CFG = {
+    "heading_step_deg": 5.0,            # headings searched
+    "heading_robust_deg": 1.0,          # a stance must also be valid at the heading +- this (the base's stopping error in yaw)
+    "pedestal_step": 0.02,              # m of stage travel between the pedestal heights searched (the lowest command to 0)
+    "window": 1.3,                      # m, the floor window around the task points that is searched (the arm reaches about 0.7 m)
+    "nms_distance": 0.10,               # m, ranked stances closer than this (and within nms_heading_deg) to a better one are dropped
+    "nms_heading_deg": 15.0,
+    "max_stances": 20,
+    "score_resolution": 0.01,           # m, the arm rule (design plan §5) rounds each arm's reach score to this, so near-ties go to the left arm
 }
 
 # ----------------------------------------------------------------------------------------------------------

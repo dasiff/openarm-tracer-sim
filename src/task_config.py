@@ -10,6 +10,7 @@ The dictionaries and who reads them:
         src/staging_source.py and src/task_policy.py (a recorded run stores its own copy, which src/replay.py uses). The staging, ready and grasp poses were found by the layout
         search and must be re-computed (experiments/beaker_hotplate_layout_search.py) if the objects, spawn or pedestal change.
     BEAKER_CFG: the hollow glass beaker (size, wall, masses, contact friction of the fingers), built at load time by src/beaker.py.
+    POUR_CFG: the pouring scene (design plan §4.2; src/pour_scene.py): the second beaker and the balls that stand in for the liquid.
     GRIP_FORCE_TABLE: the gripper force cap per object, looked up by the demo generator and later the openpi adapter.
     FURNITURE_CFG: the layered furniture map (design plan §3.4; src/furniture_map.py): resolution, the two height layers and the clearances of the first approximation.
     STANCE_CFG: settings of the stance finder (src/stance_finder.py).
@@ -118,6 +119,31 @@ BEAKER_CFG = {
 # the lowest force that holds in all six cases (slip 0.1 to 0.6 mm, no creep): safety factor 3.3 at friction 0.4 and 2.6 at 0.32 (2 x force x friction / the 0.2 kg beaker's weight).
 GRIP_FORCE_TABLE = {
     "glass_beaker": 8.0,
+}
+
+# ----------------------------------------------------------------------------------------------------------
+# Pouring scene (design plan §4.2, B3), built by src/pour_scene.py (opt in: load_task(pour=POUR_CFG))
+# ----------------------------------------------------------------------------------------------------------
+POUR_CFG = {
+    # Two identical hollow beakers (BEAKER_CFG with no rigid "liquid" mass: the contents are the balls). Which one starts full and how many balls it holds are drawn per demo
+    # from `seed` by pour_scene.draw_setup unless set here (None = draw).
+    "second_body": "task_beaker_2",
+    "second_xy": (1.20, 0.66),             # m, 20 cm beyond the first beaker (1.00, 0.66) along the bench, the hotplate on its other side
+    "full": None,                          # "first" or "second": the beaker that starts with the balls; None = drawn
+    "n_balls": None,                       # the number of balls; None = drawn from n_range
+    "n_range": (30, 60),
+    "seed": 0,
+    # The balls: free spheres of glass-bead size. Diameter 11 mm: the beaker's inside is 66 mm wide, so the mouth is 6 balls across (a free flow through an opening needs about 5 to 6
+    # diameters or more to avoid arching and jams). 2.5 g each (glass beads' density, 3.6 g/cm^3): 40 of them are the 100 g of the old rigid liquid mass. The ball's friction wins over the
+    # glass's (the glass's is 1.0) through the geom priority, so ball on glass, bench and ball on ball slide with 0.3; the contact is soft and damped (solref damping ratio above 1) so the
+    # balls hardly bounce.
+    "ball_radius": 0.0055,                 # m
+    "ball_mass": 0.0025,                   # kg
+    "ball_friction": (0.3, 0.005, 0.0001), # sliding, torsional, rolling
+    "ball_solref": (0.004, 1.2),
+    "ball_solimp": (0.9, 0.95, 0.001, 0.5, 2.0),
+    "ball_rgba": (0.95, 0.45, 0.10, 1.0),
+    "layer_gap": 0.9,                      # the starting layers are this fraction of a ball spacing apart (the balls settle in the first second)
 }
 
 # ----------------------------------------------------------------------------------------------------------

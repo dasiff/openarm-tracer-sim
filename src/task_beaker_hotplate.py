@@ -91,7 +91,7 @@ def apply_task_poses(model, data, cfg=TASK_CFG):
     mujoco.mj_forward(model, data)
 
 
-def load_task(cfg=TASK_CFG, cameras=True, beaker_cfg=BEAKER_CFG):
+def load_task(cfg=TASK_CFG, cameras=True, beaker_cfg=BEAKER_CFG, pour=None):
     """Creates a RobotSimulator on the task scene, with the pedestal lift, and places the objects.
 
     The camera neck is on, as RobotSimulator does by default.
@@ -103,16 +103,28 @@ def load_task(cfg=TASK_CFG, cameras=True, beaker_cfg=BEAKER_CFG):
             used as the camera specification dictionaries. Defaults to True.
         beaker_cfg (dict): The hollow beaker's configuration (src/beaker.py builds it into the model before compiling). Defaults to
             task_config.BEAKER_CFG.
+        pour (dict or None): The pouring scene configuration (task_config.POUR_CFG, src/pour_scene.py). If given, both beakers are built without the rigid liquid mass, the second
+            beaker and the balls are added, and they are placed after the task poses. Defaults to None (the scene as it was).
 
     Returns:
         RobotSimulator: The simulator with the pedestal lift (robot_specs.PEDESTAL_SPECS) and the objects placed.
     """
     cams = robot_specs.CAMERA_SPECS if cameras is True else (cameras or None)
+    if pour:
+        from src.pour_scene import add_pour_objects, apply_pour_poses, draw_setup
+        beaker_cfg = {**beaker_cfg, "liquid_mass": 0.0}                       # the contents are the balls
+        setup = draw_setup(pour)
+        hooks = [lambda spec: add_hollow_beaker(spec, beaker_cfg), lambda spec: add_pour_objects(spec, pour, beaker_cfg, cfg, setup)]
+    else:
+        hooks = [lambda spec: add_hollow_beaker(spec, beaker_cfg)]
     sim = RobotSimulator(model_path=str(PROJECT_ROOT / cfg["scene"]),
                          cameras=cams,
                          pedestal_lift=robot_specs.PEDESTAL_SPECS,
-                         spec_hooks=[lambda spec: add_hollow_beaker(spec, beaker_cfg)])
+                         spec_hooks=hooks)
     apply_task_poses(sim.model, sim.data, cfg)
+    if pour:
+        apply_pour_poses(sim.model, sim.data, pour, cfg, setup)
+        sim.pour_setup = setup
     return sim
 
 

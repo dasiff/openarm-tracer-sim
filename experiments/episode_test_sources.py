@@ -7,12 +7,12 @@
         runner's success path. Expected episode outcome: SUCCESS. (The hold stage lives in src/task_policy.py.)
     make_grasp_force_stage(model, data, forces=(1.0, 2.0, None), task_cfg=TASK_CFG, move_s=4.0, settle_s=1.0, close_s=3.0, open_s=2.0,
                            measure_s=1.0)
-        An ARM STAGE (test only) for experiments/gripper_force_test.py: from where the arm is (home) it moves via the legacy ready pose to the grasp pose (the
-        open fingers straddle the beaker), then closes the gripper on the beaker once per entry of `forces` with
+        An ARM STAGE (test only) for experiments/gripper_force_test.py: from where the arm is (home) it moves via a waypoint to the grasp pose (the
+        open fingers straddle the beaker; both poses are solved by IK from the beaker's position at the stance the robot is at, experiments/grasp_ik_targets.py), then closes the gripper on the beaker once per entry of `forces` with
         {"position": 0, "max_force": F} (None = a plain 0: the ceiling), measuring the finger-on-beaker normal force, and opens
         again between the closings. state["results"] has the settled numbers per closing.
     make_grasp_lift_stage(model, data, force, lift_m=0.10, task_cfg=TASK_CFG)
-        An ARM STAGE (test only) for experiments/grasp_lift_test.py: from home it moves the left arm to the grasp pose (via the legacy ready pose), closes the
+        An ARM STAGE (test only) for experiments/grasp_lift_test.py: from home it moves the left arm to the grasp pose (via an IK waypoint, as above), closes the
         gripper on the beaker with {"position": 0, "max_force": force}, lifts the closed hand by about lift_m with a scripted joint-space move (the target from a
         small damped-least-squares IK that keeps the hand's orientation), and measures whether the beaker follows (slip, finger forces). state["summary"] when done.
     make_clearance_monitor(model, data, every=5)
@@ -34,6 +34,9 @@ from src import robot_specs
 from src.base_control import base_yaw
 from src.rate_limit import min_jerk
 from src.task_config import TASK_CFG
+
+from grasp_ik_targets import grasp_targets
+from src.gripper_geometry import grasp_cfg
 
 
 def make_cheat_arm_stage(model, data, delay_s=2.0, task_cfg=TASK_CFG):
@@ -82,10 +85,80 @@ def make_cheat_arm_stage(model, data, delay_s=2.0, task_cfg=TASK_CFG):
     return {"name": "cheat", "step": step, "state": state}
 
 
-def make_grasp_force_stage(model, data, forces=(1.0, 2.0, None), task_cfg=TASK_CFG, move_s=6.0, settle_s=1.0, close_s=3.0, open_s=2.0, measure_s=1.0):
+WELD_NAME = "test_beaker_weld"
+
+
+def add_beaker_weld(spec):
+    """A spec hook (load_task(extra_hooks=[add_beaker_weld])): adds a weld constraint between the beaker and the bench, off until a test switches it on.
+
+    The weld holds the beaker where it stands, for tests that measure the gripper and not the grasp (experiments/gripper_force_test.py, the 1 N closing: a 1 N grip cannot carry the beaker's
+    weight, so the free beaker slips and the force split between the fingers depends on how it slips). set_beaker_weld switches it on and off at run time.
+    """
+    eq = spec.add_equality()
+    eq.name = WELD_NAME
+    eq.type = mujoco.mjtEq.mjEQ_WELD
+    eq.objtype = mujoco.mjtObj.mjOBJ_BODY
+    eq.name1, eq.name2 = "task_beaker", "bench"
+    eq.active = False
+
+
+def set_beaker_weld(model, data, on):
+    """Switches the beaker's weld to the bench on or off. Switching on holds the beaker at the pose it has now (the weld's relative pose is set from the current poses).
+
+    Args:
+        model (mujoco.MjModel): A model compiled with add_beaker_weld.
+        data (mujoco.MjData): Its data (the poses must be current).
+        on (bool): True to weld, False to release.
+    """
+    k = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_EQUALITY, WELD_NAME)
+    if k < 0:
+        raise ValueError("the model has no beaker weld: load it with load_task(extra_hooks=[add_beaker_weld])")
+    if on:
+        b1, b2 = model.body("task_beaker").id, model.body("bench").id
+        q_rel, q1inv = np.zeros(4), np.zeros(4)
+        mujoco.mju_negQuat(q1inv, data.xquat[b1])
+        mujoco.mju_mulQuat(q_rel, q1inv, data.xquat[b2])
+        model.eq_data[k, :] = 0.0
+        model.eq_data[k, 3:6] = data.xmat[b1].reshape(3, 3).T @ (data.xpos[b2] - data.xpos[b1])     # body2 (the bench) in body1's (the beaker's) frame
+        model.eq_data[k, 6:10] = q_rel
+        model.eq_data[k, 10] = 1.0
+    data.eq_active[k] = 1 if on else 0
+
+
+def center_beaker_on_pads(model, data, arm):
+    """Moves the beaker sideways, along the horizontal part of the hand's closing axis, until its axis passes through the centre of the finger pads; returns the shift in metres.
+
+    The hand stops a few mm off the beaker's axis (4.7 mm at the grasp pose of the finger force test: the arm's servos and the solver's tolerance). A free beaker slides to the middle of the
+    pads as the fingers close; a beaker held fixed cannot, and then one finger presses harder than the other because the two fingers move together (one actuator, a joint equality), which says
+    nothing about the force control. So the weld is applied after this shift.
+
+    Args:
+        model (mujoco.MjModel): The compiled model (the beaker's free joint "task_beaker_free").
+        data (mujoco.MjData): Its data, with the arm at the grasp pose and the gripper open (the poses must be current); changed (the beaker's position, its velocity zeroed).
+        arm (str): "left" or "right".
+
+    Returns:
+        float: The shift of the beaker, metres (positive along the horizontal closing axis as the grasp configuration defines it).
+    """
+    C = grasp_cfg(model, arm)
+    hand = model.body(f"openarm_{arm}_hand_tcp").id
+    R = data.xmat[hand].reshape(3, 3)
+    pad = data.xpos[hand] + R @ np.asarray(C["pad_center_in_tcp"], float)
+    axis = R @ np.asarray(C["closing_axis"], float)
+    ah = axis[:2] / np.linalg.norm(axis[:2])
+    b = model.body("task_beaker").id
+    delta = float((pad[:2] - data.xpos[b][:2]) @ ah)
+    jnt = model.joint("task_beaker_free")
+    data.qpos[jnt.qposadr[0]:jnt.qposadr[0] + 2] += delta * ah
+    data.qvel[jnt.dofadr[0]:jnt.dofadr[0] + 6] = 0.0
+    mujoco.mj_forward(model, data)
+    return delta
+
+
+def make_grasp_force_stage(model, data, forces=(1.0, 2.0, None), task_cfg=TASK_CFG, move_s=6.0, settle_s=1.0, close_s=3.0, open_s=2.0, measure_s=1.0, weld_forces=()):
     """Makes an arm stage that measures how hard the gripper presses on the beaker for several force limits.
 
-    The timeline is: move (ready pose to grasp pose, minimum-jerk interpolation, gripper open), settle (gripper open), then for
+    The timeline is: move (home -> IK waypoint -> grasp pose, minimum-jerk interpolation, gripper open), settle (gripper open), then for
     every entry of `forces`: close (gripper closing on the beaker; the contact forces are sampled during the last measure_s
     seconds) and open (gripper open again; the samples of the closing are summarised at its first tick). After the timeline the
     stage returns None for ever.
@@ -96,13 +169,15 @@ def make_grasp_force_stage(model, data, forces=(1.0, 2.0, None), task_cfg=TASK_C
         data (mujoco.MjData): The simulation data, read for contacts and actuator forces.
         forces (tuple): Gripper force limits to test, in newtons per finger, one closing each. An entry of None means a plain
             position 0 command, i.e. the force ceiling. Defaults to (1.0, 2.0, None).
-        task_cfg (dict): The task configuration; uses "arm", "ready_q", "grasp_q" (radians) and "finger_open" (metres, 0.044 if
-            missing). Defaults to TASK_CFG.
+        task_cfg (dict): The task configuration; uses "arm" and "finger_open" (metres, 0.044 if missing). Defaults to TASK_CFG. The grasp pose and the waypoint are not
+            read from it: they are solved at the stage's first step by experiments/grasp_ik_targets.grasp_targets from the beaker's position at the stance the robot is at.
         move_s (float): Duration of the move to the grasp pose, in seconds. Defaults to 6.0.
         settle_s (float): Pause after the move, in seconds. Defaults to 1.0.
         close_s (float): Duration of each closing, in seconds. Defaults to 3.0.
         open_s (float): Duration of each opening, in seconds. Defaults to 2.0.
         measure_s (float): The last this many seconds of each closing are sampled, in seconds. Defaults to 1.0.
+        weld_forces (tuple): The entries of `forces` whose closing holds the beaker fixed (first centred between the finger pads, center_beaker_on_pads, then welded to the bench from the
+            start of the closing and released when the gripper opens; the model must be loaded with load_task(extra_hooks=[add_beaker_weld])). The other closings leave the beaker free. Defaults to () (none).
 
     Returns:
         dict: An arm stage {"name": "grasp_force_test", "step": step(obs) -> command or None, "state": state}. state holds
@@ -112,8 +187,7 @@ def make_grasp_force_stage(model, data, forces=(1.0, 2.0, None), task_cfg=TASK_C
         values from contact_forces()).
     """
     arm = task_cfg["arm"]
-    ready, grasp = np.array(task_cfg["ready_q"], float), np.array(task_cfg["grasp_q"], float)          # the legacy ready pose is the waypoint from home
-    path = {}
+    path, targets = {}, {}
     open_g = task_cfg["finger_open"] if "finger_open" in task_cfg else 0.044
     fingers = {b for b in range(model.nbody) if model.body(b).name.startswith(f"openarm_{arm}_") and model.body(b).name.endswith("finger")}
     beaker = model.body("task_beaker").id
@@ -125,7 +199,7 @@ def make_grasp_force_stage(model, data, forces=(1.0, 2.0, None), task_cfg=TASK_C
     segs, t = [("move", move_s, None), ("settle", settle_s, None)], 0.0
     for F in forces:
         segs += [("close", close_s, F), ("open", open_s, None)]
-    state = {"t0": None, "results": [], "samples": [], "segments": segs, "total_s": sum(d for _, d, _ in segs)}
+    state = {"t0": None, "results": [], "samples": [], "segments": segs, "total_s": sum(d for _, d, _ in segs), "welded": False}
 
     hand = model.body(f"openarm_{arm}_hand").id
 
@@ -184,17 +258,29 @@ def make_grasp_force_stage(model, data, forces=(1.0, 2.0, None), task_cfg=TASK_C
             return None
         local = el - start
         if kind == "move":
-            q = _along(path, obs, arm, ready, grasp, min_jerk(local / move_s))
+            if not targets:
+                targets.update(grasp_targets(model, data, arm))
+                state["ik_targets"] = {k: v for k, v in targets.items()}
+                print(f"[grasp ik] {arm} arm: bin {targets['bin']}, joint margin {targets['joint_margin_deg']:.1f} deg, clearance {targets['clearance_mm']:.1f} mm, {targets['n_solutions']} clear solutions")
+            q = _along(path, obs, arm, targets["ready_q"], targets["grasp_q"], min_jerk(local / move_s))
             return {"mode": "arms", "arm_targets": {arm: [float(v) for v in q]}, "gripper": {arm: open_g}}
         if kind in ("settle", "open"):
             if kind == "open" and state["samples"]:
                 state["results"].append(_summarise(state["samples"], segs, state))
                 state["samples"] = []
+            if state["welded"]:                                                  # the closing with the beaker held is over: release it
+                set_beaker_weld(model, data, False)
+                state["welded"] = False
             return {"mode": "arms", "gripper": {arm: open_g}}
         # close
+        if F is not None and F in weld_forces and not state["welded"]:
+            state["weld_shift_mm"] = 1000 * center_beaker_on_pads(model, data, arm)
+            print(f"[beaker weld] closing {F} N: the beaker was {state['weld_shift_mm']:+.2f} mm off the middle of the pads along the closing axis; moved there, then welded to the bench")
+            set_beaker_weld(model, data, True)
+            state["welded"] = True
         if local >= close_s - measure_s:
             cf = contact_forces()
-            state["samples"].append({"F": F, "contact": dict(cf), "normal_sum": dict(state.get("normal_sum", {})), "axis_z": state.get("axis_z", 0.0), "actuator": [abs(float(data.actuator_force[g_act])) / n_per_act] * 2, "q": [float(data.qpos[a]) for a in f_q],
+            state["samples"].append({"F": F, "contact": dict(cf), "normal_sum": dict(state.get("normal_sum", {})), "axis_z": state.get("axis_z", 0.0), "welded": state["welded"], "actuator": [abs(float(data.actuator_force[g_act])) / n_per_act] * 2, "q": [float(data.qpos[a]) for a in f_q],
                                      "time": obs["time"], "cap": obs["applied"]["gripper_force"][arm]})
         return {"mode": "arms", "gripper": {arm: 0.0 if F is None else {"position": 0.0, "max_force": F}}}
 
@@ -218,7 +304,7 @@ def _summarise(samples, segs, state):
         "closing_axis_z" (mean world z component of the closing axis), "contact_normal_sum_N_per_finger_mean" (the same for the sum
         of the normal magnitudes, N), "contact_normal_N_peak" (largest single-finger force in any sample, N),
         "actuator_force_N_mean" (list of two: mean absolute actuator force per finger, N), "finger_q_mm" (list of two: mean finger
-        position, in millimetres (mm)) and "n_fingers_in_contact" (largest number of touching fingers in a sample).
+        position, in millimetres (mm)) and "n_fingers_in_contact" (largest number of touching fingers in a sample) and "welded" (whether the beaker was held fixed).
     """
     nf = max(len(sm["contact"]) for sm in samples)
     per_finger = [np.mean([sorted(sm["contact"].values())[i] if len(sm["contact"]) > i else 0.0 for sm in samples]) for i in range(max(nf, 1))]
@@ -227,7 +313,7 @@ def _summarise(samples, segs, state):
             "closing_axis_z": float(np.mean([sm["axis_z"] for sm in samples])), "contact_normal_sum_N_per_finger_mean": [float(v) for v in ns],
             "contact_normal_N_peak": float(max((max(sm["contact"].values()) if sm["contact"] else 0.0) for sm in samples)),
             "actuator_force_N_mean": [float(np.mean([sm["actuator"][i] for sm in samples])) for i in range(2)],
-            "finger_q_mm": [1000 * float(np.mean([sm["q"][i] for sm in samples])) for i in range(2)], "n_fingers_in_contact": nf}
+            "finger_q_mm": [1000 * float(np.mean([sm["q"][i] for sm in samples])) for i in range(2)], "n_fingers_in_contact": nf, "welded": any(sm["welded"] for sm in samples)}
 
 
 def _along(path, obs, arm, via, goal, s):
@@ -314,7 +400,7 @@ def make_clearance_monitor(model, data, every=5):
 def make_grasp_lift_stage(model, data, force, lift_m=0.10, task_cfg=TASK_CFG, move_s=6.0, close_s=2.0, hold_s=1.0, lift_s=2.0, end_s=1.5):
     """Makes an arm stage that grasps the beaker at a force limit and lifts it, and measures whether it holds. Test only.
 
-    Timeline (seconds): move (home -> legacy ready pose -> grasp pose, gripper open) move_s, settle 1, close (position 0 with max_force=force) close_s,
+    Timeline (seconds): move (home -> IK waypoint -> grasp pose, gripper open) move_s, settle 1, close (position 0 with max_force=force) close_s,
     hold hold_s (reference), lift (the joint targets move to the IK solution for the hand raised by lift_m, orientation kept) lift_s, end end_s. The stage
     returns None afterwards. During hold, lift and end it records the beaker's and the hand's heights and the finger and palm normal forces on the beaker.
 
@@ -323,7 +409,8 @@ def make_grasp_lift_stage(model, data, force, lift_m=0.10, task_cfg=TASK_CFG, mo
         data (mujoco.MjData): The simulation data, read; the IK works on a copy.
         force (float): The gripper force limit in newtons per finger (the grip force table's value for the object).
         lift_m (float): How far to raise the hand, in metres. Defaults to 0.10.
-        task_cfg (dict): The task configuration; uses "arm", "ready_q", "grasp_q" and "finger_open". Defaults to TASK_CFG.
+        task_cfg (dict): The task configuration; uses "arm" and "finger_open". Defaults to TASK_CFG. The grasp pose and the waypoint are solved at the first step by
+            experiments/grasp_ik_targets.grasp_targets from the beaker's position at the stance the robot is at.
         move_s (float): Seconds of the move to the grasp pose. Defaults to 6.0.
         close_s (float): Seconds of the closing. Defaults to 2.0.
         hold_s (float): Seconds of holding before the lift. Defaults to 1.0.
@@ -339,7 +426,7 @@ def make_grasp_lift_stage(model, data, force, lift_m=0.10, task_cfg=TASK_CFG, mo
         the lift on, to see a drop) and "q_lift" (the IK result, radians).
     """
     arm = task_cfg["arm"]
-    ready, grasp = np.array(task_cfg["ready_q"], float), np.array(task_cfg["grasp_q"], float)
+    targets = {}
     open_g = task_cfg.get("finger_open", 0.044)
     arm_ids_ = [model.joint(f"openarm_{arm}_joint{i}").id for i in range(1, 8)]
     qadr = [int(model.jnt_qposadr[j]) for j in arm_ids_]
@@ -410,7 +497,11 @@ def make_grasp_lift_stage(model, data, force, lift_m=0.10, task_cfg=TASK_CFG, mo
             return None
         local = el - start
         if kind == "move":
-            return {"mode": "arms", "arm_targets": {arm: [float(v) for v in _along(path, obs, arm, ready, grasp, min_jerk(local / move_s))]}, "gripper": {arm: open_g}}
+            if not targets:
+                targets.update(grasp_targets(model, data, arm))
+                state["ik_targets"] = {k: v for k, v in targets.items()}
+                print(f"[grasp ik] {arm} arm: bin {targets['bin']}, joint margin {targets['joint_margin_deg']:.1f} deg, clearance {targets['clearance_mm']:.1f} mm, {targets['n_solutions']} clear solutions")
+            return {"mode": "arms", "arm_targets": {arm: [float(v) for v in _along(path, obs, arm, targets["ready_q"], targets["grasp_q"], min_jerk(local / move_s))]}, "gripper": {arm: open_g}}
         if kind == "settle":
             return {"mode": "arms", "gripper": {arm: open_g}}
         close_cmd = {"position": 0.0, "max_force": float(force)}
@@ -421,7 +512,7 @@ def make_grasp_lift_stage(model, data, force, lift_m=0.10, task_cfg=TASK_CFG, mo
             return {"mode": "arms", "gripper": {arm: close_cmd}}
         if state["q_lift"] is None:
             state["q_lift"] = ik_lift()
-        q = grasp + (state["q_lift"] - grasp) * (min_jerk(local / lift_s) if kind == "lift" else 1.0)
+        q = targets["grasp_q"] + (state["q_lift"] - targets["grasp_q"]) * (min_jerk(local / lift_s) if kind == "lift" else 1.0)
         if kind == "end" and local >= end_s - 0.05 and state["summary"] is None:
             state["summary"] = _lift_summary(state, force, lift_m)
         return {"mode": "arms", "arm_targets": {arm: [float(v) for v in q]}, "gripper": {arm: close_cmd}}

@@ -11,6 +11,13 @@ Tests of the gripper force limit (the "max_force" of a gripper command).
    (or, for the ceiling, at what the servo itself gives: kp times the finger's distance from the commanded 0, clipped at the ceiling).
    At the ceiling the no-slip solver splits the load unevenly between the fingers, so the mean of the two is checked against the cap tightly (3%) and each
    finger loosely (10%).
+   The 1 N closing is measured in its own episode with the beaker held fixed (welded to the bench from the start of the closing, experiments/episode_test_sources.add_beaker_weld;
+   David 2026-10-20): a 1 N grip (pad friction 0.4) cannot carry the 0.2 kg beaker's weight, so a free beaker slips and the split of the force between the fingers depends on how it
+   slips and so on the pose (at the grasp height 0.50 of the beaker it was [0.883, 1.155] N, at 0.45, 0.55 and 0.60 inside +-0.12 N). With the beaker fixed the test measures the
+   gripper's force control and each finger must be within +-0.10 N of the limit. The beaker is first moved to the middle of the finger pads (4.7 mm at this pose: the hand stops a few mm
+   off the beaker's axis): a free beaker slides there by itself, a fixed one cannot, and because both fingers move together (one actuator, a joint equality) the off-centre fixed beaker
+   loaded one finger more (welded where it stood: [0.835, 1.204] N), which is the hand's position and not the force control. The 2 N and ceiling closings, and the recorded episode (the 1 N closing in it too, for the replay),
+   use the free beaker; the finger split of the free 1 N closing is printed, not checked.
 3. The episode is recorded; max_force changes mid-run. Its replay must be bit-identical.
 """
 
@@ -30,7 +37,7 @@ import numpy as np  # noqa: E402
 from src import robot_specs  # noqa: E402
 from src.commands import validate_command  # noqa: E402
 from src.task_beaker_hotplate import run_beaker_episode as run_episode  # noqa: E402
-from episode_test_sources import make_grasp_force_stage  # noqa: E402
+from episode_test_sources import add_beaker_weld, make_grasp_force_stage  # noqa: E402
 from src.replay import replay_run  # noqa: E402
 from src.task_beaker_hotplate import load_task  # noqa: E402
 from src.task_config import BEAKER_CFG, EPISODE_CFG  # noqa: E402
@@ -67,7 +74,66 @@ def unit():
 
 
 def grasp():
-    print("\nbeaker between the fingers, closed at max_force 1 N, 2 N and the ceiling")
+    print("\nbeaker between the fingers, closed at max_force 1 N (the beaker held fixed), then at 1 N, 2 N and the ceiling (the beaker free)")
+    kp = robot_specs.ARM_ACTUATOR_SPECS["fingers"]["kp"]
+
+    def report(r):
+        F = r["max_force_command"]
+        cap = r["applied_cap"]
+        welded = r.get("welded", False)
+        tag = f"closing {F}" + (" (beaker welded to the bench)" if welded else "")
+        print(f"    max_force {'ceiling' if F is None else str(F) + ' N'}{' (beaker welded)' if welded else ''}: applied cap {cap:.2f} N, force of each finger on the beaker along the closing axis {np.round(r['contact_normal_N_per_finger_mean'], 3)} N "
+              f"(peak {r['contact_normal_N_peak']:.3f} N; sum of the contacts' normal magnitudes {np.round(r['contact_normal_sum_N_per_finger_mean'], 3)} N), finger actuator force {np.round(r['actuator_force_N_mean'], 3)} N, fingers at {np.round(r['finger_q_mm'], 1)} mm, "
+              f"{r['n_fingers_in_contact']} fingers in contact")
+        check(f"{tag}: both fingers touch the beaker", r["n_fingers_in_contact"] == 2)
+        limit = cap
+        check(f"{tag}: each finger actuator applies at most the limit ({limit:.2f} N)", all(f <= limit + 1e-6 for f in r["actuator_force_N_mean"]), f"{np.round(r['actuator_force_N_mean'], 4)} N")
+        cf = r["contact_normal_N_per_finger_mean"]
+        weight_axial = BEAKER_KG * 9.81 * abs(r["closing_axis_z"])        # the beaker's weight along the (slightly tilted) closing axis loads one finger and unloads the other
+        if F is not None and welded:
+            # the beaker cannot move, so the gripper's own force control is measured: each finger presses with the limit, +-0.10 N
+            check(f"{tag}: each finger's contact force is the limit (+-0.10 N)", all(abs(f - limit) <= 0.10 for f in cf), f"{np.round(cf, 3)} N")
+        elif F is not None and F == 1.0:
+            print(f"      (information, not checked: the free beaker at 1 N slips, the finger split {np.round(cf, 3)} N is within {weight_axial + 0.02:.2f} N of the limit: {all(abs(f - limit) <= weight_axial + 0.02 for f in cf)})")
+        elif F is not None:
+            check(f"{tag}: each finger's contact force is the limit within the beaker's weight along the closing axis (+-{weight_axial:.2f} N)",
+                  all(abs(f - limit) <= weight_axial + 0.02 for f in cf), f"{np.round(cf, 3)} N")
+        if F is not None:
+            check(f"{tag}: the two fingers' mean contact force is the limit (within 3%)", abs(np.mean(cf) - limit) <= 0.03 * limit, f"mean {np.mean(cf):.3f} N")
+        else:
+            # At the ceiling the no-slip solver (robot_specs.NOSLIP_ITERATIONS) splits the load unevenly between the fingers (about 1 N at 10 N), so the mean
+            # is held to the cap tightly and each finger loosely.
+            check("closing at the ceiling: the two fingers' mean contact force is the cap (within 3%)", abs(np.mean(cf) - limit) <= 0.03 * limit, f"mean {np.mean(cf):.3f} N of {limit:.2f} N")
+            check("closing at the ceiling: each finger's contact force is within 10% of the cap", all(abs(f - limit) <= 0.10 * limit for f in cf), f"{np.round(cf, 3)} N")
+        if F is not None:
+            check(f"{tag}: and the limit binds (the actuators sit at it)", all(abs(f - limit) < 1e-3 for f in r["actuator_force_N_mean"]))
+        else:
+            e = np.mean(r["finger_q_mm"]) / 1000
+            want = min(kp * e, robot_specs.ARM_ACTUATOR_SPECS["fingers"]["force_limit"])
+            check("closing at the ceiling: the servo's own force, kp * (distance to the commanded 0), clipped at the 10 N ceiling (kp 300 asks for 11 N at the beaker's width)",
+                  all(abs(f - want) < 0.05 * want for f in r["actuator_force_N_mean"]) and kp * e > 10.0, f"kp * q = {kp * e:.2f} N, applied {want:.2f} N")
+
+    # episode 1: the 1 N closing with the beaker held fixed
+    sim_w = load_task(cameras=True, extra_hooks=[add_beaker_weld])
+    stage_w = {}
+
+    def make_w(m, d):
+        stage_w["s"] = make_grasp_force_stage(m, d, forces=(1.0,), weld_forces=(1.0,))
+        return stage_w["s"]
+
+    out_w = Path(tempfile.mkdtemp(prefix="gripper_force_weld_"))
+    run_episode(make_w, sim_w.model, sim_w.data, episode_cfg={**EPISODE_CFG, "timeout_after_handoff": 25.0}, out_dir=out_w / "episode")
+    res_w = stage_w["s"]["state"]["results"]
+    stage_w.clear()
+    del sim_w
+    import gc
+    gc.collect()
+    shutil.rmtree(out_w, ignore_errors=True)
+    check("one closing measured with the beaker welded", len(res_w) == 1 and res_w[0].get("welded") is True, f"{len(res_w)}")
+    for r in res_w:
+        report(r)
+
+    # episode 2: the free beaker, recorded (the replay below)
     sim = load_task(cameras=True)
     stage = {}
 
@@ -78,39 +144,12 @@ def grasp():
     out = Path(tempfile.mkdtemp(prefix="gripper_force_"))
     s = run_episode(make, sim.model, sim.data, episode_cfg={**EPISODE_CFG, "timeout_after_handoff": 25.0}, out_dir=out / "episode", record_dir=out / "recording")
     res = stage["s"]["state"]["results"]
-    check("three closings measured", len(res) == 3, f"{len(res)}")
-    kp = robot_specs.ARM_ACTUATOR_SPECS["fingers"]["kp"]
+    check("three closings measured (free beaker)", len(res) == 3, f"{len(res)}")
     for r in res:
-        F = r["max_force_command"]
-        cap = r["applied_cap"]
-        print(f"    max_force {'ceiling' if F is None else str(F) + ' N'}: applied cap {cap:.2f} N, force of each finger on the beaker along the closing axis {np.round(r['contact_normal_N_per_finger_mean'], 3)} N "
-              f"(peak {r['contact_normal_N_peak']:.3f} N; sum of the contacts' normal magnitudes {np.round(r['contact_normal_sum_N_per_finger_mean'], 3)} N), finger actuator force {np.round(r['actuator_force_N_mean'], 3)} N, fingers at {np.round(r['finger_q_mm'], 1)} mm, "
-              f"{r['n_fingers_in_contact']} fingers in contact")
-        check(f"closing {F}: both fingers touch the beaker", r["n_fingers_in_contact"] == 2)
-        limit = cap
-        check(f"closing {F}: each finger actuator applies at most the limit ({limit:.2f} N)", all(f <= limit + 1e-6 for f in r["actuator_force_N_mean"]), f"{np.round(r['actuator_force_N_mean'], 4)} N")
-        cf = r["contact_normal_N_per_finger_mean"]
-        weight_axial = BEAKER_KG * 9.81 * abs(r["closing_axis_z"])        # the beaker's weight along the (slightly tilted) closing axis loads one finger and unloads the other
-        if F is not None:
-            check(f"closing {F}: each finger's contact force is the limit within the beaker's weight along the closing axis (+-{weight_axial:.2f} N)",
-                  all(abs(f - limit) <= weight_axial + 0.02 for f in cf), f"{np.round(cf, 3)} N")
-            check(f"closing {F}: the two fingers' mean contact force is the limit (within 3%)", abs(np.mean(cf) - limit) <= 0.03 * limit, f"mean {np.mean(cf):.3f} N")
-        else:
-            # At the ceiling the no-slip solver (robot_specs.NOSLIP_ITERATIONS) splits the load unevenly between the fingers (about 1 N at 10 N), so the mean
-            # is held to the cap tightly and each finger loosely.
-            check("closing at the ceiling: the two fingers' mean contact force is the cap (within 3%)", abs(np.mean(cf) - limit) <= 0.03 * limit, f"mean {np.mean(cf):.3f} N of {limit:.2f} N")
-            check("closing at the ceiling: each finger's contact force is within 10% of the cap", all(abs(f - limit) <= 0.10 * limit for f in cf), f"{np.round(cf, 3)} N")
-        if F is not None:
-            check(f"closing {F}: and the limit binds (the actuators sit at it)", all(abs(f - limit) < 1e-3 for f in r["actuator_force_N_mean"]))
-        else:
-            e = np.mean(r["finger_q_mm"]) / 1000
-            want = min(kp * e, robot_specs.ARM_ACTUATOR_SPECS["fingers"]["force_limit"])
-            check("closing at the ceiling: the servo's own force, kp * (distance to the commanded 0), clipped at the 10 N ceiling (kp 300 asks for 11 N at the beaker's width)",
-                  all(abs(f - want) < 0.05 * want for f in r["actuator_force_N_mean"]) and kp * e > 10.0, f"kp * q = {kp * e:.2f} N, applied {want:.2f} N")
+        report(r)
     print("\nreplay of the recording (the limit changes mid-run: 10 -> 1 -> 10 -> 2 -> 10 -> ceiling)")
     stage.clear()                         # the replay builds its own model (about 2 GB): free this one first
     del sim
-    import gc
     gc.collect()
     rep = replay_run(out / "recording", video="none", quiet=True)
     check("the replay is bit-identical", rep["ok"], f"{rep['ticks']} ticks, mismatch {rep['mismatch']}")

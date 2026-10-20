@@ -15,7 +15,7 @@ A   auto / hold stage. At handoff + 100 ticks F9 (operator takes over), the oper
     F9 pressed in teleop mode does not hand back. With timeout_after_handoff = 5 s:
     the switches are logged with cause operator_key, the base moved under the operator, the auto clock was paused while the operator had
     control (auto time 5.0 s, operator time 1.6 s) and the episode ends as an AUTO timeout.
-B   auto / request_operator stage + a test source that teleports the beaker onto the hotplate at 46 s (after the request, so under teleop):
+B   auto / request_operator stage + a test source that teleports the beaker onto the hotplate at 52 s (after the request, so under teleop: the staging hands off at 47 to 48.5 s):
     the policy's request switches to teleop at the handoff (cause policy_request), the auto clock stays at 0, and the episode is
     SUCCESS with operator_assisted true.
 D   abort: the operator takes over (F9) and presses Delete: the episode ends at once as ABORTED_BY_OPERATOR.
@@ -29,7 +29,9 @@ B2  snap-back of the base: F9 while the base drives at cruise speed, Enter 78 ol
     acceleration (control run: the controller's stale memory of its speed is used, as before, and the Twist steps to the old speed).
 P   the pedestal: F9 during PEDESTAL, the operator moves it, Enter: no step (the phase already ramps from the applied height; no control run).
 R1  restore the pedestal: F9 during ARMS, the operator holds control for 35 s (longer than the ARMS timeout) and moves the pedestal, Enter: staging re-ramps
-    the pedestal to its height, ARMS does not time out, staging completes. Control runs: restoring off (the pedestal stays wrong), timeout compensation off (STAGING_FAILED).
+    the pedestal to its height, ARMS does not time out, staging completes. Control run: timeout compensation off (STAGING_FAILED). Since the staging order ARMS, PEDESTAL, DRIVE (2026-10-19)
+    a pedestal move in ARMS is undone by the PEDESTAL phase anyway, so the pedestal restore itself is tested with the same move in DRIVE: restoring on (the pedestal is back at the
+    handoff, re-ramped smoothly) and its control, restoring off (the pedestal stays where the operator left it).
 R2  restore the neck during NECK: F9 in NECK, the operator moves the neck, Enter: the framing is re-run, the neck goes there, staging completes. Control: restoring off (stalls, STAGING_FAILED).
 R3  restore the neck after DONE: F9 after the handoff (hold stage), the operator moves the neck, Enter: the neck goes back to the framing (at the neck speed). Control: it stays.
 C1  teleop start (no policy), the beaker teleported at ~3 s: time 0 is the handoff, success is checked from the start: SUCCESS, operator_assisted.
@@ -123,9 +125,9 @@ def scenario_A(model, data):
 
 
 def scenario_B(model, data):
-    print("\nB: auto / request_operator, beaker teleported at ~46 s (under teleop)")
+    print("\nB: auto / request_operator, beaker teleported at ~52 s (under teleop; the staging hands off at 47 to 48.5 s since the arms-first order and the creep-in)")
     s = run_episode(lambda m, d: make_request_operator_stage(), model, data,
-                    extra_sources=lambda m, d: {"cheat": make_cheat_arm_stage(m, d, delay_s=44.6)})
+                    extra_sources=lambda m, d: {"cheat": make_cheat_arm_stage(m, d, delay_s=50.6)})
     sw = s["mode_switches"]
     check("policy_request switch at the handoff, stage request_operator", len(sw) == 2 and sw[1]["cause"] == "policy_request" and sw[1]["to"] == "teleop"
           and sw[1]["stage"] == "request_operator" and abs(sw[1]["time"] - s["handoff_time"]) < 0.05, str(sw[-1]))
@@ -335,21 +337,25 @@ def _final_value(rec, s, name):
 
 
 def scenario_R1(model, data):
-    print("\nR1: restore the pedestal. F9 in ARMS, the operator has control for 35 s and raises the pedestal, Enter")
+    print("\nR1: restore the pedestal. F9 in ARMS and in DRIVE, the operator has control for 35 s and raises the pedestal, Enter")
+    # Since the staging order ARMS, PEDESTAL, DRIVE, CREEP_IN, NECK (2026-10-19) the PEDESTAL phase comes after ARMS and always puts the pedestal at its height, so a pedestal move during ARMS
+    # is undone by it whether or not the resume restores the pedestal: the pedestal restore (and its control, "restoring off") is tested with the move in DRIVE, after the PEDESTAL phase.
+    # The timeout compensation (and its control) stays in ARMS (timeout 30 s, shorter than the operator's 35 s; DRIVE's is 120 s).
     import src.staging_source as ss
     target = TASK_CFG["pedestal_q"]
     runs = {}
-    for label, restore, comp in (("restoring on", True, True), ("control: restoring off", False, True), ("control: timeout compensation off", True, False)):
+    keys = {glfw.KEY_F9: [(150, 151)], glfw.KEY_PAGE_UP: [(160, 219)], glfw.KEY_ENTER: [(2350, 2351)]}
+    for label, restore, comp, phase, end in (("restoring on", True, True, "ARMS", 6000), ("control: restoring off", False, True, "DRIVE", 2600), ("control: timeout compensation off", True, False, "ARMS", 6000),
+                                             ("restoring on, in DRIVE", True, True, "DRIVE", 6000)):
         ss.RESTORE_ON_RESUME, ss.COMPENSATE_PAUSES = restore, comp
         try:
-            T, rec, s = _resume_run(model, data, lambda o: o["policy"]["phase"] == "ARMS", {glfw.KEY_F9: [(150, 151)], glfw.KEY_PAGE_UP: [(160, 219)], glfw.KEY_ENTER: [(2350, 2351)]},
-                                    end=4000)
+            T, rec, s = _resume_run(model, data, lambda o, ph=phase: o["policy"]["phase"] == ph, keys, end=end)
         finally:
             ss.RESTORE_ON_RESUME, ss.COMPENSATE_PAUSES = True, True
         p = rec["pedestal"]
         h = int(round((s["handoff_time"] - 1.4) / DT)) if s["handoff_time"] is not None else None
         runs[label] = (s, p, T, h)
-        print(f"  {label}: operator moved the pedestal to {1000 * (p[T + n(2340)] - target):+.0f} mm from its height; outcome {s['outcome']}, staging error {s['staging_error']}; "
+        print(f"  {label} ({phase}): operator moved the pedestal to {1000 * (p[T + n(2340)] - target):+.0f} mm from its height; outcome {s['outcome']}, staging error {s['staging_error']}; "
               + (f"pedestal target at the handoff {1000 * (p[h] - target):+.1f} mm from its height" if h is not None else "no handoff"))
     s, p, T, h = runs["restoring on"]
     check("the operator moved the pedestal away from the staging height", abs(p[T + n(2340)] - target) > 0.03, f"{1000 * (p[T + n(2340)] - target):+.0f} mm")
@@ -360,9 +366,17 @@ def scenario_R1(model, data):
           f"{1000 * np.abs(np.diff(p[T + n(2350) - 1:h])).max():.3f} mm")
     check("the ARMS duration in the report does not include the operator's 35 s", s["phase_durations_s"]["ARMS"] < 30.0, f"{s['phase_durations_s']['ARMS']:.1f} s")
     s2, p2, T2, h2 = runs["control: restoring off"]
-    check("control: without restoring the pedestal stays where the operator left it", h2 is not None and abs(p2[h2] - target) > 0.03, f"{1000 * (p2[h2] - target):+.0f} mm" if h2 else "")
+    i2 = min(len(p2) - 1, T2 + n(2590))                      # shortly before the run's abort (the staging may fail later with the pedestal left up: only the pedestal is looked at)
+    check("control: without restoring the pedestal stays where the operator left it (the move in DRIVE)", abs(p2[i2] - target) > 0.03, f"{1000 * (p2[i2] - target):+.0f} mm")
     s3 = runs["control: timeout compensation off"][0]
     check("control: without compensation ARMS times out (STAGING_FAILED)", s3["outcome"] == "STAGING_FAILED" and "timed out" in (s3["staging_error"] or ""), f"{s3['staging_error']}")
+    s4, p4, T4, h4 = runs["restoring on, in DRIVE"]                       # the matched positive of the control above: the same move in DRIVE, restored on Enter
+    check("restoring on, the move in DRIVE: the pedestal was moved away, staging completes and the pedestal is back at the staging height at the handoff",
+          abs(p4[T4 + n(2340)] - target) > 0.03 and not s4["staging_error"] and h4 is not None and abs(p4[h4] - target) < 1e-6,
+          f"moved {1000 * (p4[T4 + n(2340)] - target):+.0f} mm, error {s4['staging_error']}" + (f", at the handoff {1000 * (p4[h4] - target):+.3f} mm" if h4 is not None else ", no handoff"))
+    if h4 is not None:
+        check("and it was re-ramped smoothly (DRIVE)", np.abs(np.diff(p4[T4 + n(2350) - 1:h4])).max() <= STAGING_CFG["pedestal_speed"] * DT + 1e-9, f"{1000 * np.abs(np.diff(p4[T4 + n(2350) - 1:h4])).max():.3f} mm")
+        check("the DRIVE duration in the report does not include the operator's 35 s", s4["phase_durations_s"]["DRIVE"] < 30.0, f"{s4['phase_durations_s']['DRIVE']:.1f} s")
 
 
 def scenario_R2(model, data):

@@ -18,6 +18,7 @@ Contents:
     Entry: one entry of the knowledge base.
     WorldModel: the knowledge base.
     SimGroundTruthSource: the source that reads the beaker, the hotplate and the bench from the simulator.
+    StaticTaskSource: the same entries from the task configuration alone, with no simulator (dry runs and the trace tool, experiments/mpvi_trace.py).
 """
 
 from dataclasses import dataclass, field
@@ -27,6 +28,16 @@ import numpy as np
 
 from src.task_beaker_hotplate import bench_top_z
 from src.task_config import BEAKER_CFG, TASK_CFG
+
+
+BEAKER_PHRASES = ("beaker", "glass beaker")
+HOTPLATE_PHRASES = ("hotplate", "hot plate")
+BENCH_PHRASES = ("bench", "lab bench")
+
+
+def _stance(task_cfg):
+    """The staging stance of the test task's bench, as the "stance" property."""
+    return {"xy": task_cfg["staging_xy"], "yaw": task_cfg["staging_yaw"], "pedestal_q": task_cfg["pedestal_q"]}
 
 
 @dataclass
@@ -191,21 +202,36 @@ class WorldModel:
         return float(self.get("bench").properties["top_z"])
 
     def stance(self, target):
-        """Gives the staging stance of a navigation target (a fixture with a "stance" property).
+        """Gives the staging stance of a navigation target.
+
+        The target is an entry id ("bench") or any phrase the planner wrote ("the beaker", "hotplate", "lab bench"): it is matched against the entries (src/grounding.resolve); a fixture with a
+        "stance" property gives it, an object or fixture with a "location" property (the id of the fixture it stands on) gives that location's stance ("Navigate to the beaker" is a drive
+        to the bench). A phrase that matches several entries with different stances is ambiguous.
 
         Args:
-            target (str): The fixture's id ("bench").
+            target (str): The navigation segment's target.
 
         Returns:
             dict: {"xy", "yaw", "pedestal_q"}.
 
         Raises:
-            KeyError: If there is no such fixture or it has no stance.
+            KeyError: If nothing matches, or the matches have no stance or several different ones.
         """
+        from src.grounding import resolve
         e = self._entries.get(target)
-        if e is None or "stance" not in e.properties:
+        found = [e] if e is not None else resolve(self, target)
+        stances = []
+        for f in found:
+            where = f if "stance" in f.properties else self._entries.get(f.properties.get("location"))
+            if where is not None and "stance" in where.properties and where.properties["stance"] not in stances:
+                stances.append(where.properties["stance"])
+        if not found:
             raise KeyError(f"the world model has no navigation target {target!r}")
-        return e.properties["stance"]
+        if not stances:
+            raise KeyError(f"navigation target {target!r} ({', '.join(f.id for f in found)}) has no stance")
+        if len(stances) > 1:
+            raise KeyError(f"navigation target {target!r} is ambiguous: {', '.join(f.id for f in found)} have different stances")
+        return stances[0]
 
 
 class SimGroundTruthSource:
@@ -266,12 +292,42 @@ class SimGroundTruthSource:
         t = float(d.time)
         world.time = t
         top_z = bench_top_z(m)
-        world.upsert(Entry("beaker", "beaker", ("beaker", "glass beaker"), "object", d.site("beaker_base").xpos.copy(),
+        world.upsert(Entry("beaker", "beaker", BEAKER_PHRASES, "object", d.site("beaker_base").xpos.copy(),
                            d.xmat[self.beaker_body].reshape(3, 3)[:, 2].copy(),
-                           {"contents": "liquid" if self.beaker_cfg["liquid_mass"] > 0 else "empty", "height": self.beaker_cfg["height"], "held_by": self.held_by()},
+                           {"contents": "liquid" if self.beaker_cfg["liquid_mass"] > 0 else "empty", "height": self.beaker_cfg["height"], "held_by": self.held_by(), "location": "bench"},
                            "sim_ground_truth", t))
-        world.upsert(Entry("hotplate", "hotplate", ("hotplate", "hot plate"), "fixture", d.site("hotplate_top").xpos.copy(),
-                           d.xmat[self.hotplate_body].reshape(3, 3)[:, 2].copy(), {}, "map", t))
+        world.upsert(Entry("hotplate", "hotplate", HOTPLATE_PHRASES, "fixture", d.site("hotplate_top").xpos.copy(),
+                           d.xmat[self.hotplate_body].reshape(3, 3)[:, 2].copy(), {"location": "bench"}, "map", t))
         xy = cfg["staging_xy"]
-        world.upsert(Entry("bench", "bench", ("bench", "lab bench"), "fixture", np.array([xy[0], xy[1], top_z]), None,
-                           {"top_z": top_z, "stance": {"xy": cfg["staging_xy"], "yaw": cfg["staging_yaw"], "pedestal_q": cfg["pedestal_q"]}}, "map", t))
+        world.upsert(Entry("bench", "bench", BENCH_PHRASES, "fixture", np.array([xy[0], xy[1], top_z]), None, {"top_z": top_z, "stance": _stance(cfg)}, "map", t))
+
+
+class StaticTaskSource:
+    """The task's entries from the configuration alone: positions are the configured xy (z is 0: there is no model to give the bench height), nothing is read from a simulation.
+
+    For dry runs of the grounding and the trace tool; the same ids, phrases and properties as SimGroundTruthSource, found = "config".
+    """
+
+    def __init__(self, task_cfg=TASK_CFG, beaker_cfg=BEAKER_CFG):
+        """Keeps the configuration.
+
+        Args:
+            task_cfg (dict): TASK_CFG ("beaker_xy", "hotplate_xy", the staging stance).
+            beaker_cfg (dict): BEAKER_CFG (height, liquid).
+        """
+        self.task_cfg, self.beaker_cfg = task_cfg, beaker_cfg
+
+    def __call__(self, world, t):
+        """Writes the three entries; a hand-held state set on the beaker entry (held_by) is kept between calls.
+
+        Args:
+            world (WorldModel): The knowledge base to write.
+            t (float): The time, seconds.
+        """
+        c, b = self.task_cfg, self.beaker_cfg
+        held = world._entries["beaker"].properties.get("held_by") if "beaker" in world._entries else None
+        up = np.array([0.0, 0.0, 1.0])
+        world.upsert(Entry("beaker", "beaker", BEAKER_PHRASES, "object", np.array([*c["beaker_xy"], 0.0]), up,
+                           {"contents": "liquid" if b["liquid_mass"] > 0 else "empty", "height": b["height"], "held_by": held, "location": "bench"}, "config", t))
+        world.upsert(Entry("hotplate", "hotplate", HOTPLATE_PHRASES, "fixture", np.array([*c["hotplate_xy"], 0.0]), up, {"location": "bench"}, "config", t))
+        world.upsert(Entry("bench", "bench", BENCH_PHRASES, "fixture", np.array([*c["staging_xy"], 0.0]), None, {"top_z": 0.0, "stance": _stance(c)}, "config", t))

@@ -22,6 +22,7 @@ The dictionaries and who reads them:
         (experiments/beaker_hotplate_layout_search.py).
     STAGING_CFG: speeds, ramps, tolerances and time limits of the scripted staging source (src/staging_source.py).
     EPISODE_CFG: time limits, the 2 s after a success, logging rate and spawn height of the episode runner (src/episode_runner.py).
+    LLM_CFG: the Gemini calls of the MPVI pipeline (src/llm_gemini.py): the pinned model name, prompt versions, retry and backoff, cache folder, secrets file.
     SUCCESS_CFG: site, geom and body names and tolerances of the success check (task_beaker_hotplate.check_success()).
 Entries marked NEW in the comments of STAGING_CFG were chosen recently and are not yet approved. All numbers are choices for this
 simulation, not measurements of the real hardware.
@@ -438,4 +439,23 @@ SUCCESS_CFG = {
     "height_tol": 0.005,                   # m, |beaker_base z - hotplate_top z|
     "upright_max_deg": 15.0,               # beaker local z against world z
     "speed_max": 0.01,                     # m/s
+}
+
+
+# The Gemini calls of the MPVI pipeline (design plan 8; src/llm_gemini.py, src/mpvi_planner.py, src/mpvi_postprocess.py).
+LLM_CFG = {
+    "model": "gemini-3.8-flash",           # the exact model name, pinned here (a change of model changes every cache key). gemini-2.5-flash, the paper's, is refused for new API users (404, 2026-10-20); 3.8 is what the API itself suggests
+    "temperature": 0.0,
+    "thinking_budget": 0,                  # tokens for the model's own thinking; 0 = off (the plan and the labels are short and fixed-schema, and the free tier is small)
+    "planner_prompt_version": "planner-appendix-d-v1",    # the paper's Task Planning Prompt (src/mpvi_prompts.py); bump when the text changes: the cache key includes it
+    "vlm_prompt_version": "vlm-check-appendix-d-v1",      # the paper's VLM Completion Checking Prompt (the completion checker, next step)
+    "label_prompt_version": "label-v0",                   # LABEL_PROMPT in src/mpvi_postprocess.py
+    "mode": "cache_only",                  # "cache_only": a cache miss is an error, the API is never called (tests, replays); "cache_or_live": read the cache, call on a miss and store;
+                                           # "live": always call and store the reply (the cache is bypassed for reading)
+    "cache_dir": "experiments/llm_cache",  # committed: the stored replies the tests replay
+    "max_retries": 6,                      # retries after the first try, on rate limits (429) and server errors (500, 503, 504) and network errors
+    "backoff_base_s": 4.0,                 # wait base * 2**retry (plus up to 1 s of jitter), at least the server's own "retry in" hint, at most backoff_max_s
+    "backoff_max_s": 65.0,
+    "timeout_s": 60.0,                     # per request
+    "secrets_file": "~/.config/openarm-tracer-sim/secrets.env",   # holds GEMINI_API_KEY=...; read when the environment variable is not set; never in the repository
 }

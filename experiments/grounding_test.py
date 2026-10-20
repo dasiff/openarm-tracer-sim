@@ -4,7 +4,7 @@ Tests of the world model, the grounding and the orchestrator's use of them (src/
 
     python experiments/grounding_test.py
 
-1. World model: upsert, get, entries by kind, what a hand holds, a source refreshed by object_pose, unknown ids and stances raise, perception-style replacement of the source.
+1. World model: upsert, get, entries by kind, what a hand holds, a source refreshed by object_pose, unknown ids and stances raise, perception-style replacement of the source; navigation targets as phrases (an object or fixture on the bench gives the bench's stance; unknown, stanceless and ambiguous targets raise).
 2. Phrase matching: articles, names, phrases, property words (full, empty, hot), modifiers that the entry does not have, no noun ("the full one"), unknown objects.
 3. Grounding: one match; not found calls the search and, with the stub, stops with "search not implemented"; a search that finds an entry grounds it; several matches with no operator stop with
    "ambiguous reference" and the candidates; with an operator the candidates are shown, the choice is logged, a bad answer stops; a place step prefers the candidate in the hand; the
@@ -80,6 +80,26 @@ def main():
         except KeyError:
             ok = True
         check(f"{name} raises KeyError", ok)
+    st = {"xy": (0.7, 1.0), "yaw": -1.5, "pedestal_q": 0.1}
+    nav = make_world(Entry("bench", "bench", ("bench", "lab bench"), "fixture", np.zeros(3), None, {"stance": st}), obj("beaker", ["beaker"], 0.1, location="bench"),
+                     Entry("hotplate", "hotplate", ("hotplate", "hot plate"), "fixture", np.zeros(3), None, {"location": "bench"}), obj("lamp", ["lamp"], 0.2))
+    check("navigation targets: an id, a phrase, an object or a fixture standing on the bench all give the bench's stance",
+          all(nav.stance(t) == st for t in ("bench", "the lab bench", "the beaker", "hotplate", "the hot plate")))
+    for name, t, text in (("an unknown phrase", "kitchen", "no navigation target"), ("an object with no location or stance", "the lamp", "has no stance")):
+        try:
+            nav.stance(t)
+            ok = False
+        except KeyError as e:
+            ok = text in e.args[0]
+        check(f"navigation target: {name} raises KeyError", ok)
+    nav.upsert(Entry("shelf", "shelf", ("shelf",), "fixture", np.zeros(3), None, {"stance": {"xy": (2.0, 2.0), "yaw": 0.0, "pedestal_q": 0.1}}))
+    nav.upsert(obj("beaker2", ["beaker"], 0.5, location="shelf"))
+    try:
+        nav.stance("the beaker")
+        ok = False
+    except KeyError as e:
+        ok = "ambiguous" in e.args[0]
+    check("navigation target: a phrase whose matches stand at different stances is ambiguous", ok)
     w.remove("flask")
     w.sources[0] = lambda world, t: world.upsert(obj("beaker", ["beaker"], 9.0, found="detector") if False else Entry("beaker", "beaker", ("beaker",), "object", np.array([9.0, 0, 0.8]), None, {}, "detector", t))
     w.refresh(3.0)

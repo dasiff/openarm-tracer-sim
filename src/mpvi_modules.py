@@ -93,9 +93,12 @@ def make_scripted_navigation(model, data, world, task_cfg=TASK_CFG, staging_cfg=
     S = {"error": None}
 
     def start(segment):
-        """Resolves the segment's target through the world model; the staging itself always goes to the test task's stance."""
+        """Resolves the segment's target through the world model (a phrase such as "the beaker" gives the bench's stance); the staging itself always goes to the test task's stance, so
+        any other stance ends the plan. A second navigation segment to the same stance finds the staging already done and ends at once."""
         try:
             S["stance"] = world.stance(segment["target"])
+            if S["stance"] != {"xy": task_cfg["staging_xy"], "yaw": task_cfg["staging_yaw"], "pedestal_q": task_cfg["pedestal_q"]}:
+                S["error"] = f"navigation: the scripted staging reaches only the test task's stance, not the one of {segment['target']!r}"
         except KeyError as e:
             S["error"] = f"navigation: {e.args[0]}"
 

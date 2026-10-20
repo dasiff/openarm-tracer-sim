@@ -1,0 +1,10 @@
+{
+ "key": "7ea073354a9bd1fd4c2b7c6c21436e99097245fa2d27d3c004e6e589181f71e5",
+ "kind": "label",
+ "model": "gemini-3.8-flash",
+ "version": "label-v0",
+ "schema": "Labels",
+ "prompt": "Below is a task plan as numbered segments. For every segment of type manipulation, say which primitive it maps to: pick (the gripper takes an object), place (the gripper puts the held object down) or other (neither), and list the object phrases the description refers to, each with its role: manipulated (the object acted on) or destination (the surface or place it goes to). Copy each phrase as written in the description. Answer only in the required schema; give no entry for navigation segments.\n\n0. [navigation] Navigate to the beaker\n1. [manipulation] Grasp the beaker\n2. [navigation] Navigate to the hotplate\n3. [manipulation] Place the beaker onto the hotplate",
+ "reply_text": "{\"labels\": [{\"index\": 1, \"primitive\": \"pick\", \"objects\": [{\"phrase\": \"the beaker\", \"role\": \"manipulated\"}]}, {\"index\": 3, \"primitive\": \"place\", \"objects\": [{\"phrase\": \"the beaker\", \"role\": \"manipulated\"}, {\"phrase\": \"the hotplate\", \"role\": \"destination\"}]}]}",
+ "created": "2026-10-20T20:40:10"
+}

@@ -21,34 +21,35 @@ otherwise (_deg degrees, _mm millimetres, _s seconds).
     The source is also a stage of src/sequential_policy.py: it has "done", "error", "phase" and "restore" (the restore step, or None when
     nothing is pending), "failure_outcome" ("STAGING_FAILED") and "report_top_level".
 
+Rule (David, 2026-10-19): the arms stay at home (the "zombie pose") at all times except during manipulation. So the arms go to home FIRST, at the spawn in open space, before any
+driving, and the robot then drives (the forearms are part of its footprint) and creeps in under the bench with the arms at home. The clearances of the arms and the base to everything
+in the scene are watched every few ticks while the arms move and while the robot drives, and the base lean is checked while it drives with the arms out.
+
 Phases, in order (one subsystem moves at a time; the neck is exempt and stays at its look-ahead aim while driving):
-  DRIVE              turn in place toward the staging (x, y) position, drive straight, turn to the staging yaw, with the ground-truth base pose. Speeds
-                     ramp gently (STAGING_CFG). The straight leg follows the line from where it started to the goal (heading plus
-                     cross-track correction, so it stays accurate right up to the goal; steering at the bearing to the goal is
-                     ill-conditioned near it). Arrival = within drive_pos_tol and drive_yaw_tol with the base at rest for drive_settle_s;
-                     the tolerances are never loosened. After drive_max_reapproach corrective re-approaches (or on the timeout)
-                     state["error"] is set and the source stops commanding; the runner ends the episode as STAGING_FAILED.
-  PEDESTAL           the pedestal command ramps to task_cfg["pedestal_q"].
-  CORRECT_PEDESTAL   the pedestal move pushes the base: if it is outside the tolerance, the same go-to-pose controller moves it back (the
-                     arms are still tucked), aiming for correction_aim_frac of the tolerance. Skipped (and logged) if the pose is fine.
-  ARMS               both arms move (minimum jerk, arms_move_s, straight in joint space) from where they are to the home pose (home_targets(): TASK_CFG
-                     home_q_left / home_q_right plus the optional random variation), the grippers opening on the way. The targets go through
-                     src/rate_limit.py from the arms' applied targets (arm_max_speed), so after an operator has moved an arm and handed
-                     back it glides back to the path instead of jumping. No waypoint: from the hanging pose the direct move stays >= 54 mm from
-                     the bench at the staging pose (measured with the home pose of TASK_CFG).
-  CORRECT_ARMS       same check. With the arms out only a creep-speed correction is allowed: a yaw turn in place and a straight move
-                     along the heading (forward or back); a sideways error cannot be fixed without a large turn, which would sweep the
-                     arms, so it counts as too large. If the needed correction exceeds correction_arms_max_pos / _max_yaw (or the sideways
-                     error exceeds the tolerance), or the base-to-bench or arm-to-bench clearance (either arm, checked every tick) falls below its
-                     minimum, state["error"] is set (STAGING_FAILED): the arms are not moved further.
+  ARMS               at the spawn: both arms move (minimum jerk, arms_move_s, straight in joint space) from where they are to the home pose (home_targets(): TASK_CFG home_q_left /
+                     home_q_right plus the optional random variation), the grippers opening on the way. Before the first move the whole straight path is checked against the scene on
+                     a scratch copy of the state: if any part of an arm would come closer than arms_open_space_min_clearance to anything (the spawn must be open space) the stage fails
+                     (state["error"]) without moving; the same minimum is watched every few ticks during the move. The targets go through src/rate_limit.py from the arms' applied
+                     targets (arm_max_speed), so after an operator has moved an arm and handed back it glides back to the path instead of jumping. The move at the old staging pose
+                     (8 cm from the bench) stayed >= 54 mm from the bench top; at the new one under the open bench it would sweep the fingers through it (-95 mm), hence this order.
+  PEDESTAL           the pedestal command ramps to task_cfg["pedestal_q"] (the arms are at home and ride with the torso; the spawn is open space).
+  DRIVE              (arms at home) turn in place toward the goal (the approach spot staging_approach_xy(task_cfg), or the staging pose if there is none), drive straight, turn to the
+                     staging yaw, with the ground-truth base pose. Speeds ramp gently (STAGING_CFG). The straight leg follows the line from where it started to the goal (heading plus
+                     cross-track correction, so it stays accurate right up to the goal; steering at the bearing to the goal is ill-conditioned near it). Arrival = within drive_pos_tol
+                     and drive_yaw_tol with the base at rest for drive_settle_s; the tolerances are never loosened. After drive_max_reapproach corrective re-approaches (or on the timeout)
+                     state["error"] is set and the source stops commanding; the runner ends the episode as STAGING_FAILED. Every few ticks the clearance of the base and of the arms
+                     (forearms and hands included: they are in the footprint) to every obstacle is measured; below correction_arms_min_base_clearance / _min_arm_clearance the stage fails.
+                     The base lean (the tilt of base_link) is checked every tick: above drive_max_lean_deg the stage fails.
+  CREEP_IN           only when task_cfg["staging_approach_back_m"] is set: from the approach spot straight along the heading to the staging pose under the open bench, at creep speed, arms at home,
+                     with the same clearance and lean checks every tick; the clearances are also sampled about every creep_in_trace_mm of travel (state["corrections"] record "trace").
+                     The base may travel at most creep_in_max_pos; the sideways error must stay within drive_pos_tol and the final pose within the tolerance.
   NECK               frame_points() on points_fn(model, data, task_cfg) (beaker, hotplate, both grippers at home), the result is commanded,
                      then held. Solved once per episode: after a hand-back the same stored targets are sent again.
   DONE               state["done"] = True. The source stops commanding.
 Phase end = the target reached, with the moving joints below the settle velocity for the settle time. Every phase has a timeout in
-STAGING_CFG (drive_timeout, pedestal_timeout, correction_timeout, arms_timeout, neck_timeout) that does not count the time an operator had
-control. state["final_turn_deg"] is the in-place turn done at the staging pose at the end of DRIVE (the staging search's swept clearance
-assumed a small one); state["planned_final_turn_deg"] is what the straight approach from the spawn implies. state["corrections"] records,
-for each correction step, whether it was needed, the pose error before and after, its duration and (extended arm) the smallest clearances seen.
+STAGING_CFG (arms_timeout, pedestal_timeout, drive_timeout, creep_in_timeout, neck_timeout) that does not count the time an operator had
+control. state["final_turn_deg"] is the in-place turn done at the end of DRIVE; state["planned_final_turn_deg"] is what the straight approach from the spawn
+implies. state["corrections"] holds the CREEP_IN record: the pose error before and after, its duration, the smallest clearances and the trace.
 """
 
 import math
@@ -266,11 +267,11 @@ def _pose_controller(cfg, goal, max_lin, max_ang, tol_pos, tol_yaw, real_pos_tol
 
 
 def _creep_controller(cfg, goal, tol_pos, tol_yaw, real_pos_tol, real_yaw_tol, max_pos, max_yaw):
-    """Makes the base-pose correction controller for an extended arm.
+    """Makes the creep-speed base controller for the arms-out final approach (staging phase CREEP_IN).
 
-    It does a creep-speed yaw turn in place, then a creep-speed straight move along the heading (forward or back). There is no turn
+    It does a creep-speed yaw turn in place, then a creep-speed straight move along the heading (forward or back), steering away a yaw error that appears on the way. There is no turn
     toward a bearing: a sideways error is not corrected (a differential base would have to turn about 90 degrees with the arm out), so
-    it makes the controller fail. The stages are "CHECK" (fail if the correction is too large or sideways), "YAW", "MOVE" and "SETTLE".
+    it makes the controller fail. A yaw error above max_yaw fails it at any time. The stages are "CHECK" (fail if the correction is too large or sideways), "YAW", "MOVE" and "SETTLE".
 
     Args:
         cfg (dict): The staging configuration (STAGING_CFG); uses drive_creep_ang, drive_creep_lin, drive_settle_s, drive_lin_accel,
@@ -332,6 +333,9 @@ def _creep_controller(cfg, goal, tol_pos, tol_yaw, real_pos_tol, real_yaw_tol, m
                              f"yaw {math.degrees(yaw_err):+.2f} deg; allowed along {max_pos * 1000:.0f} mm, sideways {real_pos_tol * 1000:.0f} mm, yaw {math.degrees(max_yaw):.1f} deg)")
                 return [], "failed"
             S["stage"] = "YAW"
+        elif abs(yaw_err) > max_yaw:                                  # a kick or drift during the creep: the arms are out, a big turn would sweep them
+            S["fail"] = f"the yaw error with the arms out grew to {math.degrees(yaw_err):+.2f} deg (allowed {math.degrees(max_yaw):.1f} deg)"
+            return [], "failed"
         lin_t = ang_t = 0.0
         if S["stage"] == "YAW":
             if abs(yaw_err) < tol_yaw:
@@ -343,6 +347,8 @@ def _creep_controller(cfg, goal, tol_pos, tol_yaw, real_pos_tol, real_yaw_tol, m
                 S["stage"] = "SETTLE"
             else:
                 lin_t = math.copysign(cfg["drive_creep_lin"], along)
+                if abs(yaw_err) > tol_yaw:                                # steer while creeping: a yaw error that appears on the way is turned away at the creep rate
+                    ang_t = math.copysign(cfg["drive_creep_ang"], yaw_err)
         if S["stage"] == "SETTLE":
             lin, ang = S["twist"]
             if abs(lin) < 1e-9 and abs(ang) < 1e-9:
@@ -364,10 +370,28 @@ def _creep_controller(cfg, goal, tol_pos, tol_yaw, real_pos_tol, real_yaw_tol, m
     return {"step": step, "S": S}
 
 
+def staging_approach_xy(task_cfg=TASK_CFG):
+    """Gives the approach spot of the staging: the staging pose moved back along its heading by task_cfg["staging_approach_back_m"].
+
+    DRIVE (arms at home) ends there and CREEP_IN covers the last stretch to the staging pose at creep speed.
+
+    Args:
+        task_cfg (dict): The task configuration; uses "staging_xy", "staging_yaw" and "staging_approach_back_m" (None or missing: no creep-in).
+
+    Returns:
+        tuple or None: (x, y) in metres, or None when there is no creep-in.
+    """
+    back = task_cfg.get("staging_approach_back_m")
+    if not back:
+        return None
+    gx, gy = task_cfg["staging_xy"]
+    return (gx - back * math.cos(task_cfg["staging_yaw"]), gy - back * math.sin(task_cfg["staging_yaw"]))
+
+
 def make_staging_source(model, data, task_cfg=TASK_CFG, cfg=STAGING_CFG, points_fn=framing_points):
     """Makes the staging source: it drives the robot from the spawn state to the HANDOFF state, phase by phase.
 
-    The phases are DRIVE, PEDESTAL, CORRECT_PEDESTAL, ARMS, CORRECT_ARMS, NECK and DONE (see the module docstring). The source keeps
+    The phases are ARMS, PEDESTAL, DRIVE, (CREEP_IN,) NECK and DONE (see the module docstring). The source keeps
     its internal bookkeeping in three dicts of the enclosing scope: `state` (public, below), `P` (phase machinery: "entered", "still_since"
     (time the settle condition first held), "neck_sent", "neck_resent", "neck_targets", "u" (ARMS time fraction), "path" (ARMS joint-space
     waypoints), "last_arm" (the last arm targets sent), "corr" (the record of the running correction), "lim_grip" (rate-limit the gripper
@@ -419,41 +443,95 @@ def make_staging_source(model, data, task_cfg=TASK_CFG, cfg=STAGING_CFG, points_
     neck = neck_ids(model, robot_specs.NECK_SPECS)
     gx, gy = task_cfg["staging_xy"]
     gyaw = task_cfg["staging_yaw"]
-    goal = (gx, gy, gyaw)
+    goal = (gx, gy, gyaw)                         # the staging pose (where the hand-off happens)
+    approach = staging_approach_xy(task_cfg)
+    two_step = approach is not None
+    px, py = approach if two_step else (gx, gy)                                 # the approach spot: DRIVE (arms at home) goes here, CREEP_IN then goes to the staging pose
+    goal0 = (px, py, gyaw)
+    after_drive = "CREEP_IN" if two_step else "NECK"
     spawn = task_cfg["spawn_xy"]
-    planned_heading = math.atan2(gy - spawn[1], gx - spawn[0])
-    state = {"phase": "DRIVE", "done": False, "error": None, "phases": {}, "arrival": None, "final_turn_deg": None,
+    planned_heading = math.atan2(py - spawn[1], px - spawn[0])
+    state = {"phase": "ARMS", "done": False, "error": None, "phases": {}, "arrival": None, "final_turn_deg": None,
              "planned_final_turn_deg": math.degrees(wrap(gyaw - planned_heading)), "first_turn_deg": None, "reapproaches": 0,
-             "framing_report": None, "corrections": [], "home_q": {sd: [float(v) for v in home[sd]] for sd in sides}}
+             "framing_report": None, "corrections": [], "home_q": {sd: [float(v) for v in home[sd]] for sd in sides}, "arms_path_clearance_mm": None}
     P = {"entered": False, "still_since": None, "neck_sent": False, "u": 0.0, "last_arm": None, "path": None, "neck_targets": None,
          "corr": None, "lim_grip": False, "paused": 0.0, "last_t": None, "restore": False, "neck_resent": False}
     pos_tol, yaw_tol = cfg["drive_pos_tol"], cfg["drive_yaw_tol"]
     frac = cfg["correction_aim_frac"]
-    drive_ctl = _pose_controller(cfg, goal, cfg["drive_max_lin_vel"], cfg["drive_max_ang_vel"], pos_tol, yaw_tol, pos_tol, yaw_tol,
+    drive_ctl = _pose_controller(cfg, goal0, cfg["drive_max_lin_vel"], cfg["drive_max_ang_vel"], pos_tol, yaw_tol, pos_tol, yaw_tol,
                                  cfg["drive_max_reapproach"])
-    ped_ctl = _pose_controller(cfg, goal, cfg["drive_max_lin_vel"], cfg["drive_max_ang_vel"], frac * pos_tol, frac * yaw_tol, pos_tol, yaw_tol,
-                               cfg["drive_max_reapproach"])
-    arm_ctl = _creep_controller(cfg, goal, frac * pos_tol, frac * yaw_tol, pos_tol, yaw_tol, cfg["correction_arms_max_pos"], cfg["correction_arms_max_yaw"])
-    drive_ctl["started"] = ped_ctl["started"] = False
+    creep_ctl = _creep_controller(cfg, goal, frac * pos_tol, frac * yaw_tol, pos_tol, yaw_tol, cfg["creep_in_max_pos"], cfg["correction_arms_max_yaw"])
+    drive_ctl["started"] = False
 
-    # clearances to the bench, watched every tick during the extended-arm correction
+    # Clearances to everything in the scene (the walls, the bench, the furniture, the hotplate: every collidable geom that is neither part of the robot nor an object with a free
+    # joint, the floor plane excluded), watched while the arms move and while the robot drives. Pairs farther apart than the look-up distance are skipped by their bounding spheres.
+    root_id = model.body("base_link").id
     base_names = ["base_link", "right_link", "left_Link", "right_front_link", "right_rear_link", "left_front_link", "left_rear_link"]
+
+    def _under_root(b):
+        while b > 0:
+            if b == root_id:
+                return True
+            b = int(model.body_parentid[b])
+        return False
+
+    def _free_body(b):
+        r = int(model.body_rootid[b])
+        return r > 0 and model.body_jntnum[r] > 0 and int(model.jnt_type[model.body_jntadr[r]]) == int(mujoco.mjtJoint.mjJNT_FREE)
+
     base_geoms = [g for g in range(model.ngeom) if model.body(int(model.geom_bodyid[g])).name in base_names]
     arm_geoms = [g for g in range(model.ngeom) if model.geom_group[g] == 3 and model.body(int(model.geom_bodyid[g])).name.startswith("openarm_")
                  and not model.body(int(model.geom_bodyid[g])).name.endswith("link0")]            # both arms
+    world_geoms = [g for g in range(model.ngeom) if (model.geom_contype[g] or model.geom_conaffinity[g]) and int(model.geom_type[g]) != int(mujoco.mjtGeom.mjGEOM_PLANE)
+                   and not _under_root(int(model.geom_bodyid[g])) and not _free_body(int(model.geom_bodyid[g]))]
     bench_geoms = [g for g in range(model.ngeom) if int(model.geom_bodyid[g]) == model.body("bench").id]
     ft = np.zeros(6)
+    look = 1.0
+    W = {"base": None, "arm": None, "tick": 0, "min_base": {}, "min_arm": {}}
+    lean_max = {}
+    base_body = model.body("base_link").id
 
-    def clearances():
-        """Measures how close the base and the arms are to the bench.
+    def clearances(d_=None):
+        """Measures how close the base and the arms are to anything in the scene.
+
+        Args:
+            d_ (mujoco.MjData or None): The data to measure in (forward kinematics done). Defaults to None, the live data.
 
         Returns:
-            tuple: (base, arm) smallest distances in metres between the base geoms and the bench geoms, and between the arms'
-            geoms (both arms, collision group 3, without link0) and the bench geoms. A negative value means penetration. Distances are looked up
-            to 1.0 m.
+            tuple: (base, arm) smallest distances in metres between the base geoms and the world geoms, and between the arms' geoms (both arms, collision group 3, without link0, so
+            the forearms and hands are included) and the world geoms. A negative value means penetration; distances are looked up to 1.0 m (so 1.0 means nothing within 1 m).
         """
-        d = lambda A: min(mujoco.mj_geomDistance(model, data, a, b, 1.0, ft) for a in A for b in bench_geoms)
-        return d(base_geoms), d(arm_geoms)
+        d_ = data if d_ is None else d_
+
+        def nearest(A):
+            best = look
+            for a in A:
+                for b in world_geoms:
+                    if np.linalg.norm(d_.geom_xpos[a] - d_.geom_xpos[b]) - model.geom_rbound[a] - model.geom_rbound[b] > best:
+                        continue
+                    best = min(best, mujoco.mj_geomDistance(model, d_, a, b, look, ft))
+            return best
+        return nearest(base_geoms), nearest(arm_geoms)
+
+    def watch(phase):
+        """Measures the clearances (every cfg["watch_every_ticks"] ticks, else the last values stay) and keeps their minima per phase in W.
+
+        Args:
+            phase (str): The current phase.
+
+        Returns:
+            tuple: (base, arm) clearances in metres, from the latest measurement.
+        """
+        if W["base"] is None or W["tick"] % cfg["watch_every_ticks"] == 0:
+            W["base"], W["arm"] = clearances()
+            W["min_base"][phase] = min(W["min_base"].get(phase, 9.0), W["base"])
+            W["min_arm"][phase] = min(W["min_arm"].get(phase, 9.0), W["arm"])
+        W["tick"] += 1
+        return W["base"], W["arm"]
+
+    def lean_deg():
+        """The tilt of base_link from the vertical, in degrees (from the live data)."""
+        return math.degrees(math.acos(max(-1.0, min(1.0, float(data.xmat[base_body][8])))))
 
     def close_phase(t):
         """Ends the current phase's record: stores its end time and the operator time inside it.
@@ -538,7 +616,8 @@ def make_staging_source(model, data, task_cfg=TASK_CFG, cfg=STAGING_CFG, points_
             when the staging pose is to the base's left); both in millimetres along and across the staging heading.
         """
         x, y, yaw = obs["base_pose"]
-        ex, ey = gx - x, gy - y
+        tx, ty = (gx, gy) if state["phase"] in ("CREEP_IN", "NECK", "DONE") else (px, py)        # before CREEP_IN the goal is the arms-first spot (the staging pose when there is none)
+        ex, ey = tx - x, ty - y
         # along > 0: the base is short of the staging pose (farther from the bench); lateral > 0: the staging pose is to the base's left
         return {"pos_mm": 1000 * math.hypot(ex, ey), "yaw_deg": math.degrees(wrap(yaw - gyaw)),
                 "along_mm": 1000 * (ex * math.cos(gyaw) + ey * math.sin(gyaw)), "lateral_mm": 1000 * (-ex * math.sin(gyaw) + ey * math.cos(gyaw))}
@@ -548,7 +627,7 @@ def make_staging_source(model, data, task_cfg=TASK_CFG, cfg=STAGING_CFG, points_
         """Runs the DRIVE phase: go to the staging pose with the go-to-pose controller.
 
         Resets the controller on the first call, copies its turn and re-approach records into `state`, and on arrival stores
-        state["arrival"] and enters PEDESTAL; on failure stores state["arrival"] (with "ok" False) and sets state["error"].
+        state["arrival"] and enters CREEP_IN (NECK when there is no arms-first spot); on failure stores state["arrival"] (with "ok" False) and sets state["error"].
 
         Args:
             obs (dict): The observation; uses "base_pose" and "applied".
@@ -565,13 +644,13 @@ def make_staging_source(model, data, task_cfg=TASK_CFG, cfg=STAGING_CFG, points_
         S = drive_ctl["S"]
         state["first_turn_deg"], state["final_turn_deg"], state["reapproaches"] = S["first_turn"], S["final_turn"], S["reapproach"]
         if status == "failed":
-            state["arrival"] = {"pos_err": math.hypot(gx - obs["base_pose"][0], gy - obs["base_pose"][1]),
+            state["arrival"] = {"pos_err": math.hypot(px - obs["base_pose"][0], py - obs["base_pose"][1]),
                                 "yaw_err_deg": abs(math.degrees(wrap(gyaw - obs["base_pose"][2]))), "ok": False}
             fail(t, "DRIVE: " + S["fail"])
         elif status == "arrived":
             e = pose_err(obs)
             state["arrival"] = {"pos_err": e["pos_mm"] / 1000, "yaw_err_deg": abs(e["yaw_deg"]), "ok": True}
-            enter("PEDESTAL", t)
+            enter(after_drive, t)
         return cmds
 
     # ------------------------------------------------------------------ PEDESTAL
@@ -580,7 +659,7 @@ def make_staging_source(model, data, task_cfg=TASK_CFG, cfg=STAGING_CFG, points_
 
         The command moves at most pedestal_speed * dt per tick from the applied height. When the pedestal is within pedestal_tol of the
         target, the applied command is at the target and the pedestal joint speed has been below pedestal_settle_vel for pedestal_settle_s,
-        it starts the CORRECT_PEDESTAL check (begin_correction) and then goes on to ARMS.
+        it enters DRIVE.
 
         Args:
             obs (dict): The observation; uses "pedestal_height" and "applied" ("pedestal"), both in metres, and "joint_velocities".
@@ -588,52 +667,26 @@ def make_staging_source(model, data, task_cfg=TASK_CFG, cfg=STAGING_CFG, points_
             dt (float): The control tick length in seconds.
 
         Returns:
-            list: [{"mode": "pedestal", "height": metres}], or [] when the command is at the target or a correction check was begun.
+            list: [{"mode": "pedestal", "height": metres}], or [] when the command is at the target or the phase ended.
         """
         target = task_cfg["pedestal_q"]
         applied = obs["applied"]["pedestal"]
         if abs(obs["pedestal_height"] - target) < cfg["pedestal_tol"] and abs(applied - target) < 1e-9 and \
                 still_for(t, abs(obs["joint_velocities"][ped_vadr]) < cfg["pedestal_settle_vel"], cfg["pedestal_settle_s"]):
-            return begin_correction(obs, t, "CORRECT_PEDESTAL", "ARMS")
+            enter("DRIVE", t)
+            return []
         if abs(applied - target) < 1e-9:
             return []
         step = cfg["pedestal_speed"] * dt
         return [{"mode": "pedestal", "height": applied + max(-step, min(step, target - applied))}]
 
-    # ------------------------------------------------------------------ corrections
-    def begin_correction(obs, t, name, nxt):
-        """Checks the base pose; enters the correction phase if it is outside the tolerance, else goes on.
+    # ------------------------------------------------------------------ CREEP_IN
+    def creep_in(obs, t, dt):
+        """Runs the CREEP_IN phase: with the arms at home, creep straight along the heading from the approach spot to the staging pose.
 
-        Appends a correction record to state["corrections"] (status "not needed" or "running"). The pose is outside the tolerance when
-        its position error exceeds drive_pos_tol or its yaw error exceeds drive_yaw_tol. For "CORRECT_PEDESTAL" it also resets the
-        pedestal-correction controller. Sets P["corr"] to the record and enters `name` if a correction is needed, else enters `nxt`.
-
-        Args:
-            obs (dict): The observation; uses "base_pose".
-            t (float): The simulation time in seconds.
-            name (str): The correction phase to enter, "CORRECT_PEDESTAL" or "CORRECT_ARMS".
-            nxt (str): The phase to enter if no correction is needed, and after the correction.
-
-        Returns:
-            list: Always empty (no command this tick).
-        """
-        e = pose_err(obs)
-        needed = e["pos_mm"] / 1000 > pos_tol or abs(e["yaw_deg"]) > math.degrees(yaw_tol)
-        rec = {"phase": name, "needed": needed, "before": e, "after": e, "duration_s": 0.0, "status": "not needed", "next": nxt,
-               "min_base_clearance_mm": None, "min_arm_clearance_mm": None}
-        state["corrections"].append(rec)
-        if not needed:
-            enter(nxt, t)
-            return []
-        rec["status"] = "running"
-        if name == "CORRECT_PEDESTAL":
-            ped_ctl["reset"](*obs["base_pose"])
-        P["corr"] = rec
-        enter(name, t)
-        return []
-
-    def correct_pedestal(obs, t, dt):
-        """Runs the CORRECT_PEDESTAL phase: move the base back to the staging pose with the go-to-pose controller.
+        On the first call it opens a record in state["corrections"] (phase "CREEP_IN", the pose error to the staging pose before). The clearance and lean checks of step() run every tick
+        before this; here the clearances are kept (minimum in the record) and a sample of (along-heading distance still to go, base clearance, arm clearance) is appended to rec["trace"] about
+        every creep_in_trace_mm of travel. The creep controller (goal: the staging pose) does the rest; on arrival the pose error after is stored and NECK follows.
 
         Args:
             obs (dict): The observation; uses "base_pose" and "applied".
@@ -641,70 +694,63 @@ def make_staging_source(model, data, task_cfg=TASK_CFG, cfg=STAGING_CFG, points_
             dt (float): The control tick length in seconds.
 
         Returns:
-            list: The base command from finish_correction().
-        """
-        cmds, status = ped_ctl["step"](obs, t, dt)
-        return finish_correction(obs, t, status, cmds, ped_ctl["S"]["fail"], ped_ctl["S"])
-
-    def correct_arms(obs, t, dt):
-        """Runs the CORRECT_ARMS phase: correct the base pose at creep speed with the arms out, watching the clearances.
-
-        Every tick it measures the base-to-bench and arm-to-bench clearances, keeps their minimum in the correction record, and fails
-        (record status "failed (clearance)", state["error"] set) if either is below correction_arms_min_base_clearance or
-        correction_arms_min_arm_clearance. Otherwise it steps the creep controller.
-
-        Args:
-            obs (dict): The observation; uses "base_pose" and "applied".
-            t (float): The simulation time in seconds.
-            dt (float): The control tick length in seconds.
-
-        Returns:
-            list: The base command from finish_correction(), or [] after a clearance failure.
+            list: The base command of the creep controller, or [] after a failure.
         """
         rec = P["corr"]
-        bc, ac = clearances()                                     # every tick: the arms must stay clear of the bench
+        if rec is None or rec["phase"] != "CREEP_IN":
+            e = pose_err(obs)
+            rec = {"phase": "CREEP_IN", "needed": True, "before": e, "after": e, "duration_s": 0.0, "status": "running", "next": "NECK",
+                   "min_base_clearance_mm": None, "min_arm_clearance_mm": None, "trace": [], "_last_along": None}
+            state["corrections"].append(rec)
+            P["corr"] = rec
+        rec["duration_s"] = elapsed(t)
+        bc, ac = W["base"], W["arm"]
         rec["min_base_clearance_mm"] = 1000 * bc if rec["min_base_clearance_mm"] is None else min(rec["min_base_clearance_mm"], 1000 * bc)
         rec["min_arm_clearance_mm"] = 1000 * ac if rec["min_arm_clearance_mm"] is None else min(rec["min_arm_clearance_mm"], 1000 * ac)
-        if bc < cfg["correction_arms_min_base_clearance"] or ac < cfg["correction_arms_min_arm_clearance"]:
-            rec["status"] = "failed (clearance)"
-            fail(t, f"CORRECT_ARMS: clearance to the bench too small (base {bc * 1000:.1f} mm, arm {ac * 1000:.1f} mm; minimums "
-                    f"{cfg['correction_arms_min_base_clearance'] * 1000:.0f} / {cfg['correction_arms_min_arm_clearance'] * 1000:.0f} mm)")
-            return []
-        cmds, status = arm_ctl["step"](obs, t, dt)
-        return finish_correction(obs, t, status, cmds, arm_ctl["S"]["fail"], arm_ctl["S"])
-
-    def finish_correction(obs, t, status, cmds, why, S):
-        """Updates the running correction record from a controller's result and moves on when it is over.
-
-        Sets rec["duration_s"] each tick. On "failed" it sets the record status to "failed", stores the pose error after, and fails with
-        the phase name and `why`. On "arrived" it stores the pose error after, sets the status to "done" (with a note if the aim was
-        missed but the tolerance met) and enters the record's "next" phase.
-
-        Args:
-            obs (dict): The observation; uses "base_pose".
-            t (float): The simulation time in seconds.
-            status (str): The controller's status: "running", "arrived" or "failed".
-            cmds (list): The controller's commands for this tick.
-            why (str or None): The controller's failure message.
-            S (dict): The controller's state dict (its "aim_missed" entry, if any, is read).
-
-        Returns:
-            list: `cmds`, or [] if the controller failed.
-        """
-        rec = P["corr"]
-        rec["duration_s"] = elapsed(t)
+        along = pose_err(obs)["along_mm"]
+        if rec["_last_along"] is None or rec["_last_along"] - along >= cfg["creep_in_trace_mm"]:
+            rec["trace"].append({"along_to_go_mm": along, "base_clearance_mm": 1000 * bc, "arm_clearance_mm": 1000 * ac, "lean_deg": lean_deg(), "t": t})
+            rec["_last_along"] = along
+        cmds, status = creep_ctl["step"](obs, t, dt)
         if status == "failed":
             rec["status"] = "failed"
             rec["after"] = pose_err(obs)
-            fail(t, f"{state['phase']}: {why}")
+            fail(t, f"CREEP_IN: {creep_ctl['S']['fail']}")
             return []
         if status == "arrived":
             rec["after"] = pose_err(obs)
-            rec["status"] = "done" + (" (within the tolerance, not the aim)" if S.get("aim_missed") else "")
-            enter(rec["next"], t)
+            rec["status"] = "done" + (" (within the tolerance, not the aim)" if creep_ctl["S"].get("aim_missed") else "")
+            rec.pop("_last_along", None)
+            enter("NECK", t)
         return cmds
 
     # ------------------------------------------------------------------ ARMS
+    def path_clearance(path):
+        """Gives the smallest clearance of the arms (and the base) to anything in the scene along the straight ARMS move, computed on a scratch copy of the state.
+
+        Args:
+            path (dict): {side: (start joints, home joints)}.
+
+        Returns:
+            float: The smallest arm-to-obstacle distance in metres over 21 samples of the minimum-jerk move (the fingers opening on the way); the base is checked once at its pose
+            and its clearance enters the minimum too.
+        """
+        sc = mujoco.MjData(model)
+        sc.qpos[:] = data.qpos
+        worst = 9.0
+        for u in np.linspace(0.0, 1.0, 21):
+            sm = float(min_jerk(u))
+            for sd in sides:
+                start, goal_q = path[sd]
+                for a, v in zip(arm_idx[sd]["qadr"], start + sm * (goal_q - start)):
+                    sc.qpos[a] = v
+                for j in arm_idx[sd]["finger_jnt"]:
+                    sc.qpos[model.jnt_qposadr[j]] = cfg["finger_open"] * sm
+            mujoco.mj_kinematics(model, sc)
+            bc, ac = clearances(sc)
+            worst = min(worst, ac, bc)
+        return worst
+
     def arms(obs, t, dt):
         """Runs the ARMS phase: move both arms to the home pose with minimum jerk, opening the grippers.
 
@@ -712,7 +758,8 @@ def make_staging_source(model, data, task_cfg=TASK_CFG, cfg=STAGING_CFG, points_
         fraction P["u"] advances by dt / arms_move_s per tick, but only if the last command was applied. The targets go through rate_limit()
         (arm_max_speed) from the applied targets, and after a hand-back (P["lim_grip"]) the gripper targets are rate-limited (gripper_max_speed) until
         they are back on the path. When the time fraction has reached 1, every joint of both arms is within arms_tol of the home pose and the
-        joints have been slower than arms_settle_vel for arms_settle_s, it starts the CORRECT_ARMS check (begin_correction) and then goes on to NECK.
+        joints have been slower than arms_settle_vel for arms_settle_s, it enters PEDESTAL. On the first call the whole path is checked against the scene (path_clearance): too close to an
+        obstacle anywhere means the stage fails before the arms move.
 
         Args:
             obs (dict): The observation; uses "applied" ("arm_targets", "gripper"), "joint_angles" and "joint_velocities".
@@ -721,16 +768,23 @@ def make_staging_source(model, data, task_cfg=TASK_CFG, cfg=STAGING_CFG, points_
 
         Returns:
             list: [{"mode": "arms", "arm_targets": {side: 7 joint angles in radians}, "gripper": {side: finger opening in metres}}] (both sides),
-            or [] when a correction check was begun.
+            or [] when the phase ended or failed.
         """
         applied = {sd: np.array(obs["applied"]["arm_targets"][sd]) for sd in sides}
         if P["path"] is None:
             P["path"] = {sd: (applied[sd].copy(), home[sd]) for sd in sides}
+            worst = path_clearance(P["path"])
+            state["arms_path_clearance_mm"] = 1000 * worst
+            if worst < cfg["arms_open_space_min_clearance"]:
+                fail(t, f"ARMS: not enough free space here to raise the arms: the move would pass {worst * 1000:.0f} mm from an obstacle (minimum "
+                        f"{cfg['arms_open_space_min_clearance'] * 1000:.0f} mm); nothing was moved")
+                return []
         q_now = {sd: np.array([obs["joint_angles"][a] for a in arm_idx[sd]["qadr"]]) for sd in sides}
         qd = max(abs(obs["joint_velocities"][v]) for sd in sides for v in arm_idx[sd]["vadr"])
         at_home = max(np.abs(q_now[sd] - home[sd]).max() for sd in sides) < cfg["arms_tol"]
         if P["u"] >= 1.0 and at_home and still_for(t, qd < cfg["arms_settle_vel"], cfg["arms_settle_s"]):
-            return begin_correction(obs, t, "CORRECT_ARMS", "NECK")
+            enter("PEDESTAL", t)
+            return []
         applied_all = np.concatenate([applied[sd] for sd in sides])
         if P["last_arm"] is None or np.allclose(applied_all, P["last_arm"], atol=1e-12):      # advance only when the last command was applied
             P["u"] = min(1.0, P["u"] + dt / cfg["arms_move_s"])
@@ -784,9 +838,8 @@ def make_staging_source(model, data, task_cfg=TASK_CFG, cfg=STAGING_CFG, points_
             state["done"] = True
         return []
 
-    phases = {"DRIVE": (drive, "drive_timeout"), "PEDESTAL": (pedestal, "pedestal_timeout"),
-              "CORRECT_PEDESTAL": (correct_pedestal, "correction_timeout"), "ARMS": (arms, "arms_timeout"),
-              "CORRECT_ARMS": (correct_arms, "correction_timeout"), "NECK": (neck_phase, "neck_timeout")}
+    phases = {"ARMS": (arms, "arms_timeout"), "PEDESTAL": (pedestal, "pedestal_timeout"), "DRIVE": (drive, "drive_timeout"),
+              "CREEP_IN": (creep_in, "creep_in_timeout"), "NECK": (neck_phase, "neck_timeout")}
 
     def step(obs):
         """Runs one control tick of the staging source.
@@ -810,7 +863,7 @@ def make_staging_source(model, data, task_cfg=TASK_CFG, cfg=STAGING_CFG, points_
         if P["last_t"] is not None and t - P["last_t"] > 1.5 * dt:          # not stepped for a while: an operator had control
             P["paused"] += (t - P["last_t"] - dt) if COMPENSATE_PAUSES else 0.0
             P["still_since"] = None
-            for c in (drive_ctl, ped_ctl, arm_ctl):
+            for c in (drive_ctl, creep_ctl):
                 c["S"]["ok_since"] = None
         P["last_t"] = t
         if P["restore"]:
@@ -819,7 +872,7 @@ def make_staging_source(model, data, task_cfg=TASK_CFG, cfg=STAGING_CFG, points_
                 return cmds
         if not P["entered"]:
             P["entered"] = True
-            state["phases"]["DRIVE"] = {"start": t, "end": None, "p0": 0.0}
+            state["phases"]["ARMS"] = {"start": t, "end": None, "p0": 0.0}
             lead = [{"mode": "neck", "neck_targets": dict(zip(robot_specs.NECK_SPECS["active_joints"], robot_specs.NECK_SPECS["drive_pose"]))}] \
                 if neck is not None else []                       # the neck looks ahead while driving (it already does; made explicit)
         else:
@@ -829,6 +882,18 @@ def make_staging_source(model, data, task_cfg=TASK_CFG, cfg=STAGING_CFG, points_
         if elapsed(t) > cfg[timeout_key]:
             fail(t, f"{phase} timed out after {cfg[timeout_key]:.0f} s")
             return []
+        lean = lean_deg()                                                       # checks with the arms out: the lean while driving, the clearances while the arms move or the robot drives
+        lean_max[phase] = max(lean_max.get(phase, 0.0), lean)
+        if phase in ("DRIVE", "CREEP_IN") and lean > cfg["drive_max_lean_deg"]:
+            fail(t, f"{phase}: the base leans {lean:.2f} deg with the arms out (limit {cfg['drive_max_lean_deg']:.1f} deg)")
+            return []
+        if phase in ("ARMS", "DRIVE", "CREEP_IN"):
+            bc, ac = watch(phase)
+            min_ac = cfg["arms_open_space_min_clearance"] if phase == "ARMS" else cfg["correction_arms_min_arm_clearance"]
+            if bc < cfg["correction_arms_min_base_clearance"] or ac < min_ac:
+                fail(t, f"{phase}: clearance too small (base {bc * 1000:.1f} mm, arms {ac * 1000:.1f} mm; minimums "
+                        f"{cfg['correction_arms_min_base_clearance'] * 1000:.0f} / {min_ac * 1000:.0f} mm)")
+                return []
         return lead + fn(obs, t, dt)
 
     # ------------------------------------------------------------------ measurements and report
@@ -837,7 +902,7 @@ def make_staging_source(model, data, task_cfg=TASK_CFG, cfg=STAGING_CFG, points_
     def observe(obs):
         """Records the staging measurements for the report: base drift per phase and the clearance during DRIVE.
 
-        Drift is the base's distance and yaw change from where the phase started, for every phase except DRIVE and the CORRECT phases
+        Drift is the base's distance and yaw change from where the phase started, for every phase except DRIVE and CREEP_IN
         (it also keeps the net value at the latest call). During DRIVE it keeps the smallest base-to-bench distance. The base pose
         when the stage became done is kept as the handoff pose. Changes M in the enclosing scope.
 
@@ -852,7 +917,7 @@ def make_staging_source(model, data, task_cfg=TASK_CFG, cfg=STAGING_CFG, points_
             M["drift"].setdefault(phase, {"max_pos": 0.0, "max_yaw": 0.0})
         if state["done"] and M["handoff_base"] is None:
             M["handoff_base"] = (x, y, yaw)
-        if phase != "DRIVE" and not phase.startswith("CORRECT"):
+        if phase not in ("DRIVE", "CREEP_IN"):
             x0, y0, yaw0 = M["phase_base"][phase]
             d = M["drift"][phase]
             d["max_pos"] = max(d["max_pos"], math.hypot(x - x0, y - y0))
@@ -871,7 +936,7 @@ def make_staging_source(model, data, task_cfg=TASK_CFG, cfg=STAGING_CFG, points_
             ({"pos_err_mm", "yaw_err_deg", "ok"} or None), "base_pose_error_at_handoff" ({"pos_err_mm", "yaw_err_deg", "along_mm",
             "lateral_mm"} or None, with the signs of pose_err()), "first_turn_deg", "final_in_place_turn_deg",
             "planned_final_turn_deg", "drive_reapproaches" (int), "pose_corrections" (the state["corrections"] records),
-            "base_drift" ({phase: {"max_pos_mm", "max_yaw_deg", "net_pos_mm", "net_yaw_deg"}}, DRIVE and the CORRECT phases left
+            "base_drift" ({phase: {"max_pos_mm", "max_yaw_deg", "net_pos_mm", "net_yaw_deg"}}, DRIVE and CREEP_IN left
             out), "min_base_to_bench_clearance_during_drive_mm" (float or None), "neck_framing_report" (the framing report or None) and "home_pose_rad"
             ({"left": 7 joint angles, "right": 7 joint angles}: the home pose commanded, with the random variation if it is on).
         """
@@ -885,7 +950,7 @@ def make_staging_source(model, data, task_cfg=TASK_CFG, cfg=STAGING_CFG, points_
                      "lateral_mm": 1000 * (-ex * math.sin(gyaw) + ey * math.cos(gyaw))}       # > 0: the staging pose is to the base's left
         drift = {k: {"max_pos_mm": 1000 * v["max_pos"], "max_yaw_deg": math.degrees(v["max_yaw"]),
                      "net_pos_mm": 1000 * v.get("net_pos", 0.0), "net_yaw_deg": math.degrees(v.get("net_yaw", 0.0))}
-                 for k, v in M["drift"].items() if k != "DRIVE" and not k.startswith("CORRECT")}
+                 for k, v in M["drift"].items() if k not in ("DRIVE", "CREEP_IN")}
         arr = state["arrival"]
         return {
             "staging_error": state["error"], "phase_durations_s": dur, "phase_times": {k: [v["start"], v["end"]] for k, v in phases_.items()},
@@ -894,10 +959,14 @@ def make_staging_source(model, data, task_cfg=TASK_CFG, cfg=STAGING_CFG, points_
             "planned_final_turn_deg": state["planned_final_turn_deg"], "drive_reapproaches": state["reapproaches"],
             "pose_corrections": state["corrections"], "base_drift": drift,
             "min_base_to_bench_clearance_during_drive_mm": None if M["min_clearance"] is None else 1000 * M["min_clearance"],
+            "arms_path_clearance_mm": state["arms_path_clearance_mm"],
+            "min_base_to_obstacle_clearance_mm_by_phase": {k: 1000 * v for k, v in W["min_base"].items()},
+            "min_arm_to_obstacle_clearance_mm_by_phase": {k: 1000 * v for k, v in W["min_arm"].items()},
+            "max_base_lean_deg_by_phase": dict(lean_max),
             "neck_framing_report": state["framing_report"], "home_pose_rad": state["home_q"]}
 
     # ------------------------------------------------------------------ restoring what the operator moved
-    AFTER_PEDESTAL = ("CORRECT_PEDESTAL", "ARMS", "CORRECT_ARMS", "NECK", "DONE")
+    AFTER_PEDESTAL = ("DRIVE", "CREEP_IN", "NECK", "DONE")
 
     def restore_step(obs, t, dt):
         """After a hand-back, puts back what this stage still needs and an operator may have moved, smoothly and one thing at a time.

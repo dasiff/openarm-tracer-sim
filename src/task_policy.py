@@ -5,7 +5,7 @@
 
 This file only knows which two stages the beaker task uses; how stages are combined (when the next one takes over, the handoff, restoring
 after an operator hand-back, status and report) is in src/sequential_policy.py and is the same for any pair of stages.
-  staging     src/staging_source.py (DRIVE -> PEDESTAL -> CORRECT_PEDESTAL -> ARMS -> CORRECT_ARMS -> NECK -> DONE), as the stage named "STAGING".
+  staging     src/staging_source.py (ARMS -> PEDESTAL -> DRIVE -> CREEP_IN (only with a staging_approach_back_m) -> NECK -> DONE; the arms go to home first, at the spawn), as the stage named "STAGING".
               It makes its own drift / clearance / pose-error measurements and reports them (its report keys are at the top level of the
               policy's report).
   arm stage   after staging (DONE = HANDOFF) the arm stage owns the arms and grippers; the base, pedestal and neck hold. An arm stage is a

@@ -14,6 +14,8 @@ The dictionaries and who reads them:
     GRIP_FORCE_TABLE: the gripper force cap per object, looked up by the demo generator and later the openpi adapter.
     FURNITURE_CFG: the layered furniture map (design plan §3.4; src/furniture_map.py): resolution, the two height layers and the clearances of the first approximation.
     STANCE_CFG: settings of the stance finder (src/stance_finder.py).
+    STANCE_REQUIREMENTS: the requirements a stance and a home pose must meet, the same in the stance finder's selection (experiments/stance_from_map.py), the home pose search
+        (experiments/home_pose_search.py) and experiments/home_pose_test.py (src/stance_checks.py measures them).
     GRASP_MAP_CFG: build settings of the grasp reachability map (design plan §3.1; src/grasp_rules.py, src/reach_map.py). Map files are not committed, only these settings.
     SEARCH_CFG: settings of the offline staging pose search (experiments/beaker_hotplate_staging_search.py).
     LAYOUT_CFG: settings of the joint layout and staging search with slack at every task pose
@@ -24,9 +26,9 @@ The dictionaries and who reads them:
 Entries marked NEW in the comments of STAGING_CFG were chosen recently and are not yet approved. All numbers are choices for this
 simulation, not measurements of the real hardware.
 
-Staging sequence (built in src/staging_source.py from STAGING_CFG): DRIVE to the staging pose -> PEDESTAL to pedestal_q ->
-ARMS (both arms) to the home pose -> NECK frames the beaker, the hotplate and both grippers -> HANDOFF (the vision-language-action (VLA) policy takes over the arm from here).
-The base and the arms never move at the same time.
+Staging sequence (built in src/staging_source.py from STAGING_CFG): ARMS (both arms) to the home pose at the spawn, in open space, with a clearance check -> PEDESTAL to pedestal_q ->
+DRIVE to the approach spot (staging_approach_back_m) with the arms at home -> CREEP_IN to the staging pose -> NECK frames the beaker, the hotplate and both grippers -> HANDOFF (the
+vision-language-action (VLA) policy takes over the arm from here). The arms stay at home at all times except during manipulation. The base and the arms never move at the same time.
 
 World frame: the bench is centred on the origin (top z = 0.96, x +-2.2, y +-0.8). The robot faces its own
 +x. The staging pose is on the +y side of the bench, facing -y (yaw = -90 deg).
@@ -47,6 +49,9 @@ TASK_CFG = {
     "beaker_xy": (1.00, 0.66),
     "hotplate_xy": (0.80, 0.66),
     "beaker_settle_clearance": 0.002,      # m, the beaker is dropped from this height above the bench top
+    # ASSUMPTION until the real lab bench is measured (design plan 4.1): the bench is open below its top, i.e. only the top and the four legs are collidable (the four frame rails
+    # are removed from the model), so the base may drive partly under it. False gives the solid bench (the rails included). A cfg without the key (old recordings) is solid.
+    "bench_open": True,
     "warmup_s": 1.0,                       # start-up as combined_controller.py: arms held at zero while the robot settles,
     "resettle_s": 0.4,                     # then the drooped pose is captured as the resting pose and held
 
@@ -61,18 +66,30 @@ TASK_CFG = {
 
     # --- from experiments/beaker_hotplate_layout_search.py (results in data/beaker_hotplate_layout/); re-run it if the
     # --- objects, spawn, pedestal or the grasp orientation constraint change ---
-    "staging_xy": (0.7500, 1.2213),        # base_link origin, m; 8 cm from the bench edge (base front to bench top edge)
+    # STAGING STANCE = FINDER OUTPUT for this scene (not hand-typed; 2026-10-20; `MUJOCO_GL=egl python experiments/home_pose_search.py --finder 1 --tag widest_range`, result
+    # data/home_pose_search/search_rank1_widest_range/open_b45_selected.json; design plan 3.4). Scene: the OPEN bench (bench_open), the objects where they are (centres 14 cm from the bench edge),
+    # the grasp band 45 to 60 % (BEAKER_CFG["grasp_band"]), heading -90 deg, left arm, the home pose below. It passes every requirement of STANCE_REQUIREMENTS (src/stance_checks.py): home clearance
+    # 116 mm (limit 40), a beaker placed on the hotplate 97 mm (40), neck spread 0.007 rad (0.06), beaker 0 % and hotplate 0.1 % hidden by the robot in the eagle image (0 % / 20 %), framing slack 12.7 %
+    # with both grippers in frame (10 %), and the IK verification (all 12 points solve, the open fingers at least 15 mm from the bench and the hotplate, joint margin 30 deg, xy tolerance at least
+    # 7 cm, heading +-8 deg, pedestal +-4.2 cm). The pedestal height is the middle of its passing range 0.10 to 0.21 m (11 cm wide: the finder prefers the widest range). Finder tolerance (distance to the
+    # edge of the valid reach region) 7.1 cm; the xy region around it that passes everything is 39 of 49 points of a +-6 cm grid, radius 5.7 cm. Re-run the finder when the scene, the band, the
+    # home pose or the robot changes. (History: (0.655, 0.995) pedestal 0.11 for the old placeholder home pose; (0.750, 1.221) pedestal 0.0452 for the old band and the solid bench.)
+    "staging_xy": (0.7650, 1.0850),        # base_link origin, m (finder output)
+    # Approach spot: the staging pose is under the open bench, so DRIVE (at normal speed, arms at home) ends this far behind it along its heading (0.2063 m: the old staging spot, where the straight
+    # arm move was verified at the old stance) and the staging phase CREEP_IN covers the last stretch at creep speed with the clearance and lean checks running every tick. None or 0 = DRIVE
+    # goes straight to the staging pose. Not finder output (a staging setting).
+    "staging_approach_back_m": 0.2063,
     "staging_yaw": math.radians(-90.0),    # facing the bench
-    "pedestal_q": 0.0452,                  # pedestal_lift command, m of height above the collapsed pedestal (0 = collapsed, 0.418 = raised); the torso is 0.3048 + 0.0452 = 0.35 m above the pedestal base (the old model's -0.2 stage command)
+    "pedestal_q": 0.1550,                  # pedestal_lift command, m of height above the collapsed pedestal (0 = collapsed, 0.418 = raised); the torso is 0.3048 + 0.155 = 0.460 m above the pedestal base (finder output: the middle of the passing range 0.10 to 0.21)
     "arm": "left",                         # the arm of the task's scripted grasp poses below (LEGACY: staging now moves both arms to home)
 
-    # --- Home pose ("waiter pose"): where the staging ARMS phase puts both arms and where the handoff happens. PLACEHOLDER until the
-    # --- hardware team gives the real OpenArm home. Upper arm down at the side and swung 12.5 deg back (j1), elbow 120 deg (j4: the forearm
-    # --- points forward and 17.5 deg above horizontal), hand tilted 15 deg down from the forearm (j7), fingers open and level. The right
-    # --- arm is the mirror image: qR = (-q1, -q2, -q3, q4, -q5, -q6, -q7) (exact to ~1 cm: the model's right elbow offset differs by 3 cm).
-    # --- At the staging pose and pedestal height the TCP is 34 cm in front of the base (the bench edge is 42 cm), 99 mm above the bench top.
-    "home_q_left": (math.radians(12.5), 0.0, 0.0, math.radians(120.0), 0.0, 0.0, math.radians(15.0)),     # rad
-    "home_q_right": (math.radians(-12.5), 0.0, 0.0, math.radians(120.0), 0.0, 0.0, math.radians(-15.0)),  # rad
+    # --- Home pose ("zombie pose"; 2026-10-20, David: the search's rank 1, chosen over A and ranks 2 and 3; design plan 1 and 3.4): where the staging ARMS phase puts both arms and where the handoff
+    # --- happens. PLACEHOLDER until the hardware team gives the real OpenArm home. Both arms in front of the chest, elbows bent 126 deg, forearms forward, the grippers facing forward (6 deg outward) and
+    # --- open, the hands 30 cm in front of the torso and 15 cm either side of the centre line, 17 cm below the shoulders. Found by experiments/home_pose_search.py to meet the requirements of
+    # --- STANCE_REQUIREMENTS with the most margin (the search's rank 1, rounded to 0.001 deg). The right arm is the mirror image: qR = (-q1, -q2, -q3, q4, -q5, -q6, -q7) (exact to ~1 cm: the model's
+    # --- right elbow offset differs by 3 cm). The old home (12.5, 0, 0, 120, 0, 0, 15) deg hid 26.8 % of the hotplate from the eagle camera and had a framing slack of 9.8 %.
+    "home_q_left": tuple(math.radians(v) for v in (22.598, -14.709, 15.531, 126.122, -3.746, 27.308, 13.018)),      # rad
+    "home_q_right": tuple(math.radians(v) for v in (-22.598, 14.709, -15.531, 126.122, 3.746, -27.308, -13.018)),   # rad
     "home_variation_rad": (0.0,) * 7,      # per joint (the same for both arms): the home pose is drawn uniformly within +-this around the values above, clipped to
                                            # the joint limits. All zeros = off (the default); the demo generator will set it. The right arm gets its own draw.
     "home_variation_seed": 0,              # seed of that draw (one draw per episode, both arms)
@@ -110,6 +127,10 @@ BEAKER_CFG = {
     "contact_solref": (0.005, 1.0),        # the same softness the finger geoms have in the robot model, so only the friction changes
     "contact_solimp": (0.9, 0.95, 0.001, 0.5, 2.0),
     "gripper_geoms": ("hand_collision", "left_finger_collision", "right_finger_collision"),   # per hand: "openarm_<side>_" + these
+    # Grasp band (David 2026-10-19; design plan 5): side grasps pinch the beaker between these heights, as fractions of its height above the bottom. The lower end is above the empty
+    # beaker's centre of mass (43 % of the height; the liquid only lowers it, 30 % with the 100 g liquid setting), so a grip never sits below it, and the upper end stays away from the
+    # rim. It was 25 to 60 % until then. The reachability map, the stance finder and the demo generator take their grasp heights from it (5 % steps in the stance checks).
+    "grasp_band": (0.45, 0.60),
 }
 
 # Gripper force cap per object, N per finger (the loop's "max_force" of a gripper command, at most robot_specs.ARM_ACTUATOR_SPECS["fingers"]["force_limit"]).
@@ -180,6 +201,10 @@ GRASP_MAP_CFG = {
     "n_seeds": 8,                       # spread-out seed points from the quick sample (plus the home pose point)
     "grid_margin": 0.03,                # m, the voxel grid extends this far beyond the outer bound's box
     "seed": 0,
+    # Holes (design plan 3.1 c, revised 2026-10-19): enclosed unreached pockets whose bounding box is at most this wide are filled without any IK test (about one cube); larger ones
+    # stay as real holes.
+    "hole_fill_max_m": 0.010,
+    "sampler_version": 1,               # bump when the flood fill or the hole rule changes: it is part of the map files' staleness hash
     # Stand-in for the base's stopping error (the real value is a hardware question, design plan §11): the sim's own pose-correction thresholds
     "stop_error_xy": 0.01,              # m
     "stop_error_yaw_deg": 1.0,          # deg
@@ -198,7 +223,12 @@ FURNITURE_CFG = {
     "arm_band": (0.43, 2.0),            # m
     # First approximation of what the arms and torso sweep: obstacles in the arm layer are grown by a disc of this radius around the base origin (the torso column, the pedestal and
     # the arms hanging at the sides reach about 0.2 m from the centre line). The real arm-to-furniture check is the verification step (B2.12).
-    "arm_layer_radius": 0.25,           # m
+    "arm_layer_radius": 0.25,           # m, used when the robot has no column function (synthetic tests)
+    # Since 2026-10-19 (David) the arm layer is grown by the torso and pedestal column's real horizontal cross-section at the bench top's height (src/stance_finder.column_polygon_fn: the
+    # hull of the cross-sections of the torso and the pedestal sections in the band from the bench top's underside to its surface, at the pedestal command of the stance), plus this
+    # margin; the arms are not part of it (the IK verification checks them against the bench). Set column_margin to None to go back to the disc.
+    "column_margin": 0.02,              # m
+    "column_slab": None,                # (z_lo, z_hi) metres above the floor, or None: from the geom "bench_top"
 }
 
 STANCE_CFG = {
@@ -210,6 +240,17 @@ STANCE_CFG = {
     "nms_heading_deg": 15.0,
     "max_stances": 20,
     "score_resolution": 0.01,           # m, the arm rule (design plan §5) rounds each arm's reach score to this, so near-ties go to the left arm
+}
+
+# The requirements on the robot at a stance with both arms at the home pose (David 2026-10-19: one set for the stance finder, the home pose search and home_pose_test).
+STANCE_REQUIREMENTS = {
+    "home_min_clearance": 0.040,        # m: every moving arm part stays this far from the bench, the hotplate and every other object (home_pose_test's bench / hotplate limit)
+    "placed_beaker_min_clearance": 0.040,   # m: and from a beaker resting on the hotplate (the home pose must not touch the beaker once it has been set down; David 2026-10-19)
+    "neck_max_spread": 0.06,            # rad: the neck framing moves no joint more than this under 0.1 degree of arm noise (the neck_once_test limit)
+    "framing_min_slack": 0.10,          # fraction of the image: with the neck at its best pose the beaker's and hotplate's corners and both grippers (tool point, hand, finger tips) are
+                                        # at least this far from every image edge (the neck framing's margin, FRAMING_CFG["margin"])
+    # Occlusion by the pixel-area measure (src/stance_checks.OcclusionMeter): the share of the object's pixels in the eagle camera image (neck at its framing pose) that the robot hides.
+    "occlusion_max_hidden": {"beaker": 0.0, "hotplate": 0.20},
 }
 
 # ----------------------------------------------------------------------------------------------------------
@@ -302,14 +343,19 @@ STAGING_CFG = {
     "drive_settle_s": 0.3,                 # the arrival must hold this long with the base at rest
     "drive_max_reapproach": 3,             # corrective re-approaches before DRIVE gives up (-> the episode is STAGING_FAILED)
     "drive_timeout": 120.0,                # s
-    # Pose corrections after PEDESTAL and after ARMS (the pedestal and arm moves push the base off its pose): if the base is outside
-    # drive_pos_tol / drive_yaw_tol it is moved back. NEW values (not from the earlier approved set):
-    "correction_aim_frac": 0.5,            # the corrections go to within this fraction of the tolerance (aim for the centre, not the edge)
-    "correction_timeout": 60.0,            # s per correction
-    "correction_arms_max_pos": 0.02,       # m: with the arm extended, a base error above this fails the episode (STAGING_FAILED) instead of moving
-    "correction_arms_max_yaw": math.radians(2.0),   # rad: same for yaw (2 deg = the layout search's verified base-perturbation range)
-    "correction_arms_min_base_clearance": 0.05,     # m: base to bench, checked every tick of the extended-arm correction (it is 0.08 at the staging pose)
-    "correction_arms_min_arm_clearance": 0.03,      # m: the task arm to the bench, same check
+    # Staging order since 2026-10-19 (David): the arms stay at home at all times except during manipulation, so ARMS and PEDESTAL come first, at the spawn in open space, then DRIVE
+    # and CREEP_IN with the arms out. The pose corrections after the pedestal and arm moves that used to be here are gone (nothing moves the base after the drive any more).
+    "correction_aim_frac": 0.5,            # the creep goes to within this fraction of the tolerance (aim for the centre, not the edge)
+    "correction_arms_max_yaw": math.radians(2.0),   # rad: the largest yaw error the creep controller turns away before it moves (2 deg = the layout search's verified base-perturbation range)
+    "correction_arms_min_base_clearance": 0.05,     # m: base to anything in the scene, checked every few ticks while driving (DRIVE and CREEP_IN)
+    "correction_arms_min_arm_clearance": 0.03,      # m: the arms (forearms and hands included) to anything in the scene, same check
+    "arms_open_space_min_clearance": 0.10,          # m: the arms raising to home at the spawn must stay this far from everything (checked along the whole path before the first move, then every few ticks)
+    "drive_max_lean_deg": 1.0,                      # deg: the base's tilt while it drives with the arms out (the pedestal lift test's bound, experiments/pedestal_lift_test.py); above it the staging fails
+    "watch_every_ticks": 5,                         # the clearance monitor runs every this many control ticks
+    # CREEP_IN (only with TASK_CFG["staging_approach_back_m"]): from the approach spot to the staging pose with the arms at home, at creep speed, same clearance minimums as above
+    "creep_in_max_pos": 0.35,              # m: the largest along-heading travel (the arms-first spot is 0.21 m behind the staging pose)
+    "creep_in_timeout": 90.0,              # s (0.21 m at the creep speed of 0.02 m/s takes about 11 s plus the ramps)
+    "creep_in_trace_mm": 10.0,             # mm of travel between the clearance samples kept in the correction record's "trace"
     # PEDESTAL
     "pedestal_speed": 0.10,                # m/s of command change (the lift's jog speed; the command is now the height, so this moves the torso as fast as the old 0.05 m/s of stage travel)
     "pedestal_tol": 0.006,                 # m (the old 0.003 m of stage travel)

@@ -91,7 +91,20 @@ def apply_task_poses(model, data, cfg=TASK_CFG):
     mujoco.mj_forward(model, data)
 
 
-def load_task(cfg=TASK_CFG, cameras=True, beaker_cfg=BEAKER_CFG, pour=None):
+BENCH_RAIL_GEOMS = ("bench_frame_front", "bench_frame_back", "bench_frame_left", "bench_frame_right")
+
+
+def remove_bench_rails(spec):
+    """Spec hook for the open bench (design plan 4.1): deletes the four frame rails, so the bench is its top and its four legs only.
+
+    Args:
+        spec (mujoco.MjSpec): The scene, not yet compiled.
+    """
+    for name in BENCH_RAIL_GEOMS:
+        spec.delete(spec.geom(name))
+
+
+def load_task(cfg=TASK_CFG, cameras=True, beaker_cfg=BEAKER_CFG, pour=None, extra_hooks=None):
     """Creates a RobotSimulator on the task scene, with the pedestal lift, and places the objects.
 
     The camera neck is on, as RobotSimulator does by default.
@@ -105,6 +118,8 @@ def load_task(cfg=TASK_CFG, cameras=True, beaker_cfg=BEAKER_CFG, pour=None):
             task_config.BEAKER_CFG.
         pour (dict or None): The pouring scene configuration (task_config.POUR_CFG, src/pour_scene.py). If given, both beakers are built without the rigid liquid mass, the second
             beaker and the balls are added, and they are placed after the task poses. Defaults to None (the scene as it was).
+        extra_hooks (list of callable or None): Functions hook(spec) that change the mujoco.MjSpec after the task's own hooks (the beaker, the pouring objects) and before it is compiled; for
+            tests (experiments/episode_test_sources.add_beaker_weld). Defaults to None.
 
     Returns:
         RobotSimulator: The simulator with the pedestal lift (robot_specs.PEDESTAL_SPECS) and the objects placed.
@@ -117,6 +132,9 @@ def load_task(cfg=TASK_CFG, cameras=True, beaker_cfg=BEAKER_CFG, pour=None):
         hooks = [lambda spec: add_hollow_beaker(spec, beaker_cfg), lambda spec: add_pour_objects(spec, pour, beaker_cfg, cfg, setup)]
     else:
         hooks = [lambda spec: add_hollow_beaker(spec, beaker_cfg)]
+    if cfg.get("bench_open", False):
+        hooks.insert(0, remove_bench_rails)
+    hooks += list(extra_hooks or [])
     sim = RobotSimulator(model_path=str(PROJECT_ROOT / cfg["scene"]),
                          cameras=cams,
                          pedestal_lift=robot_specs.PEDESTAL_SPECS,

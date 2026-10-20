@@ -1,5 +1,14 @@
 # Progress log
 
+## 2026-10-20 19:58: D4 addendum BUILT and green, face fix done; pushing main; waiting for David
+Touched entries green (suite_20261020_194634_summary.txt: postprocess 51, grounding 52, mpvi_pipeline 13, face 27). Report docs/reports/20261020_1958_postprocess_grounding_built.md. New: src/world_model.py, grounding.py, mpvi_schemas.py (Pydantic), mpvi_postprocess.py; orchestrator/modules/pipeline wired; section 8 DECIDED. LATER: operator keys 1-9 in the viewer, carry_ref from the next place step, label prompt tuning, labeling-reply cache. Full suite not rerun. No run in progress.
+
+## 2026-10-20 19:15: face turns to the viewer camera DONE; post-processing/grounding DESIGN written; waiting for David
+Face: Face.facing in src/face.py (render time only), used in src/viewer_composite.py and src/glfw_viewer.py; face_test 27/27 (log data/logs/face_test_20261020_185701.log); the 40-minute video was NOT re-rendered. Design (docs only): design plan section 8 "D4 addendum" (PROPOSED), fidelity table row, B8 search item; report docs/reports/20261020_1910_postprocess_grounding_design.md with four questions (LLM vs keywords winner, object roles, the truncated item 4, go to build). Two messages disagreed (build the regex module and push vs design only); I followed the later one: NOTHING built for post-processing, main NOT pushed (47f9f9b and the face commits are local). The suite was not rerun for the face change (only face_test). No run in progress.
+
+## 2026-10-20 18:45: recovery check after the lost session; waiting for David
+Suite had finished (26/26 exit 0, summary data/logs/suite_20261020_150132_summary.txt; the 16:10 report's "28/28" should read 26), main == origin/main at 08b7e7e, no tmux, nothing lost. Two items added to the LATER list (design plan 9: 4 mm retreat clearance past the placed beaker; reframing at each manipulation step). Report docs/reports/20261020_1845_recovery_check.md. Open: the three questions of docs/reports/20261020_1447_postprocess_tags_origin.md. No run in progress.
+
 ## 2026-10-20 16:10: arm limit restored, video rendered, full suite GREEN (28/28 exit 0), main pushed; waiting for David
 Report docs/reports/20261020_1610_suite_green_push.md. Video: data/notebook/mpvi_pipeline_success/. Open: the post-processing module proposal (docs/reports/20261020_1447_postprocess_tags_origin.md, three questions). MPVI skeleton: src/mink_arm.py, mpvi_plan.py, mpvi_modules.py, orchestrator.py, mpvi_pipeline.py, experiments/mpvi_pipeline_test.py. No run in progress.
 

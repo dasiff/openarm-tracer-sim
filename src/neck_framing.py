@@ -345,3 +345,39 @@ def summarize(report):
     if len(out) > 6:
         lines.append(f"  ... and {len(out) - 6} more points outside (worst first above)")
     return "\n".join(lines)
+
+
+def best_margin(sim, pts):
+    """The largest worst-margin any neck pose can give for these points: how much slack the framing really has.
+
+    frame_points() only has to meet the requested 10 % margin and otherwise prefers the pose that aims at the centre of the points and is closest to the posture pose, so its reported margin sits at the limit. This
+    searches the neck's joint space (a grid, then Nelder-Mead on the smallest margin) for the pose that maximizes the smallest margin, ignoring neck
+    collisions (the result says whether that pose touches anything).
+
+    Args:
+        sim (RobotSimulator): The simulator, with the robot placed.
+        pts (dict): {name: world point} as framing_points() gives.
+
+    Returns:
+        tuple: (best worst-margin as a fraction of the image, name of the point that limits it, True if that neck pose is collision-free).
+    """
+    m, d = sim.model, sim.data
+    names = list(pts)
+    P = np.array([pts[n] for n in names], float)
+    sc = _Scratch(m, d, dict(FRAMING_CFG), robot_specs.NECK_SPECS)
+    lo, hi = sc.ids["lo"], sc.ids["hi"]
+
+    def margins(q):
+        pos, R = sc.pose(np.clip(q, lo, hi))
+        u, v, depth = _project(P, pos, R, sc.fovy, sc.aspect)
+        return np.where(depth < FRAMING_CFG["near_depth"], -1.0, np.minimum((1 - np.abs(u)) / 2, (1 - np.abs(v)) / 2))
+
+    grids = [np.linspace(a, b, 9) for a, b in zip(lo, hi)]
+    scored = sorted(((-margins(np.array(q)).min(), tuple(q)) for q in itertools.product(*grids)))
+    best = None
+    for _, q in scored[:8]:
+        r = minimize(lambda x: -margins(x).min(), np.array(q), method="Nelder-Mead", options={"maxfev": 400, "xatol": 1e-5, "fatol": 1e-9})
+        if best is None or r.fun < best[0]:
+            best = (r.fun, np.clip(r.x, lo, hi))
+    mg = margins(best[1])
+    return float(mg.min()), names[int(mg.argmin())], not sc.contacts(best[1])

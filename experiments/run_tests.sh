@@ -17,7 +17,7 @@ run() {
 }
 for t in arm_kinematics_test grasp_rules_test arm_collision_test gripper_geometry_test furniture_map_test stance_finder_test pour_scene_test home_pose_test face_test neck_once_test \
          neck_framing_test gripper_force_test grasp_lift_test beaker_hollow_test target_mode_test sequential_policy_test beaker_hotplate_correction_test beaker_hotplate_success_test \
-         pedestal_lift_test rest_contacts_test robot_vs_urdf_test reach_map_holes_test cc_loop_tests cc_mode_tests mpvi_pipeline_test; do
+         pedestal_lift_test rest_contacts_test robot_vs_urdf_test reach_map_holes_test cc_loop_tests cc_mode_tests mpvi_postprocess_test grounding_test mpvi_pipeline_test; do
   run "$t" python experiments/$t.py
 done
 run safety_filter_model_check python experiments/safety_filter_roundtrip.py --model-check

@@ -78,6 +78,16 @@ def main(args):
     log = (out / "episode" / "episode_log.csv").read_text().splitlines()
     phases = {ln.split(",")[1] for ln in log[1:]}
     check("the status text showed every segment", all(any(f"{i}/3" in p for p in phases) for i in (1, 2, 3)), f"{len(phases)} distinct phase texts")
+    check("grounding at dispatch: the pick acted on the beaker, the place on the beaker (the one in the hand) and the hotplate",
+          state["grounded"] == [{"segment": 1, "manipulated": "beaker"}, {"segment": 2, "manipulated": "beaker", "destination": "hotplate"}], f"{state['grounded']}")
+    glog = pipe["grounder"]["log"]
+    check("the grounding log has one resolved entry per object phrase and no failure", [e["kind"] for e in glog] == ["resolved"] * 3, f"{[e['kind'] for e in glog]}")
+    check("the tagged plan reaching the orchestrator carries the labels and an empty postprocess log (the keywords agreed)",
+          task["tagged_plan"]["segments"][2]["primitive"] == "place" and task["tagged_plan"]["segments"][2]["check"] and task["tagged_plan"]["postprocess"]["log"] == [])
+    wm = pipe["world"]
+    hp, bk = wm.object_pose("hotplate")["position"], wm.object_pose("beaker")["position"]
+    check("the world model's beaker entry (sim ground truth) ends on the hotplate and is not held", float(np.linalg.norm(bk[:2] - hp[:2])) < 0.05 and wm.get("beaker").properties["held_by"] is None
+          and wm.get("beaker").found == "sim_ground_truth", f"{1000 * float(np.linalg.norm(bk[:2] - hp[:2])):.0f} mm from the hotplate centre, last seen {wm.get('beaker').last_seen:.1f} s")
     print("\nsmallest distances of the left arm's moving parts, per phase (m; the right arm, the bench and the hotplate)")
     arm_min = 9.0
     for ph, rec_ in mon["m"]["state"]["min"].items():

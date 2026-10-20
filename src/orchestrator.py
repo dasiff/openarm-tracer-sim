@@ -3,9 +3,14 @@
 
     policy = make_orchestrator(plan, modules)
 
-`plan` is a plan in the paper's segment format (src/mpvi_plan.py); the orchestrator tags it with postprocess() and runs each segment on the module of its type:
-navigation segments on modules["navigation"], manipulation segments on modules["manipulation"] (the pick or place primitive and its object are in the tags). The modules, the
-checker (modules["checker"]) and the world model (modules["world"]) are the dictionaries of src/mpvi_modules.py; the orchestrator knows only that protocol.
+`plan` is the TAGGED plan that src/mpvi_postprocess.postprocess() returns (the paper's segments plus the tags index, check, and for manipulation segments primitive, objects, group); the
+orchestrator no longer tags anything itself and refuses a manipulation segment without its tags when it is built. It runs each segment on the module of its type: navigation segments on
+modules["navigation"], manipulation segments on modules["manipulation"]. The modules, the checker (modules["checker"]), the world model (modules["world"]) and the grounder
+(modules["grounder"], src/grounding.py) follow the protocol of src/mpvi_modules.py; the orchestrator knows only that protocol.
+
+Flow of a manipulation segment: when it starts, its primitive must be pick or place (otherwise the plan stops with "no primitive for this step: <description>"); the grounder resolves the
+segment's object phrases against the world model (status "grounding" while the operator is asked; a failure stops the plan with the grounder's reason); the manipulation module's start() gets
+the segment plus "grounded": {role: entry id}.
 
 Flow of a manipulation segment: start(segment); every tick step(obs); whenever the module reports a gripper event ("gripper_closed", "gripper_opened") the checker is called: for
 a segment tagged "check" (the last of its unit of consecutive manipulation segments) at the event that ends its primitive (close for a pick, open for a place) the verdict decides
@@ -20,30 +25,32 @@ policy status gets "handoff" once the navigation segments are done, "error" with
 done (the task's success check reads it).
 """
 
-from src.mpvi_plan import postprocess
-
 CHECK_EVENT = {"pick": "gripper_closed", "place": "gripper_opened"}
-LABEL = {"navigation": "NAV", "pick": "PICK", "place": "PLACE"}
+LABEL = {"navigation": "NAV", "pick": "PICK", "place": "PLACE", None: "STEP", "other": "STEP"}
 
 
-def make_orchestrator(plan, modules, world_objects=("beaker", "hotplate")):
+def make_orchestrator(plan, modules):
     """Builds the orchestrator as a command source.
 
     Args:
-        plan (dict): The plan, in the paper's segment format.
-        modules (dict): "navigation", "manipulation" (the module protocol of src/mpvi_modules.py), "checker" and "world".
-        world_objects (tuple of str): Object names for the post-processing's object tag. Defaults to ("beaker", "hotplate").
+        plan (dict): The tagged plan (src/mpvi_postprocess.postprocess).
+        modules (dict): "navigation", "manipulation" (the module protocol of src/mpvi_modules.py), "checker", "world" and "grounder" (src/grounding.py).
 
     Returns:
         dict: The policy source (see the module docstring), plus "state": {"steps" (the tagged segments), "status" (list of the segment states), "index", "finished",
-        "failure" (str or None), "log" (list of (sim time, text)), "verdicts" (list of the checker's verdicts)}.
+        "failure" (str or None), "log" (list of (sim time, text)), "verdicts" (list of the checker's verdicts), "grounded" (list of {segment, role: entry id})}.
 
     Raises:
-        ValueError: If the plan is malformed.
+        ValueError: If a manipulation segment lacks its tags (primitive, objects, check), or there is no grounder.
     """
-    steps = postprocess(plan, world_objects)
+    steps = plan["segments"]
+    for i, s in enumerate(steps):
+        if s["type"] == "manipulation" and any(k not in s for k in ("primitive", "objects", "check")):
+            raise ValueError(f"segment {i} ({s['description']!r}) is not tagged: run the plan through postprocess() first")
+    if any(s["type"] == "manipulation" for s in steps) and "grounder" not in modules:
+        raise ValueError("a plan with manipulation segments needs modules['grounder']")
     n = len(steps)
-    S = {"steps": steps, "status": ["pending"] * n, "index": 0, "finished": False, "failure": None, "log": [], "verdicts": [], "started": False, "t": 0.0,
+    S = {"steps": steps, "status": ["pending"] * n, "index": 0, "finished": False, "failure": None, "log": [], "verdicts": [], "grounded": [], "cur": None, "started": False, "t": 0.0,
          "handoff": not any(s["type"] == "navigation" for s in steps)}
 
     def say(text):
@@ -71,10 +78,49 @@ def make_orchestrator(plan, modules, world_objects=("beaker", "hotplate")):
         if S["status"][i] == "pending":
             if i == 0:
                 say(f"plan '{plan['task_name']}': " + "; ".join(f"{k + 1}. {s['description']}" for k, s in enumerate(steps)))
-            S["status"][i] = "running"
             S["started"] = True
             say(f"segment {i + 1}/{n} started: {seg['description']} (completion: {seg['completion_criteria']})")
-            mod["start"](seg)
+            start_seg = seg
+            if seg["type"] == "manipulation":
+                if seg["primitive"] not in CHECK_EVENT:
+                    fail(f"no primitive for this step: {seg['description']}")
+                    return None
+                S["status"][i] = "grounding"
+                r = modules["grounder"]["begin"](seg)
+                if r["state"] == "asking":
+                    return None
+                start_seg = grounded(seg, r)
+                if start_seg is None:
+                    return None
+            S["status"][i] = "running"
+            S["cur"] = start_seg
+            mod["start"](start_seg)
+            return mod_step(mod, i, obs)
+        if S["status"][i] == "grounding":
+            r = modules["grounder"]["poll"]()
+            if r["state"] == "asking":
+                return None
+            start_seg = grounded(seg, r)
+            if start_seg is None:
+                return None
+            S["status"][i] = "running"
+            S["cur"] = start_seg
+            mod["start"](start_seg)
+        return mod_step(mod, i, obs)
+
+    def grounded(seg, r):
+        """The segment with its grounded entry ids, or None after stopping the plan on a failed grounding."""
+        if r["state"] == "failed":
+            fail(r["reason"])
+            return None
+        ids = {role: e.id for role, e in r["resolved"].items()}
+        S["grounded"].append({"segment": S["index"], **ids})
+        say(f"grounded: {ids}")
+        return {**seg, "grounded": ids}
+
+    def mod_step(mod, i, obs):
+        """Steps the running segment's module (the segment with its grounded ids in S["cur"]), handles its gripper events, errors and completion."""
+        seg = S["cur"]
         cmds = mod["step"](obs)
         for ev in mod["events"]():
             prim = seg.get("primitive")
@@ -109,8 +155,10 @@ def make_orchestrator(plan, modules, world_objects=("beaker", "hotplate")):
             return "PLAN DONE"
         i = S["index"]
         seg = steps[i]
-        label = LABEL["navigation"] if seg["type"] == "navigation" else LABEL[seg["primitive"]]
+        label = LABEL["navigation"] if seg["type"] == "navigation" else LABEL.get(seg["primitive"], "STEP")
         st = S["status"][i]
+        if st == "grounding":
+            return f"{i + 1}/{n} {label}: {modules['grounder']['phase']()} [{st}]"
         return f"{i + 1}/{n} {label}: {module_of(seg)['phase']()} [{st}]" if st != "pending" else f"{i + 1}/{n} {label}: starting"        # the reason is in the console, the report and the policy's error
 
     def status():
@@ -124,9 +172,10 @@ def make_orchestrator(plan, modules, world_objects=("beaker", "hotplate")):
             m["resume"]()
 
     def report():
-        return {"plan": plan, "segments": [{"description": s["description"], "type": s["type"], "primitive": s.get("primitive"), "check": s["check"], "status": st}
+        return {"plan": {k: v for k, v in plan.items() if k != "postprocess"}, "segments": [{"description": s["description"], "type": s["type"], "primitive": s.get("primitive"), "check": s["check"], "status": st}
                                           for s, st in zip(steps, S["status"])],
-                "finished": S["finished"], "failure": S["failure"], "verdicts": S["verdicts"], "log": S["log"],
+                "finished": S["finished"], "failure": S["failure"], "verdicts": S["verdicts"], "log": S["log"], "grounded": S["grounded"],
+                "grounding_log": modules["grounder"]["log"] if "grounder" in modules else [], "postprocess_log": plan.get("postprocess", {}).get("log", []),
                 "navigation": modules["navigation"]["report"](), "manipulation": modules["manipulation"]["report"]()}
 
     return {"name": "policy", "step": step, "status": status, "resume": resume, "report": report, "hz": lambda: None, "state": S}

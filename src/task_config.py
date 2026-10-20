@@ -391,6 +391,42 @@ EPISODE_CFG = {
 }
 
 # ----------------------------------------------------------------------------------------------------------
+# The scripted pick and place of the MPVI skeleton (src/mink_arm.py, src/mpvi_skills.py)
+# ----------------------------------------------------------------------------------------------------------
+MINK_CFG = {
+    "solver": "daqp",
+    "damping": 1e-3,                       # solve_ik's Levenberg-Marquardt term
+    "position_cost": 1.0, "orientation_cost": 0.5,   # the frame task on the pad centre
+    "posture_cost": 0.01,                  # toward the home pose, on the arm's 7 joints only (it picks the elbow, the 7th degree of freedom)
+    "joint_margin_rad": math.radians(10.0),          # stay this far from every joint limit (the map's rule)
+    "max_joint_speed": 0.5,                # rad/s, the real bridge's joint speed limit (the bridge itself is LATER); the plan's speeds stay below it
+    "collision_gain": 0.85, "detect_distance": 0.05,
+    "min_distance": {"furniture": 0.008, "right_arm": 0.040},   # m: the left arm's links 3 to 7, hand and fingers against the bench and hotplate, and against the right arm
+}
+
+PICK_PLACE_CFG = {
+    "grasp_height_frac": 0.525,            # pad centre height on the beaker, fraction of its height (the middle of BEAKER_CFG["grasp_band"])
+    "standoff_m": 0.12,                    # the descent is this far back from the beaker (or the set-down point) along the approach direction
+    "retreat_m": 0.05,                     # after the release the hand backs out this far along the approach direction (clears the beaker: 23 mm for the open fingers plus their half length), then goes home diagonally;
+                                           # a full standoff runs the left hand into the right hand at home (first run: stopped at 39.9 mm, the 40 mm limit)
+    "clearance_m": 0.20,                   # pad centre height above the surface the target sits on for the 'over' waypoints (design plan 3.3); if unreachable: ~0.12, recorded
+    "carry_gap_m": 0.04,                   # the held beaker's bottom passes this far above the hotplate top
+    "setdown_gap_m": 0.002,                # the beaker's bottom is this far above the plate when the gripper opens
+    "speed_m_s": 0.12, "slow_speed_m_s": 0.04,       # pad centre speed in transit, and for the descent, the move in and the set-down
+    "turn_rad_s": 0.5,                     # orientation speed limit of a waypoint move
+    "min_move_s": 1.0,
+    "tol_m": 0.003, "tol_rad": math.radians(2.0),    # a waypoint is reached within these (measured pad pose) and settled
+    "settle_speed_rad_s": 0.02, "settle_dwell_s": 0.2,
+    "sag_gain_per_s": 3.0, "sag_max_m": 0.04, "sag_max_rad": 0.1,   # the simple sag correction: integral gain on the measured pad pose error (1/s) and its limits
+    "timeout_factor": 3.0, "timeout_extra_s": 6.0,    # a waypoint move times out after factor * its planned time + extra
+    "close_min_s": 1.0, "close_timeout_s": 5.0, "open_timeout_s": 4.0,
+    "stall_speed_m_s": 0.002, "stall_dwell_s": 0.3,  # the fingers are stalled below this speed for this long
+    "held_travel_range_m": (0.003, 0.040),            # finger travel at the stall: between "closed on nothing" and "did not close"
+    "lift_check_m": 0.03,                  # the beaker must have risen this far with the hand after UP (the pick's own check)
+    "episode_timeout_s": 180.0,
+}
+
+# ----------------------------------------------------------------------------------------------------------
 # Success check: check_success(model, data, cfg=SUCCESS_CFG)
 # ----------------------------------------------------------------------------------------------------------
 SUCCESS_CFG = {

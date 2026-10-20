@@ -27,7 +27,7 @@ import numpy as np
 
 from src import robot_specs
 from src.cameras import CameraRig
-from src.face import settle_renderer, show_face_group
+from src.face import Face, settle_renderer, show_face_group
 from src.viewer_layout import (FOVY_DEG, REFERENCE_HEIGHT, hud_bitmap, hud_key_list, hud_position, hud_rows, inset_layout, inset_tile, order_tiles,
                                setup_follow_camera, update_follow_camera)
 from src.neck import neck_ids
@@ -88,6 +88,7 @@ class CompositeRenderer:
         mujoco.mjv_defaultCamera(self.cam)
         mujoco.mjv_defaultOption(self.opt)
         show_face_group(self.opt)                                      # the head is drawn here only, never in a policy camera or an inset
+        self.face = Face(model)                                        # turned to face this view's camera while it is drawn
         setup_follow_camera(self.cam)
         self.scene = mujoco.MjvScene(model, maxgeom=10_000)
         self.scene.flags[mujoco.mjtRndFlag.mjRND_SHADOW] = 1
@@ -131,7 +132,8 @@ class CompositeRenderer:
         yaw_deg = update_follow_camera(self.cam, data, self.base_body)
         mujoco.mjr_setBuffer(mujoco.mjtFramebuffer.mjFB_OFFSCREEN, self.context)
         viewport = mujoco.MjrRect(0, 0, W, H)
-        mujoco.mjv_updateScene(model, data, self.opt, None, self.cam, mujoco.mjtCatBit.mjCAT_ALL, self.scene)
+        with self.face.facing(data, self.cam):
+            mujoco.mjv_updateScene(model, data, self.opt, None, self.cam, mujoco.mjtCatBit.mjCAT_ALL, self.scene)
         mujoco.mjr_render(viewport, self.scene, self.context)
         rgb = np.zeros((H, W, 3), dtype=np.uint8)
         mujoco.mjr_readPixels(rgb, None, viewport, self.context)

@@ -3,6 +3,7 @@
 
     add_face(spec)            # RobotSimulator calls it after the neck and the cameras, before compiling; returns what it built (or None)
     Face(model).set_smile(b)  # the episode runner shows the neutral face normally and the smile once the success check has passed
+    with face.facing(data, cam): ...   # the viewer and the composite view draw the head turned toward their camera (render time only, see facing())
     set_enabled(False)        # process-wide switch (the --no-face options); None goes back to FACE_CFG["enabled"]
 
 The head is one ellipsoid (robot_specs.FACE_CFG: "head_radii") attached to the body that carries the eagle camera, placed so that the camera sits just in front of
@@ -22,6 +23,7 @@ Visual only, by construction:
 If an image is missing the head is plain (the grey of the images' margin) and one line is printed. No error.
 """
 
+from contextlib import contextmanager
 from pathlib import Path
 
 import cv2
@@ -233,3 +235,64 @@ class Face:
         self.smiling = bool(on)
         if self.textured:
             self.model.geom_matid[self.geom] = self.mat["smile" if on else "neutral"]
+
+    @contextmanager
+    def facing(self, data, cam):
+        """Turns the head's front toward a free camera while a view is drawn (render time only).
+
+        Overwrites data.geom_xmat of the head: the front (local -x) points from the head's centre at the camera, the head's up (local z) is the world's up as far as it
+        can be (the head's own up if the camera is straight above or below). The model is not touched; the head has no mass and no contact, no state is hashed from it, and
+        the policy cameras never draw it, so nothing but the picture of the view this wraps changes. The previous matrix is put back on exit. Does nothing without a head.
+
+        Args:
+            data (mujoco.MjData): The state about to be drawn; its geom_xpos and geom_xmat must be current (mj_forward or mj_step has run).
+            cam (mujoco.MjvCamera): The free camera of the view (type free: lookat, distance, azimuth, elevation).
+
+        Yields:
+            None
+        """
+        if not self.present:
+            yield
+            return
+        saved = data.geom_xmat[self.geom].copy()
+        data.geom_xmat[self.geom] = facing_matrix(data.geom_xpos[self.geom], free_camera_position(cam), saved.reshape(3, 3)[:, 2]).flatten()
+        try:
+            yield
+        finally:
+            data.geom_xmat[self.geom] = saved
+
+
+def free_camera_position(cam):
+    """Gives where a free MuJoCo camera is (it looks at cam.lookat from cam.distance along its azimuth and elevation).
+
+    Args:
+        cam (mujoco.MjvCamera): A free camera.
+
+    Returns:
+        numpy.ndarray: The camera's position in the world, shape (3,).
+    """
+    az, el = np.radians(cam.azimuth), np.radians(cam.elevation)
+    forward = np.array([np.cos(el) * np.cos(az), np.cos(el) * np.sin(az), np.sin(el)])
+    return np.asarray(cam.lookat, float) - cam.distance * forward
+
+
+def facing_matrix(centre, target, fallback_up):
+    """Gives the head orientation whose front looks at a point, with its up as close to the world's up as possible.
+
+    Args:
+        centre (array-like): The head's centre in the world, shape (3,).
+        target (array-like): The point to face (the camera), shape (3,).
+        fallback_up (array-like): The up to keep when the target is straight above or below the head, shape (3,).
+
+    Returns:
+        numpy.ndarray: Rotation matrix (3, 3), columns the head's local x (backwards), y and z (up), so the front, local -x, points at the target.
+    """
+    f = np.asarray(target, float) - np.asarray(centre, float)
+    f = f / max(np.linalg.norm(f), 1e-9)
+    up = np.array([0.0, 0.0, 1.0])
+    z = up - np.dot(up, f) * f
+    if np.linalg.norm(z) < 1e-6:
+        z = np.asarray(fallback_up, float) - np.dot(fallback_up, f) * f
+    z = z / np.linalg.norm(z)
+    x = -f
+    return np.column_stack([x, np.cross(z, x), z])

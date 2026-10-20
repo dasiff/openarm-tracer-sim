@@ -34,7 +34,7 @@ import numpy as np
 
 from src import robot_specs
 from src.alert_sound import play_alert
-from src.face import settle_renderer, show_face_group
+from src.face import Face, settle_renderer, show_face_group
 from src.viewer_layout import (FOVY_DEG, banner_bitmap, hud_bitmap, hud_key_list, hud_position, hud_rows, inset_layout, inset_tile, order_tiles,
                                setup_follow_camera, update_follow_camera)
 
@@ -294,6 +294,7 @@ def make_glfw_viewer(model, data, vcfg):
     mujoco.mjv_defaultCamera(cam)
     mujoco.mjv_defaultOption(opt)
     show_face_group(opt)                      # the head is drawn here only, never in a policy camera or an inset
+    head = Face(model)                        # turned to face the follow camera while the view is drawn
     setup_follow_camera(cam)
 
     scene_vis = mujoco.MjvScene(model, maxgeom=10_000)
@@ -498,9 +499,10 @@ def make_glfw_viewer(model, data, vcfg):
         width, height = glfw.get_framebuffer_size(window)
         viewport = mujoco.MjrRect(0, 0, width, height)
         t_r0 = pc()
-        mujoco.mjv_updateScene(
-            model, data, opt, None, cam,
-            mujoco.mjtCatBit.mjCAT_ALL, scene_vis)
+        with head.facing(data, cam):
+            mujoco.mjv_updateScene(
+                model, data, opt, None, cam,
+                mujoco.mjtCatBit.mjCAT_ALL, scene_vis)
         mujoco.mjr_render(viewport, scene_vis, context)
         settle_renderer(context, scene_vis)  # the hangover of drawing the textured head (src/face.py)
         t_r1 = pc()

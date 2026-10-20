@@ -11,6 +11,8 @@ Models are built one at a time (face off, a plain head for lack of images, the h
 3. Hidden from the policy cameras: a probe camera (rendered by CameraRig, as every policy camera and inset is) looking at the face gives the same picture with and without
    the head; with the face group turned on, as the viewer does, the head shows, and the smile differs from the neutral face. Only the viewer and the composite view
    call show_face_group().
+3c. Render-time turn of the head toward the view's camera (Face.facing): its front points at the camera for many camera poses, a proper rotation, upright, put back on exit,
+   the state untouched; seen from behind, the smile shows on the turned head and not on the fixed one.
 3b. The viewer's composite picture (follow view and camera tiles, shadows and reflections on, the third frame in a row) is the same with the face on and off apart from
    the head itself. Drawing the textured head made MuJoCo's renderer lose the shadows of the next render (the eagle tile, rendered first in the next frame) and of
    everything drawn after the head: the face material is 0.99 opaque (drawn late) and face.settle_renderer() takes the hit. Rendered in two processes, one GL
@@ -183,6 +185,65 @@ def main(args):
     check("the smile differs from the neutral face", smile > 1.0 and tex["smiling_flag"] and tex["matid_after_smile"] != tex["matids"][0], f"mean pixel difference {smile:.1f}")
     callers = sorted(p.name for p in (PROJECT_ROOT / "src").glob("*.py") if "show_face_group(" in p.read_text() and p.name != "face.py")
     check("only the viewer and the composite view draw the face group", callers == ["glfw_viewer.py", "viewer_composite.py"], f"{callers}")
+    print("\n3c. the face turns to the view's camera (render time only)")
+    sim, _ = build("textured")
+    m, d = sim.model, sim.data
+    set_neck_pose(m, d, robot_specs.NECK_SPECS)
+    mujoco.mj_forward(m, d)
+    g = sim.face.geom
+    rng = np.random.default_rng(0)
+    worst_aim, worst_ortho, upright, restored, state_same = 1.0, 0.0, True, True, True
+    for az, el in [(0, -15), (90, -15), (180, -15), (-90, -15), (45, -80), (200, 80)] + [(float(a), float(e)) for a, e in rng.uniform([-180, -85], [180, 85], (20, 2))]:
+        cam = mujoco.MjvCamera()
+        mujoco.mjv_defaultCamera(cam)
+        cam.lookat[:] = d.geom_xpos[g] + rng.uniform(-0.3, 0.3, 3)
+        cam.distance, cam.azimuth, cam.elevation = float(rng.uniform(0.5, 3.0)), az, el
+        before, qpos, xpos = d.geom_xmat[g].copy(), d.qpos.copy(), d.xpos.copy()
+        with sim.face.facing(d, cam):
+            R = d.geom_xmat[g].reshape(3, 3)
+            to_cam = face.free_camera_position(cam) - d.geom_xpos[g]
+            worst_aim = min(worst_aim, float(np.dot(-R[:, 0], to_cam / np.linalg.norm(to_cam))))
+            worst_ortho = max(worst_ortho, float(np.abs(R.T @ R - np.eye(3)).max()), abs(float(np.linalg.det(R)) - 1.0))
+            upright &= bool(R[2, 2] > 0)
+        restored &= bool(np.array_equal(before, d.geom_xmat[g]))
+        state_same &= bool(np.array_equal(qpos, d.qpos) and np.array_equal(xpos, d.xpos))
+    check("the head's front points at the camera for 26 camera poses (straight above and below too)", worst_aim > 1 - 1e-9, f"smallest cosine {worst_aim:.12f}")
+    check("the orientation is a proper rotation and the head stays upright (local z up)", worst_ortho < 1e-9 and upright, f"max error {worst_ortho:.1e}")
+    check("the head's matrix is put back on exit, and the state (qpos, body poses) is untouched", restored and state_same)
+    gl, ctx = _headless_context(m)
+    try:
+        opt = mujoco.MjvOption()
+        mujoco.mjv_defaultOption(opt)
+        face.show_face_group(opt)
+        scene = mujoco.MjvScene(m, maxgeom=10_000)
+        cam = mujoco.MjvCamera()
+        mujoco.mjv_defaultCamera(cam)
+        yaw_behind = 0.0                                                   # the robot's heading is +x at the spawn: azimuth 0 looks along it, from behind
+        cam.lookat[:] = d.geom_xpos[g]
+        cam.distance, cam.elevation, cam.azimuth = 0.8, -15, yaw_behind
+
+        def view(turned, smile):
+            sim.face.set_smile(smile)
+            if turned:
+                with sim.face.facing(d, cam):
+                    mujoco.mjv_updateScene(m, d, opt, None, cam, mujoco.mjtCatBit.mjCAT_ALL, scene)
+            else:
+                mujoco.mjv_updateScene(m, d, opt, None, cam, mujoco.mjtCatBit.mjCAT_ALL, scene)
+            vp = mujoco.MjrRect(0, 0, 320, 240)
+            mujoco.mjr_setBuffer(mujoco.mjtFramebuffer.mjFB_OFFSCREEN, ctx)
+            mujoco.mjr_render(vp, scene, ctx)
+            rgb = np.zeros((240, 320, 3), np.uint8)
+            mujoco.mjr_readPixels(rgb, None, vp, ctx)
+            mujoco.mjr_setBuffer(mujoco.mjtFramebuffer.mjFB_WINDOW, ctx)
+            return rgb.astype(int)
+        fixed = int((np.abs(view(False, True) - view(False, False)).sum(2) > 30).sum())
+        turned = int((np.abs(view(True, True) - view(True, False)).sum(2) > 30).sum())
+        sim.face.set_smile(False)
+    finally:
+        gl.free()
+    check("seen from behind: the smile cannot be seen on the fixed head, and can on the turned head", fixed == 0 and turned > 200, f"pixels that differ, smile vs neutral: fixed {fixed}, turned {turned}")
+    del sim, m, d
+
     if out:
         out.mkdir(parents=True, exist_ok=True)
         for k in ("neutral", "smile"):

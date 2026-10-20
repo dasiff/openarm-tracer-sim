@@ -1,6 +1,12 @@
 # Progress log
 
-## Latest: design plan §12 (real-robot replacements for sim ground truth) added; §11 got the localization-sensor question.
+## 2026-10-20 16:10: arm limit restored, video rendered, full suite GREEN (28/28 exit 0), main pushed; waiting for David
+Report docs/reports/20261020_1610_suite_green_push.md. Video: data/notebook/mpvi_pipeline_success/. Open: the post-processing module proposal (docs/reports/20261020_1447_postprocess_tags_origin.md, three questions). MPVI skeleton: src/mink_arm.py, mpvi_plan.py, mpvi_modules.py, orchestrator.py, mpvi_pipeline.py, experiments/mpvi_pipeline_test.py. No run in progress.
+
+## 2026-10-20 13:56: minimal MPVI pipeline skeleton (D3 + D4) RUNS END TO END, waiting for David
+experiments/mpvi_pipeline_test.py 8/8 (SUCCESS, replay bit-identical; log data/logs/mpvi_pipeline_20261020_135325.log). Report: docs/reports/20261020_1356_mpvi_skeleton_runs.md. Code: src/mink_arm.py, mpvi_plan.py, mpvi_modules.py, orchestrator.py, mpvi_pipeline.py; settings MINK_CFG, PICK_PLACE_CFG. LATER list in design plan 9 (bridge, contact audit, pre-flight, other tests, LLM, VLM). The full suite was not rerun (only additions). No run in progress. Next: David's call.
+
+## Previous: design plan §12 (real-robot replacements for sim ground truth) added; §11 got the localization-sensor question.
 
 ## D2 done 2026-10-20, WAITING for David before D3
 D2 (stance) is done: the zombie pose (the home pose search's rank 1) is applied at its finder stance (0.765, 1.085, -90 deg, pedestal 0.155, range 0.10..0.21) in TASK_CFG; the requirement set (src/task_config.STANCE_REQUIREMENTS) and the finder rule (widest pedestal range, then small arm coverage, then tolerance) are in design plan 1 and 3.4 as the method for future scenes. Suite (bash experiments/run_tests.sh, summary data/logs/suite_20261020_022806_summary.txt) all green after two test fixes: gripper_force_test 34/34 (the 1 N closing with the beaker centred on the pads and welded to the bench, +-0.10 N per finger; the free closings as before) and cc_mode_tests 48/48 (time budgets of B and R1 follow the longer staging since the 10-19 reorder; R1's pedestal restore and its control tested with the move in DRIVE). Baselines regenerated: byte-identical to experiments/baselines (the combined scene does not depend on the stance), nothing to rename. Local commits tidied into topic commits, main pushed, wip/new-stance deleted (see the git log). Reports: docs/reports/ (2026-10-19 and 2026-10-20). No run in progress. Next: D3 (scripted pick, place, release, home task with mink, plus the viewer status panel) after David's go.

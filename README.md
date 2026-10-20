@@ -161,7 +161,7 @@ openarm-tracer-sim/
 
 The controller is told who is in charge, `auto` or `teleop` (`cfg["mode"]` of `src/control_loop.py`). In `auto`, ONE task policy
 (`src/task_policy.py`) owns the whole task: its staging stage (`src/staging_source.py`, speeds / ramps / tolerances in `STAGING_CFG`,
-poses in `TASK_CFG`) drives to the staging pose, sets the pedestal, moves both arms to the home pose (`home_q_left` / `home_q_right`: the "waiter pose", a placeholder
+poses in `TASK_CFG`) drives to the staging pose, sets the pedestal, moves both arms to the home pose (`home_q_left` / `home_q_right`: the "zombie pose" found by the home pose search, a placeholder
 until the hardware team gives the real one; an optional random variation per joint, `home_variation_rad`, is off by default) and frames the beaker,
 the hotplate and both grippers with the neck camera; then its arm stage takes over (for now `hold`, or `request_operator`). The policy can ask for operator
 control: the controller switches to `teleop` at once (the base stops, everything holds). In the viewer F9 takes over from the policy, Enter hands control back (the policy

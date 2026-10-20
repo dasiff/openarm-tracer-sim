@@ -17,3 +17,6 @@
 
 5. **Starting a session.** Before doing anything else, read `docs/progress.md`, run `git status` and `git log --oneline -5`, check for tmux sessions still running, and
    report what was in progress and what state it's in. Then wait for instructions.
+
+6. **Reports survive crashes.** Before sending any report, write it to
+   `docs/reports/<date>_<time>_<topic>.md` and commit it. The reply points to the file.

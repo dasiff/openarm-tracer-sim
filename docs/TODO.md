@@ -30,7 +30,7 @@ Everything below was only exercised with injected keys (scripted `held()` functi
   stiffness (the placeholder `kp` is now 300 N/m: a finger pushes `kp` times its distance from the commanded position, 11 N on the 70 mm beaker, so caps up to the 10 N ceiling
   take effect; it was 100 N/m, 3.7 N), current limit, and whether the real gripper supports force / current readback.
 - [ ] **Finger pad torsional (twisting) friction** (waiting on: the hardware team): the real gripper's value; the sim uses 0.005 (`BEAKER_CFG["contact_friction"]`). It decides how freely a pinched beaker pivots about the pinch axis (see the weak-grip item below).
-- [ ] **Home pose** (waiting on: the hardware team): the real OpenArm home pose (`home_q_left` / `home_q_right` in `TASK_CFG` is a placeholder "waiter pose"), and where the
+- [ ] **Home pose** (waiting on: the hardware team): the real OpenArm home pose (`home_q_left` / `home_q_right` in `TASK_CFG` is a placeholder "zombie pose"), and where the
   wrist cameras should look from it.
 - [ ] **Base** (waiting on: Michael): how the real Tracer holds position when stopped. Also check the sim's turn rate and acceleration against the real Tracer before tuning the arm
   swing (the arms swing ~20 cm during fast turns at 2 rad/s and end ~2 cm off after stopping).

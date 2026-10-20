@@ -223,24 +223,34 @@ class FurnitureMap:
         cv2.fillConvexPoly(ker, np.round(kernel_poly / r + k).astype(np.int32), 1)
         return cv2.dilate(self.layers[layer].astype(np.uint8), ker, anchor=(k, k), borderType=cv2.BORDER_CONSTANT, borderValue=0).astype(bool)
 
-    def blocked(self, heading, footprint):
+    def blocked(self, heading, footprint, arm_kernel=None):
         """Gives the robot origin positions that are not allowed at a heading.
 
         Args:
             heading (float): The robot's heading, radians (0 = facing +x, counter-clockwise).
             footprint (numpy.ndarray): The base footprint's corners (K, 2) in the base frame, metres (footprint_polygon).
+            arm_kernel (numpy.ndarray or None): What the arm layer is grown by: a convex polygon (K, 2) in the base frame, metres, turned by the heading (for the torso and pedestal
+                column's real cross-section, src/stance_finder.column_polygon_fn). Defaults to None, the disc of radius arm_radius (the first approximation).
 
         Returns:
             numpy.ndarray: Bool array of the grid's shape, True where the robot origin may not be: the base layer grown by the rotated footprint, the arm layer grown by the arm
-            disc, and (the grid's edge being where obstacles outside it begin) the cells whose footprint leaves the grid.
+            kernel, and (the grid's edge being where obstacles outside it begin) the cells whose footprint leaves the grid.
         """
-        key = (round(float(heading), 6), footprint.tobytes())
+        key = (round(float(heading), 6), footprint.tobytes(), None if arm_kernel is None else np.round(arm_kernel, 6).tobytes())
         if key not in self._cache:
             c, s = np.cos(heading), np.sin(heading)
-            poly = footprint @ np.array([[c, s], [-s, c]])                        # rotated by the heading (rows are points: R @ f)
-            base = self._grow("base", poly)
-            ang = np.linspace(0, 2 * np.pi, 48, endpoint=False)
-            arm = self._grow("arm", self.arm_radius * np.c_[np.cos(ang), np.sin(ang)])
+            rot = np.array([[c, s], [-s, c]])
+            poly = footprint @ rot                                                # rotated by the heading (rows are points: R @ f)
+            bkey = ("base", round(float(heading), 6), footprint.tobytes())
+            if bkey not in self._cache:
+                self._cache[bkey] = self._grow("base", poly)
+            base = self._cache[bkey]
+            if arm_kernel is None:
+                ang = np.linspace(0, 2 * np.pi, 48, endpoint=False)
+                kpoly = self.arm_radius * np.c_[np.cos(ang), np.sin(ang)]
+            else:
+                kpoly = np.asarray(arm_kernel, float) @ rot
+            arm = self._grow("arm", kpoly)
             blocked = base | arm
             # the footprint must lie inside the grid: block the cells whose rotated footprint crosses the edge (the walls are in the layers, this keeps a bad grid from leaking)
             ext = np.abs(poly).max(axis=0)

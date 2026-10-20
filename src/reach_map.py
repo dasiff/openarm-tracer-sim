@@ -16,8 +16,12 @@ Contents:
     cubes_from_voxels(reached): the 1 cm cubes whose 8 voxels are all reachable.
     ReachMap: a finished map (cubes, origin, cube edge) of one arm and approach bin, what the stance finder reads.
     enclosed_unreached(reached): the unreached voxels that do not connect to the outside of the grid (holes).
+    fill_small_pockets(reached, max_extent): fills the enclosed pockets that are at most max_extent voxels across (no IK test, David 2026-10-19); larger ones stay as real holes.
+    save_map(...) / load_map(path): a built map's file (packed voxels, grid, settings, staleness hash) and the ReachMap read back from it.
 """
 
+import json
+import os
 import time
 
 import numpy as np
@@ -350,3 +354,87 @@ def enclosed_unreached(reached):
     outside = np.unique(np.concatenate([lab[0].ravel(), lab[-1].ravel(), lab[:, 0].ravel(), lab[:, -1].ravel(), lab[:, :, 0].ravel(), lab[:, :, -1].ravel()]))
     enclosed = (lab > 0) & ~np.isin(lab, outside)
     return enclosed, int(len(np.unique(lab[enclosed])))
+
+
+def fill_small_pockets(reached, max_extent):
+    """Fills the enclosed unreached pockets that are small (design plan 3.1 c as revised 2026-10-19: no IK test of the holes; a pocket no wider than about one cube is taken as a
+    failure of the flood fill's retries, not as a real hole, and anything larger is kept as a real hole).
+
+    A pocket is a 6-connected group of unreached voxels that does not connect to the grid's outside; it is small when its bounding box is at most `max_extent` voxels along every axis.
+
+    Args:
+        reached (numpy.ndarray): Bool voxel grid.
+        max_extent (int): The largest bounding-box edge, in voxels, of a pocket that is filled.
+
+    Returns:
+        tuple: (the grid with the small pockets filled (a new array), dict with "pockets" (enclosed pockets found), "filled_pockets", "filled_voxels", "kept_pockets", "kept_voxels" and
+        "kept_largest" (the bounding-box edge in voxels of the largest kept pocket)).
+    """
+    lab, n = ndimage.label(~reached)
+    outside = np.unique(np.concatenate([lab[0].ravel(), lab[-1].ravel(), lab[:, 0].ravel(), lab[:, -1].ravel(), lab[:, :, 0].ravel(), lab[:, :, -1].ravel()]))
+    out = reached.copy()
+    st = {"pockets": 0, "filled_pockets": 0, "filled_voxels": 0, "kept_pockets": 0, "kept_voxels": 0, "kept_largest": 0}
+    skip = set(int(v) for v in outside)
+    for i, sl in enumerate(ndimage.find_objects(lab), start=1):
+        if i in skip or sl is None:
+            continue
+        st["pockets"] += 1
+        ext = max(s.stop - s.start for s in sl)
+        mask = lab[sl] == i
+        if ext <= max_extent:
+            out[sl][mask] = True
+            st["filled_pockets"] += 1
+            st["filled_voxels"] += int(mask.sum())
+        else:
+            st["kept_pockets"] += 1
+            st["kept_voxels"] += int(mask.sum())
+            st["kept_largest"] = max(st["kept_largest"], ext)
+    return out, st
+
+
+def save_map(path, reached, grid, side, bin, stamp, info=None):
+    """Writes a built map (the voxels, packed, plus what the stance finder and a staleness check need) to a file: a temporary file first, checked, then renamed over the old one.
+
+    Args:
+        path (str or pathlib.Path): The .npz file.
+        reached (numpy.ndarray): Bool voxel grid (after the pockets were filled).
+        grid (Grid): Its grid.
+        side (str): "left" or "right".
+        bin (int): The approach bin.
+        stamp (str): The staleness hash (model, settings and sampler version).
+        info (dict or None): Build statistics to keep with the map (JSON serializable). Defaults to None.
+    """
+    path = str(path)
+    tmp = path + ".tmp"
+    with open(tmp, "wb") as f:
+        np.savez_compressed(f, reached=np.packbits(reached), shape=np.array(grid.shape), origin=grid.origin, voxel=grid.voxel, side=side, bin=bin, stamp=stamp, info=json.dumps(info or {}, default=str))
+    z = np.load(tmp)                                                          # the file must read back as it was written
+    assert tuple(z["shape"]) == tuple(grid.shape) and int(np.unpackbits(z["reached"])[:reached.size].sum()) == int(reached.sum())
+    z.close()
+    os.replace(tmp, path)
+
+
+def load_map(path, want_stamp=None, voxels=False):
+    """Reads a map file written by save_map.
+
+    Args:
+        path (str or pathlib.Path): The .npz file.
+        want_stamp (str or None): If given and different from the file's, the map is stale. Defaults to None (not checked).
+        voxels (bool): Also return the voxel grid. Defaults to False.
+
+    Returns:
+        ReachMap or tuple: The map, or (map, voxel grid (bool), Grid-like (origin, shape, voxel) dict, info dict) with voxels=True.
+
+    Raises:
+        ValueError: If want_stamp is given and the file's differs.
+    """
+    z = np.load(str(path))
+    if want_stamp is not None and str(z["stamp"]) != want_stamp:
+        raise ValueError(f"{path} is stale (stamp {z['stamp']} != {want_stamp})")
+    shape = tuple(int(v) for v in z["shape"])
+    reached = np.unpackbits(z["reached"])[:int(np.prod(shape))].reshape(shape).astype(bool)
+    voxel = float(z["voxel"])
+    rm = ReachMap(cubes_from_voxels(reached), z["origin"], 2 * voxel, str(z["side"]), int(z["bin"]))
+    if voxels:
+        return rm, reached, {"origin": z["origin"], "shape": shape, "voxel": voxel}, json.loads(str(z["info"]))
+    return rm

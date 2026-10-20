@@ -15,7 +15,7 @@ Method
      through a batch forward-kinematics of the arm chain (checked against MuJoCo's own FK to 1e-15 m) and keep
      the samples whose gripper pose is usable for a side pinch (SEARCH_CFG: approach axis forward and down, finger
      axis roughly horizontal). The TCP positions are stored in the openarm_body_link0 frame. The pedestal and the
-     base only move that frame rigidly (it sits 0.75 + 2q above base_link, q = the lift command), so one sample
+     base only move that frame rigidly (it sits 0.3048 + q above base_link, q = the lift command (the pedestal height; the old two-stage pedestal was 0.75 + 2q)), so one sample
      set serves every base pose and pedestal height; the sampling is not repeated per candidate.
      (experiments/workspace_sweep.py was not reused: it is a physics-stepped sweep of 78k poses on the old
      single_block scene through the pre-position-actuator controller, far too slow for millions of samples, and
@@ -344,7 +344,7 @@ def main():
             heading = math.atan2(*(xy - spawn_xy)[::-1])
             swept = swept_clearance(fp, xy, heading, yaw_f, bench_hx, bench_hy)
             for q in pedestal_qs:
-                body_z = z_rest + 0.75 + 2 * q
+                body_z = z_rest + 0.3048 + q
                 for side in SIDES:
                     s = samples[side]
                     g, cnt = {}, {}
@@ -421,7 +421,7 @@ def main():
         s = samples[side]
         xy = np.array([r["x"], r["y"]])
         R2 = rot(yaw_f)
-        body_z = z_rest + 0.75 + 2 * r["pedestal_q"]
+        body_z = z_rest + 0.3048 + r["pedestal_q"]
         a_des_w = np.r_[fwd * math.cos(math.radians(C["approach_down_deg"])), -math.sin(math.radians(C["approach_down_deg"]))]
         a_des = np.r_[R2.T @ a_des_w[:2], a_des_w[2]]
         ik = {}
@@ -487,7 +487,7 @@ def main():
 
     print("\n=== chosen staging pose ===")
     print(f"arm {r['arm']}; staging xy ({r['x']:.3f}, {r['y']:.3f}) yaw {math.degrees(yaw_f):.0f} deg; pedestal_q {r['pedestal_q']:+.3f} "
-          f"(shoulder-line z {z_rest + 0.75 + 2 * r['pedestal_q'] + 0.698:.3f} m); standoff {r['standoff'] * 100:.0f} cm")
+          f"(shoulder-line z {z_rest + 0.3048 + r['pedestal_q'] + 0.698:.3f} m); standoff {r['standoff'] * 100:.0f} cm")
     print(f"footprint clearance {r['clearance'] * 100:.1f} cm (want >= {need_c * 100:.0f}); turn-swept {r['swept_clearance'] * 100:.1f} cm "
           f"(want >= {need_t * 100:.0f}); furniture {r['furniture'] * 100:.0f} cm -> "
           + ("requirement MET" if r["slack"] >= -1e-3 else f"requirement NOT met, best achievable margins (slack {r['slack'] * 100:+.1f} cm)"))

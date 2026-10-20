@@ -262,7 +262,7 @@ def solve_pose(arm, ctx, g, name, layout, base_xy, yaw, ped_q, extra_seeds=None,
     probe: test this margin first (the requirement). Returns dict(margin, q, tried_ok_at_probe)."""
     pts = task_points(g, layout["beaker_xy"], layout["hotplate_xy"], yaw)
     tcp = pts[name]
-    body_z = ctx.z_rest + 0.75 + 2 * ped_q
+    body_z = ctx.z_rest + 0.3048 + ped_q
     p_t = to_body(tcp, base_xy, yaw, body_z)
     finger_q, beaker_origin, held = pose_scene_args(g, name, layout["beaker_xy"], tcp)
     _, idx = arm.tree.query(p_t, k=C["n_seeds"] * 3)
@@ -446,7 +446,7 @@ def main():
             yaw = -math.pi / 2 + dy * DEG
             xy = (lat, y_for[(st, dy)])
             pts = task_points(g, beaker_xy, hot_xy, yaw)
-            body_z = z_rest + 0.75 + 2 * q
+            body_z = z_rest + 0.3048 + q
             combos.append((sp, st, dy, lat, q))
             queries.extend(to_body(pts[n], xy, yaw, body_z) for n in POSES)
     queries = np.array(queries)
@@ -462,7 +462,7 @@ def main():
             yaw = -math.pi / 2 + dy * DEG + cyaw * C["robust_yaw_deg"] * DEG
             xy = (lat + cx * C["robust_xy"], y_for[(st, dy)] + cy * C["robust_xy"])
             pts = task_points(g, beaker_xy, hot_xy, yaw)
-            body_z = z_rest + 0.75 + 2 * q
+            body_z = z_rest + 0.3048 + q
             cq.extend(to_body(pts[n], xy, yaw, body_z) for n in POSES)
     counts = arm.tree.query_ball_point(np.array(cq), 0.02, return_length=True)
     rob_ok = np.asarray(counts).reshape(len(combos), -1).min(axis=1) > 0

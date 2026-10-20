@@ -29,6 +29,7 @@ import numpy as np  # noqa: E402
 from src.furniture_map import FurnitureMap, footprint_polygon, geom_points_world  # noqa: E402
 from src.stance_finder import robot_geometry  # noqa: E402
 from src.task_beaker_hotplate import load_task  # noqa: E402
+from src.staging_source import staging_approach_xy  # noqa: E402
 from src.task_config import FURNITURE_CFG, TASK_CFG  # noqa: E402
 
 results = []
@@ -117,7 +118,7 @@ def main():
     check("the grid's edge blocks the cells whose footprint would leave it", b0[0, 400] and b0[400, 0] and b0[-1, 400] and b0[400, -1] and not b0[100, 700])
 
     print("\n3. the real task scene")
-    sim = load_task(cameras=False)
+    sim = load_task({**TASK_CFG, "bench_open": False}, cameras=False)                  # the solid bench (frame rails included)
     m, d = sim.model, sim.data
     real = FurnitureMap.from_model(m, d, FURNITURE_CFG, exclude_bodies=("task_beaker",))
     wall_cells = [[5.99, 0.0], [-5.99, 0.0], [0.0, 5.99], [0.0, -5.99]]
@@ -131,13 +132,49 @@ def main():
     sx, sy = TASK_CFG["staging_xy"]
     yaw = TASK_CFG["staging_yaw"]
     bl = real.blocked(yaw, fp)
+    ax, ay = staging_approach_xy(TASK_CFG)
+    iy, ix, _ = real.cell_of(np.array([[ax, ay]]))
+    check("the approach spot (21 cm behind the staging stance) is free at its heading on the solid bench", not bl[iy[0], ix[0]])
     iy, ix, _ = real.cell_of(np.array([[sx, sy]]))
-    check("the current staging stance is free at its heading (8 cm from the bench edge)", not bl[iy[0], ix[0]])
+    check("the staging stance is blocked on the solid bench (its chassis would be under the frame rails: it is a stance for the open bench, design plan 4.1)", bl[iy[0], ix[0]])
     iy, ix, _ = real.cell_of(np.array([[sx, 0.6]]))
     check("a spot under the bench top (0.6 m from its centre line) is blocked", bl[iy[0], ix[0]])
     iy, ix, _ = real.cell_of(np.array([[3.0, 3.5]]))
     check("open floor (3, 3.5) is free", not bl[iy[0], ix[0]])
     check("the robot's own geoms are not in the map (the spawn point is free)", not real.occupied("base", np.array([TASK_CFG["spawn_xy"]]))[0])
+
+    print("\n4. the open bench (TASK_CFG default since 2026-10-19) and the column kernel")
+    del sim, m, d
+    sim = load_task(cameras=False)
+    m, d = sim.model, sim.data
+    op = FurnitureMap.from_model(m, d, FURNITURE_CFG, exclude_bodies=("task_beaker",))
+    check("open bench: the frame is gone from the base layer, the legs stay", not op.occupied("base", np.array([[0.0, 0.78], [-2.18, 0.0], [0.0, 0.0]])).any() and op.occupied("base", np.array([[2.0, 0.7], [-2.0, -0.7]])).all())
+    check("open bench: the top is still in the arm layer", op.occupied("arm", np.array([[0.0, 0.0], [0.0, 0.78], [1.5, 0.5]])).all())
+    robot = robot_geometry(m)
+    col = robot["column"]
+    check("the column function exists and its slab is the bench top's underside to its surface", col is not None and abs(robot["column_slab"][0] - 0.84) < 1e-6 and abs(robot["column_slab"][1] - 0.96) < 1e-6, str(robot["column_slab"]))
+    for q in (0.0, 0.2, 0.418):
+        poly = col(q)
+        print(f"     pedestal command {q}: column cross-section at the bench top's height x {poly[:, 0].min():+.3f}..{poly[:, 0].max():+.3f} y {poly[:, 1].min():+.3f}..{poly[:, 1].max():+.3f} (with the 2 cm margin)")
+    yaw = TASK_CFG["staging_yaw"]
+    sx, sy = TASK_CFG["staging_xy"]
+    ax, ay = staging_approach_xy(TASK_CFG)
+    b_open = op.blocked(yaw, robot["footprint"], col(TASK_CFG["pedestal_q"]))                 # the open-bench map with the column's real cross-section (design plan 3.4)
+    iy, ix, _ = op.cell_of(np.array([[sx, sy]]))
+    check("the staging stance is free at its heading on the open bench (column kernel, the stance's pedestal height)", not b_open[iy[0], ix[0]])
+    iy, ix, _ = op.cell_of(np.array([[ax, ay]]))
+    check("the approach spot is free at its heading on the open bench", not b_open[iy[0], ix[0]])
+    p0 = col(0.0)
+    check("the column cross-section is a real polygon smaller than the old 0.25 m disc", len(p0) >= 3 and np.abs(p0).max() < 0.25, f"largest coordinate {np.abs(p0).max():.3f}")
+    fp = robot["footprint"]
+    yaw = -math.pi / 2
+    b_disc, b_col = op.blocked(yaw, fp), op.blocked(yaw, fp, col(0.0))
+    check("the column kernel blocks less than the disc (and never more)", (b_col & ~b_disc).sum() == 0 and b_col.sum() < b_disc.sum(), f"{int(b_col.sum())} vs {int(b_disc.sum())} cells")
+    xi = int((0.9 - op.origin[0]) / op.res)
+    ys = np.nonzero(~b_col[:, xi] & (np.arange(op.shape[0]) * op.res + op.origin[1] > 0.0))[0]
+    y_min = op.origin[1] + (ys.min() + 0.5) * op.res
+    front = y_min + min(math.sin(yaw) * kx + math.cos(yaw) * ky for kx, ky in col(0.0))
+    check("facing the bench at q = 0 the base may go until the column is 2 cm from the bench's front edge (open bench)", abs((front - 0.80) - 0.0) < 0.025, f"column front {100 * (front - 0.80):.1f} cm from the edge (the 2 cm margin is in the polygon)")
     print(f"\n{sum(results)}/{len(results)} checks passed")
     return all(results)
 

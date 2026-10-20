@@ -15,7 +15,8 @@ either). The output lists ranked, spread-out stances; the arm rule of the demo g
 Floor grids are indexed [iy, ix] as in src/furniture_map.py. Verification of the top stances (IK along the paths, link-to-furniture checks, B2.12) is not part of this module.
 
 Contents:
-    robot_geometry(model): shoulders, mast, base height and footprint read from the model.
+    robot_geometry(model): shoulders, mast, base height, footprint and the torso-and-pedestal column's cross-section function read from the model.
+    column_polygon_fn(model, ...): the column's horizontal cross-section at a height band, for any pedestal command (what the arm layer of the furniture map is grown by).
     find_stances(points, maps, furniture, robot, ...): the search.
     region_scores(...): the valid-region scores of one heading (for inspection and tests).
     arm_for(stance, resolution): the arm the generator picks at a stance.
@@ -29,8 +30,71 @@ from scipy import ndimage
 
 from src import robot_specs
 from src.arm_kinematics import arm_chain, shoulder_origin
-from src.furniture_map import footprint_polygon
-from src.task_config import STANCE_CFG
+from scipy.spatial import ConvexHull
+
+from src.furniture_map import footprint_polygon, geom_points_world
+from src.task_config import FURNITURE_CFG, STANCE_CFG
+
+
+def _slab_points(P, z_lo, z_hi):
+    """The points of the convex hull of P (N, 3) that lie in the height band z_lo..z_hi: its vertices inside the band and where its edges cross the band's two planes (the cross-section's corners)."""
+    hull = ConvexHull(P)
+    V = P[hull.vertices]
+    out = [V[(V[:, 2] >= z_lo) & (V[:, 2] <= z_hi)]]
+    edges = {tuple(sorted((int(a), int(b)))) for tri in hull.simplices for a, b in ((tri[0], tri[1]), (tri[1], tri[2]), (tri[2], tri[0]))}
+    for a, b in edges:
+        za, zb = P[a, 2], P[b, 2]
+        for z in (z_lo, z_hi):
+            if (za - z) * (zb - z) < 0:
+                out.append((P[a] + (P[b] - P[a]) * (z - za) / (zb - za))[None])
+    return np.concatenate(out) if out else np.zeros((0, 3))
+
+
+def column_polygon_fn(model, z_lo, z_hi, margin, base_z):
+    """Makes the function that gives the torso and pedestal column's horizontal cross-section in a height band, for a pedestal command (David 2026-10-19: replaces the 25 cm disc).
+
+    The column is the collision geoms of the torso (openarm_body_link0) and the pedestal sections (pedestal_*); the arms, the neck, the base and the battery are not part of it (the arms are
+    checked by the IK verification, the base is in the base layer). At a pedestal command q the parts are placed by kinematics (the base at the origin, resting on the floor: base_z), each
+    geom's convex hull is cut to the height band above the floor, and the hull of all the cross-sections, grown by `margin`, is the polygon.
+
+    Args:
+        model (mujoco.MjModel): The compiled model with the pedestal joints.
+        z_lo (float): Lower end of the band, metres above the floor (the bench top's underside).
+        z_hi (float): Upper end (the bench top's surface).
+        margin (float): Added all round, metres.
+        base_z (float): The base origin's resting height above the floor.
+
+    Returns:
+        callable: f(q) -> polygon (K, 2) in the base frame (x forward, y left), metres: the convex cross-section grown by margin; a single point if no part of the column is in the band.
+    """
+    d = mujoco.MjData(model)
+    root = model.body("base_link").id
+    names = {g: model.body(int(model.geom_bodyid[g])).name for g in range(model.ngeom)}
+    parts = [g for g in range(model.ngeom) if (model.geom_contype[g] or model.geom_conaffinity[g]) and (names[g] == "openarm_body_link0" or names[g].startswith("pedestal_"))]
+    ring = margin * np.array([[math.cos(t), math.sin(t)] for t in np.linspace(0, 2 * math.pi, 16, endpoint=False)])
+
+    def polygon(q):
+        for jn in robot_specs.PEDESTAL_SPECS["joints"]:
+            d.qpos[model.joint(jn).qposadr[0]] = q
+        mujoco.mj_kinematics(model, d)
+        R, o = d.xmat[root].reshape(3, 3), d.xpos[root]
+        pts = []
+        for g in parts:
+            P = geom_points_world(model, d, g)
+            if P is None:
+                continue
+            L = (P - o) @ R                                                        # base frame
+            L[:, 2] += base_z                                                      # height above the floor
+            if L[:, 2].max() < z_lo or L[:, 2].min() > z_hi:
+                continue
+            pts.append(_slab_points(L, z_lo, z_hi)[:, :2])
+        if not pts:
+            return np.zeros((1, 2))
+        xy = np.concatenate(pts)
+        xy = (xy[:, None, :] + ring[None]).reshape(-1, 2)
+        return xy[ConvexHull(xy).vertices]
+
+    return polygon
 
 
 def robot_geometry(model):
@@ -60,7 +124,14 @@ def robot_geometry(model):
     bodies = [root] + ([model.body("battery").id] if any(model.body(b).name == "battery" for b in range(model.nbody)) else [])
     bc = robot_specs.BASE_CONTACT_SPECS
     base_z = -min(v[2] for v in bc["points"].values()) + bc["radius"]
-    return {"shoulder": {sd: shoulder_origin(arm_chain(model, sd)) for sd in ("left", "right")}, "torso_z0": z0, "lift_factor": (z1 - z0) / 0.1, "base_z": float(base_z),
+    column = None
+    slab = FURNITURE_CFG.get("column_slab")
+    if slab is None and any(model.geom(g).name == "bench_top" for g in range(model.ngeom)):
+        g = model.geom("bench_top")
+        slab = (float(model.geom_pos[g.id][2] - model.geom_size[g.id][2]), float(model.geom_pos[g.id][2] + model.geom_size[g.id][2]))        # the bench top's underside and surface
+    if slab is not None and FURNITURE_CFG.get("column_margin") is not None:
+        column = column_polygon_fn(model, slab[0], slab[1], FURNITURE_CFG["column_margin"], float(base_z))
+    return {"column": column, "column_slab": slab, "shoulder": {sd: shoulder_origin(arm_chain(model, sd)) for sd in ("left", "right")}, "torso_z0": z0, "lift_factor": (z1 - z0) / 0.1, "base_z": float(base_z),
             "footprint": footprint_polygon(model, d, bodies)}
 
 
@@ -121,7 +192,7 @@ def _region(points, arm, maps, furniture, robot, theta, qs, X, Y, blocked_w, cfg
         V &= any_q
         if not V.any():
             return V
-    V &= ~blocked_w.ravel()[None, :]
+    V &= ~(blocked_w.reshape(nq, -1) if blocked_w.ndim == 3 else blocked_w.ravel()[None, :])
     return V
 
 
@@ -148,7 +219,11 @@ def _heading_scores(points, arms, maps, furniture, robot, theta, qs, X, Y, win, 
     thetas = [theta] if delta == 0 else [theta - delta, theta, theta + delta]
     region = {a: np.ones((len(qs), X.size), bool) for a in arms}
     for th in thetas:
-        blocked = furniture.blocked(th, robot["footprint"])[iy0:iy1, ix0:ix1]
+        col = robot.get("column")
+        if col is None:
+            blocked = furniture.blocked(th, robot["footprint"])[iy0:iy1, ix0:ix1]
+        else:                                                                  # the arm layer is grown by the column's cross-section, which depends on the pedestal height
+            blocked = np.stack([furniture.blocked(th, robot["footprint"], col(float(q)))[iy0:iy1, ix0:ix1] for q in qs])
         for a in arms:
             region[a] &= _region(points, a, maps, furniture, robot, th, qs, X, Y, blocked, res)
     S = {}

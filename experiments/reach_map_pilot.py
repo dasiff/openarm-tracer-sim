@@ -167,7 +167,7 @@ def main(args):
     base_z, q_ped = 0.1527, TASK_CFG["pedestal_q"]
     sx, sy = TASK_CFG["staging_xy"]
     yaw = TASK_CFG["staging_yaw"]
-    torso_world = np.array([sx, sy, base_z + 0.75 + 2 * q_ped])
+    torso_world = np.array([sx, sy, base_z + 0.3048 + q_ped])
     Rz = np.array([[math.cos(yaw), -math.sin(yaw), 0], [math.sin(yaw), math.cos(yaw), 0], [0, 0, 1]])
     fracs = (0.25, 0.30, 0.35, 0.40, 0.45, 0.50, 0.55, 0.60)
     bxy = TASK_CFG["beaker_xy"]

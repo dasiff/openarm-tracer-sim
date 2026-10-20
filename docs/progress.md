@@ -1,5 +1,14 @@
 # Progress log
 
+## 2026-10-20 21:05: TASK tidy and push; VLM checker (paper's Appendix D prompt, wrist camera, VLM decides, oracle logged); live run (David's go); report and wait
+Steps: (1) fidelity row for navigation targets (paper C.3), squash the local commits into topic commits (no WIP), push main; (2) VLM checker: image call in src/llm_gemini.py (cache by image hash + prompt version), src/mpvi_vlm.py checker (YES/NO parse, oracle logged beside, only deciding checks call the VLM), triggering gripper's wrist camera from obs, orchestrator passes decides; (3) mpvi_trace.py shows each check from a run (--run DIR); (4) tests with a fake client, then the live run text-to-SUCCESS with the VLM deciding; report. Current step: 1. No run in progress.
+
+## 2026-10-20 20:50: verbatim prompts, live rerun SUCCESS, trace tool, evaluation task 6 documented; waiting for David (VLM checker next)
+All four items done and green (suite_20261020_204340_summary.txt: postprocess 51, grounding 56, llm_calls 35, pipeline 13, text 7 from the cache). Report docs/reports/20261020_2050_verbatim_prompts_live_rerun_trace.md; trace docs/reports/20261020_2043_trace_put_the_beaker_on_the_hotplate.md. Unrequested but needed: navigation targets resolved by phrase through the world model. Local commits not pushed. No run in progress.
+
+## 2026-10-20 20:35: Gemini planner + labeling calls built, first live test SUCCESS; waiting for David (VLM checker next, on his word)
+Live run text to SUCCESS (stop_on_disagreement ON, no keyword disagreement) and the same from the cache, replay identical. Report docs/reports/20261020_2035_gemini_calls_first_live_test.md. Open for David: model pinned gemini-3.8-flash (2.5 Flash refused for new API users); the planner prompt is a PLACEHOLDER (paper's Appendix D text needed). Key lives in ~/.config/openarm-tracer-sim/secrets.env. Local commits not pushed. No run in progress.
+
 ## 2026-10-20 19:58: D4 addendum BUILT and green, face fix done; pushing main; waiting for David
 Touched entries green (suite_20261020_194634_summary.txt: postprocess 51, grounding 52, mpvi_pipeline 13, face 27). Report docs/reports/20261020_1958_postprocess_grounding_built.md. New: src/world_model.py, grounding.py, mpvi_schemas.py (Pydantic), mpvi_postprocess.py; orchestrator/modules/pipeline wired; section 8 DECIDED. LATER: operator keys 1-9 in the viewer, carry_ref from the next place step, label prompt tuning, labeling-reply cache. Full suite not rerun. No run in progress.
 

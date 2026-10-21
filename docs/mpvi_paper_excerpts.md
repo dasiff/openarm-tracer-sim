@@ -20,3 +20,14 @@ E6. Appendix C.4, Completion Checker:
 "A VLM-based completion checker receives the head-camera image and the completion criterion ϕ and returns a binary completion judgment; the completion-checking prompt is in Appx. D."
 "Subtask sequencing. While the planner generates granular manipulation subtasks, completion is verified only for the terminal state preceding a navigation subtask. For instance, a plan may contain sequential subtasks "pick up the soda can" followed by "place the soda can in the trash can," but the VLM is queried only to verify that "there is one soda can in the trash can" prior to transitioning to navigation."
 "Proprioceptive trigger. Proprioceptive signals, rather than periodic polling, trigger VLM completion checks. A set of general proprioceptive heuristics monitor gripper and arm state for all manipulation subtasks, with additional heuristics applied when a manipulation primitive has been identified during post-processing. For example, a pick primitive initiates a completion check when gripper and arm state indicate a successful grasp, while a place primitive initiates a check upon object release. This ensures that VLM queries occur at semantically meaningful moments and reduces unnecessary calls. If the VLM does not confirm completion, the VLA continues execution until a timeout is reached."
+
+(Added 2026-10-21; extracted by Claude from the PDF David provided.)
+
+E7. Section 4, Navigation:
+"We therefore use A* motion planning for all base motion, using the VLA only inside the manipulation handoff radius around the target."
+
+E8. Appendix C.3:
+"Navigation terminates when the robot is within the handoff distance dh of t, at which point control transitions to the VLA for manipulation. Robot base repositioning within the handoff distance, which is not a task or object specific parameter, is handled by the VLA."
+
+E9. Section 5, limitations:
+"We attribute regression in task success to excessive motion planner intervention in scenarios where the VLA exhibits superior performance, such as maneuvering through narrow doorways while carrying objects."

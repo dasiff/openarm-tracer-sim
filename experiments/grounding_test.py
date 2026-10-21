@@ -192,7 +192,7 @@ def main():
     def build(world, plan_steps, operator=None, search=None, on_start=None):
         nav, mp = Mod(), Mod(on_start=on_start)
         plan = {"task_name": "t", "segments": plan_steps}
-        mods = {"navigation": nav.module(), "manipulation": mp.module(), "checker": {"check": lambda seg, ev, obs: {"passed": True, "reason": "", "details": {}}}, "world": world,
+        mods = {"navigation": nav.module(), "manipulation": mp.module(), "checker": {"check": lambda seg, ev, obs, decides=False: {"passed": True, "reason": "", "details": {}}}, "world": world,
                 "grounder": make_grounder(world, search, operator)}
         return make_orchestrator(plan, mods), nav, mp
 

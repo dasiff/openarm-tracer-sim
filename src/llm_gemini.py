@@ -4,6 +4,7 @@
     caller = GeminiCaller(mode="cache_only")                     # tests and replays: only stored replies, the API is never called
     caller = GeminiCaller(mode="live")                           # a live run: always calls the API and stores the reply
     reply = caller("Prompt text", Plan, kind="plan", version="planner-v1")       # a dict that fits the Pydantic model's schema
+    text = caller.text_call("Prompt text", image_rgb, kind="vlm", version="vlm-v1")   # a free-text reply about an image (the VLM completion checker)
     label_call = caller.bind("label", LLM_CFG["label_prompt_version"])           # (prompt, model) -> dict: what make_llm_labeler() wants
     caller.log                                                    # one dict per call: kind, model, versions, prompt, reply text, from_cache, attempts, seconds
 
@@ -11,7 +12,8 @@ Structured output: the Pydantic model's JSON schema is given to the SDK as `resp
 again with the model (src/mpvi_postprocess.py, src/mpvi_planner.py), so a reply that does not fit stops the plan.
 
 Cache (LLM_CFG["cache_dir"], one JSON file per reply, written to a temporary file and renamed): the key is the SHA-256 of the model name, the prompt version, the schema's name and the whole
-prompt text, i.e. of the instruction and the prompt version; a different model or prompt version never reuses a reply. Modes: "cache_only" (default; a miss raises LLMCacheMiss and nothing is
+prompt text, i.e. of the instruction and the prompt version; a different model or prompt version never reuses a reply. An image call (text_call) adds the SHA-256 of the image's PNG bytes to the key
+(the image is encoded with OpenCV's default PNG settings, which are deterministic), and the image is stored next to the reply as <key>.png. Modes: "cache_only" (default; a miss raises LLMCacheMiss and nothing is
 sent anywhere), "cache_or_live" (read the cache, call on a miss and store), "live" (call every time, store the reply over the old one: the cache is bypassed for reading, and the new reply is
 what later replays get).
 
@@ -72,7 +74,23 @@ def load_api_key(cfg=LLM_CFG):
     return key
 
 
-def cache_key(model, version, schema_name, prompt):
+def png_bytes(image_rgb):
+    """Encodes an RGB image (H, W, 3) uint8 as PNG bytes (deterministic: the same pixels always give the same bytes).
+
+    Args:
+        image_rgb (numpy.ndarray): The image.
+
+    Returns:
+        bytes: The PNG file's content.
+    """
+    import cv2
+    ok, buf = cv2.imencode(".png", cv2.cvtColor(image_rgb, cv2.COLOR_RGB2BGR))
+    if not ok:
+        raise LLMError("could not encode the image as PNG")
+    return buf.tobytes()
+
+
+def cache_key(model, version, schema_name, prompt, image_sha=None):
     """Gives the cache key of a call.
 
     Args:
@@ -80,11 +98,13 @@ def cache_key(model, version, schema_name, prompt):
         version (str): The prompt version.
         schema_name (str): The response model's class name.
         prompt (str): The whole prompt text (it contains the instruction).
+        image_sha (str or None): The SHA-256 of the image's PNG bytes for an image call. Defaults to None (no image; the key is then the same as before images existed).
 
     Returns:
         str: A hex SHA-256 digest.
     """
-    return hashlib.sha256(json.dumps([model, version, schema_name, prompt], ensure_ascii=False).encode()).hexdigest()
+    parts = [model, version, schema_name, prompt] + ([image_sha] if image_sha else [])
+    return hashlib.sha256(json.dumps(parts, ensure_ascii=False).encode()).hexdigest()
 
 
 class LLMCache:
@@ -111,14 +131,20 @@ class LLMCache:
         path = self.dir / f"{key}.json"
         return json.loads(path.read_text()) if path.is_file() else None
 
-    def put(self, key, record):
+    def put(self, key, record, image_png=None):
         """Stores a record, replacing an old one; the file is written whole to a temporary name and renamed (an interrupted write leaves the old file).
 
         Args:
             key (str): The cache key.
             record (dict): The record (JSON-serialisable).
+            image_png (bytes or None): The image of an image call, stored as <key>.png (written before the record, so a record never points at a missing image).
         """
         self.dir.mkdir(parents=True, exist_ok=True)
+        if image_png is not None:
+            fd, tmp = tempfile.mkstemp(dir=self.dir, suffix=".tmp")
+            with os.fdopen(fd, "wb") as f:
+                f.write(image_png)
+            os.replace(tmp, self.dir / f"{key}.png")
         fd, tmp = tempfile.mkstemp(dir=self.dir, suffix=".tmp")
         with os.fdopen(fd, "w") as f:
             json.dump(record, f, indent=1, ensure_ascii=False)
@@ -152,6 +178,7 @@ class GeminiCaller:
         self.cache = cache or LLMCache(cfg["cache_dir"])
         self.say, self.sleep = say, sleep
         self.log = []
+        self._images = {}
         self._key = None
 
     def __repr__(self):
@@ -175,18 +202,20 @@ class GeminiCaller:
         m = re.search(r"retry in ([\d.]+)\s*s", text) or re.search(r'retryDelay"?\s*[:=]\s*"?([\d.]+)s', text)
         return float(m.group(1)) if m else 0.0
 
-    def _generate(self, prompt, response_model, system):
-        """One live call with retries; returns (reply text, attempts)."""
+    def _generate(self, prompt, response_model, system, image_png=None):
+        """One live call with retries; returns (reply text, attempts). Without a response model the reply is free text; with an image the image comes first in the contents."""
         from google.genai import errors, types
         client = self._get_client()
-        kw = {"response_mime_type": "application/json", "response_json_schema": response_model.model_json_schema(), "temperature": self.cfg["temperature"],
-              "thinking_config": types.ThinkingConfig(thinking_budget=self.cfg["thinking_budget"])}
+        kw = {"temperature": self.cfg["temperature"], "thinking_config": types.ThinkingConfig(thinking_budget=self.cfg["thinking_budget"])}
+        if response_model is not None:
+            kw.update(response_mime_type="application/json", response_json_schema=response_model.model_json_schema())
+        contents = prompt if image_png is None else [types.Part.from_bytes(data=image_png, mime_type="image/png"), prompt]
         if system:
             kw["system_instruction"] = system
         config = types.GenerateContentConfig(**kw)
         for attempt in range(self.cfg["max_retries"] + 1):
             try:
-                resp = client.models.generate_content(model=self.cfg["model"], contents=prompt, config=config)
+                resp = client.models.generate_content(model=self.cfg["model"], contents=contents, config=config)
                 text = resp.text
                 if not text:
                     raise LLMError(f"empty reply from {self.cfg['model']} (finish reason {getattr(resp.candidates[0], 'finish_reason', '?') if getattr(resp, 'candidates', None) else 'none'})")
@@ -207,6 +236,34 @@ class GeminiCaller:
                 self.sleep(wait)
         raise LLMError("unreachable")
 
+    def _run(self, prompt, response_model, kind, version, system, image_png=None):
+        """The shared call: cache or live by the mode, a log entry. Returns the reply text."""
+        sha = hashlib.sha256(image_png).hexdigest() if image_png is not None else None
+        schema_name = response_model.__name__ if response_model is not None else "text"
+        key = cache_key(self.cfg["model"], version, schema_name, prompt, sha)
+        t0 = time.time()
+        rec = None if self.mode == "live" else self.cache.get(key)
+        from_cache, attempts = rec is not None, 0
+        if rec is None:
+            if self.mode == "cache_only":
+                raise LLMCacheMiss(f"no stored reply for this {kind} call (key {key[:12]}, model {self.cfg['model']}, version {version}"
+                                   + (f", image {sha[:12]}" if sha else "") + "); the mode is cache_only, nothing was sent")
+            text, attempts = self._generate(prompt, response_model, system, image_png)
+            rec = {"key": key, "kind": kind, "model": self.cfg["model"], "version": version, "schema": schema_name, "prompt": prompt, "reply_text": text,
+                   "created": time.strftime("%Y-%m-%dT%H:%M:%S")}
+            if sha:
+                rec["image_sha256"] = sha
+            self.cache.put(key, rec, image_png)
+        entry = {"kind": kind, "model": rec["model"], "version": version, "schema": schema_name, "key": key, "from_cache": from_cache, "attempts": attempts,
+                 "seconds": round(time.time() - t0, 3), "prompt": prompt, "reply_text": rec["reply_text"]}
+        if sha:
+            entry["image_sha256"] = sha
+            self._images[sha] = image_png
+        self.log.append(entry)
+        self.say(f"[llm] {kind} call {'from the cache' if from_cache else f'live, {entry['seconds']:.1f} s, {attempts} try(ies)'} (model {rec['model']}, version {version}, key {key[:12]}"
+                 + (f", image {sha[:12]}" if sha else "") + ")")
+        return rec["reply_text"]
+
     def __call__(self, prompt, response_model, kind="call", version="v0", system=None):
         """Makes one structured call (from the cache or live, by the mode).
 
@@ -224,25 +281,30 @@ class GeminiCaller:
             LLMCacheMiss: In "cache_only" mode with no stored reply.
             LLMError: When the call fails for good or the reply is not JSON.
         """
-        key = cache_key(self.cfg["model"], version, response_model.__name__, prompt)
-        t0 = time.time()
-        rec = None if self.mode == "live" else self.cache.get(key)
-        from_cache, attempts = rec is not None, 0
-        if rec is None:
-            if self.mode == "cache_only":
-                raise LLMCacheMiss(f"no stored reply for this {kind} call (key {key[:12]}, model {self.cfg['model']}, version {version}); the mode is cache_only, nothing was sent")
-            text, attempts = self._generate(prompt, response_model, system)
-            rec = {"key": key, "kind": kind, "model": self.cfg["model"], "version": version, "schema": response_model.__name__, "prompt": prompt, "reply_text": text,
-                   "created": time.strftime("%Y-%m-%dT%H:%M:%S")}
-            self.cache.put(key, rec)
-        entry = {"kind": kind, "model": rec["model"], "version": version, "schema": response_model.__name__, "key": key, "from_cache": from_cache, "attempts": attempts,
-                 "seconds": round(time.time() - t0, 3), "prompt": prompt, "reply_text": rec["reply_text"]}
-        self.log.append(entry)
-        self.say(f"[llm] {kind} call {'from the cache' if from_cache else f'live, {entry['seconds']:.1f} s, {attempts} try(ies)'} (model {rec['model']}, version {version}, key {key[:12]})")
+        text = self._run(prompt, response_model, kind, version, system)
         try:
-            return json.loads(rec["reply_text"])
+            return json.loads(text)
         except json.JSONDecodeError as e:
-            raise LLMError(f"the {kind} reply is not JSON: {e}: {rec['reply_text'][:200]!r}") from None
+            raise LLMError(f"the {kind} reply is not JSON: {e}: {text[:200]!r}") from None
+
+    def text_call(self, prompt, image_rgb, kind="vlm", version="v0", system=None):
+        """Asks about an image and gets a free-text answer (the VLM completion checker; no schema, the paper's prompt asks for a YES or NO sentence).
+
+        Args:
+            prompt (str): The whole prompt text.
+            image_rgb (numpy.ndarray): The image, (H, W, 3) uint8 RGB; it is sent as PNG and its SHA-256 is part of the cache key.
+            kind (str): A label for the log.
+            version (str): The prompt version (part of the cache key).
+            system (str or None): An optional system instruction.
+
+        Returns:
+            str: The reply text.
+
+        Raises:
+            LLMCacheMiss: In "cache_only" mode with no stored reply for this image and prompt.
+            LLMError: When the call fails for good.
+        """
+        return self._run(prompt, None, kind, version, system, png_bytes(image_rgb))
 
     def bind(self, kind, version, system=None):
         """Gives a two-argument function (prompt, response_model) -> dict for make_llm_labeler() and make_llm_planner().
@@ -258,13 +320,18 @@ class GeminiCaller:
         return lambda prompt, response_model: self(prompt, response_model, kind=kind, version=version, system=system)
 
     def save_log(self, path):
-        """Writes the log (every prompt and reply, no key) as JSON, whole to a temporary file and renamed.
+        """Writes the log (every prompt and reply, no key) as JSON, whole to a temporary file and renamed; the images of image calls go to vlm_images/<sha>.png next to it.
 
         Args:
             path (str or Path): The file.
         """
         path = Path(path)
         path.parent.mkdir(parents=True, exist_ok=True)
+        if self._images:                                              # the images of the image calls, one PNG per hash, next to the log
+            img_dir = path.parent / "vlm_images"
+            img_dir.mkdir(parents=True, exist_ok=True)
+            for sha, png in self._images.items():
+                (img_dir / f"{sha}.png").write_bytes(png)
         tmp = path.with_suffix(".tmp")
         tmp.write_text(json.dumps({"model": self.cfg["model"], "mode": self.mode, "calls": self.log}, indent=1, ensure_ascii=False))
         os.replace(tmp, path)

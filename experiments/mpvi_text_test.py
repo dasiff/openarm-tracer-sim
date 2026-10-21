@@ -50,8 +50,8 @@ def main(args):
     for sub in ("episode", "recording"):
         shutil.rmtree(out / sub, ignore_errors=True)
     caller = GeminiCaller(mode=args.mode or ("live" if args.live else "cache_only"))
-    summary = {"instruction": args.instruction, "mode": caller.mode, "model": LLM_CFG["model"], "stop_on_disagreement": not args.no_stop_on_disagreement}
-    print(f"instruction: {args.instruction!r}   mode {caller.mode}   model {LLM_CFG['model']}   stop on disagreement {summary['stop_on_disagreement']}")
+    summary = {"instruction": args.instruction, "mode": caller.mode, "checker": args.checker, "model": LLM_CFG["model"], "stop_on_disagreement": not args.no_stop_on_disagreement}
+    print(f"instruction: {args.instruction!r}   mode {caller.mode}   model {LLM_CFG['model']}   stop on disagreement {summary['stop_on_disagreement']}   checker {args.checker}")
 
     def finish(ok_text, error=None):
         caller.save_log(out / "llm_log.json")
@@ -64,7 +64,8 @@ def main(args):
         summary["plan"] = plan
         print("\nthe plan:\n" + "\n".join(f"  {i}. [{s['type']}] {s['description']}  (done when: {s['completion_criteria']}; target {s['target']})" for i, s in enumerate(plan["segments"])))
         sim = load_task(cameras=True)
-        task = make_pipeline_task(plan, labeler=make_llm_labeler(caller.bind("label", LLM_CFG["label_prompt_version"])), stop_on_disagreement=not args.no_stop_on_disagreement)
+        task = make_pipeline_task(plan, labeler=make_llm_labeler(caller.bind("label", LLM_CFG["label_prompt_version"])), stop_on_disagreement=not args.no_stop_on_disagreement,
+                                  checker=args.checker, vlm_caller=caller)
     except (LLMError, PlannerError, PostprocessError) as e:
         print(f"\nSTOPPED before the episode: {type(e).__name__}: {e}")
         finish("stopped", f"{type(e).__name__}: {e}")
@@ -89,9 +90,25 @@ def main(args):
     check("the episode outcome is SUCCESS and every segment is done", s["outcome"] == "SUCCESS" and all(x == "done" for x in state["status"]), f"{s['outcome']} {state['status']} {state['failure']}")
     ids = [{k: v for k, v in g.items() if k != "segment"} for g in state["grounded"]]
     check("the grounded objects are the beaker (pick) and the beaker and the hotplate (place)", ids == [{"manipulated": "beaker"}, {"manipulated": "beaker", "destination": "hotplate"}], f"{ids}")
+    deciding = [v for v in state["verdicts"] if v["decides"]]
+    print("\nthe checks (D = decides):")
+    for v in state["verdicts"]:
+        d = v.get("details") or {}
+        if "vlm" in d:
+            print(f"  segment {v['segment']} {v['event']} D  VLM {d['vlm']['verdict']} ({(d['vlm']['reply_text'] or d['vlm']['error'] or '').strip()[:60]!r})  oracle {'PASS' if d['oracle']['passed'] else 'FAIL'}  "
+                  f"{'agree' if d['agree'] else 'DISAGREE' if d['agree'] is False else '-'}  image {str(d['vlm']['image_sha256'])[:12]}")
+        else:
+            print(f"  segment {v['segment']} {v['event']} {'D' if v['decides'] else '-'}  oracle {'PASS' if v['passed'] else 'FAIL'}")
     calls = caller.log
-    check("the log has the planning and the labeling call, each with its prompt and reply", [c["kind"] for c in calls] == ["plan", "label"] and all(c["prompt"] and json.loads(c["reply_text"]) for c in calls)
+    vlm_calls = [c for c in calls if c["kind"] == "vlm"]
+    check("the log has the planning and the labeling call, then one VLM call per deciding check, each with its prompt and reply (and image)",
+          [c["kind"] for c in calls[:2]] == ["plan", "label"] and len(vlm_calls) == (len(deciding) if args.checker == "vlm" else 0) and len(calls) == 2 + len(vlm_calls)
+          and all(c["prompt"] and c["reply_text"] for c in calls) and all(json.loads(c["reply_text"]) for c in calls[:2]) and all(c.get("image_sha256") for c in vlm_calls)
           and all(c["from_cache"] == (caller.mode == "cache_only") for c in calls if caller.mode != "cache_or_live"), f"{[(c['kind'], c['from_cache'], c['attempts'], c['seconds']) for c in calls]}")
+    if args.checker == "vlm":
+        check("every deciding check has a VLM verdict and the oracle's verdict beside it, and the decision is the VLM's",
+              len(deciding) == 2 and all(v["details"]["vlm"]["verdict"] in ("YES", "NO") and "passed" in v["details"]["oracle"] and v["passed"] == (v["details"]["vlm"]["verdict"] == "YES") for v in deciding),
+              f"{[(v['details']['vlm']['verdict'], v['details']['oracle']['passed'], v['details']['agree']) for v in deciding]}")
     finish("done")
     blob = (out / "llm_log.json").read_text() + (out / "summary.json").read_text()
     from src.llm_gemini import load_api_key
@@ -114,6 +131,7 @@ if __name__ == "__main__":
     ap.add_argument("--mode", choices=("cache_only", "cache_or_live", "live"), help="the LLM mode; cache_or_live reads the stored reply of each call and calls the API only for the missing ones")
     ap.add_argument("--instruction", default="put the beaker on the hotplate")
     ap.add_argument("--no-stop-on-disagreement", action="store_true")
+    ap.add_argument("--checker", choices=("oracle", "vlm"), default="vlm", help="who decides the completion checks: the VLM (the paper; default) or the sim oracle")
     ap.add_argument("--out", help="keep the log, the summary, the episode and the recording here")
     a = ap.parse_args()
     main(a)

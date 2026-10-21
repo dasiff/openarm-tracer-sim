@@ -19,8 +19,8 @@ Navigation and manipulation modules share the protocol of a stage, plus a segmen
     events()        -> list of events since the last call: "gripper_closed" (the fingers stalled on something) and "gripper_opened" (manipulation only)
     observe(obs), resume(), report()   optional, as for a stage of src/sequential_policy.py
 
-Completion checker: check(segment, event, obs) -> {"passed": bool, "reason": str, "details": dict}, called after a gripper event for the segments tagged "check"; for the others
-the orchestrator calls it only to log the verdict.
+Completion checker: check(segment, event, obs, decides=False) -> {"passed": bool, "reason": str, "details": dict}, called after every gripper event; `decides` says whether the verdict decides (the segment's
+last manipulation step at the event that ends its primitive) or is only logged. The oracle ignores it; the VLM checker (src/mpvi_vlm.py) calls the VLM only when it is true.
 
 Scripted pick and place (PICK_PLACE_CFG, MINK_CFG in src/task_config.py): the pad centre goes through the waypoints of design plan 3.3 with the hand level, the approach along the
 robot's forward direction. PICK: OVER (at the clearance height, a standoff back from the beaker), DOWN (to the grasp height), IN (the pad centre on the beaker's axis), CLOSE (8 N), UP
@@ -354,7 +354,7 @@ def make_oracle_checker(model, data, world, pad_pose, side="left", task_cfg=TASK
     fq = int(model.jnt_qposadr[f1])
     open_g = task_cfg.get("finger_open", 0.044)
 
-    def check(segment, event, obs):
+    def check(segment, event, obs, decides=False):
         travel = float(data.qpos[fq])
         if segment["primitive"] == "pick":
             obj = segment["grounded"]["manipulated"]

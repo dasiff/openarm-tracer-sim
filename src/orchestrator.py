@@ -14,7 +14,7 @@ the segment plus "grounded": {role: entry id}.
 
 Flow of a manipulation segment: start(segment); every tick step(obs); whenever the module reports a gripper event ("gripper_closed", "gripper_opened") the checker is called: for
 a segment tagged "check" (the last of its unit of consecutive manipulation segments) at the event that ends its primitive (close for a pick, open for a place) the verdict decides
-(a failed check stops the plan); for any other event the verdict is only logged (the oracle log of design plan 8 D4 item 1). A module's error stops the plan. The plan is finished
+(a failed check stops the plan); for any other event the verdict is only logged (the oracle log of design plan 8 D4 item 1). The checker is called as check(segment, event, obs, decides): a VLM checker (src/mpvi_vlm.py) uses the VLM for deciding checks and logs the oracle beside it. A module's error stops the plan. The plan is finished
 when every segment is done.
 
 Status (the viewer's status row shows the phase text, the console and the report have the details): each segment is pending, running, checking, done or failed (with the reason).
@@ -127,9 +127,11 @@ def make_orchestrator(plan, modules):
             decides = seg["check"] and ev == CHECK_EVENT.get(prim)
             if decides:
                 S["status"][i] = "checking"
-            v = modules["checker"]["check"](seg, ev, obs)
+            v = modules["checker"]["check"](seg, ev, obs, decides)
             S["verdicts"].append({"time": S["t"], "segment": i, "event": ev, "decides": decides, **v})
-            say(f"{ev}: the check says {'PASS' if v['passed'] else 'FAIL'}" + (f" ({v['reason']})" if v["reason"] else "") + ("" if decides else " [logged only]"))
+            d = v.get("details") or {}
+            beside = f" [VLM: {d['vlm']['verdict']}, oracle: {'PASS' if d['oracle']['passed'] else 'FAIL'}, {'agree' if d.get('agree') else 'DISAGREE' if d.get('agree') is False else 'no comparison'}]" if "vlm" in d else ""
+            say(f"{ev}: the check says {'PASS' if v['passed'] else 'FAIL'}" + (f" ({v['reason']})" if v["reason"] else "") + beside + ("" if decides else " [logged only]"))
             if decides and not v["passed"]:
                 fail(f"completion check failed: {v['reason']}")
                 return None

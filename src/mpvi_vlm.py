@@ -20,7 +20,7 @@ call that still fails after the retries is NOT COMPLETE, with the reason "checke
 the normal failure path of the orchestrator). It is never read as YES.
 
 Verdict dict of a deciding check: {"passed": bool (the VLM's), "reason": str, "details": {"vlm": {"verdict": "YES" | "NO" | "ERROR", "reply_text" (the raw reply), "error_kind" (None, "checker reply
-unreadable" or "checker call failed"), "image_sha256", "camera", "prompt_version", "error"}, "oracle": {"passed", "reason"}, "agree": bool or None, "frozen": {"tick", "time", "image_source"}}}.
+unreadable" or "checker call failed"), "image_sha256", "cache_key", "image_path" (the stored image of the call, shown to the operator after a failed step), "camera", "prompt_version", "error"}, "oracle": {"passed", "reason"}, "agree": bool or None, "frozen": {"tick", "time", "image_source"}}}.
 
 Contents:
     read_answer(text), make_vlm_checker(oracle_checker, caller, side, version, say, cameras).
@@ -96,7 +96,9 @@ def make_vlm_checker(oracle_checker, caller, side="left", version=None, say=prin
             return failed(KIND_UNREADABLE, f"{type(e).__name__}: {e}")
         except LLMError as e:
             return failed(KIND_CALL_FAILED, f"{type(e).__name__}: {e}")
-        vlm.update(reply_text=text, image_sha256=caller.log[-1].get("image_sha256"))
+        entry = caller.log[-1]
+        png = caller.cache.dir / f"{entry['key']}.png"
+        vlm.update(reply_text=text, image_sha256=entry.get("image_sha256"), cache_key=entry["key"], image_path=str(png) if png.is_file() else None)
         verdict = read_answer(text)
         if verdict is None:
             return failed(KIND_UNREADABLE, f"the reply is not exactly one of the two answers: {text[:200]!r}")

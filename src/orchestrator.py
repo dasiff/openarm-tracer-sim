@@ -23,21 +23,48 @@ The phase text is "<segment number>/<count> <NAV|PICK|PLACE>: <the module's phas
 Monitors (modules["monitors"], optional list; src/mpvi_monitors.py): called every tick after the segment's step with the gripper events of the tick; they only log (state["monitors"], the console,
 the report) and never fail or stop a step. When a manipulation segment ends, the module's optional end_report() (a place: whether the arm is back at home) is logged as its own line, not as part of the check.
 
+Failure handling (design plan 8 D4 item 2; docs/mpvi_decisions.md; ORCH_CFG): the paper marks a failed step failed and goes on (E5), because its steps are independent; ours depend on each other (no
+place without a pick), so a failed MANIPULATION step is retried up to ORCH_CFG["retry_max"] times (default 1): the failing arm alone goes back to its zombie pose (the module's recover(); the other
+arm is not commanded, an object it holds stays held), the world model is refreshed, the step's objects are grounded again and the skill runs again; the completion check fires again as usual. After the
+retries the operator is asked through the operator interface of src/grounding.py (console and viewer status text: the step, the reason, the checker's image path; choices retry again, skip, abort; the choice
+is logged); an unattended run (no operator present) stops the plan with the reason. No retry, straight to the operator or the stop: a navigation step, a grounding failure, a place whose object is not in the
+hand, a pick whose object is already in the hand, an object knocked over (its up axis more than ORCH_CFG["knocked_over_deg"] from vertical), and a module error whose error_kind() is "clearance" or "contact".
+These read the world model and the module, never the oracle. Every attempt is logged (state["attempts"]: attempt number, outcome, reason, the checker's verdict and the oracle's, the decision).
+
 The orchestrator is a command source of src/control_loop.py (the dictionary of src/sequential_policy.py: "step", "status", "resume", "report", "hz"); the episode runner's
 policy status gets "handoff" once the navigation segments are done, "error" with the failure reason, and "failure_outcome" PLAN_FAILED. state["finished"] is True once the plan is
 done (the task's success check reads it).
 """
 
+import math
+
+from src.task_config import ORCH_CFG
+
 CHECK_EVENT = {"pick": "gripper_closed", "place": "gripper_opened"}
+
+
+class _Option:
+    """One choice of the operator's question after a failed step (the operator interface shows describe())."""
+
+    def __init__(self, id, text):
+        self.id, self._text = id, text
+
+    def describe(self):
+        return self._text
+
+
+OPTIONS = (_Option("retry", "retry the step again"), _Option("skip", "skip the step (it stays failed, the plan goes on)"), _Option("abort", "abort the plan"))
 LABEL = {"navigation": "NAV", "pick": "PICK", "place": "PLACE", None: "STEP", "other": "STEP"}
 
 
-def make_orchestrator(plan, modules):
+def make_orchestrator(plan, modules, cfg=None):
     """Builds the orchestrator as a command source.
 
     Args:
         plan (dict): The tagged plan (src/mpvi_postprocess.postprocess).
-        modules (dict): "navigation", "manipulation" (the module protocol of src/mpvi_modules.py), "checker", "world" and "grounder" (src/grounding.py).
+        modules (dict): "navigation", "manipulation" (the module protocol of src/mpvi_modules.py), "checker", "world" and "grounder" (src/grounding.py); optional: "monitors" (they only log),
+            "operator" (the operator interface of src/grounding.py, asked after a failed step; absent or not present means the plan stops instead).
+        cfg (dict or None): ORCH_CFG ("retry_max", "knocked_over_deg"). Defaults to it.
 
     Returns:
         dict: The policy source (see the module docstring), plus "state": {"steps" (the tagged segments), "status" (list of the segment states), "index", "finished",
@@ -46,6 +73,7 @@ def make_orchestrator(plan, modules):
     Raises:
         ValueError: If a manipulation segment lacks its tags (primitive, objects, check), or there is no grounder.
     """
+    cfg = cfg or ORCH_CFG
     steps = plan["segments"]
     for i, s in enumerate(steps):
         if s["type"] == "manipulation" and any(k not in s for k in ("primitive", "objects", "check")):
@@ -53,25 +81,143 @@ def make_orchestrator(plan, modules):
     if any(s["type"] == "manipulation" for s in steps) and "grounder" not in modules:
         raise ValueError("a plan with manipulation segments needs modules['grounder']")
     n = len(steps)
-    S = {"steps": steps, "status": ["pending"] * n, "index": 0, "finished": False, "failure": None, "log": [], "verdicts": [], "grounded": [], "monitors": [], "skill_end": [], "tick_events": [], "cur": None, "started": False, "t": 0.0,
+    S = {"steps": steps, "status": ["pending"] * n, "index": 0, "finished": False, "failure": None, "log": [], "verdicts": [], "grounded": [], "monitors": [], "skill_end": [], "tick_events": [], "attempt": [1] * len(steps), "attempts": [], "last_check": None, "operator": [], "skipped": [], "asking": None, "cur": None, "started": False, "t": 0.0,
          "handoff": not any(s["type"] == "navigation" for s in steps)}
 
     def say(text):
         S["log"].append((S["t"], text))
         print(f"[orchestrator] t={S['t']:.2f} s: {text}")
 
-    def fail(reason):
-        S["status"][S["index"]] = "failed"
-        S["failure"] = f"segment {S['index'] + 1}/{n} ({steps[S['index']]['description']}): {reason}"
+    def end_attempt(i, outcome, reason):
+        """Logs the end of an attempt of segment i: the checker's verdict and the oracle's beside it (None where there was no deciding check)."""
+        v = S["last_check"]
+        d = (v or {}).get("details") or {}
+        is_oracle = modules["checker"].get("name") == "sim oracle"
+        entry = {"segment": i, "attempt": S["attempt"][i], "time": S["t"], "outcome": outcome, "reason": reason, "checker_passed": None if v is None else v["passed"],
+                 "vlm_verdict": (d.get("vlm") or {}).get("verdict"), "oracle_passed": (d.get("oracle") or {}).get("passed") if not is_oracle else (None if v is None else v["passed"]),
+                 "image_path": (d.get("vlm") or {}).get("image_path"), "decision": None}
+        S["attempts"].append(entry)
+        return entry
+
+    def no_retry_reason(i, seg, kind):
+        """Why a failed step is NOT retried (a string), or None when it is: only the structure of the step, the world model and the module are read, never the oracle."""
+        if seg["type"] == "navigation":
+            return "a navigation step is not retried"
+        if kind in ("grounding", "no_primitive", "recovery"):
+            return f"a {kind} failure is not retried"
+        mod = modules["manipulation"]
+        if "recover" not in mod:
+            return "the manipulation module has no recovery"
+        if mod.get("error_kind") and mod["error_kind"]() in ("clearance", "contact"):
+            return f"a {mod['error_kind']()} abort is not retried"
+        if S["attempt"][i] - 1 >= cfg["retry_max"]:
+            return f"the retries are used up (retry_max {cfg['retry_max']})"
+        cur = S["cur"] or {}
+        obj = (cur.get("grounded") or {}).get("manipulated")
+        world = modules.get("world")
+        if obj is not None and world is not None:
+            world.refresh(S["t"])
+            e = world.get(obj)
+            side = mod.get("side")
+            holder = e.properties.get("held_by")
+            if seg["primitive"] == "place" and holder != side:
+                return f"the object to place ({obj}) is not in the {side} hand"
+            if seg["primitive"] == "pick" and holder == side:
+                return f"the object ({obj}) is already in the {side} hand"
+            axis = e.axis
+            if axis is not None:
+                tilt = math.degrees(math.acos(max(-1.0, min(1.0, float(axis[2]) / max(float(sum(float(a) ** 2 for a in axis)) ** 0.5, 1e-9)))))
+                if tilt > cfg["knocked_over_deg"]:
+                    return f"{obj} is knocked over (tilt {tilt:.0f} deg)"
+        return None
+
+    def advance_past(i):
+        """Moves on after segment i (done, or skipped by the operator)."""
+        if i + 1 < n:
+            S["index"] = i + 1
+        else:
+            S["finished"] = True
+            say("plan finished" + (f" (steps skipped: {[k + 1 for k in S['skipped']]})" if S["skipped"] else ""))
+
+    def stop_plan(i, reason):
+        S["status"][i] = "failed"
+        S["failure"] = f"segment {i + 1}/{n} ({steps[i]['description']}): {reason}"
         say(f"FAILED: {S['failure']}")
 
+    def begin_retry(i, why):
+        S["attempt"][i] += 1
+        S["status"][i] = "recovering"
+        say(f"RETRY, attempt {S['attempt'][i]} of segment {i + 1}/{n}: {why}; the arm goes back to its zombie pose, then the world model is refreshed and the step is grounded again")
+        modules["manipulation"]["recover"]()
+
+    def fail(reason, kind="module"):
+        """A step failed: retry it, ask the operator, or stop the plan (see the module docstring). kind: "check", "module", "grounding", "no_primitive" or "recovery"."""
+        i = S["index"]
+        seg = steps[i]
+        entry = end_attempt(i, "failed", reason)
+        S["last_check"] = None
+        say(f"attempt {S['attempt'][i]} of segment {i + 1}/{n} failed ({kind}): {reason}")
+        block = no_retry_reason(i, seg, kind)
+        if block is None:
+            entry["decision"] = "retry"
+            begin_retry(i, reason)
+            return
+        op = modules.get("operator")
+        if op is None or not op.get("present"):
+            entry["decision"] = f"stop (no retry: {block}; no operator present)"
+            stop_plan(i, f"{reason} [no retry: {block}; no operator present]")
+            return
+        entry["decision"] = f"operator (no retry: {block})"
+        path = entry["image_path"]
+        text = f"step {i + 1}/{n} ({seg['description']}) failed after {S['attempt'][i]} attempt(s): {reason}; no retry: {block}; checker image: {path or 'none'}"
+        S["asking"] = {"segment": i, "text": text, "reason": reason, "entry": entry}
+        S["status"][i] = "asking_failure"
+        op["ask"](text, list(OPTIONS), "failure")
+
+    def operator_step(i):
+        """Polls the operator's answer to the failed-step question; acts on it when it comes. Returns None (no commands while waiting)."""
+        op = modules["operator"]
+        k = op["answer"]()
+        if k is None:
+            return None
+        a = S["asking"]
+        S["asking"] = None
+        choice = OPTIONS[k - 1].id if isinstance(k, int) and 1 <= k <= len(OPTIONS) else None
+        S["operator"].append({"time": S["t"], "segment": i, "reason": a["reason"], "answer": k, "choice": choice})
+        a["entry"]["operator_choice"] = choice
+        say(f"the operator chose {choice or f'an invalid answer {k!r}'} for step {i + 1}/{n}")
+        if choice == "retry" and "recover" in modules["manipulation"] and steps[i]["type"] == "manipulation":
+            begin_retry(i, "the operator asked for another try")
+        elif choice == "skip":
+            S["status"][i] = "failed"
+            S["skipped"].append(i)
+            say(f"segment {i + 1}/{n} skipped by the operator (it stays failed)")
+            advance_past(i)
+        else:
+            stop_plan(i, f"{a['reason']} [{'aborted by the operator' if choice == 'abort' else 'the operator could not retry' if choice == 'retry' else 'invalid operator answer'}]")
+        return None
+
+    def recovery_step(mod, i, obs):
+        """Steps the recovery of the failing arm; when it is done the step starts again (grounded again). The gripper events of the recovery are not checked."""
+        cmds = mod["step"](obs)
+        mod["events"]()
+        if mod["error"]():
+            fail(f"recovery failed: {mod['error']()}", "recovery")
+            return None
+        if mod["done"]():
+            if modules.get("world") is not None:
+                modules["world"].refresh(S["t"])
+            S["status"][i] = "pending"
+            say(f"recovery done: the arm is at its zombie pose, the world model is refreshed")
+        return cmds
+
     def with_group(seg):
-        """The segment for the checker: with `group_description`, the concatenated descriptions of its manipulation group (paper E4, E6); the criterion stays the segment's own, which is
-        the final segment's for the one that carries the check tag."""
+        """The segment with the text of its manipulation group (paper E4, E6): `group_description`, the concatenated descriptions of its group's segments, and `group_completion_criteria`, the final
+        segment's criterion. The checker gets it, and the manipulation module's start() (a VLA reads it as the task text)."""
         if seg.get("group") is None:
             return seg
-        group = [s["description"] for s in steps if s["type"] == "manipulation" and s.get("group") == seg["group"]]
-        return {**seg, "group_description": "; ".join(group)}
+        group = [s for s in steps if s["type"] == "manipulation" and s.get("group") == seg["group"]]
+        return {**seg, "group_description": "; ".join(s["description"] for s in group), "group_completion_criteria": group[-1]["completion_criteria"]}
 
     def module_of(seg):
         return modules["navigation" if seg["type"] == "navigation" else "manipulation"]
@@ -102,15 +248,20 @@ def make_orchestrator(plan, modules):
         i = S["index"]
         seg = steps[i]
         mod = module_of(seg)
+        if S["status"][i] == "asking_failure":
+            return operator_step(i)
+        if S["status"][i] == "recovering":
+            return recovery_step(mod, i, obs)
         if S["status"][i] == "pending":
-            if i == 0:
+            if i == 0 and S["attempt"][i] == 1:
                 say(f"plan '{plan['task_name']}': " + "; ".join(f"{k + 1}. {s['description']}" for k, s in enumerate(steps)))
             S["started"] = True
-            say(f"segment {i + 1}/{n} started: {seg['description']} (completion: {seg['completion_criteria']})")
+            S["last_check"] = None
+            say(f"segment {i + 1}/{n} " + ("started" if S["attempt"][i] == 1 else f"attempt {S['attempt'][i]} started") + f": {seg['description']} (completion: {seg['completion_criteria']})")
             start_seg = seg
             if seg["type"] == "manipulation":
                 if seg["primitive"] not in CHECK_EVENT:
-                    fail(f"no primitive for this step: {seg['description']}")
+                    fail(f"no primitive for this step: {seg['description']}", "no_primitive")
                     return None
                 S["status"][i] = "grounding"
                 r = modules["grounder"]["begin"](seg)
@@ -121,7 +272,7 @@ def make_orchestrator(plan, modules):
                     return None
             S["status"][i] = "running"
             S["cur"] = start_seg
-            mod["start"](start_seg)
+            mod["start"](with_group(start_seg) if start_seg["type"] == "manipulation" else start_seg)
             return mod_step(mod, i, obs)
         if S["status"][i] == "grounding":
             r = modules["grounder"]["poll"]()
@@ -132,13 +283,13 @@ def make_orchestrator(plan, modules):
                 return None
             S["status"][i] = "running"
             S["cur"] = start_seg
-            mod["start"](start_seg)
+            mod["start"](with_group(start_seg))
         return mod_step(mod, i, obs)
 
     def grounded(seg, r):
         """The segment with its grounded entry ids, or None after stopping the plan on a failed grounding."""
         if r["state"] == "failed":
-            fail(r["reason"])
+            fail(r["reason"], "grounding")
             return None
         ids = {role: e.id for role, e in r["resolved"].items()}
         S["grounded"].append({"segment": S["index"], **ids})
@@ -157,19 +308,22 @@ def make_orchestrator(plan, modules):
                 S["status"][i] = "checking"
             v = modules["checker"]["check"](with_group(seg), ev, obs, decides)
             S["verdicts"].append({"time": S["t"], "segment": i, "event": ev, "decides": decides, **v})
+            if decides:
+                S["last_check"] = v
             d = v.get("details") or {}
             beside = f" [VLM: {d['vlm']['verdict']}, oracle: {'PASS' if d['oracle']['passed'] else 'FAIL'}, {'agree' if d.get('agree') else 'DISAGREE' if d.get('agree') is False else 'no comparison'}]" if "vlm" in d else ""
             say(f"{ev}: the check says {'PASS' if v['passed'] else 'FAIL'}" + (f" ({v['reason']})" if v["reason"] else "") + beside + ("" if decides else " [logged only]"))
             if decides and not v["passed"]:
-                fail(f"completion check failed: {v['reason']}")
+                fail(f"completion check failed: {v['reason']}", "check")
                 return None
             if decides:
                 S["status"][i] = "running"
         if mod["error"]():
-            fail(mod["error"]())
+            fail(mod["error"](), "module")
             return None
         if mod["done"]():
             S["status"][i] = "done"
+            end_attempt(i, "done", "")
             say(f"segment {i + 1}/{n} done")
             end = mod["end_report"]() if "end_report" in mod else None
             if end:
@@ -177,11 +331,7 @@ def make_orchestrator(plan, modules):
                 say(f"skill ended (not part of any check): arm {'at home' if end['at_home'] else 'NOT at home'}, largest joint error {end['max_joint_error_rad']:.3f} rad [logged only]")
             if seg["type"] == "navigation" and all(s["type"] != "navigation" for s in steps[i + 1:]):
                 S["handoff"] = True
-            if i + 1 < n:
-                S["index"] = i + 1
-            else:
-                S["finished"] = True
-                say("plan finished")
+            advance_past(i)
         return cmds
 
     def phase_text():
@@ -193,6 +343,11 @@ def make_orchestrator(plan, modules):
         st = S["status"][i]
         if st == "grounding":
             return f"{i + 1}/{n} {label}: {modules['grounder']['phase']()} [{st}]"
+        if st == "asking_failure":
+            a = S["asking"]
+            return f"{i + 1}/{n} {label}: ASK OPERATOR, step failed: {a['reason'][:90]}; " + "; ".join(f"{k + 1}) {o.id}" for k, o in enumerate(OPTIONS)) + f"; checker image {a['entry']['image_path'] or 'none'}"
+        if st == "recovering":
+            return f"{i + 1}/{n} {label}: RETRY {S['attempt'][i]}: arm to the zombie pose [{st}]"
         return f"{i + 1}/{n} {label}: {module_of(seg)['phase']()} [{st}]" if st != "pending" else f"{i + 1}/{n} {label}: starting"        # the reason is in the console, the report and the policy's error
 
     def status():
@@ -209,6 +364,7 @@ def make_orchestrator(plan, modules):
         return {"plan": {k: v for k, v in plan.items() if k != "postprocess"}, "segments": [{"description": s["description"], "type": s["type"], "primitive": s.get("primitive"), "check": s["check"], "status": st}
                                           for s, st in zip(steps, S["status"])],
                 "finished": S["finished"], "failure": S["failure"], "verdicts": S["verdicts"], "log": S["log"], "grounded": S["grounded"], "monitors": S["monitors"], "skill_end": S["skill_end"],
+                "attempts": S["attempts"], "operator": S["operator"], "skipped": S["skipped"],
                 "grounding_log": modules["grounder"]["log"] if "grounder" in modules else [], "postprocess_log": plan.get("postprocess", {}).get("log", []),
                 "navigation": modules["navigation"]["report"](), "manipulation": modules["manipulation"]["report"]()}
 

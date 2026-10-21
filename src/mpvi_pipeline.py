@@ -28,7 +28,7 @@ from src.task_config import EPISODE_CFG, PICK_PLACE_CFG, SUCCESS_CFG, STAGING_CF
 
 
 def make_pipeline_task(plan=BEAKER_ON_HOTPLATE_PLAN, task_cfg=TASK_CFG, staging_cfg=STAGING_CFG, episode_cfg=EPISODE_CFG, success_cfg=SUCCESS_CFG, arm="left", labeler=None,
-                       operator=None, search=None, stop_on_disagreement=False, checker="oracle", vlm_caller=None, drop_monitor=True):
+                       operator=None, search=None, stop_on_disagreement=False, checker="oracle", vlm_caller=None, drop_monitor=True, orch_cfg=None, grip_force=None, module_hook=None):
     """Packages the pipeline as a task for the generic episode runner.
 
     Args:
@@ -45,6 +45,9 @@ def make_pipeline_task(plan=BEAKER_ON_HOTPLATE_PLAN, task_cfg=TASK_CFG, staging_
         checker (str): "oracle" (the sim ground truth decides) or "vlm" (the VLM decides, as in the paper; the oracle is logged beside every deciding check). Defaults to "oracle".
         vlm_caller (GeminiCaller or None): The caller of the VLM checker; required when checker is "vlm". The image is rendered on demand at the tick of the gripper event (obs["render"]); no policy cameras are needed.
         drop_monitor (bool): Run the drop monitor (src/mpvi_monitors.py; it only logs). Defaults to True.
+        orch_cfg (dict or None): The orchestrator's failure settings (ORCH_CFG: retry_max, knocked_over_deg). Defaults to ORCH_CFG.
+        grip_force (float or None): Overrides the grip force per finger, newtons, for a test (the forced slip test); None uses the grip force table (GRIP_FORCE_TABLE is never changed).
+        module_hook (callable or None): A test seam: module_hook(modules, model, data) -> modules, called on the module dictionary before the orchestrator is built (a test wraps a module to inject a failure).
 
     Returns:
         dict: The task (see src/episode_runner.py); task["pipeline"] is filled with the orchestrator and the modules when the policy is made.
@@ -61,12 +64,16 @@ def make_pipeline_task(plan=BEAKER_ON_HOTPLATE_PLAN, task_cfg=TASK_CFG, staging_
         """Builds the modules and the orchestrator for this model and state."""
         world = make_sim_world_model(model, data, task_cfg)
         nav = make_scripted_navigation(model, data, world, task_cfg, staging_cfg)
-        manip = make_scripted_manipulation(model, data, world, arm, task_cfg[f"home_q_{arm}"], task_cfg)
+        manip = make_scripted_manipulation(model, data, world, arm, task_cfg[f"home_q_{arm}"], task_cfg, force=grip_force)
         oracle = make_oracle_checker(model, data, world, manip["pad_pose"], arm, task_cfg, success_cfg)
         checker = make_vlm_checker(oracle, vlm_caller, arm) if use_vlm else oracle
-        grounder = make_grounder(world, search or make_search_stub(), operator or make_operator(), arm)
+        op = operator or make_operator()
+        grounder = make_grounder(world, search or make_search_stub(), op, arm)
         monitors = [make_drop_monitor(model, oracle, arm)] if drop_monitor else []
-        orch = make_orchestrator(tagged, {"navigation": nav, "manipulation": manip, "checker": checker, "world": world, "grounder": grounder, "monitors": monitors})
+        modules = {"navigation": nav, "manipulation": manip, "checker": checker, "world": world, "grounder": grounder, "monitors": monitors, "operator": op}
+        if module_hook is not None:
+            modules = module_hook(modules, model, data)
+        orch = make_orchestrator(tagged, modules, orch_cfg)
         built.update(monitors=monitors, orchestrator=orch, navigation=nav, manipulation=manip, checker=checker, world=world, grounder=grounder)
         return orch
 

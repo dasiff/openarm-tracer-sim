@@ -11,7 +11,11 @@ centre), bench_top_z(), object_height(id) and stance(target). Which objects a ma
 "grounded": {"manipulated": entry id, "destination": entry id (place only)}.
 
 Navigation and manipulation modules share the protocol of a stage, plus a segment start and events:
-    start(segment)  begin the segment (the orchestrator calls it once, on the tick the segment starts)
+    start(segment)  begin the segment (the orchestrator calls it once per attempt, on the tick the attempt starts). A manipulation segment comes with its grounded ids and, as in the paper
+                    (E4), with "group_description" (the concatenated descriptions of its manipulation group: what a VLA reads as its task text) and "group_completion_criteria" (the final
+                    segment's criterion). The scripted skill ignores both (it is driven by the primitive and the objects) and only keeps the text for its report.
+    recover()       optional, manipulation only: begin the recovery of a failed step, the failing arm back to its zombie pose (design plan 8 D4 item 2); then step/done/error as for a segment. The
+                    other arm is not commanded.
     step(obs)       -> the commands of this tick (a command, a list, or None)
     done()          -> bool, the segment's motion is finished
     error()         -> str or None, a failure message (the orchestrator stops the plan and reports it)
@@ -202,6 +206,7 @@ def make_scripted_manipulation(model, data, world, side, home_q, task_cfg=TASK_C
         prim = segment["primitive"]
         S.update(i=0, t0=None, error=None, events=[], started=True, still=None)
         S["ctx"]["primitive"] = prim
+        S["ctx"]["task_text"] = {"group_description": segment.get("group_description"), "group_completion_criteria": segment.get("group_completion_criteria")}
         ids = segment.get("grounded") or {}
         S["ctx"]["obj"] = ids.get("manipulated")
         arm.reset(data)
@@ -217,6 +222,27 @@ def make_scripted_manipulation(model, data, world, side, home_q, task_cfg=TASK_C
             fail(f"unknown primitive {prim!r}")
         S["phase"] = S["steps"][0]["name"] if S["steps"] else "IDLE"
         print(f"[manipulation] {prim}: " + " -> ".join(s["name"] for s in S["steps"]))
+
+    def recover():
+        """Begins the recovery of a failed step: the failing arm goes back to its zombie pose (the home pose), nothing else moves (the other arm is not commanded).
+
+        The fingers are opened first when the world model says this hand holds nothing (a hand that holds something keeps its grip); then the pad centre backs off along the robot's forward
+        direction by the retreat distance, goes to the zombie pose's pad centre, and the joints go to the zombie pose.
+        """
+        S.update(i=0, t0=None, error=None, events=[], started=True, still=None)
+        S["ctx"]["primitive"] = "recover"
+        arm.reset(data)
+        C["p"], C["r"] = np.zeros(3), np.zeros(3)
+        p, R0 = arm.pad_pose(data)
+        a = forward()
+        R = pad_rotation(a, R0[:, 0])
+        back = p.copy()
+        back[:2] -= a[:2] * cfg["retreat_m"]
+        hp_pose, hR = home_pad_pose()
+        steps = [] if world.held_by(side) else [{"kind": "open", "name": "OPEN"}]
+        S["steps"] = steps + [move("BACK", back, cfg["slow_speed_m_s"], R), move("HOME", hp_pose, cfg["speed_m_s"], hR), {"kind": "joints", "name": "HOME"}]
+        S["phase"] = S["steps"][0]["name"]
+        print(f"[manipulation] recover (zombie pose): " + " -> ".join(s["name"] for s in S["steps"]))
 
     def command(grip=None):
         """The arms command: the joint command, and the gripper's (kept every tick: a plain travel would reset the force limit)."""
@@ -338,7 +364,7 @@ def make_scripted_manipulation(model, data, world, side, home_q, task_cfg=TASK_C
         return ev
 
     return {"name": "scripted manipulation", "start": start, "step": step, "done": done, "error": lambda: S["error"], "phase": lambda: S["phase"], "events": pop_events,
-            "resume": lambda: None, "report": lambda: {"steps_done": S["i"], "error": S["error"]}, "end_report": end_report, "pad_pose": lambda: arm.pad_pose(data), "arm": arm, "state": S}
+            "resume": lambda: None, "report": lambda: {"steps_done": S["i"], "error": S["error"], "task_text": S["ctx"].get("task_text")}, "end_report": end_report, "recover": recover, "side": side, "pad_pose": lambda: arm.pad_pose(data), "arm": arm, "state": S}
 
 
 # ----------------------------------------------------------------------------------------------------------

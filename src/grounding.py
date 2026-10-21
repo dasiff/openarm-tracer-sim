@@ -19,7 +19,8 @@ property words hold. Three results:
 Then the step's own checks: a pick needs a manipulated object that nothing holds, in a hand that holds nothing; a place needs the manipulated object to be the one in the manipulating hand
 (the phrase must resolve to what the hand holds, or the step stops), and a destination.
 
-The operator is a dict: {"present": bool, "ask": ask(phrase, candidates) (shows the request), "answer": answer() -> the chosen number (1 to len(candidates)) or None while nobody has answered}.
+The operator is a dict: {"present": bool, "ask": ask(phrase, candidates, kind="ambiguous") (shows the request; kind "failure" is the orchestrator's question after a failed step, whose candidates are the options
+retry / skip / abort: src/orchestrator.py), "answer": answer() -> the chosen number (1 to len(candidates)) or None while nobody has answered}.
 make_operator() gives an unattended one (present False). make_scripted_operator() answers from a list after some polls (tests, and a stand-in for the viewer keys, which are LATER).
 
 Every decision goes to grounder["log"]: dicts with "kind" ("resolved", "search", "operator_asked", "operator_chose", "failed"), the phrase, and the candidates' ids.
@@ -96,8 +97,9 @@ def make_operator(present=False):
     Returns:
         dict: See the module docstring; ask() only prints, answer() is always None.
     """
-    def ask(phrase, candidates):
-        print(f"[grounding] {phrase!r} is ambiguous; candidates: " + "; ".join(f"{i + 1}) {c.describe()}" for i, c in enumerate(candidates)))
+    def ask(phrase, candidates, kind="ambiguous"):
+        text = "; ".join(f"{i + 1}) {c.describe()}" for i, c in enumerate(candidates))
+        print(f"[operator] {phrase}: {text}" if kind == "failure" else f"[grounding] {phrase!r} is ambiguous; candidates: {text}")
     return {"name": "operator" if present else "no operator", "present": present, "ask": ask, "answer": lambda: None}
 
 
@@ -114,8 +116,8 @@ def make_scripted_operator(answers, polls=1):
     S = {"i": 0, "wait": 0, "open": False, "asked": []}
     base = make_operator(True)
 
-    def ask(phrase, candidates):
-        base["ask"](phrase, candidates)
+    def ask(phrase, candidates, kind="ambiguous"):
+        base["ask"](phrase, candidates, kind)
         S["asked"].append((phrase, [c.id for c in candidates]))
         S["open"], S["wait"] = True, polls
 

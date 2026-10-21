@@ -22,6 +22,7 @@ The dictionaries and who reads them:
         (experiments/beaker_hotplate_layout_search.py).
     STAGING_CFG: speeds, ramps, tolerances and time limits of the scripted staging source (src/staging_source.py).
     EPISODE_CFG: time limits, the 2 s after a success, logging rate and spawn height of the episode runner (src/episode_runner.py).
+    ORCH_CFG: the orchestrator's failure handling (src/orchestrator.py): retries, the knocked-over limit.
     LLM_CFG: the Gemini calls of the MPVI pipeline (src/llm_gemini.py): the pinned model name, prompt versions, retry and backoff, cache folder, secrets file.
     SUCCESS_CFG: site, geom and body names and tolerances of the success check (task_beaker_hotplate.check_success()).
 Entries marked NEW in the comments of STAGING_CFG were chosen recently and are not yet approved. All numbers are choices for this
@@ -462,4 +463,11 @@ LLM_CFG = {
     "backoff_max_s": 65.0,
     "timeout_s": 60.0,                     # per request
     "secrets_file": "~/.config/openarm-tracer-sim/secrets.env",   # holds GEMINI_API_KEY=...; read when the environment variable is not set; never in the repository
+}
+
+# The orchestrator's failure handling (design plan 8 D4 item 2; docs/mpvi_decisions.md). A failed manipulation step is retried (the failing arm returns to its zombie pose, the world model is refreshed,
+# the objects are grounded again, the skill runs again), then the operator is asked, or in an unattended run the plan stops.
+ORCH_CFG = {
+    "retry_max": 1,                        # retries of a failed manipulation step before the operator is asked (or the plan stops)
+    "knocked_over_deg": 30.0,              # the manipulated object's up axis this far from vertical (world model) is "knocked over": no retry (the upright limit of the success check is 15, the beaker tips at 49.5)
 }

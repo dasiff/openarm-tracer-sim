@@ -23,7 +23,7 @@ server's own "retry in Ns" hint, at most backoff_max_s. A 429 that names a per-d
 The API key (GEMINI_API_KEY from the environment, else from the secrets file) is never logged, printed or stored: it is not in the log or the cache, and it is masked in every error text.
 
 Contents:
-    LLMError, LLMCacheMiss, load_api_key(), cache_key(), LLMCache, GeminiCaller.
+    LLMError, LLMEmptyReply, LLMCacheMiss, load_api_key(), cache_key(), LLMCache, GeminiCaller.
 """
 
 import hashlib
@@ -43,6 +43,10 @@ RETRY_CODES = (429, 500, 502, 503, 504)
 
 class LLMError(RuntimeError):
     """A Gemini call failed for good (message with the key masked)."""
+
+
+class LLMEmptyReply(LLMError):
+    """The call went through but the reply has no text (a refusal, a blocked reply, an empty answer); not retried."""
 
 
 class LLMCacheMiss(LLMError):
@@ -202,13 +206,16 @@ class GeminiCaller:
         m = re.search(r"retry in ([\d.]+)\s*s", text) or re.search(r'retryDelay"?\s*[:=]\s*"?([\d.]+)s', text)
         return float(m.group(1)) if m else 0.0
 
-    def _generate(self, prompt, response_model, system, image_png=None):
-        """One live call with retries; returns (reply text, attempts). Without a response model the reply is free text; with an image the image comes first in the contents."""
+    def _generate(self, prompt, response_model, system, image_png=None, choices=None):
+        """One live call with retries; returns (reply text, attempts). Without a response model the reply is free text (or, with `choices`, exactly one of them: Gemini's enum output,
+        response_mime_type "text/x.enum"); with an image the image comes first in the contents."""
         from google.genai import errors, types
         client = self._get_client()
         kw = {"temperature": self.cfg["temperature"], "thinking_config": types.ThinkingConfig(thinking_budget=self.cfg["thinking_budget"])}
         if response_model is not None:
             kw.update(response_mime_type="application/json", response_json_schema=response_model.model_json_schema())
+        elif choices:
+            kw.update(response_mime_type="text/x.enum", response_schema=types.Schema(type=types.Type.STRING, enum=list(choices)))
         contents = prompt if image_png is None else [types.Part.from_bytes(data=image_png, mime_type="image/png"), prompt]
         if system:
             kw["system_instruction"] = system
@@ -218,7 +225,7 @@ class GeminiCaller:
                 resp = client.models.generate_content(model=self.cfg["model"], contents=contents, config=config)
                 text = resp.text
                 if not text:
-                    raise LLMError(f"empty reply from {self.cfg['model']} (finish reason {getattr(resp.candidates[0], 'finish_reason', '?') if getattr(resp, 'candidates', None) else 'none'})")
+                    raise LLMEmptyReply(f"empty reply from {self.cfg['model']} (finish reason {getattr(resp.candidates[0], 'finish_reason', '?') if getattr(resp, 'candidates', None) else 'none'})")
                 return text, attempt + 1
             except LLMError:
                 raise
@@ -236,7 +243,7 @@ class GeminiCaller:
                 self.sleep(wait)
         raise LLMError("unreachable")
 
-    def _run(self, prompt, response_model, kind, version, system, image_png=None):
+    def _run(self, prompt, response_model, kind, version, system, image_png=None, choices=None):
         """The shared call: cache or live by the mode, a log entry. Returns the reply text."""
         sha = hashlib.sha256(image_png).hexdigest() if image_png is not None else None
         schema_name = response_model.__name__ if response_model is not None else "text"
@@ -248,7 +255,7 @@ class GeminiCaller:
             if self.mode == "cache_only":
                 raise LLMCacheMiss(f"no stored reply for this {kind} call (key {key[:12]}, model {self.cfg['model']}, version {version}"
                                    + (f", image {sha[:12]}" if sha else "") + "); the mode is cache_only, nothing was sent")
-            text, attempts = self._generate(prompt, response_model, system, image_png)
+            text, attempts = self._generate(prompt, response_model, system, image_png, choices)
             rec = {"key": key, "kind": kind, "model": self.cfg["model"], "version": version, "schema": schema_name, "prompt": prompt, "reply_text": text,
                    "created": time.strftime("%Y-%m-%dT%H:%M:%S")}
             if sha:
@@ -287,8 +294,8 @@ class GeminiCaller:
         except json.JSONDecodeError as e:
             raise LLMError(f"the {kind} reply is not JSON: {e}: {text[:200]!r}") from None
 
-    def text_call(self, prompt, image_rgb, kind="vlm", version="v0", system=None):
-        """Asks about an image and gets a free-text answer (the VLM completion checker; no schema, the paper's prompt asks for a YES or NO sentence).
+    def text_call(self, prompt, image_rgb, kind="vlm", version="v0", system=None, choices=None):
+        """Asks about an image and gets a text answer (the VLM completion checker; the paper's prompt asks for a YES or NO sentence).
 
         Args:
             prompt (str): The whole prompt text.
@@ -296,6 +303,8 @@ class GeminiCaller:
             kind (str): A label for the log.
             version (str): The prompt version (part of the cache key).
             system (str or None): An optional system instruction.
+            choices (list[str] or None): If given, Gemini's enum output restricts the reply to exactly one of these strings. NOT part of the cache key (a stored free-text reply with the same
+                prompt and image is the same entry), so the caller must check the reply itself. Defaults to None (free text).
 
         Returns:
             str: The reply text.
@@ -304,7 +313,7 @@ class GeminiCaller:
             LLMCacheMiss: In "cache_only" mode with no stored reply for this image and prompt.
             LLMError: When the call fails for good.
         """
-        return self._run(prompt, None, kind, version, system, png_bytes(image_rgb))
+        return self._run(prompt, None, kind, version, system, png_bytes(image_rgb), choices)
 
     def bind(self, kind, version, system=None):
         """Gives a two-argument function (prompt, response_model) -> dict for make_llm_labeler() and make_llm_planner().

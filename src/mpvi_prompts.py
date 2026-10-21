@@ -58,6 +58,13 @@ Be strict: only say YES if you are confident the criteria is met.
 Your answer:"""
 
 
+# The two answers the VLM completion prompt allows, exactly as the prompt quotes them (enum output and the reader of the reply use these).
+VLM_ANSWER_YES = "YES, the task is complete"
+VLM_ANSWER_NO = "NO, the task is not complete"
+VLM_ANSWERS = (VLM_ANSWER_YES, VLM_ANSWER_NO)
+assert all(f'"{a}"' in VLM_CHECK_PROMPT for a in VLM_ANSWERS)
+
+
 def fill_prompt(template, **fields):
     """Fills the named {fields} of a prompt text and nothing else (the texts contain JSON braces, so str.format() cannot be used).
 

@@ -11,6 +11,9 @@ with YES is yes, one that starts with NO is no, anything else is NO and is flagg
 for every check, logged beside the VLM's (agree or disagree) and never changes the decision. For events that do not decide (the paper triggers the VLM only on the tagged segments) the oracle's
 verdict is returned and logged alone, and the VLM is not called.
 
+The image comes from obs["cameras"], which the control loop fills only when its policy cameras are on (run_episode(..., loop_cfg={"cameras": True}); the episode runner turns them off by default). A
+camera image is at most one camera period old (cameras are rendered round robin at 30 Hz in all, so each one about every 0.1 s); at a gripper event the arm has stopped.
+
 A failed VLM call (a rate limit that never clears, a cache miss in cache_only mode, no wrist camera image) is a failed check with the reason in it: the plan stops and reports, it is never read as YES.
 
 Verdict dict of a deciding check: {"passed": bool (the VLM's), "reason": str, "details": {"vlm": {"verdict": "YES" | "NO" | "ERROR", "reply_text", "unparsed", "image_sha256", "camera", "prompt_version",
@@ -70,7 +73,7 @@ def make_vlm_checker(oracle_checker, caller, side="left", version=None, say=prin
         images = (obs.get("cameras") or {})
         image = images.get(camera)
         if image is None:
-            vlm["error"] = f"no image from {camera} in the observation"
+            vlm["error"] = f"no image from {camera} in the observation (the episode must run with the policy cameras on: run_episode(..., loop_cfg={{'cameras': True}}))"
             return {"passed": False, "reason": f"VLM check failed: {vlm['error']}", "details": details}
         prompt = fill_prompt(VLM_CHECK_PROMPT, description=segment["description"], completion_criteria=segment["completion_criteria"])
         try:

@@ -42,7 +42,7 @@ def make_pipeline_task(plan=BEAKER_ON_HOTPLATE_PLAN, task_cfg=TASK_CFG, staging_
         search (dict or None): The search module. Defaults to the stub ("search not implemented").
         stop_on_disagreement (bool): Stop the plan before it starts when the labeling and the keywords disagree on a primitive. Defaults to False.
         checker (str): "oracle" (the sim ground truth decides) or "vlm" (the VLM decides, as in the paper; the oracle is logged beside every deciding check). Defaults to "oracle".
-        vlm_caller (GeminiCaller or None): The caller of the VLM checker; required when checker is "vlm".
+        vlm_caller (GeminiCaller or None): The caller of the VLM checker; required when checker is "vlm". The episode must then run with the policy cameras on (run_episode(..., loop_cfg={"cameras": True})).
 
     Returns:
         dict: The task (see src/episode_runner.py); task["pipeline"] is filled with the orchestrator and the modules when the policy is made.

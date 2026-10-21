@@ -78,7 +78,7 @@ def main(args):
     pl = tagged["postprocess"]["log"]
     print(f"keyword cross-check log: {pl if pl else 'no disagreement, nothing unmatched, nothing ambiguous'}")
 
-    s = run_episode(task, sim.model, sim.data, out_dir=out / "episode", record_dir=out / "recording")
+    s = run_episode(task, sim.model, sim.data, out_dir=out / "episode", record_dir=out / "recording", loop_cfg={"cameras": True} if args.checker == "vlm" else None)
     pipe = task["pipeline"]
     state = pipe["orchestrator"]["state"]
     summary.update(outcome=s["outcome"], plan_failure=state["failure"], status=state["status"], grounded=state["grounded"], grounding_log=pipe["grounder"]["log"], verdicts=state["verdicts"])

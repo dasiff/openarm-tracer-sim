@@ -9,6 +9,8 @@ schema), the raw reply, the parsed plan; the labeling request (prompt, schema), 
 found, the keyword primitive, the labeling's primitive, agreement, ambiguity, and whether stop_on_disagreement would stop); the computed tags (index, check, group) and the execution units with the
 completion check that closes each; and a dry run of the grounding at dispatch time against the task's configuration (no simulator: the world model is src/world_model.StaticTaskSource, the hand
 is simulated: a resolved pick puts the object in the hand, a resolved place empties it): each navigation target's stance, each manipulation step's resolved entries or its failure reason.
+With --run DIR (a folder written by experiments/mpvi_text_test.py --out) the report ends with every completion check of that run: the triggering wrist camera's image (copied next to the report),
+the prompt, the raw reply, the parsed verdict and the oracle's verdict (agree or disagree), and the outcome.
 
 The report goes to docs/reports/<date>_<time>_trace_<slug>.md unless --out is given, and its path is printed.
 """
@@ -16,6 +18,7 @@ The report goes to docs/reports/<date>_<time>_trace_<slug>.md unless --out is gi
 import argparse
 import json
 import re
+import shutil
 import sys
 import time
 from pathlib import Path
@@ -27,7 +30,8 @@ from src.grounding import make_grounder, make_operator, make_search_stub  # noqa
 from src.llm_gemini import GeminiCaller, LLMError  # noqa: E402
 from src.mpvi_planner import PlannerError, make_llm_planner  # noqa: E402
 from src.mpvi_postprocess import PostprocessError, keyword_primitive, make_llm_labeler, postprocess  # noqa: E402
-from src.mpvi_schemas import Labels, Plan  # noqa: E402
+from src.mpvi_schemas import Labels, Plan
+from src.mpvi_vlm import parse_verdict  # noqa: E402
 from src.orchestrator import CHECK_EVENT  # noqa: E402
 from src.task_config import LLM_CFG  # noqa: E402
 from src.world_model import StaticTaskSource, WorldModel  # noqa: E402
@@ -52,13 +56,58 @@ def pretty(text):
         return text
 
 
-def build_trace(instruction, mode, side):
+def checks_section(head, out, run_dir, images_dir):
+    """Describes the completion checks and the outcome of a run (from its summary.json, llm_log.json and vlm_images/).
+
+    Args:
+        head (callable): Starts a numbered section.
+        out (list): The report lines; changed.
+        run_dir (Path): A run folder written by experiments/mpvi_text_test.py (--out).
+        images_dir (Path): Where the report's images are copied (linked relatively from the report).
+    """
+    head(f"Completion checks and outcome of the run `{run_dir.name}`")
+    summ = json.loads((run_dir / "summary.json").read_text())
+    log = json.loads((run_dir / "llm_log.json").read_text()) if (run_dir / "llm_log.json").is_file() else {"calls": []}
+    vlm_calls = [c for c in log["calls"] if c["kind"] == "vlm"]
+    out.append(f"Checker: `{summ.get('checker', 'oracle')}`; outcome **{summ.get('outcome')}**; plan failure: {summ.get('plan_failure')}; segment status: {summ.get('status')}\n")
+    verdicts = summ.get("verdicts", [])
+    if not verdicts:
+        out.append("No check ran.\n")
+        return
+    images_dir.mkdir(parents=True, exist_ok=True)
+    for n, v in enumerate(verdicts):
+        d = v.get("details") or {}
+        title = f"Check {n}: segment {v['segment']}, event `{v['event']}`, " + ("DECIDES" if v["decides"] else "logged only (the oracle's verdict, no VLM call)")
+        out.append(f"### {title}\n")
+        if "vlm" not in d:
+            out.append(f"- oracle: {'PASS' if v['passed'] else 'FAIL'}" + (f" ({v['reason']})" if v["reason"] else "") + "\n")
+            continue
+        vlm, orc = d["vlm"], d["oracle"]
+        call = next((c for c in vlm_calls if c.get("image_sha256") == vlm.get("image_sha256")), None)
+        out.append(f"- camera `{vlm['camera']}` (the triggering gripper's wrist camera), prompt version `{vlm['prompt_version']}`, image SHA-256 `{str(vlm['image_sha256'])[:16]}`"
+                   + (f", reply {'read from the cache' if call['from_cache'] else f'live ({call['seconds']:.1f} s, {call['attempts']} try(ies))'}" if call else "") + "\n")
+        src = run_dir / "vlm_images" / f"{vlm['image_sha256']}.png"
+        if vlm.get("image_sha256") and src.is_file():
+            shutil.copy(src, images_dir / f"check{n}.png")
+            out.append(f"![check {n}: {vlm['camera']}]({images_dir.name}/check{n}.png)\n")
+        if call:
+            out.append("Prompt:\n\n" + fence(call["prompt"]))
+            out.append("Raw reply:\n\n" + fence(call["reply_text"]))
+        parsed = parse_verdict(vlm["reply_text"]) if vlm.get("reply_text") is not None else None
+        out.append(f"- parsed verdict: **{vlm['verdict']}**" + (" (UNPARSED: counted as NO)" if parsed and parsed[1] else "") + (f"; error: {vlm['error']}" if vlm.get("error") else ""))
+        out.append(f"- oracle verdict: **{'PASS' if orc['passed'] else 'FAIL'}**" + (f" ({orc['reason']})" if orc["reason"] else ""))
+        out.append(f"- VLM vs oracle: **{'agree' if d['agree'] else 'DISAGREE' if d['agree'] is False else 'no comparison'}**; the decision is the VLM's: {'PASS' if v['passed'] else 'FAIL'}\n")
+
+
+def build_trace(instruction, mode, side, run_dir=None, images_dir=None):
     """Runs the pipeline up to the first motion and describes every step.
 
     Args:
         instruction (str): The task instruction.
         mode (str): The LLM mode (cache_only, cache_or_live, live).
         side (str): The manipulating hand for the grounding dry run.
+        run_dir (Path or None): A run folder (experiments/mpvi_text_test.py --out) whose completion checks and outcome are added at the end.
+        images_dir (Path or None): Where the check images are copied; required with run_dir.
 
     Returns:
         str: The Markdown report.
@@ -191,6 +240,8 @@ def build_trace(instruction, mode, side):
     out.append("")
     out.append("Grounding log:\n\n" + fence(json.dumps(grounder["log"], indent=1, default=str), "json"))
     out.append("Result: " + ("the plan would STOP in the grounding dry run (see the table)." if stopped else "every step grounds; the plan would reach the first motion.") + "\n")
+    if run_dir is not None:
+        checks_section(head, out, Path(run_dir), images_dir)
     return "\n".join(out)
 
 
@@ -200,13 +251,14 @@ def main():
     ap.add_argument("--mode", choices=("cache_only", "cache_or_live", "live"), default="cache_only")
     ap.add_argument("--out", help="the report file (default docs/reports/<date>_<time>_trace_<slug>.md)")
     ap.add_argument("--side", default="left", choices=("left", "right"))
+    ap.add_argument("--run", help="a run folder written by experiments/mpvi_text_test.py --out: adds each completion check (image, prompt, raw reply, parsed verdict, oracle verdict) and the outcome")
     a = ap.parse_args()
-    text = build_trace(a.instruction, a.mode, a.side)
     if a.out:
         path = Path(a.out)
     else:
         slug = re.sub(r"[^a-z0-9]+", "_", a.instruction.lower()).strip("_")[:40]
         path = PROJECT_ROOT / "docs" / "reports" / f"{time.strftime('%Y%m%d_%H%M')}_trace_{slug}.md"
+    text = build_trace(a.instruction, a.mode, a.side, a.run, path.parent / f"{path.stem}_images")
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(".tmp")
     tmp.write_text(text)

@@ -136,7 +136,7 @@ def main():
     c, _ = caller(["YES, the task is complete"])
     ck = make_vlm_checker(oracle(True), c, "right", say=lambda *_: None)
     ck["check"](SEG, "gripper_opened", obs(left_wrist_cam=img(1), right_wrist_cam=img(2), eagle_cam=img(3)), decides=True)
-    check("the release check shows the triggering gripper's wrist camera (right here), nobody else's", c._client.calls[0]["contents"][0].inline_data.data == png_bytes(img(2)))
+    check("the release check shows the eagle camera too (LLM_CFG vlm_cameras)", c._client.calls[0]["contents"][0].inline_data.data == png_bytes(img(3)))
     expected = VLM_CHECK_PROMPT.replace("{description}", SEG["description"]).replace("{completion_criteria}", SEG["completion_criteria"])
     check("the prompt is the paper's text with the segment's description and completion criteria filled in", call["contents"][1] == expected and "Be strict: only say YES" in expected and "{" not in expected)
     check("the version is the one of LLM_CFG and the model the pinned one", c.log[0]["version"] == LLM_CFG["vlm_prompt_version"] and call["model"] == LLM_CFG["model"] and c.log[0]["kind"] == "vlm")

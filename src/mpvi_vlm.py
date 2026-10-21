@@ -5,8 +5,7 @@
     verdict = checker["check"](segment, "gripper_closed", obs, decides=True)
 
 The checker follows the checker protocol of src/mpvi_modules.py (check(segment, event, obs, decides=False) -> {"passed", "reason", "details"}). When the orchestrator says the check DECIDES (the
-segment's last manipulation step, at the gripper event that ends its primitive), the image of the camera that LLM_CFG["vlm_cameras"] names for the event (the eagle camera for gripper_closed, the
-triggering gripper's wrist camera obs["cameras"]["<side>_wrist_cam"] for gripper_opened) is shown to Gemini with
+segment's last manipulation step, at the gripper event that ends its primitive), the image of the camera that LLM_CFG["vlm_cameras"] names for the event (the eagle camera for both gripper events; "wrist_cam" would be the triggering gripper's own, obs["cameras"]["<side>_wrist_cam"]) is shown to Gemini with
 the paper's VLM Completion Checking Prompt, verbatim (src/mpvi_prompts.py), filled with the segment's description and completion criteria. The answer is parsed as YES or NO: an answer that starts
 with YES is yes, one that starts with NO is no, anything else is NO and is flagged `unparsed` (and printed). THE VLM DECIDES. The sim oracle's verdict (src/mpvi_modules.make_oracle_checker) is computed
 for every check, logged beside the VLM's (agree or disagree) and never changes the decision. For events that do not decide (the paper triggers the VLM only on the tagged segments) the oracle's

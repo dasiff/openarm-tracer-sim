@@ -4,13 +4,15 @@ Tests of the VLM completion checker (src/mpvi_vlm.py) and the image call of src/
 
     python experiments/vlm_checker_test.py
 
-1. The parse: YES / NO as the paper's prompt asks, with quotes, markdown and case; anything else is NO and flagged unparsed.
+1. The reply reader (D5): exactly one of the two allowed answers (YES or NO); anything else, even "yes", quotes or an extra sentence, is unreadable.
 2. The image call: the image goes as PNG before the prompt, no schema; the cache key follows the image's hash, the prompt and the version; the same pixels hit the cache (cache_only, no client
    call), other pixels or another version miss; the image is stored with the reply and written next to the log; the key is in none of it.
-3. The checker: a deciding check shows the triggering gripper's wrist camera and the paper's prompt (verbatim text, the segment's description and criteria filled in); the VLM's YES passes and NO
-   fails whatever the oracle says; the oracle's verdict is logged beside it with agree or disagree and never changes the decision; a check that does not decide returns the oracle's verdict and
-   never calls the VLM; an unparsable answer is NO and flagged; a failed call, a cache miss and a missing image are failed checks with a reason, never YES.
-4. The orchestrator: the checker is called with the decides flag (the deciding step only), a VLM NO stops the plan with the reason and the verdict list carries both verdicts.
+3. The checker: a deciding check shows the eagle camera and the paper's prompt (verbatim text, the description and criteria filled in) and asks for enum output over the two answers; the VLM's YES passes
+   and NO fails whatever the oracle says; the oracle's verdict is logged beside it with agree or disagree and never changes the decision; a check that does not decide returns the oracle's verdict
+   and never calls the VLM; an unreadable reply (not exactly one answer, or empty) is NOT COMPLETE with the reason "checker reply unreadable" and the raw reply; a failed call, a cache miss and a missing
+   image are NOT COMPLETE with "checker call failed"; never YES. The image is rendered on demand on the tick of the call (obs["render"]) and the oracle is read in the same call (frozen tick).
+4. The orchestrator: the checker is called with the decides flag (the deciding step only), a VLM NO stops the plan with the reason and the verdict list carries both verdicts; a manipulation group
+   (pick then place) gets ONE VLM call, with the concatenated descriptions and the final segment's criterion (D6); a criterion with two conditions reaches the VLM whole.
 """
 
 import json
@@ -27,8 +29,8 @@ from google.genai import errors  # noqa: E402
 from src.grounding import make_grounder  # noqa: E402
 from src.llm_gemini import GeminiCaller, LLMCache, LLMError, cache_key, png_bytes  # noqa: E402
 from src.mpvi_postprocess import make_stored_labeler, postprocess  # noqa: E402
-from src.mpvi_prompts import VLM_CHECK_PROMPT  # noqa: E402
-from src.mpvi_vlm import make_vlm_checker, parse_verdict  # noqa: E402
+from src.mpvi_prompts import VLM_ANSWERS, VLM_CHECK_PROMPT  # noqa: E402
+from src.mpvi_vlm import make_vlm_checker, read_answer  # noqa: E402
 from src.orchestrator import make_orchestrator  # noqa: E402
 from src.task_config import LLM_CFG  # noqa: E402
 from src.world_model import Entry, WorldModel  # noqa: E402
@@ -87,11 +89,11 @@ def obs(**cams):
 
 
 def main():
-    print("1. the parse")
-    for text, want in [("YES, the task is complete", ("YES", False)), ("NO, the task is not complete", ("NO", False)), ("yes", ("YES", False)), ("  \"YES, the task is complete\"", ("YES", False)),
-                       ("**NO**, the task is not complete", ("NO", False)), ("Yes. The beaker is held.", ("YES", False)), ("NOT sure", ("NO", True)), ("Maybe", ("NO", True)), ("", ("NO", True)),
-                       ("The criteria is met, so YES", ("NO", True)), ("YESTERDAY", ("NO", True)), ("Nope", ("NO", True))]:
-        check(f"{text!r} -> {want}", parse_verdict(text) == want, f"{parse_verdict(text)}")
+    print("1. the reply reader")
+    for text, want in [("YES, the task is complete", "YES"), ("NO, the task is not complete", "NO"), ("  YES, the task is complete\n", "YES"), ("yes", None), ("  \"YES, the task is complete\"", None),
+                       ("YES, the task is complete.", None), ("**NO**, the task is not complete", None), ("YES", None), ("NOT sure", None), ("", None), (None, None),
+                       ("YES, the task is complete\nbecause the beaker is held", None)]:
+        check(f"{text!r} -> {want}", read_answer(text) == want, f"{read_answer(text)}")
 
     print("\n2. the image call")
     a, b = img(10), img(200)
@@ -133,6 +135,8 @@ def main():
     ck["check"](SEG, "gripper_closed", obs(left_wrist_cam=img(1), right_wrist_cam=img(2), eagle_cam=img(3)), decides=True)
     call = c._client.calls[0]
     check("the grip check shows the eagle camera, no wrist camera", call["contents"][0].inline_data.data == png_bytes(img(3)))
+    check("the call asks for enum output over exactly the two answers", call["config"].response_mime_type == "text/x.enum" and list(call["config"].response_schema.enum) == list(VLM_ANSWERS)
+          and call["config"].response_json_schema is None, f"{call['config'].response_mime_type} {call['config'].response_schema}")
     c, _ = caller(["YES, the task is complete"])
     ck = make_vlm_checker(oracle(True), c, "right", say=lambda *_: None)
     ck["check"](SEG, "gripper_opened", obs(left_wrist_cam=img(1), right_wrist_cam=img(2), eagle_cam=img(3)), decides=True)
@@ -149,13 +153,41 @@ def main():
     c, _ = caller(["Probably fine"])
     ck = make_vlm_checker(oracle(True), c, "left", say=lines.append)
     v = ck["check"](SEG, "gripper_closed", obs(eagle_cam=img(1)), decides=True)
-    check("an unparsable answer is NO, flagged unparsed and printed", not v["passed"] and v["details"]["vlm"]["unparsed"] and v["details"]["vlm"]["verdict"] == "NO" and any("neither YES nor NO" in l for l in lines))
+    check("a reply that is not exactly one answer is NOT COMPLETE: reason 'checker reply unreadable', the raw reply kept, printed, never YES",
+          not v["passed"] and v["reason"].startswith("checker reply unreadable") and v["details"]["vlm"]["error_kind"] == "checker reply unreadable" and v["details"]["vlm"]["reply_text"] == "Probably fine"
+          and v["details"]["vlm"]["verdict"] == "ERROR" and v["details"]["agree"] is None and any("checker reply unreadable" in l for l in lines))
+    c, _ = caller([""])
+    v = make_vlm_checker(oracle(True), c, "left", say=lambda *_: None)["check"](SEG, "gripper_closed", obs(eagle_cam=img(1)), decides=True)
+    check("an empty reply (a refusal) is NOT COMPLETE: 'checker reply unreadable'", not v["passed"] and v["details"]["vlm"]["error_kind"] == "checker reply unreadable" and "empty reply" in v["reason"], v["reason"][:80])
     c, _ = caller([errors.ClientError(400, {"error": {"message": "bad", "status": "S"}})])
     v = make_vlm_checker(oracle(True), c, "left", say=lambda *_: None)["check"](SEG, "gripper_closed", obs(eagle_cam=img(1)), decides=True)
-    check("a failed call is a failed check with the reason, never YES", not v["passed"] and "VLM check failed" in v["reason"] and v["details"]["vlm"]["verdict"] == "ERROR" and v["details"]["agree"] is None)
+    check("a call that failed for good is NOT COMPLETE: 'checker call failed' with the reason, never YES", not v["passed"] and v["reason"].startswith("checker call failed")
+          and v["details"]["vlm"]["error_kind"] == "checker call failed" and v["details"]["vlm"]["verdict"] == "ERROR" and v["details"]["agree"] is None)
+    c, _ = caller([errors.ServerError(503, {"error": {"message": "overloaded", "status": "UNAVAILABLE"}})] * 8)
+    v = make_vlm_checker(oracle(True), c, "left", say=lambda *_: None)["check"](SEG, "gripper_closed", obs(eagle_cam=img(1)), decides=True)
+    check("a call still failing after the retries is NOT COMPLETE: 'checker call failed'", not v["passed"] and v["details"]["vlm"]["error_kind"] == "checker call failed" and "gave up" in v["reason"],
+          f"{len(c._client.calls)} tries")
+    # frozen tick: the image is rendered on demand and the oracle is read in the same call, from the same state
+    world_state = {"n": 0}
+    rendered = []
+
+    def render(camera):
+        rendered.append((camera, world_state["n"]))
+        return img(world_state["n"] % 200 + 1)
+
+    seen = []
+
+    def chk(seg, ev, o, decides=False):
+        seen.append(world_state["n"])
+        return {"passed": True, "reason": "", "details": {}}
+    world_state["n"] = 7
+    c, _ = caller(["YES, the task is complete"])
+    v = make_vlm_checker({"name": "o", "check": chk}, c, "left", say=lambda *_: None)["check"](SEG, "gripper_closed", {"time": 2.0, "tick": 66, "render": render, "cameras": {"eagle_cam": img(99)}}, decides=True)
+    check("the image is rendered on demand (preferred to the stale policy frame) and the oracle is read in the same call: same state, same tick", rendered == [("eagle_cam", 7)] and seen == [7]
+          and c._client.calls[0]["contents"][0].inline_data.data == png_bytes(img(8)) and v["details"]["frozen"] == {"tick": 66, "time": 2.0, "image_source": "render"}, f"{v['details']['frozen']}")
     co = GeminiCaller(LLM_CFG, "cache_only", FakeClient([]), LLMCache(tempfile.mkdtemp()), say=lambda *_: None)
     v = make_vlm_checker(oracle(True), co, "left", say=lambda *_: None)["check"](SEG, "gripper_closed", obs(eagle_cam=img(1)), decides=True)
-    check("a cache miss in cache_only mode is a failed check that says nothing was sent", not v["passed"] and "nothing was sent" in v["reason"])
+    check("a cache miss in cache_only mode is NOT COMPLETE ('checker call failed') that says nothing was sent", not v["passed"] and "nothing was sent" in v["reason"] and v["reason"].startswith("checker call failed"))
     v = make_vlm_checker(oracle(True), caller(["YES"])[0], "left", say=lambda *_: None)["check"](SEG, "gripper_closed", obs(left_wrist_cam=img(1)), decides=True)
     check("a missing eagle camera image is a failed check (the wrist image does not stand in)", not v["passed"] and "no image from eagle_cam" in v["reason"])
     v = make_vlm_checker(oracle(True), caller(["YES"])[0], "left", say=lambda *_: None)["check"](SEG, "gripper_closed", {"time": 0.0, "cameras": None}, decides=True)
@@ -201,6 +233,78 @@ def main():
     orch, c, orc = run_plan("NO, the task is not complete", oracle(True))
     check("a VLM NO stops the plan with the reason, although the oracle says PASS; the disagreement is in the verdict list", orch["state"]["failure"] and "completion check failed: the VLM says NO" in orch["state"]["failure"]
           and orch["state"]["verdicts"][0]["details"]["agree"] is False)
+
+    # a monitor only logs: one that raises is logged and the plan still finishes
+    boom = {"name": "boom", "tick": lambda o, ev, seg: (_ for _ in ()).throw(RuntimeError("monitor bug"))}
+    world = WorldModel()
+    world.upsert(Entry("beaker", "beaker", ("beaker",), "object", np.zeros(3), None, {"contents": "empty", "held_by": None, "height": 0.1}))
+    plan1 = postprocess({"task_name": "t", "segments": [{"type": "manipulation", "description": "Grasp the beaker", "completion_criteria": "The beaker is held securely in the gripper", "target": None}]},
+                        make_stored_labeler({"labels": [{"index": 0, "primitive": "pick", "objects": [{"phrase": "the beaker", "role": "manipulated"}]}]}), say=lambda *_: None)
+    c, _ = caller(["YES, the task is complete"])
+    orch = make_orchestrator(plan1, {"navigation": Mod([]).module(), "manipulation": Mod(["gripper_closed"]).module(), "checker": make_vlm_checker(oracle(True), c, "left", say=lambda *_: None),
+                                     "world": world, "grounder": make_grounder(world), "monitors": [boom]})
+    for k in range(30):
+        orch["step"]({"time": 0.01 * k, "cameras": {"eagle_cam": img(5)}})
+        if orch["state"]["finished"] or orch["state"]["failure"]:
+            break
+    check("a monitor that raises is logged as monitor_error and never stops the plan", orch["state"]["finished"] and not orch["state"]["failure"]
+          and orch["state"]["monitors"] and orch["state"]["monitors"][0]["kind"] == "monitor_error", f"{orch['state']['monitors'][:1]}")
+
+    # D6: a manipulation group (pick then place, no navigation between) gets ONE VLM call: the concatenated descriptions, the final segment's criterion
+    class GroupMod:
+        """A fake manipulation module: each segment takes three steps and reports the gripper event of its primitive on the first."""
+        def __init__(self, world):
+            self.n, self.prim, self.world = 0, None, world
+
+        def module(self):
+            return {"name": "fake", "start": self.start, "step": self.step, "done": lambda: self.n >= 3, "error": lambda: None, "phase": lambda: "PH", "events": self.pop,
+                    "resume": lambda: None, "report": lambda: {}}
+
+        def start(self, seg):
+            self.n, self.prim = 0, seg["primitive"]
+
+        def step(self, o):
+            self.n += 1
+            return {"cmd": 1}
+
+        def pop(self):
+            if self.n == 1:
+                if self.prim == "pick":                          # the pick's close: the hand now holds the beaker
+                    self.world.upsert(Entry("beaker", "beaker", ("beaker",), "object", np.zeros(3), None, {"contents": "empty", "held_by": "left", "height": 0.1}))
+                return ["gripper_closed" if self.prim == "pick" else "gripper_opened"]
+            return []
+
+    def run_group(criterion, reply, orc):
+        world = WorldModel()
+        world.upsert(Entry("beaker", "beaker", ("beaker",), "object", np.zeros(3), None, {"contents": "empty", "held_by": None, "height": 0.1}))
+        world.upsert(Entry("hotplate", "hotplate", ("hotplate",), "fixture", np.array([0.3, 0, 0.0]), None, {}))
+        plan = postprocess({"task_name": "t", "segments": [
+            {"type": "manipulation", "description": "Pick up the beaker", "completion_criteria": "The beaker is held", "target": None},
+            {"type": "manipulation", "description": "Place the beaker on the hotplate", "completion_criteria": criterion, "target": None}]},
+            make_stored_labeler({"labels": [{"index": 0, "primitive": "pick", "objects": [{"phrase": "the beaker", "role": "manipulated"}]},
+                                            {"index": 1, "primitive": "place", "objects": [{"phrase": "the beaker", "role": "manipulated"}, {"phrase": "the hotplate", "role": "destination"}]}]}),
+            say=lambda *_: None)
+        c, _ = caller([reply])
+        ck = make_vlm_checker(orc, c, "left", say=lambda *_: None)
+        nav = Mod([])
+        orch = make_orchestrator(plan, {"navigation": nav.module(), "manipulation": GroupMod(world).module(), "checker": ck, "world": world, "grounder": make_grounder(world)})
+        for k in range(40):
+            orch["step"]({"time": 0.01 * k, "cameras": {"eagle_cam": img(5)}})
+            if orch["state"]["finished"] or orch["state"]["failure"]:
+                break
+        return orch, c, plan
+    crit2 = "The beaker is resting upright on top of the hotplate and the gripper is released"
+    orch, c, plan = run_group(crit2, "YES, the task is complete", oracle(True))
+    sent = c._client.calls[0]["contents"][1] if c._client.calls else ""
+    check("a group of a pick and a place is checked once: one VLM call, at the place's release; the pick's close is logged only", orch["state"]["finished"] and len(c._client.calls) == 1
+          and [(v["segment"], v["event"], v["decides"]) for v in orch["state"]["verdicts"]] == [(0, "gripper_closed", False), (1, "gripper_opened", True)], f"{[(v['segment'], v['event'], v['decides']) for v in orch['state']['verdicts']]}")
+    expected = VLM_CHECK_PROMPT.replace("{description}", "Pick up the beaker; Place the beaker on the hotplate").replace("{completion_criteria}", crit2)
+    check("the prompt has the concatenated descriptions of the group and the FINAL segment's criterion (not the pick's)", sent == expected and "The beaker is held" not in sent, sent[sent.find("Task:"):sent.find("Look at")][:200])
+    check("a criterion with two conditions reaches the VLM whole (both the plate and the release are in the prompt)", "resting upright on top of the hotplate and the gripper is released" in sent)
+    orch, c, plan = run_group(crit2, "NO, the task is not complete", oracle(True))
+    check("the VLM's NO on a two-condition criterion (only one holds) fails the step even when the oracle passes", orch["state"]["failure"] and "the VLM says NO" in orch["state"]["failure"]
+          and orch["state"]["verdicts"][-1]["details"]["agree"] is False)
+
     print(f"\n{sum(results)}/{len(results)} checks passed")
     return all(results)
 

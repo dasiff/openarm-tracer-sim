@@ -16,7 +16,9 @@ Navigation and manipulation modules share the protocol of a stage, plus a segmen
     done()          -> bool, the segment's motion is finished
     error()         -> str or None, a failure message (the orchestrator stops the plan and reports it)
     phase()         -> str, what the module is doing now (shown in the viewer's status row)
-    events()        -> list of events since the last call: "gripper_closed" (the fingers stalled on something) and "gripper_opened" (manipulation only)
+    events()        -> list of events since the last call: "gripper_closed" (commanded closed, the fingers at rest for a short window, stopped short of fully closed: something between
+                       them) and "gripper_opened" (manipulation only: commanded open, the fingers at rest at the open position; thresholds in PICK_PLACE_CFG: stall_speed_m_s, stall_dwell_s,
+                       held_travel_range_m, open_reached_margin_m)
     observe(obs), resume(), report()   optional, as for a stage of src/sequential_policy.py
 
 Completion checker: check(segment, event, obs, decides=False) -> {"passed": bool, "reason": str, "details": dict}, called after every gripper event; `decides` says whether the verdict decides (the segment's
@@ -199,6 +201,7 @@ def make_scripted_manipulation(model, data, world, side, home_q, task_cfg=TASK_C
         """Plans the segment's primitive from the world as it is now."""
         prim = segment["primitive"]
         S.update(i=0, t0=None, error=None, events=[], started=True, still=None)
+        S["ctx"]["primitive"] = prim
         ids = segment.get("grounded") or {}
         S["ctx"]["obj"] = ids.get("manipulated")
         arm.reset(data)
@@ -290,6 +293,8 @@ def make_scripted_manipulation(model, data, world, side, home_q, task_cfg=TASK_C
             stalled = speed < cfg["stall_speed_m_s"]
             S["still"] = (S["still"] if S["still"] is not None else t) if stalled else None
             done_stalled = S["still"] is not None and t - S["still"] >= cfg["stall_dwell_s"]
+            if not closing and travel < open_g - cfg["open_reached_margin_m"]:
+                done_stalled = False                               # the open event needs the open position reached (design plan 8 D4), not only fingers at rest
             if el >= cfg["close_min_s"] and done_stalled:
                 if closing:
                     lo, hi = cfg["held_travel_range_m"]
@@ -321,12 +326,19 @@ def make_scripted_manipulation(model, data, world, side, home_q, task_cfg=TASK_C
     def done():
         return S["started"] and S["error"] is None and S["i"] >= len(S["steps"])
 
+    def end_report():
+        """What the skill that just ended left behind, for the log (not part of any check): after a place the arm's return to home; nothing for a pick (it ends holding at the carry height)."""
+        if S["ctx"].get("primitive") != "place":
+            return None
+        err = float(np.max(np.abs(data.qpos[arm.qadr] - home_q)))
+        return {"primitive": "place", "at_home": bool(err < 0.02), "max_joint_error_rad": err}
+
     def pop_events():
         ev, S["events"] = S["events"], []
         return ev
 
     return {"name": "scripted manipulation", "start": start, "step": step, "done": done, "error": lambda: S["error"], "phase": lambda: S["phase"], "events": pop_events,
-            "resume": lambda: None, "report": lambda: {"steps_done": S["i"], "error": S["error"]}, "pad_pose": lambda: arm.pad_pose(data), "arm": arm, "state": S}
+            "resume": lambda: None, "report": lambda: {"steps_done": S["i"], "error": S["error"]}, "end_report": end_report, "pad_pose": lambda: arm.pad_pose(data), "arm": arm, "state": S}
 
 
 # ----------------------------------------------------------------------------------------------------------

@@ -78,10 +78,11 @@ def main(args):
     pl = tagged["postprocess"]["log"]
     print(f"keyword cross-check log: {pl if pl else 'no disagreement, nothing unmatched, nothing ambiguous'}")
 
-    s = run_episode(task, sim.model, sim.data, out_dir=out / "episode", record_dir=out / "recording", loop_cfg={"cameras": True} if args.checker == "vlm" else None)
+    s = run_episode(task, sim.model, sim.data, out_dir=out / "episode", record_dir=out / "recording")
     pipe = task["pipeline"]
     state = pipe["orchestrator"]["state"]
-    summary.update(outcome=s["outcome"], plan_failure=state["failure"], status=state["status"], grounded=state["grounded"], grounding_log=pipe["grounder"]["log"], verdicts=state["verdicts"])
+    summary.update(outcome=s["outcome"], plan_failure=state["failure"], status=state["status"], grounded=state["grounded"], grounding_log=pipe["grounder"]["log"], verdicts=state["verdicts"],
+                   monitors=state["monitors"], skill_end=state["skill_end"])
     print(f"\noutcome {s['outcome']}  plan failure: {state['failure']}")
     check("the plan has a pick and then a place, each after a navigation, and ends with the place",
           [x.get("primitive") for x in tagged["segments"] if x["type"] == "manipulation"] == ["pick", "place"] and tagged["segments"][0]["type"] == "navigation" and tagged["segments"][-1].get("primitive") == "place",
@@ -109,6 +110,12 @@ def main(args):
         check("every deciding check has a VLM verdict and the oracle's verdict beside it, and the decision is the VLM's",
               len(deciding) == 2 and all(v["details"]["vlm"]["verdict"] in ("YES", "NO") and "passed" in v["details"]["oracle"] and v["passed"] == (v["details"]["vlm"]["verdict"] == "YES") for v in deciding),
               f"{[(v['details']['vlm']['verdict'], v['details']['oracle']['passed'], v['details']['agree']) for v in deciding]}")
+        check("each deciding check took its image on its own tick by rendering it on demand, and the oracle's verdict is from the same call",
+              all(v["details"]["frozen"]["image_source"] == "render" and v["details"]["frozen"]["tick"] is not None for v in deciding), f"{[v['details']['frozen'] for v in deciding]}")
+    print(f"\nthe drop monitor (logs only): {state['monitors'] if state['monitors'] else 'nothing logged'}")
+    print(f"the skill ends (logged beside, not part of any check): {state['skill_end']}")
+    check("the drop monitor logged no drop and no error in this clean run (a measurement: a drop here would be reported, not hidden)", state["monitors"] == [], f"{state['monitors']}")
+    check("the place's return to home is its own log line after the skill ended, with the arm at home", len(state["skill_end"]) == 1 and state["skill_end"][0]["at_home"], f"{state['skill_end']}")
     finish("done")
     blob = (out / "llm_log.json").read_text() + (out / "summary.json").read_text()
     from src.llm_gemini import load_api_key

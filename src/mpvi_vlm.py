@@ -5,53 +5,53 @@
     verdict = checker["check"](segment, "gripper_closed", obs, decides=True)
 
 The checker follows the checker protocol of src/mpvi_modules.py (check(segment, event, obs, decides=False) -> {"passed", "reason", "details"}). When the orchestrator says the check DECIDES (the
-segment's last manipulation step, at the gripper event that ends its primitive), the image of the camera that LLM_CFG["vlm_cameras"] names for the event (the eagle camera for both gripper events; "wrist_cam" would be the triggering gripper's own, obs["cameras"]["<side>_wrist_cam"]) is shown to Gemini with
-the paper's VLM Completion Checking Prompt, verbatim (src/mpvi_prompts.py), filled with the segment's description and completion criteria. The answer is parsed as YES or NO: an answer that starts
-with YES is yes, one that starts with NO is no, anything else is NO and is flagged `unparsed` (and printed). THE VLM DECIDES. The sim oracle's verdict (src/mpvi_modules.make_oracle_checker) is computed
-for every check, logged beside the VLM's (agree or disagree) and never changes the decision. For events that do not decide (the paper triggers the VLM only on the tagged segments) the oracle's
-verdict is returned and logged alone, and the VLM is not called.
+segment's last manipulation step, at the gripper event that ends its primitive), the image of the camera that LLM_CFG["vlm_cameras"] names for the event (the eagle camera for both gripper events;
+"wrist_cam" would be the triggering gripper's own) is shown to Gemini with the paper's VLM Completion Checking Prompt, verbatim (src/mpvi_prompts.py). {description} is the concatenated descriptions of
+the segments of the manipulation group (the orchestrator puts it in segment["group_description"]; a group of one is the segment's own description), {completion_criteria} the final segment's
+criterion (paper E4, E6). THE VLM DECIDES. The sim oracle's verdict (src/mpvi_modules.make_oracle_checker, only the step's completion criterion) is computed for every check, logged beside the VLM's
+(agree or disagree) and never changes the decision. For events that do not decide the oracle's verdict is returned and logged alone, and the VLM is not called.
 
-The image comes from obs["cameras"], which the control loop fills only when its policy cameras are on (run_episode(..., loop_cfg={"cameras": True}); the episode runner turns them off by default). A
-camera image is at most one camera period old (cameras are rendered round robin at 30 Hz in all, so each one about every 0.1 s); at a gripper event the arm has stopped.
+Frozen tick: the image and the oracle's verdict are both taken in this call, on the tick of the gripper event (the physics does not advance inside the call). The image is rendered on demand at that
+tick through obs["render"] (the control loop's hook; no policy cameras are needed); an observation without it falls back to obs["cameras"][camera] (the latest policy frame). The tick and the
+image source are in details["frozen"].
 
-A failed VLM call (a rate limit that never clears, a cache miss in cache_only mode, no image from the camera) is a failed check with the reason in it: the plan stops and reports, it is never read as YES.
+The answer is forced by Gemini's enum output to exactly one of two strings (VLM_ANSWERS), and the reply is checked to be exactly one of them. A reply that is neither, a refusal or empty reply, or a
+call that still fails after the retries is NOT COMPLETE, with the reason "checker reply unreadable" or "checker call failed" and the raw reply in the details: the check fails (the step then follows
+the normal failure path of the orchestrator). It is never read as YES.
 
-Verdict dict of a deciding check: {"passed": bool (the VLM's), "reason": str, "details": {"vlm": {"verdict": "YES" | "NO" | "ERROR", "reply_text", "unparsed", "image_sha256", "camera", "prompt_version",
-"error"}, "oracle": {"passed", "reason"}, "agree": bool or None}}.
+Verdict dict of a deciding check: {"passed": bool (the VLM's), "reason": str, "details": {"vlm": {"verdict": "YES" | "NO" | "ERROR", "reply_text" (the raw reply), "error_kind" (None, "checker reply
+unreadable" or "checker call failed"), "image_sha256", "camera", "prompt_version", "error"}, "oracle": {"passed", "reason"}, "agree": bool or None, "frozen": {"tick", "time", "image_source"}}}.
 
 Contents:
-    parse_verdict(text), make_vlm_checker(oracle_checker, caller, side).
+    read_answer(text), make_vlm_checker(oracle_checker, caller, side, version, say, cameras).
 """
 
-import re
-
-from src.llm_gemini import LLMError
-from src.mpvi_prompts import VLM_CHECK_PROMPT, fill_prompt
+from src.llm_gemini import LLMEmptyReply, LLMError
+from src.mpvi_prompts import VLM_ANSWER_NO, VLM_ANSWER_YES, VLM_ANSWERS, VLM_CHECK_PROMPT, fill_prompt
 from src.task_config import LLM_CFG
 
-_ANSWER_RE = re.compile(r"^[\s\"'`*_>\-]*(YES|NO)\b", re.IGNORECASE)
+KIND_UNREADABLE = "checker reply unreadable"
+KIND_CALL_FAILED = "checker call failed"
 
 
-def parse_verdict(text):
-    """Parses the VLM's answer as YES or NO.
+def read_answer(text):
+    """Reads the VLM's reply: exactly one of the two allowed answers (surrounding whitespace ignored), else unreadable.
 
     Args:
-        text (str): The reply text ("YES, the task is complete", "NO, the task is not complete", ...).
+        text (str or None): The raw reply.
 
     Returns:
-        tuple: (verdict "YES" or "NO", unparsed bool). An answer that does not start with yes or no (ignoring case, quotes and markdown marks) is ("NO", True).
+        str or None: "YES" or "NO", or None when the reply is not exactly one of VLM_ANSWERS.
     """
-    m = _ANSWER_RE.match(text or "")
-    if m:
-        return m.group(1).upper(), False
-    return "NO", True
+    t = (text or "").strip()
+    return "YES" if t == VLM_ANSWER_YES else "NO" if t == VLM_ANSWER_NO else None
 
 
 def make_vlm_checker(oracle_checker, caller, side="left", version=None, say=print, cameras=None):
     """Builds the checker in which the VLM decides and the oracle is logged beside it.
 
     Args:
-        oracle_checker (dict): The sim oracle's checker (make_oracle_checker); computed for every check, never decides here.
+        oracle_checker (dict): The sim oracle's checker (make_oracle_checker); computed for every check on the same tick as the image, never decides here.
         caller (GeminiCaller): The Gemini caller (its mode decides whether the cache or the API answers).
         side (str): The manipulating gripper, "left" or "right": its wrist camera is the one "wrist_cam" stands for. Defaults to "left".
         version (str or None): The prompt version for the cache key. Defaults to LLM_CFG["vlm_prompt_version"].
@@ -64,30 +64,43 @@ def make_vlm_checker(oracle_checker, caller, side="left", version=None, say=prin
     version = version or LLM_CFG["vlm_prompt_version"]
     cameras = cameras or LLM_CFG["vlm_cameras"]
 
+    def frame(obs, camera):
+        """The camera's image on the tick of the call: rendered now through obs["render"], else the latest policy frame; (image or None, source)."""
+        if obs.get("render") is not None:
+            return obs["render"](camera), "render"
+        return (obs.get("cameras") or {}).get(camera), "cameras"
+
     def check(segment, event, obs, decides=False):
         oracle = oracle_checker["check"](segment, event, obs)
         if not decides:
             return oracle
         camera = cameras.get(event, "wrist_cam")
         camera = f"{side}_wrist_cam" if camera == "wrist_cam" else camera
-        details = {"oracle": {"passed": oracle["passed"], "reason": oracle["reason"]}, "vlm": {"camera": camera, "prompt_version": version, "verdict": "ERROR", "reply_text": None,
-                                                                                                   "unparsed": False, "image_sha256": None, "error": None}, "agree": None}
+        details = {"oracle": {"passed": oracle["passed"], "reason": oracle["reason"]},
+                   "vlm": {"camera": camera, "prompt_version": version, "verdict": "ERROR", "reply_text": None, "error_kind": None, "image_sha256": None, "error": None},
+                   "agree": None, "frozen": {"tick": obs.get("tick"), "time": obs.get("time"), "image_source": None}}
         vlm = details["vlm"]
-        images = (obs.get("cameras") or {})
-        image = images.get(camera)
+
+        def failed(kind, error):
+            vlm.update(error_kind=kind, error=error)
+            say(f"[vlm] {camera}, {event}: {kind}: {error[:200]} (counted as NOT COMPLETE; the oracle says {'PASS' if oracle['passed'] else 'FAIL'})")
+            return {"passed": False, "reason": f"{kind}: {error[:200]}", "details": details}
+
+        image, details["frozen"]["image_source"] = frame(obs, camera)
         if image is None:
-            vlm["error"] = f"no image from {camera} in the observation (the episode must run with the policy cameras on: run_episode(..., loop_cfg={{'cameras': True}}))"
-            return {"passed": False, "reason": f"VLM check failed: {vlm['error']}", "details": details}
-        prompt = fill_prompt(VLM_CHECK_PROMPT, description=segment["description"], completion_criteria=segment["completion_criteria"])
+            return failed(KIND_CALL_FAILED, f"no image from {camera} (the observation has neither obs['render'] nor a policy frame in obs['cameras'])")
+        prompt = fill_prompt(VLM_CHECK_PROMPT, description=segment.get("group_description") or segment["description"], completion_criteria=segment["completion_criteria"])
         try:
-            text = caller.text_call(prompt, image, kind="vlm", version=version)
+            text = caller.text_call(prompt, image, kind="vlm", version=version, choices=VLM_ANSWERS)
+        except LLMEmptyReply as e:
+            return failed(KIND_UNREADABLE, f"{type(e).__name__}: {e}")
         except LLMError as e:
-            vlm["error"] = f"{type(e).__name__}: {e}"
-            return {"passed": False, "reason": f"VLM check failed: {vlm['error']}", "details": details}
-        verdict, unparsed = parse_verdict(text)
-        vlm.update(verdict=verdict, reply_text=text, unparsed=unparsed, image_sha256=caller.log[-1].get("image_sha256"))
-        if unparsed:
-            say(f"[vlm] the answer is neither YES nor NO, counted as NO: {text[:200]!r}")
+            return failed(KIND_CALL_FAILED, f"{type(e).__name__}: {e}")
+        vlm.update(reply_text=text, image_sha256=caller.log[-1].get("image_sha256"))
+        verdict = read_answer(text)
+        if verdict is None:
+            return failed(KIND_UNREADABLE, f"the reply is not exactly one of the two answers: {text[:200]!r}")
+        vlm["verdict"] = verdict
         details["agree"] = (verdict == "YES") == bool(oracle["passed"])
         say(f"[vlm] {camera}, {event}: the VLM says {verdict}; the oracle says {'PASS' if oracle['passed'] else 'FAIL'} ({'agree' if details['agree'] else 'DISAGREE'})")
         return {"passed": verdict == "YES", "reason": "" if verdict == "YES" else f"the VLM says NO: {text.strip()[:200]}", "details": details}

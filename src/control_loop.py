@@ -235,7 +235,7 @@ def run_loop(model, data, sources, cfg, viewer=None, logger=None):
     "tick" (int, tick number), "timestep" (float, physics step in seconds), "steps_per_frame" (int, physics steps per tick),
     "base_pose" ((x, y, yaw) of the base in metres and radians), "pedestal_height" (float, metres), "applied" (dict of the loop's current
     targets: "twist", "gripper_force", "pedestal", "arm_targets", "gripper", "mode", "neck_targets", "neck_goal"), "cameras" (dict of camera
-    name to image, or None without policy cameras), "mode" ("teleop" or "auto"), "operator" ({"requested", "responded"}), and "policy"
+    name to image, or None without policy cameras), "render" (the hook API's render(camera_name): one frame of a camera from the current state, on demand; a source that needs an image at one tick, such as a completion check, calls it), "mode" ("teleop" or "auto"), "operator" ({"requested", "responded"}), and "policy"
     (the auto source's status(), only if it has one).
 
     Args:
@@ -902,7 +902,7 @@ def run_loop(model, data, sources, cfg, viewer=None, logger=None):
         obs.update(tick=frame, timestep=model.opt.timestep, steps_per_frame=steps_per_frame,
                    base_pose=(float(data.qpos[0]), float(data.qpos[1]), base_yaw(data)),
                    pedestal_height=float(data.qpos[ped_qadr]), applied=applied(),
-                   cameras=rig.images if rig else None, mode=ctl["mode"],
+                   cameras=rig.images if rig else None, render=render, mode=ctl["mode"],
                    operator={"requested": ctl["requested"], "responded": ctl["responded"]})
         if auto_src is not None and "status" in sources[auto_src]:
             obs["policy"] = sources[auto_src]["status"]()

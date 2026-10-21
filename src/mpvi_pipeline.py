@@ -20,6 +20,7 @@ from src.mpvi_modules import make_oracle_checker, make_scripted_manipulation, ma
 from src.grounding import make_grounder, make_operator, make_search_stub
 from src.mpvi_plan import BEAKER_ON_HOTPLATE_LABELS, BEAKER_ON_HOTPLATE_PLAN
 from src.mpvi_postprocess import make_stored_labeler, postprocess
+from src.mpvi_monitors import make_drop_monitor
 from src.mpvi_vlm import make_vlm_checker
 from src.orchestrator import make_orchestrator
 from src.task_beaker_hotplate import make_task
@@ -27,7 +28,7 @@ from src.task_config import EPISODE_CFG, PICK_PLACE_CFG, SUCCESS_CFG, STAGING_CF
 
 
 def make_pipeline_task(plan=BEAKER_ON_HOTPLATE_PLAN, task_cfg=TASK_CFG, staging_cfg=STAGING_CFG, episode_cfg=EPISODE_CFG, success_cfg=SUCCESS_CFG, arm="left", labeler=None,
-                       operator=None, search=None, stop_on_disagreement=False, checker="oracle", vlm_caller=None):
+                       operator=None, search=None, stop_on_disagreement=False, checker="oracle", vlm_caller=None, drop_monitor=True):
     """Packages the pipeline as a task for the generic episode runner.
 
     Args:
@@ -42,7 +43,8 @@ def make_pipeline_task(plan=BEAKER_ON_HOTPLATE_PLAN, task_cfg=TASK_CFG, staging_
         search (dict or None): The search module. Defaults to the stub ("search not implemented").
         stop_on_disagreement (bool): Stop the plan before it starts when the labeling and the keywords disagree on a primitive. Defaults to False.
         checker (str): "oracle" (the sim ground truth decides) or "vlm" (the VLM decides, as in the paper; the oracle is logged beside every deciding check). Defaults to "oracle".
-        vlm_caller (GeminiCaller or None): The caller of the VLM checker; required when checker is "vlm". The episode must then run with the policy cameras on (run_episode(..., loop_cfg={"cameras": True})).
+        vlm_caller (GeminiCaller or None): The caller of the VLM checker; required when checker is "vlm". The image is rendered on demand at the tick of the gripper event (obs["render"]); no policy cameras are needed.
+        drop_monitor (bool): Run the drop monitor (src/mpvi_monitors.py; it only logs). Defaults to True.
 
     Returns:
         dict: The task (see src/episode_runner.py); task["pipeline"] is filled with the orchestrator and the modules when the policy is made.
@@ -63,8 +65,9 @@ def make_pipeline_task(plan=BEAKER_ON_HOTPLATE_PLAN, task_cfg=TASK_CFG, staging_
         oracle = make_oracle_checker(model, data, world, manip["pad_pose"], arm, task_cfg, success_cfg)
         checker = make_vlm_checker(oracle, vlm_caller, arm) if use_vlm else oracle
         grounder = make_grounder(world, search or make_search_stub(), operator or make_operator(), arm)
-        orch = make_orchestrator(tagged, {"navigation": nav, "manipulation": manip, "checker": checker, "world": world, "grounder": grounder})
-        built.update(orchestrator=orch, navigation=nav, manipulation=manip, checker=checker, world=world, grounder=grounder)
+        monitors = [make_drop_monitor(model, oracle, arm)] if drop_monitor else []
+        orch = make_orchestrator(tagged, {"navigation": nav, "manipulation": manip, "checker": checker, "world": world, "grounder": grounder, "monitors": monitors})
+        built.update(monitors=monitors, orchestrator=orch, navigation=nav, manipulation=manip, checker=checker, world=world, grounder=grounder)
         return orch
 
     base_check = task["check_success"]

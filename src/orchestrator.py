@@ -20,6 +20,9 @@ when every segment is done.
 Status (the viewer's status row shows the phase text, the console and the report have the details): each segment is pending, running, checking, done or failed (with the reason).
 The phase text is "<segment number>/<count> <NAV|PICK|PLACE>: <the module's phase> [<status>]".
 
+Monitors (modules["monitors"], optional list; src/mpvi_monitors.py): called every tick after the segment's step with the gripper events of the tick; they only log (state["monitors"], the console,
+the report) and never fail or stop a step. When a manipulation segment ends, the module's optional end_report() (a place: whether the arm is back at home) is logged as its own line, not as part of the check.
+
 The orchestrator is a command source of src/control_loop.py (the dictionary of src/sequential_policy.py: "step", "status", "resume", "report", "hz"); the episode runner's
 policy status gets "handoff" once the navigation segments are done, "error" with the failure reason, and "failure_outcome" PLAN_FAILED. state["finished"] is True once the plan is
 done (the task's success check reads it).
@@ -50,7 +53,7 @@ def make_orchestrator(plan, modules):
     if any(s["type"] == "manipulation" for s in steps) and "grounder" not in modules:
         raise ValueError("a plan with manipulation segments needs modules['grounder']")
     n = len(steps)
-    S = {"steps": steps, "status": ["pending"] * n, "index": 0, "finished": False, "failure": None, "log": [], "verdicts": [], "grounded": [], "cur": None, "started": False, "t": 0.0,
+    S = {"steps": steps, "status": ["pending"] * n, "index": 0, "finished": False, "failure": None, "log": [], "verdicts": [], "grounded": [], "monitors": [], "skill_end": [], "tick_events": [], "cur": None, "started": False, "t": 0.0,
          "handoff": not any(s["type"] == "navigation" for s in steps)}
 
     def say(text):
@@ -62,10 +65,34 @@ def make_orchestrator(plan, modules):
         S["failure"] = f"segment {S['index'] + 1}/{n} ({steps[S['index']]['description']}): {reason}"
         say(f"FAILED: {S['failure']}")
 
+    def with_group(seg):
+        """The segment for the checker: with `group_description`, the concatenated descriptions of its manipulation group (paper E4, E6); the criterion stays the segment's own, which is
+        the final segment's for the one that carries the check tag."""
+        if seg.get("group") is None:
+            return seg
+        group = [s["description"] for s in steps if s["type"] == "manipulation" and s.get("group") == seg["group"]]
+        return {**seg, "group_description": "; ".join(group)}
+
     def module_of(seg):
         return modules["navigation" if seg["type"] == "navigation" else "manipulation"]
 
+    monitors = modules.get("monitors", [])
+
     def step(obs):
+        """One tick: the running segment's step, then the monitors (they only log)."""
+        S["tick_events"] = []
+        cmds = run_segment(obs)
+        for m in monitors:
+            try:
+                entries = m["tick"](obs, S["tick_events"], S["cur"])
+            except Exception as e:                                  # noqa: BLE001 - a monitor only logs; its own failure is logged and never stops a step
+                entries = [{"kind": "monitor_error", "error": f"{type(e).__name__}: {e}"}]
+            for entry in entries:
+                S["monitors"].append({"monitor": m["name"], **entry})
+                say(f"[{m['name']}] {entry['kind']}: " + ", ".join(f"{k}={v:.4f}" if isinstance(v, float) else f"{k}={v}" for k, v in entry.items() if k != "kind") + " [logged only]")
+        return cmds
+
+    def run_segment(obs):
         S["t"] = obs["time"]
         for m in (modules["navigation"], modules["manipulation"]):
             if "observe" in m and (m is modules["navigation"] or S["started"]):
@@ -125,9 +152,10 @@ def make_orchestrator(plan, modules):
         for ev in mod["events"]():
             prim = seg.get("primitive")
             decides = seg["check"] and ev == CHECK_EVENT.get(prim)
+            S["tick_events"].append((ev, seg))
             if decides:
                 S["status"][i] = "checking"
-            v = modules["checker"]["check"](seg, ev, obs, decides)
+            v = modules["checker"]["check"](with_group(seg), ev, obs, decides)
             S["verdicts"].append({"time": S["t"], "segment": i, "event": ev, "decides": decides, **v})
             d = v.get("details") or {}
             beside = f" [VLM: {d['vlm']['verdict']}, oracle: {'PASS' if d['oracle']['passed'] else 'FAIL'}, {'agree' if d.get('agree') else 'DISAGREE' if d.get('agree') is False else 'no comparison'}]" if "vlm" in d else ""
@@ -143,6 +171,10 @@ def make_orchestrator(plan, modules):
         if mod["done"]():
             S["status"][i] = "done"
             say(f"segment {i + 1}/{n} done")
+            end = mod["end_report"]() if "end_report" in mod else None
+            if end:
+                S["skill_end"].append({"time": S["t"], "segment": i, **end})
+                say(f"skill ended (not part of any check): arm {'at home' if end['at_home'] else 'NOT at home'}, largest joint error {end['max_joint_error_rad']:.3f} rad [logged only]")
             if seg["type"] == "navigation" and all(s["type"] != "navigation" for s in steps[i + 1:]):
                 S["handoff"] = True
             if i + 1 < n:
@@ -176,7 +208,7 @@ def make_orchestrator(plan, modules):
     def report():
         return {"plan": {k: v for k, v in plan.items() if k != "postprocess"}, "segments": [{"description": s["description"], "type": s["type"], "primitive": s.get("primitive"), "check": s["check"], "status": st}
                                           for s, st in zip(steps, S["status"])],
-                "finished": S["finished"], "failure": S["failure"], "verdicts": S["verdicts"], "log": S["log"], "grounded": S["grounded"],
+                "finished": S["finished"], "failure": S["failure"], "verdicts": S["verdicts"], "log": S["log"], "grounded": S["grounded"], "monitors": S["monitors"], "skill_end": S["skill_end"],
                 "grounding_log": modules["grounder"]["log"] if "grounder" in modules else [], "postprocess_log": plan.get("postprocess", {}).get("log", []),
                 "navigation": modules["navigation"]["report"](), "manipulation": modules["manipulation"]["report"]()}
 

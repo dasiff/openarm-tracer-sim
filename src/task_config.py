@@ -423,6 +423,8 @@ PICK_PLACE_CFG = {
     "close_min_s": 1.0, "close_timeout_s": 5.0, "open_timeout_s": 4.0,
     "stall_speed_m_s": 0.002, "stall_dwell_s": 0.3,  # the fingers are stalled below this speed for this long
     "held_travel_range_m": (0.003, 0.040),            # finger travel at the stall: between "closed on nothing" and "did not close"
+    "open_reached_margin_m": 0.003,        # the open event needs the fingers within this of the open travel (the oracle's margin), not only stalled
+    "drop_margin_m": 0.003, "drop_dwell_s": 0.05,     # drop monitor (logging only): the fingers closed this much past the width they held the object at, for this long
     "lift_check_m": 0.03,                  # the beaker must have risen this far with the hand after UP (the pick's own check)
     "episode_timeout_s": 180.0,
 }

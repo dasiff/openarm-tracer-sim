@@ -270,6 +270,7 @@ The bare "mode" display of the viewer is replaced by a compact status window of 
 - **B4** Demos are single skills (pick, place). Place demos start from two poses: the zombie pose, and the lifted post-pick pose (at the clearance height, holding the object), for the null case (§6).
 - **B5** The eagle camera frames once per step, after parking; at a null step it may reframe while the arm pauses, only if the next step's targets need it (§14.1).
 - **B6** If no stance passes for a step: stop and report the reason (out of reach, or out of view). LATER (§10): a paused reframe inside a step for objects that are reachable but not all in view.
+- **L1 (M068)** Longest-run stance selection: at each non-null navigation step, stance selection first tries one stance for the points of the next k steps together (k = the run cap, a setting, default 4), then k-1, down to 1; the first k that passes wins, and the following steps in that run get null navigation steps (their arm stays where it is, B2). The step order stays the LLM's: no reordering. This gives the fewest moves for a fixed step order. **L2 (M069)** The objects of the later steps in the run are grounded early; the S-Q11 rule (re-check reach on every world-model update of an object the next step needs) covers their changes.
 - Status today: the scripted pick ends at the carry height with the arm extended (not at the zombie pose) and the place starts from there (the skeleton cut D3's single pick-and-place run in two); under B2 and B3 the pick ends at the zombie pose except before a null step. The 2026-10-21 report answers why.
 
 ### Fidelity to the MPVI paper [DECIDED 2026-10-19]
@@ -346,7 +347,7 @@ Build steps are referred to only as B-numbers. Each step shows the section that 
 - RAIL safety filter
 - Home pose and framing margin tests were tuned to the placeholder camera; recheck when the real camera is known
 - Weak (2 N) grip: beaker creeps upward ~15 mm/s with the hand still. Real pinch ejection from tilt, or contact solver artifact? Check before demo generation.
-- A* task-level planner, our own extension of MPVI (moved here from §8 on Dan's direction to implement MPVI as in the paper first; the design text is kept as it was):
+- A* task-level planner, our own extension of MPVI (moved here from §8 on Dan's direction to implement MPVI as in the paper first; the design text is kept as it was): **[Extension, David, 2026-10-21, M070]** Cost-based stance sequences that weigh safety, not only the number of moves (the longest-run rule L1 minimizes moves for a fixed step order): the distance carried (scaled by contents, liquid highest), the proximity to hazards while carrying (for example the hot hotplate), the total travel, the reach scores.
   - The LLM marks dependencies between steps with a depends_on field (told to mark dependent when unsure); the LLM does not set the final order. Dependency-aware reordering.
   - Task-level search: weighted A* (accepts a good-enough plan quickly) over the LLM's steps chooses order within dependencies, arm assignment, and stances. The old plan wrote the arm choice into the prompt; that is dropped (prompts do not name the arm, §6), so arm assignment would only steer the stances.
   - Costs: travel time; heavy penalty for driving while carrying, scaled by contents (liquid highest); penalty for low reach scores (carrying costs).

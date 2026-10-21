@@ -23,7 +23,7 @@ server's own "retry in Ns" hint, at most backoff_max_s. A 429 that names a per-d
 The API key (GEMINI_API_KEY from the environment, else from the secrets file) is never logged, printed or stored: it is not in the log or the cache, and it is masked in every error text.
 
 Contents:
-    LLMError, LLMEmptyReply, LLMCacheMiss, load_api_key(), cache_key(), LLMCache, GeminiCaller.
+    LLMError, LLMDailyQuota, LLMEmptyReply, LLMCacheMiss, load_api_key(), cache_key(), LLMCache, GeminiCaller.
 """
 
 import hashlib
@@ -43,6 +43,11 @@ RETRY_CODES = (429, 500, 502, 503, 504)
 
 class LLMError(RuntimeError):
     """A Gemini call failed for good (message with the key masked)."""
+
+
+class LLMDailyQuota(LLMError):
+    """The API's daily quota is used up (a 429 that names a per-day limit): waiting does not help, so it is not retried; the orchestrator stops the plan with "checker unavailable: daily quota"
+    (a pipeline problem, not a step failure, decisions-log M043)."""
 
 
 class LLMEmptyReply(LLMError):
@@ -234,7 +239,9 @@ class GeminiCaller:
                 code = getattr(e, "code", None) if isinstance(e, errors.APIError) else None
                 network = not isinstance(e, errors.APIError) and type(e).__module__.split(".")[0] in ("httpx", "httpcore", "requests", "urllib3", "ssl", "socket")
                 per_day = code == 429 and re.search(r"PerDay|per day", msg, re.I) is not None
-                if per_day or not (code in RETRY_CODES or network):
+                if per_day:
+                    raise LLMDailyQuota(f"{type(e).__name__}{f' ({code})' if code else ''}: {msg[:600]}") from None
+                if not (code in RETRY_CODES or network):
                     raise LLMError(f"{type(e).__name__}{f' ({code})' if code else ''}: {msg[:600]}") from None
                 if attempt >= self.cfg["max_retries"]:
                     raise LLMError(f"gave up after {attempt + 1} tries: {type(e).__name__}{f' ({code})' if code else ''}: {msg[:300]}") from None

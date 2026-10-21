@@ -29,7 +29,7 @@ arm is not commanded, an object it holds stays held), the world model is refresh
 retries the operator is asked through the operator interface of src/grounding.py (console and viewer status text: the step, the reason, the checker's image path; choices retry again, skip, abort; the choice
 is logged); an unattended run (no operator present) stops the plan with the reason. No retry, straight to the operator or the stop: a navigation step, a grounding failure, a place whose object is not in the
 hand, a pick whose object is already in the hand, an object knocked over (its up axis more than ORCH_CFG["knocked_over_deg"] from vertical), and a module error whose error_kind() is "clearance" or "contact".
-These read the world model and the module, never the oracle. Every attempt is logged (state["attempts"]: attempt number, outcome, reason, the checker's verdict and the oracle's, the decision).
+These read the world model and the module, never the oracle. A "dropped" entry of the drop monitor (src/mpvi_monitors.py, M044) fails the current step like a module error (kind "drop"): a pick is retried when the object is out of the hand and upright, a place or a navigation step is not. A daily-quota error of the checker (M043) is not a step failure: the plan stops with "checker unavailable: daily quota", logged in state["pipeline_problems"], episode outcome PIPELINE_PROBLEM. Every attempt is logged (state["attempts"]: attempt number, outcome, reason, the checker's verdict and the oracle's, the decision).
 
 The orchestrator is a command source of src/control_loop.py (the dictionary of src/sequential_policy.py: "step", "status", "resume", "report", "hz"); the episode runner's
 policy status gets "handoff" once the navigation segments are done, "error" with the failure reason, and "failure_outcome" PLAN_FAILED. state["finished"] is True once the plan is
@@ -81,20 +81,20 @@ def make_orchestrator(plan, modules, cfg=None):
     if any(s["type"] == "manipulation" for s in steps) and "grounder" not in modules:
         raise ValueError("a plan with manipulation segments needs modules['grounder']")
     n = len(steps)
-    S = {"steps": steps, "status": ["pending"] * n, "index": 0, "finished": False, "failure": None, "log": [], "verdicts": [], "grounded": [], "monitors": [], "skill_end": [], "tick_events": [], "attempt": [1] * len(steps), "attempts": [], "last_check": None, "operator": [], "skipped": [], "asking": None, "cur": None, "started": False, "t": 0.0,
+    S = {"steps": steps, "status": ["pending"] * n, "index": 0, "finished": False, "failure": None, "log": [], "verdicts": [], "grounded": [], "monitors": [], "skill_end": [], "tick_events": [], "attempt": [1] * len(steps), "attempts": [], "pipeline_problems": [], "last_check": None, "operator": [], "skipped": [], "asking": None, "cur": None, "started": False, "t": 0.0,
          "handoff": not any(s["type"] == "navigation" for s in steps)}
 
     def say(text):
         S["log"].append((S["t"], text))
         print(f"[orchestrator] t={S['t']:.2f} s: {text}")
 
-    def end_attempt(i, outcome, reason):
+    def end_attempt(i, outcome, reason, oracle=None):
         """Logs the end of an attempt of segment i: the checker's verdict and the oracle's beside it (None where there was no deciding check)."""
         v = S["last_check"]
         d = (v or {}).get("details") or {}
         is_oracle = modules["checker"].get("name") == "sim oracle"
         entry = {"segment": i, "attempt": S["attempt"][i], "time": S["t"], "outcome": outcome, "reason": reason, "checker_passed": None if v is None else v["passed"],
-                 "vlm_verdict": (d.get("vlm") or {}).get("verdict"), "oracle_passed": (d.get("oracle") or {}).get("passed") if not is_oracle else (None if v is None else v["passed"]),
+                 "vlm_verdict": (d.get("vlm") or {}).get("verdict"), "oracle_passed": oracle if oracle is not None else ((d.get("oracle") or {}).get("passed") if not is_oracle else (None if v is None else v["passed"])),
                  "image_path": (d.get("vlm") or {}).get("image_path"), "decision": None}
         S["attempts"].append(entry)
         return entry
@@ -150,11 +150,22 @@ def make_orchestrator(plan, modules, cfg=None):
         say(f"RETRY, attempt {S['attempt'][i]} of segment {i + 1}/{n}: {why}; the arm goes back to its zombie pose, then the world model is refreshed and the step is grounded again")
         modules["manipulation"]["recover"]()
 
-    def fail(reason, kind="module"):
-        """A step failed: retry it, ask the operator, or stop the plan (see the module docstring). kind: "check", "module", "grounding", "no_primitive" or "recovery"."""
+    def pipeline_problem(i, problem):
+        """A problem of the pipeline, not a failure of the step (for example the checker's daily quota, decisions-log M043): the plan stops at once, no retry, no operator question; it is logged
+        in state["pipeline_problems"] and as an attempt with the outcome "pipeline_problem" (kept out of the step failure counts), and the episode outcome is PIPELINE_PROBLEM."""
+        S["pipeline_problems"].append({"time": S["t"], "segment": i, "problem": problem})
+        end_attempt(i, "pipeline_problem", problem)
+        S["last_check"] = None
+        S["status"][i] = "failed"
+        S["failure"] = f"segment {i + 1}/{n} ({steps[i]['description']}): {problem}"
+        S["pipeline_stop"] = True
+        say(f"PIPELINE PROBLEM (not a step failure): {S['failure']}")
+
+    def fail(reason, kind="module", oracle=None):
+        """A step failed: retry it, ask the operator, or stop the plan (see the module docstring). kind: "check", "module", "drop", "grounding", "no_primitive" or "recovery"."""
         i = S["index"]
         seg = steps[i]
-        entry = end_attempt(i, "failed", reason)
+        entry = end_attempt(i, "failed", reason, oracle)
         S["last_check"] = None
         say(f"attempt {S['attempt'][i]} of segment {i + 1}/{n} failed ({kind}): {reason}")
         block = no_retry_reason(i, seg, kind)
@@ -235,7 +246,11 @@ def make_orchestrator(plan, modules, cfg=None):
                 entries = [{"kind": "monitor_error", "error": f"{type(e).__name__}: {e}"}]
             for entry in entries:
                 S["monitors"].append({"monitor": m["name"], **entry})
-                say(f"[{m['name']}] {entry['kind']}: " + ", ".join(f"{k}={v:.4f}" if isinstance(v, float) else f"{k}={v}" for k, v in entry.items() if k != "kind") + " [logged only]")
+                deciding = bool(entry.get("decides")) and entry["kind"] == "dropped"
+                say(f"[{m['name']}] {entry['kind']}: " + ", ".join(f"{k}={v:.4f}" if isinstance(v, float) else f"{k}={v}" for k, v in entry.items() if k != "kind") + ("" if deciding else " [logged only]"))
+                if deciding and not S["failure"] and not S["finished"] and S["status"][S["index"]] in ("running", "checking"):
+                    fail(f"the object was dropped: the finger opening is {1000 * entry['finger_opening_m']:.1f} mm, it held {1000 * entry['held_width_m']:.1f} mm (the sim oracle's held verdict at that tick, logged beside: {entry['oracle_held']})", "drop", oracle=entry["oracle_held"])
+                    return None
         return cmds
 
     def run_segment(obs):
@@ -314,6 +329,9 @@ def make_orchestrator(plan, modules, cfg=None):
             beside = f" [VLM: {d['vlm']['verdict']}, oracle: {'PASS' if d['oracle']['passed'] else 'FAIL'}, {'agree' if d.get('agree') else 'DISAGREE' if d.get('agree') is False else 'no comparison'}]" if "vlm" in d else ""
             say(f"{ev}: the check says {'PASS' if v['passed'] else 'FAIL'}" + (f" ({v['reason']})" if v["reason"] else "") + beside + ("" if decides else " [logged only]"))
             if decides and not v["passed"]:
+                if (v.get("details") or {}).get("pipeline_problem"):
+                    pipeline_problem(i, v["details"]["pipeline_problem"])
+                    return None
                 fail(f"completion check failed: {v['reason']}", "check")
                 return None
             if decides:
@@ -353,7 +371,7 @@ def make_orchestrator(plan, modules, cfg=None):
     def status():
         out = {"stage": "ORCHESTRATOR", "phase": phase_text(), "handoff": S["handoff"], "error": S["failure"]}
         if S["failure"]:
-            out["failure_outcome"] = "PLAN_FAILED"
+            out["failure_outcome"] = "PIPELINE_PROBLEM" if S.get("pipeline_stop") else "PLAN_FAILED"
         return out
 
     def resume():
@@ -364,7 +382,7 @@ def make_orchestrator(plan, modules, cfg=None):
         return {"plan": {k: v for k, v in plan.items() if k != "postprocess"}, "segments": [{"description": s["description"], "type": s["type"], "primitive": s.get("primitive"), "check": s["check"], "status": st}
                                           for s, st in zip(steps, S["status"])],
                 "finished": S["finished"], "failure": S["failure"], "verdicts": S["verdicts"], "log": S["log"], "grounded": S["grounded"], "monitors": S["monitors"], "skill_end": S["skill_end"],
-                "attempts": S["attempts"], "operator": S["operator"], "skipped": S["skipped"],
+                "attempts": S["attempts"], "operator": S["operator"], "skipped": S["skipped"], "pipeline_problems": S["pipeline_problems"],
                 "grounding_log": modules["grounder"]["log"] if "grounder" in modules else [], "postprocess_log": plan.get("postprocess", {}).get("log", []),
                 "navigation": modules["navigation"]["report"](), "manipulation": modules["manipulation"]["report"]()}
 

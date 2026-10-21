@@ -25,7 +25,10 @@ sys.path.insert(0, str(PROJECT_ROOT))
 
 import numpy as np  # noqa: E402
 
+from src.grounding import make_grounder, make_operator, make_scripted_operator  # noqa: E402
 from src.mpvi_modules import make_oracle_checker  # noqa: E402
+from src.orchestrator import make_orchestrator  # noqa: E402
+from orchestrator_retry_test import NAV, PICK, PLACE, Manip, Nav, World, checker as fake_checker, make_plan  # noqa: E402
 from src.mpvi_monitors import make_drop_monitor  # noqa: E402
 from src.robot_helpers import arm_ids  # noqa: E402
 from src.task_beaker_hotplate import bench_top_z, load_task  # noqa: E402
@@ -75,7 +78,7 @@ def main():
           and abs(e["finger_opening_m"] - (width - 0.010)) < 1e-9 and abs(e["held_width_m"] - width) < 1e-9 and e["oracle_held"] is False and abs(e["time"] - (20 * dt + cfg["drop_dwell_s"])) < 2 * dt, f"{e}")
     out2, _ = run(slip, {0: "gripper_closed"}, oracle_passed=True)
     check("with the oracle still saying held the entry says so (a disagreement to measure)", len(out2) == 1 and out2[0]["oracle_held"] is True)
-    check("the entry has no object pose: only time, opening, width and the oracle's verdict", set(e) == {"kind", "time", "below_since", "finger_opening_m", "held_width_m", "oracle_held", "oracle_reason"}, f"{sorted(e)}")
+    check("the entry has no object pose: only time, opening, width, the oracle's verdict and the decides flag", set(e) == {"kind", "decides", "time", "below_since", "finger_opening_m", "held_width_m", "oracle_held", "oracle_reason"}, f"{sorted(e)}")
     out, _ = run([width] * 20 + [width - 0.010] + [width] * 40, {0: "gripper_closed"})
     check("a blip shorter than the dwell logs nothing", out == [])
     out, _ = run([width] * 10 + [0.044] * 5 + [0.0] * 30, {0: "gripper_closed", 10: "gripper_opened"})
@@ -108,6 +111,79 @@ def main():
           and "gripper is not open" not in v["reason"], v["reason"][:100])
     v = state(on_plate=True, open_gripper=True)
     check("both conditions hold: PASS", v["passed"] and v["reason"] == "", v["reason"][:100])
+    print("\nthe drop monitor DECIDES (M044): it fails the step and the retry path starts")
+
+    class DropManip(Manip):
+        """The retry test's fake module that runs `length` steps per attempt and drops the object (the world's hand empties, the finger opening closes) at step `drop_n` of attempt `drop_attempt`."""
+
+        def __init__(self, world, drop_attempt=1, drop_n=2, length=14, **kw):
+            super().__init__(world, **kw)
+            self.drop_attempt, self.drop_n, self.length, self.dropped = drop_attempt, drop_n, length, False
+
+        def start(self, seg):
+            super().start(seg)
+            self.dropped = False
+
+        def step(self, o):
+            out = super().step(o)
+            if not self.recovering and self.attempt == self.drop_attempt and self.n == self.drop_n and self.prim == "pick":
+                self.world.held_by, self.dropped = None, True
+            return out
+
+        def done(self):
+            return self.rec_n >= 2 if self.recovering else (self.n >= self.length and self.err is None)
+
+    def drive(segs, manip, decides=True, nav=None, operator=None, ticks=400, drop_in_nav=None):
+        world = manip.world
+        mon = make_drop_monitor(model, {"name": "o", "check": lambda s_, e_, o_, d_=False: {"passed": world.held_by == "left", "reason": ""}}, "left", decides=decides)
+        modules = {"navigation": (nav or Nav()).module(), "manipulation": manip.module(), "checker": fake_checker(), "world": world.w, "grounder": make_grounder(world.w, operator=operator),
+                   "monitors": [mon]}
+        if operator is not None:
+            modules["operator"] = operator
+        orch = make_orchestrator(make_plan(segs), modules)
+        for k in range(ticks):
+            q = np.zeros(model.nq)
+            q[fq] = 0.003 if manip.dropped else 0.02
+            orch["step"]({"time": 0.01 * k, "joint_angles": q})
+            if orch["state"]["finished"] or orch["state"]["failure"]:
+                break
+        return orch, mon
+
+    world = World()
+    manip = DropManip(world)
+    orch, mon = drive([PICK], manip)
+    st = orch["state"]
+    check("a drop during the pick fails the step (kind drop) and, the object being out of the hand and upright, it is retried: recover() once, attempt 2 done, the plan finishes",
+          st["finished"] and not st["failure"] and manip.recovers == 1 and [(a["attempt"], a["outcome"]) for a in st["attempts"]] == [(1, "failed"), (2, "done")] and "dropped" in st["attempts"][0]["reason"]
+          and st["attempts"][0]["decision"] == "retry" and st["attempts"][0]["oracle_passed"] is False, f"{[(a['attempt'], a['outcome'], a['reason'][:40]) for a in st['attempts']]}")
+    check("the monitor entry says it decides and carries the oracle's held verdict of that tick (logged beside)", st["monitors"] and st["monitors"][0]["kind"] == "dropped" and st["monitors"][0]["decides"] is True
+          and st["monitors"][0]["oracle_held"] is False, f"{st['monitors'][:1]}")
+    world = World()
+    manip = DropManip(world)
+    orch, mon = drive([PICK], manip, decides=False)
+    check("with the setting off the monitor only logs: the dropped entry is there, the step is not failed", orch["state"]["finished"] and manip.recovers == 0 and orch["state"]["monitors"][0]["decides"] is False)
+    world = World()
+    manip = DropManip(world)
+
+    class DropNav(Nav):
+        """A navigation module (the carry) during which the object is dropped."""
+
+        def step(self, o):
+            out = super().step(o)
+            if self.n == 2 and len(self.started) == 2:                           # the second navigation segment is the carry (the first is before the pick)
+                world.held_by, manip.dropped = None, True
+            return out
+
+        def module(self):
+            m = super().module()
+            m["done"] = lambda: self.n >= 14
+            return m
+    manip.drop_n = 99                                                    # the pick itself is fine
+    op = make_scripted_operator([3])
+    orch, mon = drive([NAV, PICK, NAV, PLACE], manip, nav=DropNav(), operator=op, ticks=600)
+    a = [x for x in orch["state"]["attempts"] if x["outcome"] == "failed"]
+    check("a drop during the carry (a navigation step) fails that step: not retried, the operator is asked", len(a) == 1 and "navigation step is not retried" in a[0]["decision"] and "dropped" in a[0]["reason"] and len(op["asked"]) == 1
+          and manip.recovers == 0, f"{[(x['reason'][:30], x['decision'][:50]) for x in a]}")
     print(f"\n{sum(results)}/{len(results)} checks passed")
     return all(results)
 

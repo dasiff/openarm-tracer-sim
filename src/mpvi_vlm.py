@@ -15,7 +15,8 @@ Frozen tick: the image and the oracle's verdict are both taken in this call, on 
 tick through obs["render"] (the control loop's hook; no policy cameras are needed); an observation without it falls back to obs["cameras"][camera] (the latest policy frame). The tick and the
 image source are in details["frozen"].
 
-The answer is forced by Gemini's enum output to exactly one of two strings (VLM_ANSWERS), and the reply is checked to be exactly one of them. A reply that is neither, a refusal or empty reply, or a
+The answer is forced by Gemini's enum output to exactly one of two strings (VLM_ANSWERS), and the reply is checked to be exactly one of them. A DAILY QUOTA error is different (A1, decisions-log M043): no retry, details["pipeline_problem"] = "checker unavailable: daily quota", and the orchestrator stops the plan and logs it as a
+pipeline problem, separate from step failures. A reply that is neither, a refusal or empty reply, or a
 call that still fails after the retries is NOT COMPLETE, with the reason "checker reply unreadable" or "checker call failed" and the raw reply in the details: the check fails (the step then follows
 the normal failure path of the orchestrator). It is never read as YES.
 
@@ -26,12 +27,13 @@ Contents:
     read_answer(text), make_vlm_checker(oracle_checker, caller, side, version, say, cameras).
 """
 
-from src.llm_gemini import LLMEmptyReply, LLMError
+from src.llm_gemini import LLMDailyQuota, LLMEmptyReply, LLMError
 from src.mpvi_prompts import VLM_ANSWER_NO, VLM_ANSWER_YES, VLM_ANSWERS, VLM_CHECK_PROMPT, fill_prompt
 from src.task_config import LLM_CFG
 
 KIND_UNREADABLE = "checker reply unreadable"
 KIND_CALL_FAILED = "checker call failed"
+PIPELINE_QUOTA = "checker unavailable: daily quota"
 
 
 def read_answer(text):
@@ -92,6 +94,11 @@ def make_vlm_checker(oracle_checker, caller, side="left", version=None, say=prin
         prompt = fill_prompt(VLM_CHECK_PROMPT, description=segment.get("group_description") or segment["description"], completion_criteria=segment["completion_criteria"])
         try:
             text = caller.text_call(prompt, image, kind="vlm", version=version, choices=VLM_ANSWERS)
+        except LLMDailyQuota as e:                                  # a pipeline problem, not a step failure (A1, decisions-log M043): the orchestrator stops the plan, no retry
+            vlm.update(error_kind=PIPELINE_QUOTA, error=f"{type(e).__name__}: {e}")
+            details["pipeline_problem"] = PIPELINE_QUOTA
+            say(f"[vlm] {camera}, {event}: {PIPELINE_QUOTA}")
+            return {"passed": False, "reason": PIPELINE_QUOTA, "details": details}
         except LLMEmptyReply as e:
             return failed(KIND_UNREADABLE, f"{type(e).__name__}: {e}")
         except LLMError as e:

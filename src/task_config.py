@@ -422,11 +422,12 @@ PICK_PLACE_CFG = {
     "sag_gain_per_s": 3.0, "sag_max_m": 0.04, "sag_max_rad": 0.1,   # the simple sag correction: integral gain on the measured pad pose error (1/s) and its limits
     "timeout_factor": 3.0, "timeout_extra_s": 6.0,    # a waypoint move times out after factor * its planned time + extra
     "close_min_s": 1.0, "close_timeout_s": 5.0, "open_timeout_s": 4.0,
-    "stall_speed_m_s": 0.002, "stall_dwell_s": 0.3,  # the fingers are stalled below this speed for this long
-    "held_travel_range_m": (0.003, 0.040),            # finger travel at the stall: between "closed on nothing" and "did not close"
-    "open_reached_margin_m": 0.003,        # the open event needs the fingers within this of the open travel (the oracle's margin), not only stalled
-    "drop_margin_m": 0.003, "drop_dwell_s": 0.05,     # drop monitor (logging only): the fingers closed this much past the width they held the object at, for this long
-    "lift_check_m": 0.03,                  # the beaker must have risen this far with the hand after UP (the pick's own check)
+    "stall_speed_m_s": 0.002, "stall_dwell_s": 0.3,  # m/s and s: the fingers count as stopped when slower than 0.002 m/s for 0.3 s; chosen so the gripper event fires once the grip has settled and the image is not taken mid-motion (row M020)
+    "held_travel_range_m": (0.003, 0.040),            # m: finger travel at the stall must lie in this range: under 3 mm is "closed on nothing" (no event, a module error), over 40 mm is "did not close"; the 3 mm is the "stopped short of fully closed" margin (row M020)
+    "open_reached_margin_m": 0.003,        # m: the open event needs the fingers within 3 mm of the open travel, not only at rest; the same margin the sim oracle uses for "gripper open" (row M020)
+    "drop_margin_m": 0.003, "drop_dwell_s": 0.05,     # m and s: the drop monitor reports "dropped" when the finger opening stays more than 3 mm below the opening measured at the grasp for 0.05 s (about 7 control ticks, so one noisy tick does not fire it); 3 mm is well above the 1 mm noise of a held grasp (rows M025, M044)
+    "drop_monitor_decides": True,           # True: a "dropped" report fails the current step and starts the retry path (David, 2026-10-21: with the VLM checker there is no scripted stand-in check; row M044); False: it only logs
+
     "episode_timeout_s": 180.0,
 }
 
@@ -452,8 +453,7 @@ LLM_CFG = {
     "thinking_budget": 0,                  # tokens for the model's own thinking; 0 = off (the plan and the labels are short and fixed-schema, and the free tier is small)
     "planner_prompt_version": "planner-appendix-d-v1",    # the paper's Task Planning Prompt (src/mpvi_prompts.py); bump when the text changes: the cache key includes it
     "vlm_prompt_version": "vlm-check-appendix-d-v1",      # the paper's VLM Completion Checking Prompt (the completion checker, next step)
-    "vlm_cameras": {"gripper_closed": "eagle_cam", "gripper_opened": "eagle_cam"},   # the camera each deciding check shows the VLM; "wrist_cam" would be the triggering gripper's own. Eagle for both
-                                           # (David, 2026-10-20: Appendix C.4 says the checker receives the head-camera image; Figure 3b says wrist; the wrist view at the grip gave a false NO). Provisional
+    "vlm_cameras": {"gripper_closed": "eagle_cam", "gripper_opened": "eagle_cam"},   # which camera the VLM sees at each gripper event ("wrist_cam" would be the gripper's own); the eagle camera for both, because the wrist view at the grip is filled by the beaker and gave a false NO, and Appendix C.4 says the checker gets the head camera; provisional (row M016)
     "label_prompt_version": "label-v0",                   # LABEL_PROMPT in src/mpvi_postprocess.py
     "mode": "cache_only",                  # "cache_only": a cache miss is an error, the API is never called (tests, replays); "cache_or_live": read the cache, call on a miss and store;
                                            # "live": always call and store the reply (the cache is bypassed for reading)
@@ -468,6 +468,6 @@ LLM_CFG = {
 # The orchestrator's failure handling (design plan 8 D4 item 2; docs/mpvi_decisions.md). A failed manipulation step is retried (the failing arm returns to its zombie pose, the world model is refreshed,
 # the objects are grounded again, the skill runs again), then the operator is asked, or in an unattended run the plan stops.
 ORCH_CFG = {
-    "retry_max": 1,                        # retries of a failed manipulation step before the operator is asked (or the plan stops)
-    "knocked_over_deg": 30.0,              # the manipulated object's up axis this far from vertical (world model) is "knocked over": no retry (the upright limit of the success check is 15, the beaker tips at 49.5)
+    "retry_max": 1,                        # count: retries of a failed manipulation step before the operator is asked (or the plan stops); 1 because a second identical try rarely changes a failure the first one had, and each retry costs a full skill (row M026)
+    "knocked_over_deg": 30.0,              # degrees: the manipulated object's up axis (world model) this far from vertical counts as knocked over and is not retried; between the success check's upright limit (15) and the angle at which the beaker tips (49.5), my choice (row M029)
 }

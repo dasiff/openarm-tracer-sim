@@ -339,10 +339,9 @@ def make_scripted_manipulation(model, data, world, side, home_q, task_cfg=TASK_C
                 fail(f"{st['name']}: the gripper did not stop within {el:.1f} s")
                 return None
         elif kind == "held":
-            rise = float(world.object_pose(S["ctx"]["obj"])["position"][2]) - S["ctx"]["z_rise_ref"]
-            if rise < cfg["lift_check_m"]:
-                fail(f"UP: the beaker rose {1000 * rise:.0f} mm; it was not lifted with the hand (dropped or slipped)")
-                return None
+            rise = float(world.object_pose(S["ctx"]["obj"])["position"][2]) - S["ctx"]["z_rise_ref"]        # a LOGGED measurement of the lift (sim ground truth): it no longer decides, the drop monitor does
+            S["ctx"]["lift_rise_m"] = rise                                                                  # (src/mpvi_monitors.py, decisions-log M044)
+            print(f"[manipulation] UP: the beaker rose {1000 * rise:.0f} mm [logged only]")
             advance = True
             out = command()
         if advance:
@@ -364,7 +363,7 @@ def make_scripted_manipulation(model, data, world, side, home_q, task_cfg=TASK_C
         return ev
 
     return {"name": "scripted manipulation", "start": start, "step": step, "done": done, "error": lambda: S["error"], "phase": lambda: S["phase"], "events": pop_events,
-            "resume": lambda: None, "report": lambda: {"steps_done": S["i"], "error": S["error"], "task_text": S["ctx"].get("task_text")}, "end_report": end_report, "recover": recover, "side": side, "pad_pose": lambda: arm.pad_pose(data), "arm": arm, "state": S}
+            "resume": lambda: None, "report": lambda: {"steps_done": S["i"], "error": S["error"], "task_text": S["ctx"].get("task_text"), "lift_rise_m": S["ctx"].get("lift_rise_m")}, "end_report": end_report, "recover": recover, "side": side, "pad_pose": lambda: arm.pad_pose(data), "arm": arm, "state": S}
 
 
 # ----------------------------------------------------------------------------------------------------------

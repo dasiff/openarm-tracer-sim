@@ -305,6 +305,38 @@ def main():
     check("the VLM's NO on a two-condition criterion (only one holds) fails the step even when the oracle passes", orch["state"]["failure"] and "the VLM says NO" in orch["state"]["failure"]
           and orch["state"]["verdicts"][-1]["details"]["agree"] is False)
 
+
+    # A1 (M043): a daily-quota error stops the plan as a PIPELINE PROBLEM: no retry, not a step failure
+    quota = errors.ClientError(429, {"error": {"message": "You exceeded your current quota. Quota exceeded for metric generate_content_free_tier_requests PerDay, limit: 20", "status": "RESOURCE_EXHAUSTED"}})
+    c, _ = caller([quota])
+    slept = []
+    c.sleep = slept.append
+    v = make_vlm_checker(oracle(True), c, "left", say=lambda *_: None)["check"](SEG, "gripper_closed", obs(eagle_cam=img(1)), decides=True)
+    check("a daily-quota error is a pipeline problem: 'checker unavailable: daily quota', one call, no retry, no waiting", not v["passed"] and v["reason"] == "checker unavailable: daily quota"
+          and v["details"]["pipeline_problem"] == "checker unavailable: daily quota" and len(c._client.calls) == 1 and slept == [], f"{len(c._client.calls)} calls, slept {slept}")
+    world = WorldModel()
+    world.upsert(Entry("beaker", "beaker", ("beaker",), "object", np.zeros(3), None, {"contents": "empty", "held_by": None, "height": 0.1}))
+    plan1 = postprocess({"task_name": "t", "segments": [{"type": "manipulation", "description": "Grasp the beaker", "completion_criteria": "The beaker is held securely in the gripper", "target": None}]},
+                        make_stored_labeler({"labels": [{"index": 0, "primitive": "pick", "objects": [{"phrase": "the beaker", "role": "manipulated"}]}]}), say=lambda *_: None)
+    c, _ = caller([quota])
+    manip_q = Mod(["gripper_closed"]).module()
+    manip_q["recover"] = lambda: (_ for _ in ()).throw(AssertionError("a pipeline problem must not start a retry"))
+    orch = make_orchestrator(plan1, {"navigation": Mod([]).module(), "manipulation": manip_q, "checker": make_vlm_checker(oracle(True), c, "left", say=lambda *_: None), "world": world,
+                                     "grounder": make_grounder(world)})
+    for k in range(30):
+        orch["step"]({"time": 0.01 * k, "cameras": {"eagle_cam": img(5)}})
+        if orch["state"]["finished"] or orch["state"]["failure"]:
+            break
+    st = orch["state"]
+    check("the orchestrator stops with 'checker unavailable: daily quota', logs it as a pipeline problem and not as a step failure, the outcome is PIPELINE_PROBLEM, no retry",
+          st["failure"] and "checker unavailable: daily quota" in st["failure"] and [x["problem"] for x in st["pipeline_problems"]] == ["checker unavailable: daily quota"]
+          and [a["outcome"] for a in st["attempts"]] == ["pipeline_problem"] and orch["status"]()["failure_outcome"] == "PIPELINE_PROBLEM", f"{st['failure']} {[a['outcome'] for a in st['attempts']]}")
+    perminute = errors.ClientError(429, {"error": {"message": "Too many requests: rate limit exceeded, retry in 1s", "status": "RESOURCE_EXHAUSTED"}})
+    c, _ = caller([perminute, "YES, the task is complete"])
+    c.sleep = lambda s: None
+    v = make_vlm_checker(oracle(True), c, "left", say=lambda *_: None)["check"](SEG, "gripper_closed", obs(eagle_cam=img(1)), decides=True)
+    check("a per-minute 429 keeps the old rule: retried after the backoff, then the answer counts", v["passed"] and len(c._client.calls) == 2 and "pipeline_problem" not in v["details"])
+
     print(f"\n{sum(results)}/{len(results)} checks passed")
     return all(results)
 

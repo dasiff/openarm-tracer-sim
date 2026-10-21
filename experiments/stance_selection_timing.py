@@ -34,7 +34,7 @@ import stance_from_map as SFM  # noqa: E402
 import stance_sensitivity as SS  # noqa: E402
 from src.furniture_map import FurnitureMap  # noqa: E402
 from src.stance_checks import StanceChecks  # noqa: E402
-from src.stance_finder import find_stances  # noqa: E402
+from src.stance_finder import find_stances, region_scores  # noqa: E402
 from src.task_beaker_hotplate import apply_task_poses  # noqa: E402
 from src.task_config import STANCE_CFG, TASK_CFG  # noqa: E402
 
@@ -82,13 +82,22 @@ def main(args):
     out = {"points": len(pts), "headings_deg": SFM.HEADINGS}
 
     print(f"layer 2: {len(pts)} task points labeled either, {len(SFM.HEADINGS)} headings, {len(qs)} pedestal heights")
-    per, cands = {}, []
+    per, cands, t_rs, raw_any, raw_both, cell = {}, [], [], {}, {}, None
     t_all = time.perf_counter()
     for h in SFM.HEADINGS:
         t0 = time.perf_counter()
         res = find_stances(pts, maps, furniture, rg, cfg=cfg, headings=[math.radians(h)], pedestal_qs=qs)
         per[h] = round(time.perf_counter() - t0, 2)
         cands += [{**c, "heading_deg": float(h)} for c in res]
+        t1 = time.perf_counter()                                                 # the unthinned candidates: every floor cell of this heading, by the best score over the pedestal heights
+        X, Y, Sc = region_scores(pts, maps, furniture, rg, math.radians(h), qs)
+        t_rs.append(time.perf_counter() - t1)
+        cell = float(X[0, 1] - X[0, 0])
+        any_arm = np.maximum(Sc["left"].max(axis=0), Sc["right"].max(axis=0))
+        both_arms = np.minimum(Sc["left"], Sc["right"]).max(axis=0)
+        for f in FLOORS_CM:
+            raw_any[f] = raw_any.get(f, 0) + int((any_arm * 100 > f).sum())
+            raw_both[f] = raw_both.get(f, 0) + int((both_arms * 100 > f).sum())
     out["layer2_seconds_total"] = round(time.perf_counter() - t_all, 1)
     out["layer2_seconds_per_heading"] = per
     cands.sort(key=lambda c: (-c["tier"], -c["score"]))
@@ -97,6 +106,12 @@ def main(args):
     print("  ranked (both arms first, then score): x, y, heading, pedestal q (range), arm, score cm")
     for c in cands[:20]:
         print(f"   x {c['x']:.2f} y {c['y']:.2f} h {c['heading_deg']:6.1f}  q {c['q']:.3f} ({c['q_lo']:.2f}..{c['q_hi']:.2f})  {c['arm']:5s}  score {100 * c['score']:.1f} cm")
+    out["region_scores_seconds_per_heading"] = round(float(np.mean(t_rs)), 2)
+    out["cell_m"], out["heading_step_deg"] = cell, STANCE_CFG["heading_step_deg"]
+    out["unthinned_cells_above_floor_any_arm"] = {str(f): n for f, n in raw_any.items()}
+    out["unthinned_cells_above_floor_both_arms"] = {str(f): n for f, n in raw_both.items()}
+    print(f"  the unthinned candidates (floor cells x headings; cell {1000 * cell:.0f} mm, heading step {STANCE_CFG['heading_step_deg']} deg), above a floor (cm): any arm " + ", ".join(f"{f}: {raw_any[f]}" for f in FLOORS_CM)
+          + "; both arms " + ", ".join(f"{f}: {raw_both[f]}" for f in FLOORS_CM) + f"   (region_scores {np.mean(t_rs):.1f} s per heading)")
     out["above_floor"] = {f"{f}": sum(c["score"] * 100 > f for c in cands) for f in FLOORS_CM}
     print("  candidates above a floor (cm): " + ", ".join(f"{f}: {n}" for f, n in out["above_floor"].items()))
     both = [c for c in cands if c["tier"] == 1]

@@ -1,5 +1,9 @@
 # Progress log
 
+## 2026-10-21 01:55: VLM live run FINISHED (exit 1, PLAN_FAILED), diagnosis next
+Run vlmlive2 done, no tmux left, no run in progress. Log data/logs/mpvi_text_vlm2_20261021_000536.log, out data/mpvi_text_run/vlm2_20261021_000536. Segment 2/4 (Grasp the beaker), check gripper_closed: VLM said NO, oracle PASS (DISAGREE), image 23af79d498a4 (left_wrist_cam), so the plan failed; place check never ran. 5/8 test checks passed (the 3 FAILs follow from that one disagreement); replay bit-identical. Next: look at the wrist image and the prompt/reply in llm_log.json to see whether the image, the prompt or the grasp is at fault, then steps (2)-(5) below.
+Steps (2)-(5) of the entry below still stand.
+
 ## 2026-10-21 00:12: STOPPED for a fresh session. TASK VLM checker + live run: code done, live run in progress, report not written
 Pushed: 072e374 (planner/labeling calls, trace tool, docs; no WIP). Local, NOT pushed: WIP commits for the VLM checker (src/mpvi_vlm.py, image call in src/llm_gemini.py, pipeline `checker="vlm"`, experiments/vlm_checker_test.py 35/35, mpvi_trace.py --run, mpvi_text_test.py --checker vlm default, run_tests.sh entry). Tidy into topic commits before any push.
 Run in progress (detached tmux `vlmlive2`, started 00:05): `mpvi_text_test.py --mode cache_or_live --checker vlm`, log data/logs/mpvi_text_vlm2_20261021_000536.log, out data/mpvi_text_run/vlm2_20261021_000536 (llm_log.json, summary.json, vlm_images/). Plan and label replies come from the cache; the two VLM calls (pick at gripper_closed, place at gripper_opened) are live and get stored in experiments/llm_cache (key includes the image hash). First attempt failed because episodes run with policy cameras off: fixed with loop_cfg={"cameras": True}. Expected 5-8 min.

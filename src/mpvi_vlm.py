@@ -5,7 +5,8 @@
     verdict = checker["check"](segment, "gripper_closed", obs, decides=True)
 
 The checker follows the checker protocol of src/mpvi_modules.py (check(segment, event, obs, decides=False) -> {"passed", "reason", "details"}). When the orchestrator says the check DECIDES (the
-segment's last manipulation step, at the gripper event that ends its primitive), the image of the triggering gripper's wrist camera (obs["cameras"]["<side>_wrist_cam"]) is shown to Gemini with
+segment's last manipulation step, at the gripper event that ends its primitive), the image of the camera that LLM_CFG["vlm_cameras"] names for the event (the eagle camera for gripper_closed, the
+triggering gripper's wrist camera obs["cameras"]["<side>_wrist_cam"] for gripper_opened) is shown to Gemini with
 the paper's VLM Completion Checking Prompt, verbatim (src/mpvi_prompts.py), filled with the segment's description and completion criteria. The answer is parsed as YES or NO: an answer that starts
 with YES is yes, one that starts with NO is no, anything else is NO and is flagged `unparsed` (and printed). THE VLM DECIDES. The sim oracle's verdict (src/mpvi_modules.make_oracle_checker) is computed
 for every check, logged beside the VLM's (agree or disagree) and never changes the decision. For events that do not decide (the paper triggers the VLM only on the tagged segments) the oracle's
@@ -14,7 +15,7 @@ verdict is returned and logged alone, and the VLM is not called.
 The image comes from obs["cameras"], which the control loop fills only when its policy cameras are on (run_episode(..., loop_cfg={"cameras": True}); the episode runner turns them off by default). A
 camera image is at most one camera period old (cameras are rendered round robin at 30 Hz in all, so each one about every 0.1 s); at a gripper event the arm has stopped.
 
-A failed VLM call (a rate limit that never clears, a cache miss in cache_only mode, no wrist camera image) is a failed check with the reason in it: the plan stops and reports, it is never read as YES.
+A failed VLM call (a rate limit that never clears, a cache miss in cache_only mode, no image from the camera) is a failed check with the reason in it: the plan stops and reports, it is never read as YES.
 
 Verdict dict of a deciding check: {"passed": bool (the VLM's), "reason": str, "details": {"vlm": {"verdict": "YES" | "NO" | "ERROR", "reply_text", "unparsed", "image_sha256", "camera", "prompt_version",
 "error"}, "oracle": {"passed", "reason"}, "agree": bool or None}}.
@@ -47,26 +48,29 @@ def parse_verdict(text):
     return "NO", True
 
 
-def make_vlm_checker(oracle_checker, caller, side="left", version=None, say=print):
+def make_vlm_checker(oracle_checker, caller, side="left", version=None, say=print, cameras=None):
     """Builds the checker in which the VLM decides and the oracle is logged beside it.
 
     Args:
         oracle_checker (dict): The sim oracle's checker (make_oracle_checker); computed for every check, never decides here.
         caller (GeminiCaller): The Gemini caller (its mode decides whether the cache or the API answers).
-        side (str): The manipulating gripper, "left" or "right": its wrist camera's image is shown. Defaults to "left".
+        side (str): The manipulating gripper, "left" or "right": its wrist camera is the one "wrist_cam" stands for. Defaults to "left".
         version (str or None): The prompt version for the cache key. Defaults to LLM_CFG["vlm_prompt_version"].
         say (callable): Where the console line of each check goes. Defaults to print.
+        cameras (dict or None): Gripper event -> camera name ("wrist_cam" = the triggering gripper's own). Defaults to LLM_CFG["vlm_cameras"]; an event not in it uses the wrist camera.
 
     Returns:
         dict: {"name": "VLM checker", "check": check(segment, event, obs, decides=False), "oracle": the oracle checker}.
     """
     version = version or LLM_CFG["vlm_prompt_version"]
-    camera = f"{side}_wrist_cam"
+    cameras = cameras or LLM_CFG["vlm_cameras"]
 
     def check(segment, event, obs, decides=False):
         oracle = oracle_checker["check"](segment, event, obs)
         if not decides:
             return oracle
+        camera = cameras.get(event, "wrist_cam")
+        camera = f"{side}_wrist_cam" if camera == "wrist_cam" else camera
         details = {"oracle": {"passed": oracle["passed"], "reason": oracle["reason"]}, "vlm": {"camera": camera, "prompt_version": version, "verdict": "ERROR", "reply_text": None,
                                                                                                    "unparsed": False, "image_sha256": None, "error": None}, "agree": None}
         vlm = details["vlm"]

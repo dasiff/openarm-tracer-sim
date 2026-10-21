@@ -1,0 +1,11 @@
+{
+ "key": "4a5d6bc8c5826b2da31db1a3b5abcdae9b4d95524eac1629f8ca3c58996c7274",
+ "kind": "vlm",
+ "model": "gemini-3.8-flash",
+ "version": "vlm-check-appendix-d-v1",
+ "schema": "text",
+ "prompt": "You are checking if a robot manipulation task is complete.\nTask: Grasp the beaker\nCompletion criteria: The beaker is held securely in the gripper\nLook at the image and determine if the completion criteria has been met.\nAnswer with:\n- \"YES, the task is complete\" if the criteria is clearly satisfied\n- \"NO, the task is not complete\" if the criteria is not yet satisfied\nBe strict: only say YES if you are confident the criteria is met.\nYour answer:",
+ "reply_text": "NO, the task is not complete",
+ "created": "2026-10-21T00:18:05",
+ "image_sha256": "23af79d498a437d969f25eb0a895e1e21419aadb8132859f472d45a48dae0186"
+}

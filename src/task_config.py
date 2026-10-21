@@ -449,6 +449,8 @@ LLM_CFG = {
     "thinking_budget": 0,                  # tokens for the model's own thinking; 0 = off (the plan and the labels are short and fixed-schema, and the free tier is small)
     "planner_prompt_version": "planner-appendix-d-v1",    # the paper's Task Planning Prompt (src/mpvi_prompts.py); bump when the text changes: the cache key includes it
     "vlm_prompt_version": "vlm-check-appendix-d-v1",      # the paper's VLM Completion Checking Prompt (the completion checker, next step)
+    "vlm_cameras": {"gripper_closed": "eagle_cam", "gripper_opened": "wrist_cam"},   # the camera each deciding check shows the VLM; "wrist_cam" is the triggering gripper's own. The grip
+                                           # check uses the eagle camera (David, 2026-10-21): the wrist view is filled by the beaker and cannot tell held from merely enclosed
     "label_prompt_version": "label-v0",                   # LABEL_PROMPT in src/mpvi_postprocess.py
     "mode": "cache_only",                  # "cache_only": a cache miss is an error, the API is never called (tests, replays); "cache_or_live": read the cache, call on a miss and store;
                                            # "live": always call and store the reply (the cache is bypassed for reading)

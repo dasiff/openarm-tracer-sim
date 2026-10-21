@@ -130,9 +130,13 @@ def main():
               v["passed"] is want_pass and d_["agree"] is want_agree and d_["oracle"]["passed"] is oracle_passed and d_["vlm"]["verdict"] == ("YES" if want_pass else "NO") and (v["reason"] == "") == want_pass)
     c, _ = caller(["YES, the task is complete"])
     ck = make_vlm_checker(oracle(True), c, "right", say=lambda *_: None)
-    ck["check"](SEG, "gripper_closed", obs(left_wrist_cam=img(1), right_wrist_cam=img(2)), decides=True)
+    ck["check"](SEG, "gripper_closed", obs(left_wrist_cam=img(1), right_wrist_cam=img(2), eagle_cam=img(3)), decides=True)
     call = c._client.calls[0]
-    check("the triggering gripper's wrist camera is shown (right here), nobody else's", call["contents"][0].inline_data.data == png_bytes(img(2)))
+    check("the grip check shows the eagle camera, no wrist camera", call["contents"][0].inline_data.data == png_bytes(img(3)))
+    c, _ = caller(["YES, the task is complete"])
+    ck = make_vlm_checker(oracle(True), c, "right", say=lambda *_: None)
+    ck["check"](SEG, "gripper_opened", obs(left_wrist_cam=img(1), right_wrist_cam=img(2), eagle_cam=img(3)), decides=True)
+    check("the release check shows the triggering gripper's wrist camera (right here), nobody else's", c._client.calls[0]["contents"][0].inline_data.data == png_bytes(img(2)))
     expected = VLM_CHECK_PROMPT.replace("{description}", SEG["description"]).replace("{completion_criteria}", SEG["completion_criteria"])
     check("the prompt is the paper's text with the segment's description and completion criteria filled in", call["contents"][1] == expected and "Be strict: only say YES" in expected and "{" not in expected)
     check("the version is the one of LLM_CFG and the model the pinned one", c.log[0]["version"] == LLM_CFG["vlm_prompt_version"] and call["model"] == LLM_CFG["model"] and c.log[0]["kind"] == "vlm")
@@ -144,16 +148,16 @@ def main():
     lines = []
     c, _ = caller(["Probably fine"])
     ck = make_vlm_checker(oracle(True), c, "left", say=lines.append)
-    v = ck["check"](SEG, "gripper_closed", obs(left_wrist_cam=img(1)), decides=True)
+    v = ck["check"](SEG, "gripper_closed", obs(eagle_cam=img(1)), decides=True)
     check("an unparsable answer is NO, flagged unparsed and printed", not v["passed"] and v["details"]["vlm"]["unparsed"] and v["details"]["vlm"]["verdict"] == "NO" and any("neither YES nor NO" in l for l in lines))
     c, _ = caller([errors.ClientError(400, {"error": {"message": "bad", "status": "S"}})])
-    v = make_vlm_checker(oracle(True), c, "left", say=lambda *_: None)["check"](SEG, "gripper_closed", obs(left_wrist_cam=img(1)), decides=True)
+    v = make_vlm_checker(oracle(True), c, "left", say=lambda *_: None)["check"](SEG, "gripper_closed", obs(eagle_cam=img(1)), decides=True)
     check("a failed call is a failed check with the reason, never YES", not v["passed"] and "VLM check failed" in v["reason"] and v["details"]["vlm"]["verdict"] == "ERROR" and v["details"]["agree"] is None)
     co = GeminiCaller(LLM_CFG, "cache_only", FakeClient([]), LLMCache(tempfile.mkdtemp()), say=lambda *_: None)
-    v = make_vlm_checker(oracle(True), co, "left", say=lambda *_: None)["check"](SEG, "gripper_closed", obs(left_wrist_cam=img(1)), decides=True)
+    v = make_vlm_checker(oracle(True), co, "left", say=lambda *_: None)["check"](SEG, "gripper_closed", obs(eagle_cam=img(1)), decides=True)
     check("a cache miss in cache_only mode is a failed check that says nothing was sent", not v["passed"] and "nothing was sent" in v["reason"])
-    v = make_vlm_checker(oracle(True), caller(["YES"])[0], "left", say=lambda *_: None)["check"](SEG, "gripper_closed", obs(right_wrist_cam=img(1)), decides=True)
-    check("a missing wrist camera image is a failed check", not v["passed"] and "no image from left_wrist_cam" in v["reason"])
+    v = make_vlm_checker(oracle(True), caller(["YES"])[0], "left", say=lambda *_: None)["check"](SEG, "gripper_closed", obs(left_wrist_cam=img(1)), decides=True)
+    check("a missing eagle camera image is a failed check (the wrist image does not stand in)", not v["passed"] and "no image from eagle_cam" in v["reason"])
     v = make_vlm_checker(oracle(True), caller(["YES"])[0], "left", say=lambda *_: None)["check"](SEG, "gripper_closed", {"time": 0.0, "cameras": None}, decides=True)
     check("no policy cameras at all is a failed check", not v["passed"] and "no image" in v["reason"])
 
@@ -186,7 +190,7 @@ def main():
         nav = Mod([])
         orch = make_orchestrator(plan, {"navigation": nav.module(), "manipulation": Mod(["gripper_closed"]).module(), "checker": ck, "world": world, "grounder": make_grounder(world)})
         for k in range(30):
-            orch["step"]({"time": 0.01 * k, "cameras": {"left_wrist_cam": img(5)}})
+            orch["step"]({"time": 0.01 * k, "cameras": {"eagle_cam": img(5)}})
             if orch["state"]["finished"] or orch["state"]["failure"]:
                 break
         return orch, c, orc

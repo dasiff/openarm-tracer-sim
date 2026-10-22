@@ -1,10 +1,10 @@
-# Profile of one layer 3 stance check (2026-10-22)
+# Profile of one full check stance check (2026-10-22)
 
 Written for: David, who decides from these numbers how to make the stance check faster. Timing and counting only: no code path and no setting was changed, no optimization was tried.
 
 Scripts (committed): `experiments/stance_check_profile.py` (the profile), `experiments/stance_checker_build_time.py` (a small follow-up). Logs and data (not in git): `data/logs/stance_check_profile_run_20261022_032708.log`, `data/logs/stance_check_profile_20261022_034130.json` (every counter), `.../stance_check_profile_20261022_034130.prof` (the cProfile data, open with `pstats`), `data/logs/stance_checker_build_time_20261022_034229.log`.
 
-What was run, with the code of `experiments/stance_selection_timing.py` (the 235 s of the navigation proposal): the scene of the "open_b45" case; for each pedestal height of the candidate's range on a 1 cm grid the checks of `StanceChecks.requirements` (cheap ones first, the slow ones only where those pass), then, if any height passes, the IK verification `Runner.evaluate` at the middle of the passing heights. Four runs: **A cold** and **A warm** (the stance in `TASK_CFG`, 10 heights 0.105 to 0.205 m, all pass), **A under cProfile**, and **B** (a candidate that fails early: the first layer 2 candidate at heading -90 degrees, 12 heights). The wrappers that count and time are removed before the cProfile run. Machine: the 7.4 GB VM, nothing else running.
+What was run, with the code of `experiments/stance_selection_timing.py` (the 235 s of the navigation proposal): the scene of the "open_b45" case; for each pedestal height of the candidate's range on a 1 cm grid the checks of `StanceChecks.requirements` (cheap ones first, the slow ones only where those pass), then, if any height passes, the IK verification `Runner.evaluate` at the middle of the passing heights. Four runs: **A cold** and **A warm** (the stance in `TASK_CFG`, 10 heights 0.105 to 0.205 m, all pass), **A under cProfile**, and **B** (a candidate that fails early: the first quick search candidate at heading -90 degrees, 12 heights). The wrappers that count and time are removed before the cProfile run. Machine: the 7.4 GB VM, nothing else running.
 
 ## 1. Time
 
@@ -45,7 +45,7 @@ The cold-run surplus: the occlusion renderers and the transparent copy of the mo
 
 ## 3. Anything recomputed that does not change
 
-- **Scene loading, model compiling:** once per process (38 s for the case's scene and the IK chain, `Runner`; `StanceChecks` 0.0 s). Not per check. The furniture map and the reachability maps are not used by layer 3 (they belong to layer 2): not loaded here.
+- **Scene loading, model compiling:** once per process (38 s for the case's scene and the IK chain, `Runner`; `StanceChecks` 0.0 s). Not per check. The furniture map and the reachability maps are not used by full check (they belong to quick search): not loaded here.
 - **The arm collision checker** (one per pedestal height, a model copy; `Ctx.checker` keeps only the two most recent): the cold run measured 14.8 s for its single build, but standalone it takes 1.04 s the first time and 0.38 to 0.46 s each time after, also for another pedestal height (`stance_checker_build_time`: 0.16, 0.16, 0.12, 0.20, 0.10, 0.16 m); through `Ctx.checker` with its two-entry cache a new height costs 1.7 s (0.12 m) and 0.54 s (0.20 m). So the 14.8 s of the cold run is not reproduced by itself; I do not know its cause (candidates: memory pressure after the renderers were built on a VM without swap, or other load at that moment). Not part of the warm time.
 - **The 8 perturbed neck solves repeat the whole global search** (the 2,401-point grid and 7 refinements) of what is nearly the same problem as the unperturbed one (0.1 degree of arm noise moves the target points by under a millimetre): 80 of the 90 solves (8 per height), about 82 s of the 92.8 s. The same holds across the 10 heights (the torso moves 1 cm each time); no solve starts from the neighbour's answer (`local=False`).
 - **The IK ladders** solve the same 12 points for 83 stances from random starts each time; the nominal solve is also done twice (the first ladder rung is the nominal 10 degree margin and repeats what `analyze` just solved), about 1.8 s.

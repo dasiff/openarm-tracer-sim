@@ -120,3 +120,5 @@ Stage 5 live test running: tmux sel_pipe, log data/logs/stance_select_pipeline_2
 FINAL FULL SUITE (all stages): tmux suite_final, TAG 20261022_141600, data/logs/suite_20261022_141600_summary.txt, SKIP=face_test (run alone afterwards), started 14:16:00. DO NOT EDIT experiments/run_tests.sh OR src/ WHILE IT RUNS. Stage 5 report, Stage 6 report and overnight summary are still to be written (docs only).
 
 Suite part 2: the final suite (TAG 20261022_141600) was OOM-killed in full_check_test section 7 at 15:29 (baseline machine memory 3.4 GB used with nothing of mine running; 29 modules passed before it). full_check_test section 7 now uses every second heading (10 deg). Rerunning the rest: tmux suite_p2, TAG 20261022_153117, started 15:31:17. DO NOT EDIT experiments/run_tests.sh OR src/ WHILE IT RUNS.
+
+Suite part 3 (restart after the session ended): tmux suite_p3, TAG 20261022_154755, started 15:47:55; same SKIP as part 2 (29 done modules + face_test). DO NOT EDIT run_tests.sh OR src/ WHILE IT RUNS.

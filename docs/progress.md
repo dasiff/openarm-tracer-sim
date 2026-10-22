@@ -126,3 +126,5 @@ Suite part 3 (restart after the session ended): tmux suite_p3, TAG 20261022_1547
 2026-10-22 16:xx: Suite part 3 killed (David: do not rerun; the full suite runs once at the end of step 2). Fixed-camera step 1 (records) DONE: rows M153-M157, design plan, report docs/reports/*_fixed_camera_step1.md, commit 2b92ffe. WAITING for David to review the step 2 scope. Nothing running.
 
 Baseline regeneration (E3): tmux regen, log data/logs/cc_bench_regen_20261022_181814.log, started 18:18:14: experiments/cc_bench_regen.sh (manual, teleop, policy, twice each, then replace references). Reach maps restamped (24, voxels unchanged). Part D done and committed; E2 tests updated, not yet run.
+
+VLM refresh (E4): tmux vlm, log data/logs/vlm_refresh_20261022_182126.log, out data/mpvi_text_run/fixedcam_20261022_182126, started 18:21:26: experiments/mpvi_text_test.py --mode cache_or_live --checker vlm (live Gemini calls for the new eagle images only).

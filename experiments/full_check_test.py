@@ -57,7 +57,12 @@ def full_state(model, data):
 def main():
     A = (TASK_CFG["staging_xy"][0], TASK_CFG["staging_xy"][1], math.radians(-90.0), TASK_CFG["pedestal_q"])
     maps = SFM.load_maps(str(PROJECT_ROOT / "data" / "reach_map"))
+    import gc
+    import resource
+    rss = lambda: resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024
+    print(f"peak resident set before the check's simulation: {rss():.0f} MB")
     fc = FullCheck(maps=maps)
+    print(f"peak resident set with the check's own simulation and the reach maps loaded: {rss():.0f} MB")
     pts = task_points(fc.model, fc.scene_data)
     print(f"the check's own simulation loaded in {fc.load_seconds:.1f} s; {len(pts)} points; {len(maps)} reach maps")
 
@@ -80,8 +85,7 @@ def main():
     r1 = fc.check(A, pts, source_data=run.data, use_cache=False)
     after = full_state(run.model, run.data)
     check("the running simulation's state is bit-identical before and after a check that read it", before == after and r1["ok"], f"{len(before)} bytes; check ok {r1['ok']}")
-    import resource
-    check("memory use reported", True, f"peak resident set of this process {resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024:.0f} MB")
+    check("memory use reported", True, f"peak resident set of this process {rss():.0f} MB (the check's simulation with its renderers and arm collision checkers, a second running simulation, the reach maps)")
 
     print("\n2. the remembered answer")
     t0 = time.perf_counter()
@@ -99,14 +103,27 @@ def main():
     run.data.qpos[fc.model.joint("task_beaker_free").qposadr[0] + 1] -= 0.01
 
     print("\n3. objects on the table count")
-    blocker = {"id": "u1", "outline": [[0.96, 0.78], [1.04, 0.78], [1.04, 0.86], [0.96, 0.86]], "height_range": (0.96, 1.10)}      # on the bench in front of the beaker, where the hand comes in
-    ro = fc.check(A, pts, objects=[blocker], source_data=None)
-    check("an object in the hand's way is not answered from the memory and fails the IK path check", not ro["cached"] and ro["key"] != rA["key"] and not ro["ok"] and "ik" in ro["failed"],
-          ro["reason"][:140])
+    del run
+    gc.collect()
+    near_arms = {"id": "u0", "outline": [[0.96, 0.78], [1.04, 0.78], [1.04, 0.86], [0.96, 0.86]], "height_range": (0.96, 1.10)}      # on the bench in front of the beaker, near the arms at home
+    ro = fc.check(A, pts, objects=[near_arms], source_data=None)
+    check("an object near the arms at home is not answered from the memory and fails the zombie pose clearance (R2i)", not ro["cached"] and ro["key"] != rA["key"] and not ro["ok"] and "home_clearance" in ro["failed"]
+          and "fc_slot" in ro["reason"], ro["reason"][:150])
+    blocker = {"id": "u1", "outline": [[0.97, 0.74], [1.03, 0.74], [1.03, 0.78], [0.97, 0.78]], "height_range": (0.96, 1.10)}      # in the hand's way to the beaker
+    fc.set_objects([blocker])
+    info = fc._solve_stance(A, pts, None)
+    check("the IK path check sees an object in the hand's way: a point has no collision-free solution", not info["ok"] and info["failed_point"] is not None, f"failed at point {info['failed_point']} ({info.get('failed_path')})")
+    fc.set_objects([])
+    info0 = fc._solve_stance(A, pts, None)
+    check("the same IK path check without the object solves every point", info0["ok"])
     occluder = {"id": "u2", "outline": [[0.86, 0.72], [0.93, 0.72], [0.93, 0.79], [0.86, 0.79]], "height_range": (1.18, 1.34)}      # above the hand's reach, on the camera's line to the beaker
-    rc = fc.check(A, pts, objects=[occluder], source_data=None)
-    hb = [h.get("beaker_hidden") for h in rc["heights"]]
-    check("an object between the camera and the beaker is seen by the occlusion check (or the IK path check), the same stance without it passes", not rc["ok"] and ("occlusion" in rc["failed"] or "ik" in rc["failed"]) and rA["ok"], f"{rc['failed']}: {rc['reason'][:120]}; beaker hidden {hb}")
+    ns = fc.chk.neck_spread(A, n=1)
+    oc0 = fc.chk.occlusion(A, ns["targets"])
+    fc.set_objects([occluder])
+    oc1 = fc.chk.occlusion(A, ns["targets"])
+    fc.set_objects([])
+    check("the occlusion check sees an object between the camera and the beaker (anything that hides a target counts, R2i)", oc1["beaker_hidden_frac"] > oc0["beaker_hidden_frac"] + 0.05,
+          f"beaker hidden {100 * oc0['beaker_hidden_frac']:.1f} % without, {100 * oc1['beaker_hidden_frac']:.1f} % with the object")
     rr = fc.check(A, pts, objects=[], source_data=None)
     check("with the objects removed again the answer is the first one (memory)", rr["cached"] and rr["ok"])
 
@@ -123,11 +140,9 @@ def main():
     check("an elbow flip (a joint change over the limit between consecutive points of a path) is a failure", not r_flip["ok"] and r_flip["failed_point"] is not None, f"failed at point {r_flip['failed_point']}")
 
     print("\n6. the clearance map of the quick search")
-    sim = load_task(cameras=False)
-    m, d = sim.model, sim.data
-    mujoco.mj_forward(m, d)
-    rg = robot_geometry(m)
-    chk = StanceChecks(m, d, rg["base_z"])
+    m, d = fc.model, fc.scene_data
+    rg = fc.rg
+    chk = fc.chk
     t0 = time.perf_counter()
     hcm = HomeClearanceMap(m, d, chk, window_centre=(0.9, 0.66), robot_geometry=rg)
     print(f"  built in {time.perf_counter() - t0:.1f} s ({hcm.n_primitives} furniture primitives, {len(hcm.points)} arm points)")
@@ -189,6 +204,7 @@ def main():
     print("\n8. the occlusion option")
     meter = OcclusionMeter(fc.model)
     check("the default occluders are the robot's, as before", meter.occluders == "robot" and StanceChecks(m, d, rg["base_z"]).occluders == "robot")
+    print(f"peak resident set at the end: {rss():.0f} MB")
     print(f"\n{sum(results)}/{len(results)} checks passed")
     return all(results)
 

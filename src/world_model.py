@@ -54,6 +54,8 @@ class Entry:
         properties (dict): contents ("empty" or "liquid"), held_by (None, "left" or "right"), height, and so on.
         found (str): How it got here: "map", "sim_ground_truth", "detector" or "operator".
         last_seen (float): Sim time of the last update, seconds.
+        outline (numpy.ndarray or None): (N, 2) world xy corners of the footprint seen from above, for navigation (an entry with an outline and a height_range is an obstacle for the base).
+        height_range (tuple or None): (z_low, z_high) world heights the entry occupies, metres.
     """
 
     id: str
@@ -65,6 +67,8 @@ class Entry:
     properties: dict = field(default_factory=dict)
     found: str = "sim_ground_truth"
     last_seen: float = 0.0
+    outline: object = None
+    height_range: object = None
 
     def words(self):
         """Gives the words that describe this entry: the words of its phrases and its text-valued properties.
@@ -103,6 +107,8 @@ class WorldModel:
         self.sources = list(sources)
         self.time = 0.0
         self._entries = {}
+        self._obstacle_sig = {}
+        self.obstacle_version = 0
 
     def upsert(self, entry):
         """Adds an entry or replaces the one with the same id.
@@ -111,6 +117,18 @@ class WorldModel:
             entry (Entry): The entry; its last_seen is the time of the latest refresh unless the source set it.
         """
         self._entries[entry.id] = entry
+        sig = None if entry.outline is None or entry.height_range is None else (tuple(np.round(np.asarray(entry.outline, float), 4).ravel().tolist()), tuple(np.round(entry.height_range, 4)))
+        if self._obstacle_sig.get(entry.id) != sig:                       # only a real change counts (a source rewriting the same values every tick is no change: N3)
+            self._obstacle_sig[entry.id] = sig
+            self.obstacle_version += 1
+
+    def obstacles(self):
+        """Lists the entries that have an outline and a height range (what the navigation grid is built from).
+
+        Returns:
+            list[Entry]: The entries.
+        """
+        return [e for e in self._entries.values() if e.outline is not None and e.height_range is not None]
 
     def remove(self, entry_id):
         """Removes an entry (an object that is known to be gone). Does nothing if it is not there.
@@ -118,7 +136,8 @@ class WorldModel:
         Args:
             entry_id (str): The entry's id.
         """
-        self._entries.pop(entry_id, None)
+        if self._entries.pop(entry_id, None) is not None and self._obstacle_sig.pop(entry_id, None) is not None:
+            self.obstacle_version += 1
 
     def refresh(self, t=None):
         """Lets every source write what it knows now.
@@ -299,7 +318,10 @@ class SimGroundTruthSource:
         world.upsert(Entry("hotplate", "hotplate", HOTPLATE_PHRASES, "fixture", d.site("hotplate_top").xpos.copy(),
                            d.xmat[self.hotplate_body].reshape(3, 3)[:, 2].copy(), {"location": "bench"}, "map", t))
         xy = cfg["staging_xy"]
-        world.upsert(Entry("bench", "bench", BENCH_PHRASES, "fixture", np.array([xy[0], xy[1], top_z]), None, {"top_z": top_z, "stance": _stance(cfg)}, "map", t))
+        g = m.geom("bench_top")
+        c, hs = d.geom_xpos[g.id], m.geom_size[g.id]                  # the open bench blocks its whole outline from the floor up (an overhang: A* never drives under it)
+        outline = np.array([[c[0] - hs[0], c[1] - hs[1]], [c[0] + hs[0], c[1] - hs[1]], [c[0] + hs[0], c[1] + hs[1]], [c[0] - hs[0], c[1] + hs[1]]])
+        world.upsert(Entry("bench", "bench", BENCH_PHRASES, "fixture", np.array([xy[0], xy[1], top_z]), None, {"top_z": top_z, "stance": _stance(cfg)}, "map", t, outline, (0.0, top_z)))
 
 
 class StaticTaskSource:

@@ -116,3 +116,5 @@ Stage 3 chain running: tmux nav_chain, logs data/logs/nav_chain_20261022_130744.
 Stage 3 subset suite: tmux suite7, TAG 20261022_131836, data/logs/suite_20261022_131836_summary.txt, started 13:18:36 (neck_once, correction, orchestrator, monitor, text, grounding, vlm_checker, nav tests, pipeline).
 
 Stage 5 live test running: tmux sel_pipe, log data/logs/stance_select_pipeline_20261022_135324.log, started 13:53:24 (experiments/stance_select_pipeline_test.py). Stage 6 neck_rule_test written, not run; Stage 3 subset suite done (all exits 0; runner edited mid-run, safety_filter_model_check not run this time).
+
+FINAL FULL SUITE (all stages): tmux suite_final, TAG 20261022_141600, data/logs/suite_20261022_141600_summary.txt, SKIP=face_test (run alone afterwards), started 14:16:00. DO NOT EDIT experiments/run_tests.sh OR src/ WHILE IT RUNS. Stage 5 report, Stage 6 report and overnight summary are still to be written (docs only).

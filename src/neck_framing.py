@@ -236,6 +236,25 @@ def _evaluate(sc, q, pts, center, q0):
     return cost, (pos, R, u, v, depth, aim)
 
 
+def _polish_least_movement(sc, pts, q0, q_start, lo, hi, cfg):
+    """The least-movement pose exactly: minimise |q - q0|^2 with every point at least `margin` inside the image (a hair more, 1e-4) and in front of the camera (SLSQP from a simplex result).
+
+    Returns:
+        numpy.ndarray or None: The joint angles, or None if the solver did not end at a feasible pose.
+    """
+    lim = 1.0 - 2.0 * cfg["margin"] - 1e-4
+
+    def cons(q):
+        pos, R = sc.pose(np.clip(q, lo, hi))
+        u, v, depth = _project(pts, pos, R, sc.fovy, sc.aspect)
+        return np.concatenate([lim - u, lim + u, lim - v, lim + v, depth - 2.0 * cfg["near_depth"]])
+
+    r = minimize(lambda q: float(np.sum((q - q0) ** 2)), np.asarray(q_start, float), jac=lambda q: 2.0 * (q - q0), method="SLSQP", bounds=list(zip(lo, hi)),
+                 constraints={"type": "ineq", "fun": cons}, options={"maxiter": 200, "ftol": 1e-14})
+    q = np.clip(r.x, lo, hi)
+    return q if float(cons(q).min()) >= -1e-9 else None
+
+
 def frame_points(model, data, points, cfg=FRAMING_CFG, neck_specs=robot_specs.NECK_SPECS, start=None, local=False):
     """Finds the neck joint targets that frame world points in the neck camera's image.
 
@@ -306,6 +325,11 @@ def frame_points(model, data, points, cfg=FRAMING_CFG, neck_specs=robot_specs.NE
             opts["initial_simplex"] = np.vstack([s, s + cfg["simplex_step"] * np.eye(len(s))])
         r = minimize(f, s, method="Nelder-Mead", bounds=list(zip(lo, hi)), options=opts)
         cands.append((float(r.fun), np.clip(r.x, lo, hi)))
+    if cfg["rule"] == "least_movement":
+        for _, q_ in list(cands):                           # the exact constrained solution next to each simplex result: the optimum sits on the margin, where the penalty search stops imprecisely
+            q2 = _polish_least_movement(sc, pts, q0, q_, lo, hi, cfg)
+            if q2 is not None:
+                cands.append((float(f(q2)), q2))
     cands.sort(key=lambda t: t[0])
 
     chosen, contacts = None, []

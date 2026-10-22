@@ -122,3 +122,5 @@ FINAL FULL SUITE (all stages): tmux suite_final, TAG 20261022_141600, data/logs/
 Suite part 2: the final suite (TAG 20261022_141600) was OOM-killed in full_check_test section 7 at 15:29 (baseline machine memory 3.4 GB used with nothing of mine running; 29 modules passed before it). full_check_test section 7 now uses every second heading (10 deg). Rerunning the rest: tmux suite_p2, TAG 20261022_153117, started 15:31:17. DO NOT EDIT experiments/run_tests.sh OR src/ WHILE IT RUNS.
 
 Suite part 3 (restart after the session ended): tmux suite_p3, TAG 20261022_154755, started 15:47:55; same SKIP as part 2 (29 done modules + face_test). DO NOT EDIT run_tests.sh OR src/ WHILE IT RUNS.
+
+2026-10-22 16:xx: Suite part 3 killed (David: do not rerun; the full suite runs once at the end of step 2). Fixed-camera step 1 (records) DONE: rows M153-M157, design plan, report docs/reports/*_fixed_camera_step1.md, commit 2b92ffe. WAITING for David to review the step 2 scope. Nothing running.

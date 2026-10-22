@@ -3,7 +3,11 @@
 The bench rectangle stance selection in the live pipeline: the plan "navigate to the beaker, pick it up, navigate to the hotplate, place it" runs to success with ONE stance chosen from the bench rectangle
 (BENCH_RECT_CFG["rectangle"], measured by experiments/bench_rectangle_measure.py) and a NULL second navigation step, recorded and replayed.
 
-    MUJOCO_GL=egl python experiments/stance_select_pipeline_test.py
+    MUJOCO_GL=egl python experiments/stance_select_pipeline_test.py [--plumbing]
+
+--plumbing: a hand-set rectangle (forward 0.39 to 0.48 m, 0.10 m right to 0.35 m left), NOT the measured one, whose centred spot passes the full check: it tests the plumbing (one stance, the null second navigation
+step, the staging at the chosen spot, record and replay). With the measured rectangle (BENCH_RECT_CFG["rectangle"]) the selection finds no spot that passes the full check today (see the Stage 5 report): the
+test then reports the selection and fails at its first check.
 
 Steps: (1) the selection: the rectangle, the plan's runs, the full check of the chosen spot (its own simulation, freed before the next); (2) the pipeline run on the chosen stance; (3) the replay.
 Reports the chosen stance next to TASK_CFG's, the candidates and the full check's verdicts, the time of the selection and the staging's arrival errors.
@@ -46,8 +50,11 @@ def check(name, ok, detail=""):
     print(f"  {'PASS' if ok else 'FAIL'}  {name}  {detail}", flush=True)
 
 
-def main():
-    cfg = {**BENCH_RECT_CFG, "mode": "bench_rectangle"}
+PLUMBING_RECT = {"forward_near": 0.39, "forward_far": 0.48, "right": -0.10, "left": 0.35}
+
+
+def main(plumbing=False):
+    cfg = {**BENCH_RECT_CFG, "mode": "bench_rectangle", **({"rectangle": PLUMBING_RECT} if plumbing else {})}
     if cfg["rectangle"] is None:
         print("the rectangle is not measured yet")
         return False
@@ -104,4 +111,4 @@ def main():
 
 
 if __name__ == "__main__":
-    sys.exit(0 if main() else 1)
+    sys.exit(0 if main("--plumbing" in sys.argv) else 1)

@@ -231,28 +231,40 @@ ARM_ACTUATOR_SPECS = {
 ORBBEC_RESOLUTION = (640, 480)  # (width, height) [row M100]
 ORBBEC_FOVY_DEG = 58.0  # [row M100]
 
+# The eagle camera (David, 2026-10-22, M153, M158): fixed to the torso, no neck. STAND-IN: the Orbbec Gemini 335, values from Orbbec's page
+# https://www.orbbec.com/products/stereo-vision-camera/gemini-335/ (read 2026-10-22): colour field of view H 86 x V 55 degrees (16:9), body W x H x D 90 x 25 x 30 mm, weight 97 g.
+EAGLE_FOVY_DEG = 55.0   # vertical colour field of view, degrees [row M158]
+EAGLE_RESOLUTION = (640, 360)   # (width, height): 640 px wide at the colour sensor's 16:9 aspect [row M158]
+EAGLE_BODY_SPECS = {
+    "name": "eagle_cam_body",          # the body fixed to the torso that carries the camera, its collision box and the head [row M158]
+    "size": (0.015, 0.045, 0.0125),    # m: half sizes of the collision box along the body's x (forward: depth 30 mm), y (sideways: width 90 mm) and z (up: height 25 mm) [row M158]
+    "mass": 0.097,                     # kg: 97 g [row M158]
+}
+# PLACEHOLDER mount until the hardware team decides (David, 2026-10-22, M161): chosen by the search of experiments/camera_mount_search.py (design plan 14.1). The pose of the body's centre in the torso link's
+# frame (x forward, y left, z up; the torso link's axes are parallel to the base's) and its tilt: pitch_deg is how far the optical axis points below the horizontal; facing straight forward, no roll.
+EAGLE_MOUNT = {
+    "parent": "openarm_body_link0",    # the torso link (it rides with the pedestal) [row M161]
+    "pos": (-0.01, 0.0, 0.7855),       # m: on top of the torso, where the old neck stood (0.773 m up) plus half the box height [row M161 PENDING David: first guess, replaced by the search]
+    "pitch_deg": 20.0,                 # degrees below the horizontal [row M161 PENDING David: first guess, replaced by the search]
+}
+
 # All camera poses are PLACEHOLDERS until mounting info arrives.
-# - The eagle cam is confirmed robot mounted. Parent openarm_body_link0 is a
-#   placeholder: the exact mounting body (torso/pedestal top vs. Tracer base)
-#   is unconfirmed.
+# - The eagle cam is confirmed robot mounted, fixed (no neck); its mount is EAGLE_MOUNT (placeholder).
 # - pos / look_at / up are in the parent body's frame.
 # - The hand frame has the gripper along +Z (TCP at 0.08) and fingers along Y,
 #   so the wrist cam sits off to +X and set back so the fingertips are in view.
 CAMERA_SPECS = [  # the three policy cameras (eagle, left and right wrist): mounts, look-at points and up vectors in the parent body's frame, placeholders until the mounts are known [row M100]
     {
         "name": "eagle_cam",
-        # Placeholder pending real mount: the camera module at the end of the SO-101 neck (NECK_SPECS), looking along the
-        # direction the neck's last link points (the optical axis is the forward direction of the gripper frame, with the
-        # image level because the neck has no roll joint). pos / look_at / up are in the neck_wrist_camera body frame:
-        # 25 mm in front of the module's origin, looking straight along the link; the module's axes are tilted by the
-        # official mount, hence the odd-looking numbers. The neck's pose (and so what the camera sees) comes from
-        # src/neck_framing.py or the neck keys.
-        "parent": "neck_wrist_camera",
-        "pos": [0.0, -0.0106, 0.0226],
-        "look_at": [0.0, -0.4344, 0.9284],
-        "up": [0.9988, -0.0441, -0.0206],
-        "fovy": ORBBEC_FOVY_DEG,
-        "resolution": ORBBEC_RESOLUTION,
+        # The eagle camera is FIXED to the torso (design plan 14, M153): the colour sensor of the Orbbec Gemini 335 stand-in (M158) on the front face of its body (EAGLE_BODY_SPECS,
+        # fixed to openarm_body_link0 at EAGLE_MOUNT). pos / look_at / up are in the camera body's frame (x forward, y left, z up): 0.5 mm in front of the body's front face, looking straight
+        # forward, level. The colour field of view is 86 x 55 degrees (16:9): 55 degrees vertical, rendered 640 x 360.
+        "parent": "eagle_cam_body",
+        "pos": [EAGLE_BODY_SPECS["size"][0] + 0.0005, 0.0, 0.0],
+        "look_at": [EAGLE_BODY_SPECS["size"][0] + 1.0005, 0.0, 0.0],
+        "up": [0.0, 0.0, 1.0],
+        "fovy": EAGLE_FOVY_DEG,
+        "resolution": EAGLE_RESOLUTION,
         # Shadows make no visible difference in this view but cost ~10x the
         # render time on the VM; the wrist cams need them for finger contrast.
         "shadows": False,

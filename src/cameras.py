@@ -55,6 +55,26 @@ def add_cameras(spec, camera_specs):
         cam.resolution = list(cs["resolution"])
 
 
+def add_eagle_body(spec, body_specs, mount):
+    """Adds the eagle camera's body: a box fixed to the torso (no joint) with a collision box of the camera's size and its mass; the eagle camera (CAMERA_SPECS) and the head sit on it.
+
+    Args:
+        spec (mujoco.MjSpec): The robot's specification, not yet compiled; changed.
+        body_specs (dict): robot_specs.EAGLE_BODY_SPECS ("name", "size" half sizes, "mass").
+        mount (dict): robot_specs.EAGLE_MOUNT ("parent" torso link, "pos" of the body's centre in its frame, "pitch_deg" below the horizontal).
+
+    Raises:
+        ValueError: If the torso link is not in the model.
+    """
+    parent = spec.body(mount["parent"])
+    if parent is None:
+        raise ValueError(f"eagle camera body: parent body '{mount['parent']}' not found in model")
+    pitch = np.radians(mount["pitch_deg"])
+    quat = [np.cos(pitch / 2), 0.0, np.sin(pitch / 2), 0.0]           # about +y: a positive angle turns the forward axis (+x) down
+    body = parent.add_body(name=body_specs["name"], pos=list(mount["pos"]), quat=quat)
+    body.add_geom(name=body_specs["name"] + "_box", type=mujoco.mjtGeom.mjGEOM_BOX, size=list(body_specs["size"]), mass=body_specs["mass"], rgba=[0.15, 0.15, 0.17, 1.0])
+
+
 def make_offscreen_big_enough(model, camera_specs):
     """Raise the offscreen framebuffer size to fit the largest camera.
 

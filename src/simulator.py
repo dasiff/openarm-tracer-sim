@@ -15,9 +15,8 @@ from src import robot_specs
 from src.arm_actuators import add_arm_actuators
 from src.base_contacts import add_base_contacts
 from src.battery import add_battery
-from src.cameras import add_cameras, make_offscreen_big_enough
+from src.cameras import add_cameras, add_eagle_body, make_offscreen_big_enough
 from src.face import Face, add_face, is_enabled
-from src.neck import add_neck
 from src.pedestal import add_pedestal_lift
 
 
@@ -40,10 +39,10 @@ class RobotSimulator:
 
     def __init__(self, model_path: str = None, track_bodies: list[str] = None,
                  cameras: list[dict] = None, pedestal_lift: dict = None,
-                 neck=True, spec_hooks: list = None, face=None, battery=True):
-        """Loads the scene, adds the actuators, neck and cameras, compiles the model and creates its data.
+                 spec_hooks: list = None, face=None, battery=True):
+        """Loads the scene, adds the actuators, the eagle camera's body and the cameras, compiles the model and creates its data.
 
-        The parts are added in this order: the arm and finger position actuators, the base contacts, the battery pack, the pedestal lift, the neck, the cameras, the face (src/face.py), then
+        The parts are added in this order: the arm and finger position actuators, the base contacts, the battery pack, the pedestal lift, the eagle camera's body (fixed to the torso, no neck: M153), the cameras, the face (src/face.py), then
         the scene's own `spec_hooks` (the beaker task builds its beaker this way). The
         physics timestep is then set to robot_specs.SIMULATION_TIMESTEP (a note is printed if the XML had another one). A summary
         of the loaded model is printed.
@@ -60,14 +59,10 @@ class RobotSimulator:
                 to None (no cameras).
             pedestal_lift (dict or None): robot_specs.PEDESTAL_SPECS. If given, the placeholder pedestal lift (stage coupling plus
                 one position actuator) is added via MjSpec as the actuator after the robot's 20 actuators, i.e. at index
-                20; the neck's actuators, if the neck is on, follow it. Without the neck it is the last actuator. It changes
+                20, the last actuator. It changes
                 the actuator count from 20 to 21. Defaults to None (no pedestal lift).
-            neck (bool or dict or None): The SO-101 camera neck (src/neck.py, robot_specs.NECK_SPECS), attached to the torso after
-                the pedestal lift and before the cameras (the eagle camera is on the neck). True means robot_specs.NECK_SPECS,
-                a dict means those specifications, None or False means no neck (then the eagle camera has no body to sit on:
-                pass cameras without it). Defaults to True.
-            face (bool or None): Whether to add the visual-only head with the face at the end of the neck (src/face.py, robot_specs.FACE_CFG). None follows
-                face.is_enabled() (FACE_CFG["enabled"], or the --no-face switch); it needs the neck. Defaults to None.
+            face (bool or None): Whether to add the visual-only head with the face on the eagle camera's body (src/face.py, robot_specs.FACE_CFG). None follows
+                face.is_enabled() (FACE_CFG["enabled"], or the --no-face switch). Defaults to None.
             battery (bool or dict or None): The battery pack on the deck (src/battery.py, robot_specs.BATTERY_SPECS): True means BATTERY_SPECS, a dict means
                 those specifications, None or False means no battery. It adds a body and no joint or actuator. Defaults to True.
             spec_hooks (list of callable or None): Functions hook(spec) that change the mujoco.MjSpec after everything above has been added and before it is
@@ -96,11 +91,10 @@ class RobotSimulator:
             add_battery(spec, robot_specs.BATTERY_SPECS if battery is True else battery)
         if pedestal_lift:
             add_pedestal_lift(spec, pedestal_lift)
-        if neck:
-            add_neck(spec, robot_specs.NECK_SPECS if neck is True else neck)
+        add_eagle_body(spec, robot_specs.EAGLE_BODY_SPECS, robot_specs.EAGLE_MOUNT)
         if cameras:
             add_cameras(spec, cameras)
-        if neck and (is_enabled() if face is None else face):
+        if is_enabled() if face is None else face:
             add_face(spec)
         for hook in spec_hooks or []:
             hook(spec)

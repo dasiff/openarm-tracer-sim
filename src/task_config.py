@@ -501,8 +501,9 @@ NAV_CFG = {
     "lead_in_min_m": 0.4,                  # m: if the lead-in does not fit, shorter ones are tried down to this before the checked in-place turn (row M129)
     "lead_out_m": 0.3,                     # m: the path starts straight along the robot's heading for this long (row M129)
     "w_data": 0.2, "w_smooth": 0.3,        # the iterative smoother's weights: stay near the A* path, smoothness (Nav2 SimpleSmoother `w_data`, `w_smooth`) [row M148 PENDING David]
+    "w_data_open_frac": 0.002,              # the smoother's pull to the A* points falls to this fraction of w_data in open space (clearance of one inflation width or more, beyond the cost field; the relaxation length is about sqrt(w_smooth / w_data) points): the grid's 5 cm quantisation is no reason to keep a jog [row M148 PENDING David]
     "w_obs": 0.3,                          # the smoother's extra term: push away from obstacles (not in Nav2; David's third term of N6) [row M148 PENDING David]
-    "smooth_max_its": 400, "smooth_tol_m": 0.001,   # the smoother stops after this many iterations or when no point moves more than this (m) [row M148 PENDING David]
+    "smooth_max_its": 1500, "smooth_tol_m": 2.0e-5,   # the smoother stops after this many iterations or when no point moves more than this (m) [row M148 PENDING David]
     "spline_s_per_point": 1.0e-4,          # m^2 per point: the B-spline's smoothing (splprep `s` = this * number of points: the fit stays within about 1 cm of the smoothed points) [row M148 PENDING David]
     "verify_step_m": 0.025, "verify_heading_deg": 2.0,   # the dense verification samples the spline every 2.5 cm of arc length and at every 2 degrees of heading change (proposal N7) [row M148 PENDING David]
     "turn_in_place_deg": 90.0,             # degrees: when the path's first (last) stretch leaves the robot's (goal's) heading by more than this, the lead-out (lead-in) is dropped for a checked in-place turn, so the route has no cusp (Nav2's rotate-to-heading) [row M148 PENDING David]

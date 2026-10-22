@@ -125,10 +125,11 @@ def smooth(points, fixed, grid, cfg=NAV_CFG):
         idx = np.nonzero(free[1:-1])[0] + 1
         if not len(idx):
             break
-        step = cfg["w_data"] * (X[idx] - Y[idx]) + cfg["w_smooth"] * (Y[idx - 1] + Y[idx + 1] - 2 * Y[idx])
         cx = (Y[idx, 0] - grid.origin[0]) / grid.res - 0.5
         cy = (Y[idx, 1] - grid.origin[1]) / grid.res - 0.5
         d = ndimage.map_coordinates(grid.dist, [cy, cx], order=1, mode="nearest")
+        wd = cfg["w_data"] * (1.0 - (1.0 - cfg["w_data_open_frac"]) * np.clip((d - grid.r_in) / d_soft, 0.0, 1.0))[:, None]   # the data pull falls in open space
+        step = wd * (X[idx] - Y[idx]) + cfg["w_smooth"] * (Y[idx - 1] + Y[idx + 1] - 2 * Y[idx])
         gradv = np.stack([ndimage.map_coordinates(gx, [cy, cx], order=1, mode="nearest"), ndimage.map_coordinates(gy, [cy, cx], order=1, mode="nearest")], axis=1)
         gn = np.maximum(np.hypot(gradv[:, 0], gradv[:, 1]), 1e-9)[:, None]
         push = np.maximum(0.0, d_soft - np.maximum(d - grid.r_in, 0.0))[:, None] / d_soft * (gradv / gn)

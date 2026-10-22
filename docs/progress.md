@@ -130,3 +130,5 @@ Baseline regeneration (E3): tmux regen, log data/logs/cc_bench_regen_20261022_18
 VLM refresh (E4): tmux vlm, log data/logs/vlm_refresh_20261022_182126.log, out data/mpvi_text_run/fixedcam_20261022_182126, started 18:21:26: experiments/mpvi_text_test.py --mode cache_or_live --checker vlm (live Gemini calls for the new eagle images only).
 
 FULL SUITE (step 2, E5): tmux suite_s2, TAG 20261022_183500, data/logs/suite_20261022_183500_summary.txt, SKIP=face_test mpvi_text_test (the Gemini API gave 503 for the new eagle images; the VLM replies are refreshed later; face_test alone at the end). Started 18:35:00. DO NOT EDIT run_tests.sh OR src/ WHILE IT RUNS.
+
+Resumed after the crash (swap 4 GB added). Tag before-neck-removal on 2b92ffe. full_check_test fixed (29/29). Remaining tests one at a time: tmux tail, docs/reports/logs/tail_20261022_211004_summary.txt, started 21:10:04: nav_pipeline_follow_test stance_select_test stance_select_pipeline_test mpvi_pipeline_test safety_filter_model_check, then face_test alone. mpvi_text_test blocked on the VLM refresh (Gemini 503). DO NOT EDIT src/ or experiments/ WHILE IT RUNS.

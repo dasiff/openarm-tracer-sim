@@ -678,7 +678,7 @@ def make_staging_source(model, data, task_cfg=TASK_CFG, cfg=STAGING_CFG, points_
         S = ctl["S"]
         if nav_cfg["follow"]:
             state["nav"] = {"routes": S["routes"], "replans": S["replans"], "cross_track_max_mm": S["cross_track_max"] * 1000, "plan_seconds": S["plan_seconds"], "build_seconds": nav["build_s"],
-                            "footprint": nav.get("footprint"), "fail_kind": S["fail_kind"], "max_curvature_used": S.get("max_curvature_used", 0.0)}
+                            "footprint": nav.get("footprint"), "trace": S["trace"], "fail_kind": S["fail_kind"], "max_curvature_used": S.get("max_curvature_used", 0.0)}
         state["first_turn_deg"], state["final_turn_deg"], state["reapproaches"] = S["first_turn"], S["final_turn"], S["reapproach"]
         if status == "failed":
             state["arrival"] = {"pos_err": math.hypot(px - obs["base_pose"][0], py - obs["base_pose"][1]),

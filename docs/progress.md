@@ -109,4 +109,4 @@ Earlier (one line each): reachability maps (24, 63 min), open bench default, col
 Stage 2 suite (only tests importing world_model + nav_core_test): tmux session suite6, TAG 20261022_124509, summary data/logs/suite_20261022_124509_summary.txt, started 12:45:09.
 
 ## Stage 3 in progress (follower integrated behind NAV_CFG["follow"], default False)
-Done: nav_follower.py + nav_follow_test (kinematic 10/10), staging DRIVE hook, report key "nav". Running: experiments/nav_follow_sim_test.py (off then on, separate processes), tmux nav_sim, log data/logs/nav_follow_sim_20261022_125257.log, started 12:52:57. Next: read the log, N9 lean sweep (experiments/nav_lean_sweep.py), one MPVI pipeline run with follow on (recorded, replayed), Stage 3 report.
+Done: nav_follower.py + nav_follow_test (kinematic 10/10), staging DRIVE hook, report key "nav". Running: experiments/nav_follow_sim_test.py (off then on, separate processes), tmux nav_sim, log data/logs/nav_follow_sim_20261022_125601.log, started 12:52:57. Next: read the log, N9 lean sweep (experiments/nav_lean_sweep.py), one MPVI pipeline run with follow on (recorded, replayed), Stage 3 report.

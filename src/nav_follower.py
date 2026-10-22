@@ -47,11 +47,11 @@ def route_controller(cfg, plan_fn, final_ctl, clearance_at=None, max_ang=0.4):
             "aim_missed", "cross_track_max" (m), "max_curvature_used" (1/m), "plan_seconds".
     """
     S = {"leg": "PLAN", "twist": (0.0, 0.0), "route": None, "routes": [], "replans": 0, "first_turn": None, "final_turn": None, "reapproach": 0, "fail": None, "fail_kind": None,
-         "aim_missed": False, "cross_track_max": 0.0, "i": 0, "rotating": False, "plan_seconds": 0.0, "line": None, "ok_since": None}
+         "aim_missed": False, "cross_track_max": 0.0, "i": 0, "rotating": False, "plan_seconds": 0.0, "line": None, "ok_since": None, "trace": [], "ticks": 0}
 
     def reset(x, y, yaw):
         S.update(leg="PLAN", twist=(0.0, 0.0), route=None, routes=[], replans=0, first_turn=None, final_turn=None, reapproach=0, fail=None, fail_kind=None, aim_missed=False,
-                 cross_track_max=0.0, i=0, rotating=False, plan_seconds=0.0)
+                 cross_track_max=0.0, i=0, rotating=False, plan_seconds=0.0, trace=[], ticks=0)
 
     def plan(x, y, yaw):
         import time
@@ -114,6 +114,9 @@ def route_controller(cfg, plan_fn, final_ctl, clearance_at=None, max_ang=0.4):
         i, s, d, th, kff = project(R, x, y)
         S["i"] = i
         S["cross_track_max"] = max(S["cross_track_max"], d)
+        S["ticks"] += 1
+        if S["ticks"] % 75 == 1:                                         # a sparse trace (every 0.5 s) for the report: time, pose, leg, distance to the route, applied twist
+            S["trace"].append([round(t, 2), round(x, 3), round(y, 3), round(yaw, 3), S["leg"] + ("+rot" if S["rotating"] else ""), round(d, 3), round(lin, 3), round(ang, 3)])
         remaining = float(R["samples"][-1, 4] - s)
         if S["leg"] == "FOLLOW" and d > cfg["track_tol"]:
             S["leg"] = "BRAKE"

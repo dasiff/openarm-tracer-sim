@@ -75,6 +75,8 @@ def main(only):
         r0 = (nav.get("routes") or [{}])[0]
         print(f"  route: length {r0.get('length', float('nan')):.2f} m, lead-in {r0.get('lead_in_m')}, lead-out {r0.get('lead_out_m')}, smoothed {r0.get('smoothed')}, max curvature {r0.get('max_curvature', float('nan')):.2f} 1/m; "
               f"curvature used {nav.get('max_curvature_used', float('nan')):.2f}; build {nav.get('build_seconds', float('nan')):.1f} s, planning {nav.get('plan_seconds', float('nan')):.2f} s; footprint {nav.get('footprint')}")
+        for row in nav.get("trace", []):
+            print("   trace", row)
         a, h = s["arrival_at_end_of_drive"], s["base_pose_error_at_handoff"]
         check("follow on: the episode reaches the handoff", s["outcome"] == "STAGING_COMPLETE", f"{s['outcome']} {s.get('staging_error')}")
         check("the arrival at the approach spot is within 1 cm and 1 degree", a is not None and a["pos_err_mm"] <= 10.0 and abs(a["yaw_err_deg"]) <= 1.0, f"{a}")

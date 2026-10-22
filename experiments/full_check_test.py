@@ -101,6 +101,7 @@ def main():
     fc.cfg = old
     check("a changed setting is rechecked", not r4["cached"] and r4["key"] != r2["key"])
     run.data.qpos[fc.model.joint("task_beaker_free").qposadr[0] + 1] -= 0.01
+    fc.chk.q_scene = fc.scene_data.qpos.copy()                                      # the check's own scene again (the last sync above had the beaker moved 1 cm)
 
     print("\n3. objects on the table count")
     del run
@@ -127,15 +128,31 @@ def main():
     fc.set_objects([])
     check("the occlusion check sees an object between the camera and the beaker (anything that hides a target counts, R2i)", oc1["beaker_hidden_frac"] > oc0["beaker_hidden_frac"] + 0.05,
           f"beaker hidden {100 * oc0['beaker_hidden_frac']:.1f} % without, {100 * oc1['beaker_hidden_frac']:.1f} % with the object")
-    # the fixed camera's collision box (A3, M160): the arm's collision filter treats it as a static obstacle, and a path that needs the hand inside it fails the full check
+    # the fixed camera's collision box (A3, M160). The arm's collision filter treats it as a static obstacle. Task points next to the box: the hand that reaches them has to be where the box is, so the
+    # IK path check finds no collision-free solution and the full check fails on "ik" by name; the control switches the box's collision off and the same points pass. A pad point exactly at the box's
+    # centre is NOT an arm collision: the open fingers straddle the thin box (25 mm), so the full check accepts it (asserted as it is, not as "any failure").
     ck = fc._checker(A[3])
+    box_g = fc.model.geom("eagle_cam_body_box").id
     box_on = any(fc.model.body(int(fc.model.geom_bodyid[g])).name == "eagle_cam_body" for g in np.nonzero(ck.active & ~ck.moving)[0])
-    box_c = fc.chk.d.geom_xpos[fc.model.geom("eagle_cam_body_box").id].copy()
-    pt_in_box = [{"p": box_c.tolist(), "arm": "left", "bin": None, "path": "grasp"}]
-    r_box = fc.check(A, pt_in_box)
-    check("the camera box is a static obstacle of the arm's collision tests, and a task point inside it fails the full check (the hand cannot be there without touching it)",
-          box_on and not r_box["ok"] and "ik" in r_box["failed"], f"{r_box['failed']} {r_box['reason'][:100]}")
-    check("the camera box is part of the occluders' reference too: with the robot invisible the box is gone (it is under base_link)", fc.chk.meter is not None)
+    fc.chk.place(A)
+    box_c = fc.chk.d.geom_xpos[box_g].copy()
+    fwd = np.array([math.cos(A[2]), math.sin(A[2]), 0.0])                           # the robot's forward direction in the world
+    side = np.array([-fwd[1], fwd[0], 0.0])                                         # its left
+    near = {"3 cm behind the box centre": box_c - 0.03 * fwd, "6 cm in front of it": box_c + 0.06 * fwd, "6 cm to its right": box_c - 0.06 * side}
+    pt = lambda p: [{"p": [float(v) for v in p], "arm": "left", "bin": None, "path": "grasp"}]
+    on = {k: fc.check(A, pt(p), use_cache=False) for k, p in near.items()}
+    check("the camera box is a static obstacle of the arm's collision filter", box_on)
+    check("task points next to the box fail the full check on the IK path check, by name (the hand would have to be inside the box)", all(r["failed"] == ["ik"] and not r["ok"] for r in on.values()),
+          f"{ {k: (r['failed'], r['reason'][:60]) for k, r in on.items()} }")
+    saved = (int(fc.model.geom_contype[box_g]), int(fc.model.geom_conaffinity[box_g]))
+    fc.model.geom_contype[box_g] = fc.model.geom_conaffinity[box_g] = 0
+    fc._checkers.clear()
+    off = {k: fc.check(A, pt(p), use_cache=False) for k, p in near.items()}
+    fc.model.geom_contype[box_g], fc.model.geom_conaffinity[box_g] = saved
+    fc._checkers.clear()
+    check("control: with the box's collision switched off the same points pass (the box is the cause)", all(r["ok"] for r in off.values()), f"{ {k: r['failed'] for k, r in off.items()} }")
+    r_c = fc.check(A, pt(box_c), use_cache=False)
+    check("a pad point exactly at the box's centre passes (the open fingers straddle the 25 mm box: no arm part is inside it)", r_c["ok"], f"{r_c['failed']}")
     rr = fc.check(A, pts, objects=[], source_data=None)
     check("with the objects removed again the answer is the first one (memory)", rr["cached"] and rr["ok"])
 

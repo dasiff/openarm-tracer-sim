@@ -52,6 +52,12 @@ FRAMING_CFG = {
     "posture_weight": 0.003,   # cost of leaving the posture pose (rad^2): the weak term that picks one answer among the poses that aim and fit equally well [row M091]
     "posture_pose": None,      # the posture pose, in the order of the active joints; None = the neck's default aim (NECK_SPECS["drive_pose"]) [row M122 PENDING David: no decision recorded]
     "near_depth": 0.05,        # m, points closer to the camera than this count as not visible [row M122 PENDING David: no decision recorded]
+    # The framing rule (design plan 14.1, M135, overnight queue stage 6; M151). "aim_centre": today's rule, aim at the centre of the points' bounding box with a weak posture term (the default; every
+    # existing result is unchanged). "least_movement": the least movement from the start pose (the driving pose after parking) that frames every point with `margin` (10 %): no aim term, no posture
+    # term, the cost of moving from the start pose instead. The repeatability check then uses 2 jiggled solves (FULLCHECK_CFG["neck_draws_least_movement"]).
+    "rule": "aim_centre",      # "aim_centre" or "least_movement" [row M151]
+    "least_move_weight": 1.0,  # cost per rad^2 of moving from the start pose under the least_movement rule (the violation terms weigh 100 and 10 per unit of image, so the margin always wins) [row M151 PENDING David]
+    "keep_margin": 0.05,       # at a null step the neck keeps its pose while every point is more than this fraction of the image inside the edge (10 % is restored only below it) [row M135]
 }
 
 
@@ -274,6 +280,10 @@ def frame_points(model, data, points, cfg=FRAMING_CFG, neck_specs=robot_specs.NE
         ValueError: If the model has no neck.
     """
     cfg = {**FRAMING_CFG, **cfg}
+    if cfg["rule"] == "least_movement":
+        cfg = {**cfg, "aim_weight": 0.0, "posture_weight": 0.0, "move_weight": cfg["least_move_weight"]}
+    elif cfg["rule"] != "aim_centre":
+        raise ValueError("FRAMING_CFG['rule'] is 'aim_centre' or 'least_movement'")
     names, pts = _points_array(points)
     sc = _Scratch(model, data, cfg, neck_specs)
     ids = sc.ids
@@ -320,6 +330,57 @@ def frame_points(model, data, points, cfg=FRAMING_CFG, neck_specs=robot_specs.NE
                        "outside_by": float(max(0.0, cfg["margin"] - margin[i]))} for i, n in enumerate(names)},
     }
     return report["neck_targets"], report
+
+
+def margins_at(model, data, points, q=None, cfg=FRAMING_CFG, neck_specs=robot_specs.NECK_SPECS):
+    """The margin of every point in the camera's image at a neck pose (the current one by default): fractions of the image to the nearest edge, -1 for a point too close to the camera.
+
+    Args:
+        model (mujoco.MjModel): The model.
+        data (mujoco.MjData): Its data (not modified).
+        points (dict or array-like): The world points, as for frame_points.
+        q (sequence of float or None): Neck joint angles in radians in the order of the active joints. Defaults to the current ones in `data`.
+        cfg (dict): Framing configuration. Defaults to FRAMING_CFG.
+        neck_specs (dict): Neck specification. Defaults to robot_specs.NECK_SPECS.
+
+    Returns:
+        dict: {point name: margin}.
+    """
+    cfg = {**FRAMING_CFG, **cfg}
+    names, pts = _points_array(points)
+    sc = _Scratch(model, data, cfg, neck_specs)
+    q = np.array([data.qpos[a] for a in sc.ids["qadr"]]) if q is None else np.asarray(q, float)
+    pos, R = sc.pose(q)
+    u, v, depth = _project(pts, pos, R, sc.fovy, sc.aspect)
+    m = np.where(depth < cfg["near_depth"], -1.0, np.minimum((1 - np.abs(u)) / 2, (1 - np.abs(v)) / 2))
+    return {n: float(m[i]) for i, n in enumerate(names)}
+
+
+def reframe_or_keep(model, data, points, cfg=FRAMING_CFG, neck_specs=robot_specs.NECK_SPECS):
+    """The framing at a null step (the base did not move): keep the current neck pose while every point is more than cfg["keep_margin"] (5 %) inside the image, otherwise move the least needed to
+    restore the 10 % margin (the least_movement rule from the current pose, whatever FRAMING_CFG["rule"] says).
+
+    Args:
+        model (mujoco.MjModel): The model.
+        data (mujoco.MjData): Its data: the neck's current pose is the one kept or moved from (not modified).
+        points (dict or array-like): The world points, as for frame_points.
+        cfg (dict): Framing configuration. Defaults to FRAMING_CFG.
+        neck_specs (dict): Neck specification. Defaults to robot_specs.NECK_SPECS.
+
+    Returns:
+        tuple: (targets, report, moved). targets: joint name -> radians (the current pose when kept); report: frame_points's report (for a kept pose: "fits", "worst_margin", "camera_pos", "neck_targets", "points"
+        margins only); moved (bool).
+    """
+    cfg = {**FRAMING_CFG, **cfg}
+    mg = margins_at(model, data, points, None, cfg, neck_specs)
+    sc = _Scratch(model, data, cfg, neck_specs)
+    q_now = [float(data.qpos[a]) for a in sc.ids["qadr"]]
+    if min(mg.values()) > cfg["keep_margin"]:
+        pos, _ = sc.pose(q_now)
+        targets = {n: v for n, v in zip(sc.ids["names"], q_now)}
+        return targets, {"fits": min(mg.values()) >= cfg["margin"] - 1e-9, "worst_margin": min(mg.values()), "camera_pos": pos.round(4).tolist(), "neck_targets": targets, "points": mg, "contacts": []}, False
+    targets, report = frame_points(model, data, points, {**cfg, "rule": "least_movement"}, neck_specs, start=q_now)
+    return targets, report, True
 
 
 def summarize(report):

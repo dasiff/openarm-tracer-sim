@@ -483,6 +483,7 @@ FULLCHECK_CFG = {
     "hand_clearance": 0.01,                 # m: the hand and fingers must stay this far from the bench, the hotplate and every other object at the IK solutions (the old case 'open_b45' used 1 cm; row M146 PENDING David)
     "arm_clearance": 0.0,                   # m: the other arm parts must not touch the furniture or the objects (row M146 PENDING David)
     "body_clearance": 0.0,                  # m: the whole robot at the stance must not touch the bench or an object (the old check: no contact; row M146 PENDING David)
+    "neck_draws_least_movement": 2,         # count: perturbed neck solves of the repeatability check under the least_movement framing rule (a sanity check, R2e, row M151)
     "neck_draws": 8,                        # count: perturbed neck solves of the repeatability check (the old value; the new framing rule will use 2, R2e, row M135)
     "object_slots": 6,                      # count: boxes of the private model that stand for unknown objects on the table (more objects than this make the check refuse; row M147 PENDING David)
     "checkers_kept": 3,                     # count: arm collision checkers kept (one per pedestal height, a model copy each) (row M136: memory)

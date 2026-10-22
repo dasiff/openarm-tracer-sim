@@ -33,6 +33,7 @@ import numpy as np
 from src import robot_specs
 from src.arm_collision import ArmCollisionChecker
 from src.arm_kinematics import arm_chain, solve_ik
+from src.neck_framing import FRAMING_CFG
 from src.grasp_rules import bin_center, joint_bounds, make_constraint
 from src.gripper_geometry import grasp_cfg
 from src.robot_helpers import arm_ids
@@ -243,7 +244,7 @@ class FullCheck:
             h.update(np.round(np.asarray(pt["p"], float), 6).tobytes() + repr((pt.get("bin"), pt.get("path"), pt.get("arm"))).encode())
         for o in objects:
             h.update(np.round(np.asarray(o["outline"], float), 6).tobytes() + np.round(np.asarray(o["height_range"], float), 6).tobytes() + str(o.get("id")).encode())
-        h.update(repr(approach_bin).encode() + repr(sorted(self.cfg.items(), key=lambda kv: kv[0])).encode() + repr(sorted(STANCE_REQUIREMENTS.items())).encode())
+        h.update(repr(approach_bin).encode() + repr(sorted(self.cfg.items(), key=lambda kv: kv[0])).encode() + repr(sorted(STANCE_REQUIREMENTS.items())).encode() + repr(sorted(FRAMING_CFG.items(), key=lambda kv: kv[0])).encode())      # the framing rule is part of the answer
         h.update(np.round(self.chk.q_scene[self._beaker_free:self._beaker_free + 7], 6).tobytes())                    # the beaker's pose
         hp = self.model.body("task_hotplate").id
         h.update(np.round(self.model.body_pos[hp], 6).tobytes())
@@ -434,7 +435,7 @@ class FullCheck:
         # 3. neck, occlusion, framing slack at the heights
         for h, row in zip(heights, res["heights"]):
             st = (x, y, th, h)
-            ns = timed("neck", chk.neck_spread, st, n=cfg["neck_draws"])
+            ns = timed("neck", chk.neck_spread, st, n=cfg["neck_draws_least_movement"] if FRAMING_CFG["rule"] == "least_movement" else cfg["neck_draws"])
             row["neck_spread"] = ns["spread"]
             if ns["spread"] > STANCE_REQUIREMENTS["neck_max_spread"]:
                 return finish(["neck_spread"], f"at pedestal {h:.3f} the neck framing moves {ns['spread']:.3f} rad under arm noise (the limit is {STANCE_REQUIREMENTS['neck_max_spread']})")

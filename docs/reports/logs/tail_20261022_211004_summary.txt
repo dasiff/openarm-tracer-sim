@@ -1,0 +1,25 @@
+=== nav_pipeline_follow_test start 21:10:05 | before: avail 5750 MB
+swap used 19 MB
+=== nav_pipeline_follow_test exit 0 at 21:15:52: 13/13 checks passed (follow on) | after: avail 5660 MB
+swap used 19 MB | peak swap 19 MB | log docs/reports/logs/nav_pipeline_follow_test_20261022_211005.log
+=== stance_select_test start 21:15:52 | before: avail 5660 MB
+swap used 19 MB
+=== stance_select_test exit 0 at 21:15:57: 23/23 checks passed | after: avail 5716 MB
+swap used 19 MB | peak swap 19 MB | log docs/reports/logs/stance_select_test_20261022_211552.log
+=== stance_select_pipeline_test start 21:15:57 | before: avail 5716 MB
+swap used 19 MB
+=== stance_select_pipeline_test exit 0 at 21:20:04: 7/7 checks passed | after: avail 5750 MB
+swap used 19 MB | peak swap 19 MB | log docs/reports/logs/stance_select_pipeline_test_20261022_211557.log
+=== mpvi_pipeline_test start 21:20:04 | before: avail 5749 MB
+swap used 19 MB
+=== mpvi_pipeline_test exit 0 at 21:24:48: 13/13 checks passed | after: avail 5698 MB
+swap used 19 MB | peak swap 19 MB | log docs/reports/logs/mpvi_pipeline_test_20261022_212004.log
+=== safety_filter_model_check start 21:24:49 | before: avail 5698 MB
+swap used 19 MB
+=== safety_filter_model_check exit 0 at 21:24:54:  | after: avail 5494 MB
+swap used 19 MB | peak swap 19 MB | log docs/reports/logs/safety_filter_model_check_20261022_212448.log
+=== face_test start 21:24:54 | before: avail 5494 MB
+swap used 19 MB
+=== face_test exit 0 at 21:28:00: 27/27 checks passed | after: avail 5706 MB
+swap used 19 MB | peak swap 19 MB | log docs/reports/logs/face_test_20261022_212454.log
+TAIL_DONE

@@ -91,7 +91,7 @@ def main(plumbing=None):
     print(f"  outcome {s['outcome']}; plan failure {state['failure']}; status {state['status']}")
     check("the episode outcome is SUCCESS", s["outcome"] == "SUCCESS", s["outcome"])
     check("the plan finished, every segment done (the second navigation step too)", state["finished"] and all(x == "done" for x in state["status"]) and len(state["status"]) == 4, f"{state['status']}")
-    srep = s.get("report", s)
+    srep = task["pipeline"]["navigation"]["report"]()                # the staging's own report (the episode summary of a pipeline run does not carry it)
     a = srep.get("arrival_at_end_of_drive") or {}
     h = srep.get("base_pose_error_at_handoff") or {}
     print(f"  arrival at the approach spot {a}; handoff pose error {h}")

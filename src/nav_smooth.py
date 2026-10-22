@@ -250,6 +250,11 @@ def plan_route(grid, fine, start, goal, cfg=NAV_CFG):
     p_g = np.array([gx, gy])
     gdir = np.array([math.cos(gyaw), math.sin(gyaw)])
     cands, L = [], cfg["lead_in_m"]
+    sx, sy, syaw = start
+    a_along = (sx - gx) * gdir[0] + (sy - gy) * gdir[1]                  # the start along the goal heading (negative: before the goal)
+    b_side = -(sx - gx) * gdir[1] + (sy - gy) * gdir[0]
+    if -cfg["lead_in_m"] < a_along < -0.02 and abs(b_side) <= 0.2 and abs(_wrap(syaw - gyaw)) <= math.radians(45.0):   # a replan from inside the lead-in: straight on to the goal
+        cands.append(-1.0)
     while L >= cfg["lead_in_min_m"] - 1e-9:
         if _straight_clear(fine, p_g - gdir * L, p_g, gyaw, cfg):
             cands.append(L)
@@ -260,6 +265,11 @@ def plan_route(grid, fine, start, goal, cfg=NAV_CFG):
         return _empty("can't line up")
     last = None
     for lead_in in cands:
+        if lead_in < 0:
+            r = _route(grid, fine, start, goal, lead_in, cfg, direct=True)
+            if r["ok"]:
+                return r
+            continue
         r = _route(grid, fine, start, goal, lead_in, cfg)
         if r["ok"] or r["reason"] in ("start blocked", "goal blocked", "no path", "start cannot turn"):
             return r
@@ -271,8 +281,10 @@ def _empty(reason):
     return {"ok": False, "reason": reason, "samples": None, "turns": [], "lead_in_m": 0.0, "lead_out_m": 0.0, "smoothed": True, "repairs": 0, "max_curvature": 0.0, "length": 0.0, "astar": None}
 
 
-def _route(grid, fine, start, goal, lead_in, cfg):
-    """One route for a given lead-in length (0: the in-place turn at the goal): the lead-out, A*, smoothing, spline, verification, and the polyline fallback."""
+def _route(grid, fine, start, goal, lead_in, cfg, direct=False):
+    """One route for a given lead-in length (0: the in-place turn at the goal): the lead-out, A*, smoothing, spline, verification, and the polyline fallback.
+
+    direct: the start is inside the lead-in's strip (a replan): no A*, the route is the straight line to the goal (lead_in is then the distance to it)."""
     sx, sy, syaw = start
     gx, gy, gyaw = goal
     res = _empty("")
@@ -280,6 +292,17 @@ def _route(grid, fine, start, goal, lead_in, cfg):
     p_s, p_g = np.array([sx, sy]), np.array([gx, gy])
     gdir = np.array([math.cos(gyaw), math.sin(gyaw)])
     sdir = np.array([math.cos(syaw), math.sin(syaw)])
+    if direct:
+        lead_in, lead_out = float(np.hypot(*(p_g - p_s))), 0.0
+        pts = resample(np.array([p_s, p_g]), grid.res)
+        spl = Spline(pts, cfg, np.full(len(pts), 20.0))
+        smp = spl.samples(cfg)
+        res["astar"] = {"ok": True, "reason": "", "expanded": 0, "cost": lead_in}
+        if verify(smp, fine, cfg).any():
+            res["reason"] = "no verified path"
+            return res
+        res.update(ok=True, samples=smp, lead_in_m=lead_in, lead_out_m=0.0, turns=[], length=spl.length, max_curvature=float(np.abs(smp[:, 3]).max()), smoothed=True)
+        return res
     lead_out, L = 0.0, cfg["lead_out_m"]
     while L >= 0.1 - 1e-9:
         if _straight_clear(fine, p_s, p_s + sdir * L, syaw, cfg):

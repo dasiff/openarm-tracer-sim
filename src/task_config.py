@@ -506,5 +506,14 @@ NAV_CFG = {
     "spline_s_per_point": 1.0e-4,          # m^2 per point: the B-spline's smoothing (splprep `s` = this * number of points: the fit stays within about 1 cm of the smoothed points) [row M148 PENDING David]
     "verify_step_m": 0.025, "verify_heading_deg": 2.0,   # the dense verification samples the spline every 2.5 cm of arc length and at every 2 degrees of heading change (proposal N7) [row M148 PENDING David]
     "turn_in_place_deg": 90.0,             # degrees: when the path's first (last) stretch leaves the robot's (goal's) heading by more than this, the lead-out (lead-in) is dropped for a checked in-place turn, so the route has no cusp (Nav2's rotate-to-heading) [row M148 PENDING David]
+    "follow": False,                       # False: the scripted go-to-pose DRIVE of today (the pipeline is byte-identical); True: the navigation core plans a route and the follower drives it (stage 3) [row M149]
+    "desired_linear_vel": 0.3,             # m/s: the follower's cruise speed (Nav2 RPP `desired_linear_vel`); today's drive_max_lin_vel until the lean measurement (N9) says otherwise [row M149 PENDING David]
+    "use_velocity_scaled_lookahead_dist": True, "lookahead_time": 1.0, "min_lookahead_dist": 0.25, "max_lookahead_dist": 0.8,   # RPP names; the lookahead is speed * lookahead_time, kept between the two distances (m) [row M149 PENDING David]
+    "regulated_linear_scaling_min_radius": 0.9, "regulated_linear_scaling_min_speed": 0.05,   # RPP names: below this turning radius (m) the speed shrinks in proportion, never below this speed (m/s) [row M149 PENDING David]
+    "cost_scaling_dist": 0.6, "cost_scaling_gain": 1.0,   # RPP names: within this distance (m) of an obstacle's inscribed edge the speed shrinks in proportion (times the gain) [row M149 PENDING David]
+    "approach_velocity_scaling_dist": 0.6, "min_approach_linear_velocity": 0.02,   # RPP names: within this distance (m) of the path's end the speed shrinks in proportion, never below this (m/s: today's drive_creep_lin) [row M149 PENDING David]
+    "rotate_to_heading_angular_vel": 0.4, "rotate_to_heading_min_angle": 0.35,   # RPP names: the yaw rate (rad/s: today's drive_max_ang_vel, a placeholder until N9) of an in-place turn, and the heading error (rad) above which the follower turns in place first [row M149 PENDING David]
+    "max_linear_accel": 0.1, "max_linear_decel": 0.15, "max_angular_accel": 0.2,   # today's drive_lin_accel / drive_lin_decel / drive_ang_accel (m/s^2, m/s^2, rad/s^2): conservative placeholders until the lean measurement N9 [row M149 PENDING David]
+    "k_fb": 0.5,                           # the curvature feed-forward: yaw rate = v * (kappa_path + k_fb * (kappa_pursuit - kappa_path)); 1 is Nav2's plain RPP [row M149 PENDING David]
     "max_replans": 3,                      # count: replans per approach after a drift or a new obstacle, then the operator (row M057)
 }

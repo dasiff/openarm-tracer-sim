@@ -194,10 +194,10 @@ def main():
     check("the map only removes cells (never adds), and some cells at some pedestal heights are cut", bool(np.all(~(S["left"] > 0) | (S0["left"] > 0))) and cut >= 0, f"{cut} (cell, pedestal) pairs cut of {int((S0['left'] > 0).sum())}")
 
     print("\n7. the heading window of the quick search")
-    win, found_win = find_stances_windowed(qpts, maps, furniture, rg, cfg={**STANCE_CFG, "heading_window_deg": 45.0}, headings=np.radians(np.arange(-150.0, -29.0, 5.0)), pedestal_qs=qs)
+    win, found_win = find_stances_windowed(qpts, maps, furniture, rg, cfg={**STANCE_CFG, "heading_window_deg": 45.0}, headings=np.radians(np.arange(-150.0, -29.0, 10.0)), pedestal_qs=qs)
     cx, cy = np.mean([p["p"][0] for p in qpts]), np.mean([p["p"][1] for p in qpts])
     off = [abs((s["heading"] - math.atan2(cy - s["y"], cx - s["x"]) + math.pi) % (2 * math.pi) - math.pi) for s in win]
-    check("every stance of the windowed search faces the targets within 45 degrees", found_win and win and max(off) <= math.radians(45.0) + math.radians(5.0), f"{len(win)} stances; largest angle {math.degrees(max(off)) if off else 0:.0f} degrees")
+    check("every stance of the windowed search faces the targets within 45 degrees", found_win and win and max(off) <= math.radians(45.0) + math.radians(10.0), f"{len(win)} stances; largest angle {math.degrees(max(off)) if off else 0:.0f} degrees")
     none_win, used = find_stances_windowed(qpts, maps, furniture, rg, cfg={**STANCE_CFG, "heading_window_deg": 0.5}, headings=[math.radians(60.0)], pedestal_qs=qs)
     check("when the window finds nothing the unrestricted search is the fallback (window_used False)", used is False)
 

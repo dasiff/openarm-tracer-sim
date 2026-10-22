@@ -28,7 +28,6 @@ import mujoco  # noqa: E402
 import numpy as np  # noqa: E402
 
 from src import robot_specs  # noqa: E402
-from src.neck import set_neck_pose  # noqa: E402
 from src.robot_helpers import arm_ids  # noqa: E402
 from src.simulator import RobotSimulator  # noqa: E402
 from src.task_config import TASK_CFG  # noqa: E402
@@ -69,7 +68,6 @@ def run_case(sim, pose, gains, gravcomp):
         ctrl[ids[s]["gripper"]] = 0.044
         for j in ids[s]["finger_jnt"]:
             d.qpos[m.jnt_qposadr[j]] = 0.044
-    set_neck_pose(m, d, robot_specs.NECK_SPECS)
     mujoco.mj_forward(m, d)
     tcp = {s: m.body(f"openarm_{s}_hand_tcp").id for s in ids}
     ref = {s: d.xpos[tcp[s]] - d.xpos[m.body("base_link").id] for s in ids}

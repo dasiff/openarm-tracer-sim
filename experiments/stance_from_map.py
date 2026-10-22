@@ -102,27 +102,26 @@ def closest_to_edge(furniture, rg, ctx, margin):
 REQ = STANCE_REQUIREMENTS         # the requirements, the same in the home pose search and home_pose_test (src/task_config.py)
 HOME_MIN_CLEARANCE = REQ["home_min_clearance"]       # m: the arms at home stay this far from the bench, the hotplate and every object
 PLACED_BEAKER_MIN = REQ["placed_beaker_min_clearance"]   # m: and from a beaker resting on the hotplate
-NECK_MAX_SPREAD = REQ["neck_max_spread"]             # rad: the neck framing moves no joint more than this under the small arm perturbations (the neck_once_test limit)
-FRAMING_MIN_SLACK = REQ["framing_min_slack"]         # the framing slack with both grippers in the frame (fraction of the image)
+VIEW_MIN_MARGIN = REQ["view_min_margin"]             # the smallest margin of the points (both grippers included) in the fixed eagle image (fraction of the image)
 OCC_MAX = REQ["occlusion_max_hidden"]                # share of the beaker's and the hotplate's pixels the robot may hide from the eagle camera
 
 
 def req_row(chk, st):
     """All the non-reach requirements at a stance (StanceChecks.requirements), flattened for the tables: the numbers, the failed names and "ok"."""
     r = chk.requirements(st)
-    hc, ns, oc, fr = r["home_clearance"], r["neck"], r["occlusion"], r["framing"]
+    hc, vw, oc = r["home_clearance"], r["view"], r["occlusion"]
     return {"home_clearance_arms_mm": 1000 * hc["arms"], "home_clearance_hands_mm": 1000 * hc["hands"], "home_pair": hc["arms_pair"],
-            "placed_beaker_mm": r["placed_beaker_mm"], "neck_spread": None if ns is None else ns["spread"], "neck_spread_test_draws": None if ns is None else ns["spread_test_draws"],
+            "placed_beaker_mm": r["placed_beaker_mm"],
             "beaker_hidden_frac": None if oc is None else oc["beaker_hidden_frac"], "hotplate_hidden_frac": None if oc is None else oc["hotplate_hidden_frac"],
             "beaker_px": None if oc is None else oc["beaker_px"], "hotplate_px": None if oc is None else oc["hotplate_px"],
             "arm_frac": None if oc is None else oc["arm_frac"], "hand_frac": None if oc is None else oc["hand_frac"],
-            "framing_slack": None if fr is None else fr["slack"], "framing_limit": None if fr is None else fr["limit"], "failed": r["failed"], "ok": r["ok"]}
+            "view_margin": None if vw is None else vw["margin"], "view_limit": None if vw is None else vw["limit"], "failed": r["failed"], "ok": r["ok"]}
 
 
 def xy_region(chk, tol, x0, y0, heading, q, half, step):
     """The passing region in the floor plane around a stance, at its pedestal height: on a grid of offsets (+-half, step) every point must have the arms reachable (the finder's tolerance there
-    positive) and meet the requirements of StanceChecks.requirements: the arms at home at least HOME_MIN_CLEARANCE from everything and PLACED_BEAKER_MIN from a beaker resting on the hotplate, the neck framing spread at most NECK_MAX_SPREAD, the pixel
-    occlusion within OCC_MAX and the framing slack at least FRAMING_MIN_SLACK.
+    positive) and meet the requirements of StanceChecks.requirements: the arms at home at least HOME_MIN_CLEARANCE from everything and PLACED_BEAKER_MIN from a beaker resting on the hotplate, the view margin of the points in the fixed eagle image at least VIEW_MIN_MARGIN and the pixel
+    occlusion within OCC_MAX.
 
     Returns:
         dict: "points" (list of {dx, dy, reach, ok, failed, and the numbers of req_row}), "n_pass", "n_total", "radius_m" (the distance from the stance to the nearest failing grid point,
@@ -162,15 +161,15 @@ def select_stance(name, args, maps):
 
     Candidates: the finder's best stances at the heading (left arm, every pedestal height on a 2 cm grid), in the finder's order. For each candidate position and each pedestal height of its
     valid range: the finder's tolerance there and the requirements of src/stance_checks.StanceChecks.requirements (src/task_config.STANCE_REQUIREMENTS, the same as in the home pose search and
-    home_pose_test): the home pose clearance (every moving arm part of both arms at home at least HOME_MIN_CLEARANCE from everything and PLACED_BEAKER_MIN from a beaker resting on the hotplate), the neck framing spread (at most NECK_MAX_SPREAD), the
-    pixel occlusion of the beaker and the hotplate in the eagle camera's image (beaker 0 % hidden, hotplate at most 20 %) and the framing slack with both grippers in the frame (at least 10 %);
+    home_pose_test): the home pose clearance (every moving arm part of both arms at home at least HOME_MIN_CLEARANCE from everything and PLACED_BEAKER_MIN from a beaker resting on the hotplate), the
+    pixel occlusion of the beaker and the hotplate in the eagle camera's image (beaker 0 % hidden, hotplate at most 20 %) and the view margin with both grippers in the fixed view (at least 10 %);
     the heights that pass form runs (consecutive grid heights), the longest run of a candidate is its passing range and its middle is the chosen height.
     Ranking (David 2026-10-19 and 2026-10-20, design plan 3.4): the candidates with a passing range are ranked by the width of the range (the widest first), then, at equal width, by the arm
     coverage of the eagle image at the chosen height (the smaller first), then by the finder's tolerance there; the first whose IK verification passes is the result. The IK verification (all points solve, the open fingers at least 1 cm from the bench and the hotplate) is the last test. (Before: ranked by the
     tolerance alone, which chose a one-height range.)
     """
     t0 = time.time()
-    R = SS.Runner(name, {**CASES[name], "cameras": True})                 # the eagle camera is needed for the neck framing check
+    R = SS.Runner(name, {**CASES[name], "cameras": True})                 # the eagle camera is needed for the view and occlusion checks
     ctx = R.ctx
     m = ctx.m
     m.body_pos[m.body("task_hotplate").id] = [ctx.hotplate_xy[0], ctx.hotplate_xy[1], ctx.top]
@@ -189,13 +188,13 @@ def select_stance(name, args, maps):
     xs, ys = X[0], Y[:, 0]
     tol = lambda x, y, q: float(S[int(np.argmin(abs(qs - q))), int(np.argmin(abs(ys - y))), int(np.argmin(abs(xs - x)))])
     chk = StanceChecks(m, data, rg["base_z"])
-    log(f"select: {len(cands)} candidates at heading {args.heading} ({time.time() - t0:.0f} s); requirements: arms at home >= {1000 * HOME_MIN_CLEARANCE:.0f} mm from everything and >= {1000 * PLACED_BEAKER_MIN:.0f} mm from a beaker on the hotplate, neck spread <= {NECK_MAX_SPREAD} rad, "
-        f"eagle view: beaker hidden <= {100 * OCC_MAX['beaker']:.0f} %, hotplate hidden <= {100 * OCC_MAX['hotplate']:.0f} % (pixels), framing slack with the grippers >= {100 * FRAMING_MIN_SLACK:.0f} %")
+    log(f"select: {len(cands)} candidates at heading {args.heading} ({time.time() - t0:.0f} s); requirements: arms at home >= {1000 * HOME_MIN_CLEARANCE:.0f} mm from everything and >= {1000 * PLACED_BEAKER_MIN:.0f} mm from a beaker on the hotplate, "
+        f"eagle view: beaker hidden <= {100 * OCC_MAX['beaker']:.0f} %, hotplate hidden <= {100 * OCC_MAX['hotplate']:.0f} % (pixels), view margin with the grippers >= {100 * VIEW_MIN_MARGIN:.0f} %")
     table = []
     for ci, c in enumerate(cands[:args.n_cand]):
         qv = [float(q) for q in qs if c["q_lo"] - 1e-9 <= q <= c["q_hi"] + 1e-9 and tol(c["x"], c["y"], q) > 0]
         rows = []
-        for q in qv:                                                             # cheap checks first; the slow ones (neck solve, renders, framing) only where the earlier ones pass
+        for q in qv:                                                             # cheap checks first; the slow ones (the view, the renders) only where the earlier ones pass
             row = {"q": q, "tolerance_cm": 100 * tol(c["x"], c["y"], q), **req_row(chk, (c["x"], c["y"], heading, q))}
             rows.append(row)
         ok = [r["ok"] for r in rows]
@@ -214,10 +213,10 @@ def select_stance(name, args, maps):
         table.append(entry)
         def tag(r):                                                              # one letter per requirement: capital = met, small = failed, - = not checked (an earlier one failed)
             f = r["failed"]
-            return ("h" if "home_clearance" in f else "H") + ("b" if "placed_beaker" in f else "B") + ("-" if r["neck_spread"] is None else "n" if "neck_spread" in f else "N") \
-                + ("-" if r["beaker_hidden_frac"] is None else "o" if "occlusion" in f else "O") + ("-" if r["framing_slack"] is None else "f" if "framing" in f else "F")
+            return ("h" if "home_clearance" in f else "H") + ("b" if "placed_beaker" in f else "B") + ("-" if r["view_margin"] is None else "v" if "view" in f else "V") \
+                + ("-" if r["beaker_hidden_frac"] is None else "o" if "occlusion" in f else "O")
         log(f"  candidate {ci + 1}/{len(cands)}: x {c['x']:.2f} y {c['y']:.2f}, valid heights {c['q_lo']:.2f}..{c['q_hi']:.2f}: "
-            + " ".join(f"q{r['q']:.2f}:{tag(r)}" for r in rows) + "   (H home clearance, B placed beaker, N neck spread, O occlusion, F framing slack; capital = met, small = failed, - = not checked)"
+            + " ".join(f"q{r['q']:.2f}:{tag(r)}" for r in rows) + "   (H home clearance, B placed beaker, V fixed view, O occlusion; capital = met, small = failed, - = not checked)"
             + (f"  -> passing run {entry['passing_run']['q_lo']:.2f}..{entry['passing_run']['q_hi']:.2f}, middle {entry['passing_run']['q_mid']:.3f}, tolerance there {entry['passing_run']['tolerance_cm']:.1f} cm" if entry["passing_run"] else "  -> no height passes all"))
         save(Path(args.out) / f"{name}_selected_partial.json", {"table": table})
     ranked = sorted([e for e in table if e["passing_run"]], key=lambda e: (-e["passing_run"]["width_steps"], e["passing_run"]["arm_frac"], -e["passing_run"]["tolerance_cm"]))        # the widest pedestal range first, then the smaller arm coverage, then the larger tolerance
@@ -231,28 +230,28 @@ def select_stance(name, args, maps):
         if ok:
             chosen = {"x": e["x"], "y": e["y"], "heading_deg": args.heading, "q": pr["q_mid"], "passing_range": [pr["q_lo"], pr["q_hi"]], "finder_tolerance_cm": pr["tolerance_cm"],
                       "home_clearance_arms_mm": pr["home_clearance_arms_mm"], "home_clearance_hands_mm": pr["home_clearance_hands_mm"], "home_clearance_pair": pr["home_pair"],
-                      "home_margin_mm": pr["home_clearance_arms_mm"] - 1000 * HOME_MIN_CLEARANCE, "neck_spread_rad": pr["neck_spread"], "neck_margin_rad": NECK_MAX_SPREAD - pr["neck_spread"],
+                      "home_margin_mm": pr["home_clearance_arms_mm"] - 1000 * HOME_MIN_CLEARANCE, 
                       "beaker_hidden_frac": pr["beaker_hidden_frac"], "hotplate_hidden_frac": pr["hotplate_hidden_frac"], "beaker_px": pr["beaker_px"], "hotplate_px": pr["hotplate_px"],
-                      "hotplate_occlusion_margin": OCC_MAX["hotplate"] - pr["hotplate_hidden_frac"], "framing_slack": pr["framing_slack"], "framing_margin": pr["framing_slack"] - FRAMING_MIN_SLACK,
-                      "framing_limit": pr["framing_limit"], "arm_frac": pr["arm_frac"], "hand_frac": pr["hand_frac"], "placed_beaker_clearance_mm": pr["placed_beaker_mm"], "placed_beaker_margin_mm": None if pr["placed_beaker_mm"] is None else pr["placed_beaker_mm"] - 1000 * PLACED_BEAKER_MIN, "range_width_cm": 100 * (pr["q_hi"] - pr["q_lo"]),
+                      "hotplate_occlusion_margin": OCC_MAX["hotplate"] - pr["hotplate_hidden_frac"], "view_margin": pr["view_margin"], "view_margin_over_limit": pr["view_margin"] - VIEW_MIN_MARGIN,
+                      "view_limit": pr["view_limit"], "arm_frac": pr["arm_frac"], "hand_frac": pr["hand_frac"], "placed_beaker_clearance_mm": pr["placed_beaker_mm"], "placed_beaker_margin_mm": None if pr["placed_beaker_mm"] is None else pr["placed_beaker_mm"] - 1000 * PLACED_BEAKER_MIN, "range_width_cm": 100 * (pr["q_hi"] - pr["q_lo"]),
                       "ik": ev}
             break
     result = {"case": name, "scene": {"beaker_xy": ctx.beaker_xy.tolist(), "hotplate_xy": ctx.hotplate_xy.tolist(), "bench_open": R.open, "grasp_fracs": list(R.fracs)},
-              "requirements": {"home_min_clearance_mm": 1000 * HOME_MIN_CLEARANCE, "placed_beaker_min_clearance_mm": 1000 * PLACED_BEAKER_MIN, "neck_max_spread_rad": NECK_MAX_SPREAD, "framing_min_slack": FRAMING_MIN_SLACK, "occlusion_max_hidden": OCC_MAX}, "chosen": chosen, "candidates": table, "verification": verification,
+              "requirements": {"home_min_clearance_mm": 1000 * HOME_MIN_CLEARANCE, "placed_beaker_min_clearance_mm": 1000 * PLACED_BEAKER_MIN, "view_min_margin": VIEW_MIN_MARGIN, "occlusion_max_hidden": OCC_MAX}, "chosen": chosen, "candidates": table, "verification": verification,
               "seconds": time.time() - t0}
     if chosen and args.xy_half > 0:
         chosen["xy_region"] = xy_region(chk, tol, chosen["x"], chosen["y"], heading, chosen["q"], args.xy_half, args.xy_step)
         result["chosen"] = chosen
         xr = chosen["xy_region"]
-        log(f"xy region around the chosen stance at pedestal {chosen['q']:.3f} (grid +-{100 * args.xy_half:.0f} cm, {100 * args.xy_step:.0f} cm steps): {xr['n_pass']}/{xr['n_total']} points pass (reach, home clearance, neck, occlusion and framing); "
+        log(f"xy region around the chosen stance at pedestal {chosen['q']:.3f} (grid +-{100 * args.xy_half:.0f} cm, {100 * args.xy_step:.0f} cm steps): {xr['n_pass']}/{xr['n_total']} points pass (reach, home clearance, view and occlusion); "
             f"largest passing radius {100 * xr['radius_m']:.1f} cm; extent x {100 * xr['x_extent_m'][0]:+.0f}..{100 * xr['x_extent_m'][1]:+.0f} cm, y {100 * xr['y_extent_m'][0]:+.0f}..{100 * xr['y_extent_m'][1]:+.0f} cm")
     save(Path(args.out) / f"{name}_selected.json", result)
     if chosen:
         log(f"CHOSEN: x {chosen['x']:.3f} y {chosen['y']:.3f} heading {chosen['heading_deg']:.0f} pedestal {chosen['q']:.3f} (passing range {chosen['passing_range'][0]:.2f}..{chosen['passing_range'][1]:.2f}); "
             f"finder tolerance {chosen['finder_tolerance_cm']:.1f} cm; home clearance {chosen['home_clearance_arms_mm']:.1f} mm (margin {chosen['home_margin_mm']:+.1f} mm; closest {chosen['home_clearance_pair']}); "
-            f"neck spread {chosen['neck_spread_rad']:.3f} rad (margin {chosen['neck_margin_rad']:+.3f} rad); occlusion: beaker {100 * chosen['beaker_hidden_frac']:.1f} % hidden "
+            f"occlusion: beaker {100 * chosen['beaker_hidden_frac']:.1f} % hidden "
             f"({chosen['beaker_px']} px visible; limit {100 * OCC_MAX['beaker']:.0f} %), hotplate {100 * chosen['hotplate_hidden_frac']:.1f} % hidden (limit {100 * OCC_MAX['hotplate']:.0f} %, margin {100 * chosen['hotplate_occlusion_margin']:+.1f} points); "
-            f"framing slack {100 * chosen['framing_slack']:.1f} % (margin {100 * chosen['framing_margin']:+.1f} points; limited by {chosen['framing_limit']}); "
+            f"view margin {100 * chosen['view_margin']:.1f} % (margin {100 * chosen['view_margin_over_limit']:+.1f} points; limited by {chosen['view_limit']}); "
             f"arms at home to a beaker standing on the hotplate: {chosen['placed_beaker_clearance_mm']} mm (margin {chosen['placed_beaker_margin_mm']} mm); pedestal range width {chosen['range_width_cm']:.0f} cm; arm coverage of the eagle image {100 * chosen['arm_frac']:.1f} % (hands {100 * chosen['hand_frac']:.1f} %)")
     else:
         log("CHOSEN: none: no candidate passes all requirements")
@@ -269,7 +268,7 @@ def main():
     ap.add_argument("--maps", default=str(PROJECT_ROOT / "data" / "reach_map"))
     ap.add_argument("--out", default=str(PROJECT_ROOT / "data" / "stance_map"))
     ap.add_argument("--no-verify", action="store_true")
-    ap.add_argument("--select", action="store_true", help="choose the staging stance (and its pedestal height) for the first --case with the home clearance and neck repeatability checks")
+    ap.add_argument("--select", action="store_true", help="choose the staging stance (and its pedestal height) for the first --case with the home clearance and fixed-view checks")
     ap.add_argument("--heading", type=float, default=-90.0, help="--select: the stance heading, degrees")
     ap.add_argument("--n-cand", type=int, default=6, help="--select: how many finder candidates are checked")
     ap.add_argument("--q-step", type=float, default=0.01, help="--select: the pedestal height grid, metres")

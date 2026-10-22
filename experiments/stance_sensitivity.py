@@ -51,7 +51,6 @@ from src import robot_specs  # noqa: E402
 from src.arm_kinematics import solve_ik  # noqa: E402
 from src.grasp_rules import joint_bounds, make_constraint  # noqa: E402
 from src.robot_helpers import arm_ids  # noqa: E402
-from src.neck import set_neck_pose  # noqa: E402
 from src.task_config import BEAKER_CFG, STAGING_CFG, TASK_CFG  # noqa: E402
 
 FRACS_ALL = S.FRACS
@@ -165,7 +164,6 @@ class BodyCheck:
         self.pedestal = [m.joint(jn).qposadr[0] for jn in robot_specs.PEDESTAL_SPECS["joints"]]
         self.base_z = ctx.rg["base_z"]
         self.torso = [g for g in range(m.ngeom) if col[g] and m.body(int(m.geom_bodyid[g])).name == "openarm_body_link0"]
-        set_neck_pose(m, d, robot_specs.NECK_SPECS)
 
     def place(self, stance):
         d = self.data

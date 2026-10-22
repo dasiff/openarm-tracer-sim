@@ -4,7 +4,7 @@ The robot at rest on the imported model: contacts, lean and the clearances that 
 
     MUJOCO_GL=egl python experiments/rest_contacts_test.py
 
-The robot (neck, battery, face off, both arms at the start pose, grippers open) stands on the floor of the lab scene, the base held still, for 3 s at each of two pedestal heights (raised: the model's start;
+The robot (the eagle camera's box, battery, face off, both arms at the start pose, grippers open) stands on the floor of the lab scene, the base held still, for 3 s at each of two pedestal heights (raised: the model's start;
 the staging height TASK_CFG["pedestal_q"]). Reported and checked:
   1. Contacts: only the floor with the six base spheres; nothing robot-to-robot (every other contact listed with its depth if there is one).
   2. Lean and height: the base's tilt under 0.5 degrees, its height 0.1527 m (the old rest height, within 1 mm).
@@ -53,7 +53,7 @@ def dist(m, d, ga, gb):
 
 
 def main():
-    sim = RobotSimulator(model_path=str(SCENE), cameras=None, pedestal_lift=robot_specs.PEDESTAL_SPECS, neck=True, battery=True, face=False)
+    sim = RobotSimulator(model_path=str(SCENE), cameras=None, pedestal_lift=robot_specs.PEDESTAL_SPECS, battery=True, face=False)
     m, d = sim.model, sim.data
     ped = m.actuator(robot_specs.PEDESTAL_SPECS["actuator_name"]).id
     wheels = [m.actuator("left_motor").id, m.actuator("right_motor").id]

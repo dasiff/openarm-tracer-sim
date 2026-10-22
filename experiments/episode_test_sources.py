@@ -345,12 +345,12 @@ def make_clearance_monitor(model, data, every=5):
     """Makes a test source that records the smallest distances of the arms to their surroundings, per staging phase.
 
     Every `every` ticks, for each arm's moving parts (collision geoms without link0, link1 and link2, which are the fixed shoulder), the smallest distance
-    (mujoco.mj_geomDistance, looked up to 0.3 m) to the geoms of: "bench", "hotplate+beaker", "torso" (openarm_body_link0), "pedestal", "base", "neck", "battery"
+    (mujoco.mj_geomDistance, looked up to 0.3 m) to the geoms of: "bench", "hotplate+beaker", "torso" (openarm_body_link0), "pedestal", "base", "camera" (the eagle camera's box), "battery"
     (the battery pack; left out if the model has none),
     and for "other arm" the geoms of the other arm. Negative means penetration.
 
     Args:
-        model (mujoco.MjModel): The compiled model (with the neck).
+        model (mujoco.MjModel): The compiled model (with the eagle camera's box).
         data (mujoco.MjData): The simulation data, read.
         every (int): Measure on every this many calls. Defaults to 5.
 
@@ -362,7 +362,7 @@ def make_clearance_monitor(model, data, every=5):
     col = [g for g in range(model.ngeom) if model.geom_contype[g] or model.geom_conaffinity[g]]
     groups = {"bench": [g for g in col if body(g) == "bench"], "hotplate+beaker": [g for g in col if body(g) in ("task_hotplate", "task_beaker")],
               "torso": [g for g in col if body(g) == "openarm_body_link0"], "pedestal": [g for g in col if body(g).startswith("pedestal_")],
-              "base": [g for g in col if body(g) == "base_link" or body(g).endswith(("_link", "_Link"))], "neck": [g for g in col if body(g).startswith("neck_")],
+              "base": [g for g in col if body(g) == "base_link" or body(g).endswith(("_link", "_Link"))], "camera": [g for g in col if body(g) == "eagle_cam_body"],
               "battery": [g for g in col if body(g) == robot_specs.BATTERY_SPECS["name"]]}
     groups = {k: v for k, v in groups.items() if v}
     moving = {sd: [g for g in col if body(g).startswith(f"openarm_{sd}_") and not body(g).endswith(("link0", "link1", "link2"))] for sd in ("left", "right")}

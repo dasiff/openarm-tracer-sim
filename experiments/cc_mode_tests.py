@@ -9,7 +9,7 @@ in those "old ticks" (a key window of 15 old ticks is 0.24 s): held() converts t
 a recording use n(old ticks) = the same instant in 150 Hz ticks. DT is the tick length used by the per-tick speed limit checks.
 
 K   the keys: Enter, the abort key (Delete) and the F9 take-over key are not used by any other key of the controller (the keyboard source's
-    drive / jog / pedestal / neck keys, the viewer's F2-F7 and Esc).
+    drive / jog / pedestal keys, the viewer's F2-F7 and Esc).
 A   auto / hold stage. At handoff + 100 ticks F9 (operator takes over), the operator drives the base back a little (arrow key, then SPACE),
     at handoff + 200 Enter (control returns to auto, the policy continues its stage). Enter and Delete pressed earlier, in auto mode, do nothing;
     F9 pressed in teleop mode does not hand back. With timeout_after_handoff = 5 s:
@@ -32,8 +32,7 @@ R1  restore the pedestal: F9 during ARMS, the operator holds control for 35 s (l
     the pedestal to its height, ARMS does not time out, staging completes. Control run: timeout compensation off (STAGING_FAILED). Since the staging order ARMS, PEDESTAL, DRIVE (2026-10-19)
     a pedestal move in ARMS is undone by the PEDESTAL phase anyway, so the pedestal restore itself is tested with the same move in DRIVE: restoring on (the pedestal is back at the
     handoff, re-ramped smoothly) and its control, restoring off (the pedestal stays where the operator left it).
-R2  restore the neck during NECK: F9 in NECK, the operator moves the neck, Enter: the framing is re-run, the neck goes there, staging completes. Control: restoring off (stalls, STAGING_FAILED).
-R3  restore the neck after DONE: F9 after the handoff (hold stage), the operator moves the neck, Enter: the neck goes back to the framing (at the neck speed). Control: it stays.
+(R2 and R3, the restore of the neck, are gone with the neck: M153.)
 C1  teleop start (no policy), the beaker teleported at ~3 s: time 0 is the handoff, success is checked from the start: SUCCESS, operator_assisted.
 C2  teleop start, nothing happens, operator_timeout = 5 s: TIMEOUT of kind operator after 5.0 s.
 """
@@ -150,8 +149,7 @@ def scenario_K():
     print("\nK: key map")
     from src import keyboard_source as ks
     used = {ks.key_code(k) for kk in ks.JOG_KEYS.values() for lst in kk.values() for k in lst}
-    used |= {ks.key_code(k) for k in ks.PEDESTAL_KEYS.values()} | {ks.key_code(k) for k in ks.NECK_KEYS["plus"] + ks.NECK_KEYS["minus"]}
-    used |= {ks.key_code(ks.NECK_KEYS["frame"]), ks.key_code(ks.NECK_KEYS["home"])}
+    used |= {ks.key_code(k) for k in ks.PEDESTAL_KEYS.values()}
     used |= {ks.key_code(k) for lst in ks.DRIVE_CFG["keys"].values() for k in lst}
     viewer_keys = {glfw.KEY_F2, glfw.KEY_F3, glfw.KEY_F4, glfw.KEY_F5, glfw.KEY_F6, glfw.KEY_ESCAPE}       # combined_controller / glfw_viewer hotkeys
     mine = {"F9 take over": {glfw.KEY_F9}, "Enter hand back": {glfw.KEY_ENTER, glfw.KEY_KP_ENTER}, "Delete abort": {glfw.KEY_DELETE}}
@@ -256,8 +254,6 @@ def _resume_run(model, data, trigger, keys, staging_cfg=STAGING_CFG, record=("tw
         pr["rec"]["twist"].append(np.array(ap["twist"])) if "twist" in pr["rec"] else None
         pr["rec"]["pedestal"].append(ap["pedestal"]) if "pedestal" in pr["rec"] else None
         pr["rec"]["gripper"].append(ap["gripper"]["left"]) if "gripper" in pr["rec"] else None
-        if "neck" in pr["rec"]:
-            pr["rec"]["neck"].append(np.array(list(ap["neck_targets"].values())))
         pr["phase"].append(obs["policy"]["phase"] if obs.get("policy") else None)
         if pr["T"] is None and obs.get("policy") and trigger(obs):
             pr["T"] = obs["tick"]
@@ -338,7 +334,7 @@ def _final_value(rec, s, name):
 
 def scenario_R1(model, data):
     print("\nR1: restore the pedestal. F9 in ARMS and in DRIVE, the operator has control for 35 s and raises the pedestal, Enter")
-    # Since the staging order ARMS, PEDESTAL, DRIVE, CREEP_IN, NECK (2026-10-19) the PEDESTAL phase comes after ARMS and always puts the pedestal at its height, so a pedestal move during ARMS
+    # Since the staging order ARMS, PEDESTAL, DRIVE, CREEP_IN (2026-10-19) the PEDESTAL phase comes after ARMS and always puts the pedestal at its height, so a pedestal move during ARMS
     # is undone by it whether or not the resume restores the pedestal: the pedestal restore (and its control, "restoring off") is tested with the move in DRIVE, after the PEDESTAL phase.
     # The timeout compensation (and its control) stays in ARMS (timeout 30 s, shorter than the operator's 35 s; DRIVE's is 120 s).
     import src.staging_source as ss
@@ -379,55 +375,8 @@ def scenario_R1(model, data):
         check("the DRIVE duration in the report does not include the operator's 35 s", s4["phase_durations_s"]["DRIVE"] < 30.0, f"{s4['phase_durations_s']['DRIVE']:.1f} s")
 
 
-def scenario_R2(model, data):
-    print("\nR2: restore the neck during NECK. F9 20 old ticks into NECK, the operator pans the neck (key 9), Enter at +60")
-    import src.staging_source as ss
-    runs = {}
-    for label, restore in (("restoring on", True), ("control: restoring off", False)):
-        ss.RESTORE_ON_RESUME = restore
-        try:
-            T, rec, s = _resume_run(model, data, lambda o: o["policy"]["phase"] == "NECK", {glfw.KEY_F9: [(20, 21)], glfw.KEY_9: [(30, 44)], glfw.KEY_ENTER: [(60, 61)]},
-                                    record=("twist", "neck"), end=1200)
-        finally:
-            ss.RESTORE_ON_RESUME = True
-        nk = rec["neck"]
-        runs[label] = (s, nk, T)
-        print(f"  {label}: outcome {s['outcome']}, staging error {s['staging_error']}")
-    s, nk, T = runs["restoring on"]
-    goal = np.array(list(s["neck_framing_report"]["neck_targets"].values()))
-    check("the operator moved the neck away", np.abs(nk[T + n(59)] - nk[T + n(25)]).max() > 0.1, f"{np.abs(nk[T + n(59)] - nk[T + n(25)]).max():.2f} rad")
-    check("staging completes (no STAGING_FAILED, handoff reached)", not s["staging_error"] and s["handoff_time"] is not None, f"{s['staging_error']}")
-    check("the neck ended at the (re-run) framing", np.abs(nk[T + n(600)] - goal).max() < 1e-6, f"{np.abs(nk[T + n(600)] - goal).max():.2e} rad")
-    check("at the neck speed (no tick changes a neck target by more than 1.5 rad/s * dt = 0.01 rad)", np.abs(np.diff(nk[T + n(60) - 1:T + n(600)], axis=0)).max() <= 1.5 * DT + 1e-9,
-          f"{np.abs(np.diff(nk[T + n(60) - 1:T + n(600)], axis=0)).max():.4f} rad")
-    s2 = runs["control: restoring off"][0]
-    check("control: without restoring NECK stalls and fails", s2["outcome"] == "STAGING_FAILED" and "NECK" in (s2["staging_error"] or ""), f"{s2['staging_error']}")
-
-
-def scenario_R3(model, data):
-    print("\nR3: restore the neck after DONE. F9 20 old ticks after the handoff (hold stage), the operator pans the neck, Enter at +80")
-    import src.staging_source as ss
-    runs = {}
-    for label, restore in (("restoring on", True), ("control: restoring off", False)):
-        ss.RESTORE_ON_RESUME = restore
-        try:
-            T, rec, s = _resume_run(model, data, lambda o: o["policy"]["phase"] == "DONE", {glfw.KEY_F9: [(20, 21)], glfw.KEY_9: [(30, 49)], glfw.KEY_ENTER: [(80, 81)]},
-                                    record=("twist", "neck"), end=400)
-        finally:
-            ss.RESTORE_ON_RESUME = True
-        runs[label] = (s, rec["neck"], T)
-    s, nk, T = runs["restoring on"]
-    goal = np.array(list(s["neck_framing_report"]["neck_targets"].values()))
-    away = np.abs(nk[T + n(79)] - goal).max()
-    check("the operator moved the neck away from the framing", away > 0.1, f"{away:.2f} rad")
-    check("restoring on: the neck is back at the framing", np.abs(nk[T + n(350)] - goal).max() < 1e-6, f"{np.abs(nk[T + n(350)] - goal).max():.2e} rad")
-    check("at the neck speed (<= 0.01 rad per tick)", np.abs(np.diff(nk[T + n(80) - 1:T + n(350)], axis=0)).max() <= 1.5 * DT + 1e-9, f"{np.abs(np.diff(nk[T + n(80) - 1:T + n(350)], axis=0)).max():.4f} rad")
-    s2, nk2, T2 = runs["control: restoring off"]
-    check("control: without restoring the neck stays away", np.abs(nk2[T2 + n(350)] - goal).max() > 0.1, f"{np.abs(nk2[T2 + n(350)] - goal).max():.2f} rad")
-
-
 def main():
-    which = sys.argv[1:] or ["K", "A", "B", "C1", "C2", "D", "E", "S", "G", "B2", "P", "R1", "R2", "R3"]
+    which = sys.argv[1:] or ["K", "A", "B", "C1", "C2", "D", "E", "S", "G", "B2", "P", "R1"]
     if "K" in which:
         scenario_K()
     sim = load_task(cameras=True)
@@ -452,10 +401,6 @@ def main():
         scenario_P(model, data)
     if "R1" in which:
         scenario_R1(model, data)
-    if "R2" in which:
-        scenario_R2(model, data)
-    if "R3" in which:
-        scenario_R3(model, data)
     print(f"\n{sum(results)}/{len(results)} checks passed")
     sys.exit(0 if all(results) else 1)
 

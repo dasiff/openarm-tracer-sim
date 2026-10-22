@@ -46,7 +46,6 @@ from src import face, robot_specs  # noqa: E402
 from src.cameras import CameraRig  # noqa: E402
 from src.control_loop import _headless_context  # noqa: E402
 from src.face import HEAD_GEOM, head_frame  # noqa: E402
-from src.neck import set_neck_pose  # noqa: E402
 from src.run_record import model_hash  # noqa: E402
 from src.task_beaker_hotplate import load_task, run_beaker_episode  # noqa: E402
 from src.replay import replay_run  # noqa: E402
@@ -60,7 +59,7 @@ def check(name, ok, detail=""):
 
 
 def probe_spec():
-    """The probe camera: on the neck's camera body, 45 cm in front of the face, looking at the head's centre."""
+    """The probe camera: on the eagle camera's body (fixed to the torso), 45 cm in front of the face, looking at the head's centre."""
     eagle = next(cs for cs in robot_specs.CAMERA_SPECS if cs["name"] == "eagle_cam")
     centre, quat = head_frame(eagle)
     m = np.zeros(9)
@@ -125,7 +124,6 @@ def main(args):
     for mode in ("off", "plain", "textured"):
         sim, notices = build(mode)
         m, d = sim.model, sim.data
-        set_neck_pose(m, d, robot_specs.NECK_SPECS)
         mujoco.mj_forward(m, d)
         info[mode] = {"hash": model_hash(m), "mass": m.body_mass.copy(), "inertia": m.body_inertia.copy(), "notices": notices, "present": sim.face.present,
                       "textured": sim.face.textured, "ngeom": m.ngeom}
@@ -146,7 +144,6 @@ def main(args):
         info[mode]["qpos"] = d.qpos.copy()
         mujoco.mj_resetData(m, d)
         mujoco.mj_forward(m, d)
-        set_neck_pose(m, d, robot_specs.NECK_SPECS)
         mujoco.mj_forward(m, d)
         imgs[(mode, "default")] = render_probe(sim)
         if mode == "textured":
@@ -188,7 +185,6 @@ def main(args):
     print("\n3c. the face turns to the view's camera (render time only)")
     sim, _ = build("textured")
     m, d = sim.model, sim.data
-    set_neck_pose(m, d, robot_specs.NECK_SPECS)
     mujoco.mj_forward(m, d)
     g = sim.face.geom
     rng = np.random.default_rng(0)

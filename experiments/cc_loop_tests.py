@@ -4,7 +4,6 @@ Tests of src/control_loop.py without a window (viewer=None).
 
     python experiments/cc_loop_tests.py headless [--no-cameras]   # the manual bench scenario headless; writes a CSV
     python experiments/cc_loop_tests.py hold                      # the hold rule with exclusivity on, and the control run
-    python experiments/cc_loop_tests.py neck                      # the neck: default aim, slew limit, exempt from exclusivity
 
 headless: the same scripted keys as experiments/cc_bench_scenarios.sh manual, through the keyboard source, with the
 cameras rendered over an EGL offscreen context (or skipped). The CSV is compared with the pre-refactor baseline by
@@ -49,14 +48,6 @@ MANUAL_KEYS = "12-108:UP,108-228:SPACE,240-336:LEFT,336-456:SPACE,480-624:PAGE_D
 def load(cameras):
     sim = RobotSimulator(model_path=str(PROJECT_ROOT / SCENE), cameras=robot_specs.CAMERA_SPECS if cameras else None,
                          pedestal_lift=robot_specs.PEDESTAL_SPECS)
-    scale = float(os.environ.get("CC_NECK_MASS_SCALE", "1"))
-    if scale != 1.0:                                  # experiment: how much of a difference is the neck's mass?
-        for b in range(sim.model.nbody):
-            if sim.model.body(b).name.startswith(robot_specs.NECK_SPECS["prefix"]):
-                sim.model.body_mass[b] *= scale
-                sim.model.body_inertia[b] *= scale
-        mujoco.mj_setConst(sim.model, sim.data)
-        print(f"NECK MASS SCALED by {scale}: neck mass now {sum(sim.model.body_mass[b] for b in range(sim.model.nbody) if sim.model.body(b).name.startswith('neck_')):.6f} kg")
     return sim.model, sim.data
 
 
@@ -140,50 +131,6 @@ def hold_test(exclusive):
     return res, rec, first
 
 
-def neck_test():
-    from src.neck import neck_ids
-    model, data = load(False)
-    ids = neck_ids(model, robot_specs.NECK_SPECS)
-    tick = [0]
-    pan = ids["names"].index("shoulder_pan")
-    home = np.array(robot_specs.NECK_SPECS["drive_pose"])
-
-    def script(k):
-        cmds = []
-        if n(20) <= k < n(100):
-            cmds.append({"mode": "base", "twist": (0.8, 0.0)})
-        if n(40) <= k < n(60):
-            cmds.append({"mode": "arms", "arm_targets": {"left": [0, 0, 0.6, 0, 0, 0, 0]}})       # waits for the base (exclusive)
-        if n(30) <= k < n(40):
-            cmds.append({"mode": "neck", "neck_targets": {"shoulder_pan": 0.6, "wrist_flex": -0.3}})   # while the base is moving
-        return cmds
-    rows = []
-
-    class Rec(Scripted):
-        def step(self, obs):
-            q = np.array([obs["joint_angles"][a] for a in ids["qadr"]])
-            rows.append((obs["tick"], obs["time"], q, np.array([obs["applied"]["neck_targets"][n] for n in ids["names"]]),
-                         float(np.hypot(*obs["joint_velocities"][0:2])), obs["applied"]["arm_targets"]["left"][2]))
-            return self.fn(obs["tick"])
-    sc = Rec(script)
-    spf = steps_per_frame(model)
-    cfg = {"source_hz": 1.0 / model.opt.timestep / spf, "spawn_pos": SPAWN, "tick_ref": tick, "cameras": False, "exclusive": True,
-           "routes": {k: "script" for k in ("base", "pedestal", "arms.left", "arms.right", "gripper.left", "gripper.right", "neck")},
-           "bench_frames": n(190)}
-    res = run_loop(model, data, {"script": sc.as_source()}, cfg, viewer=None)
-    t = np.array([r[1] for r in rows]); Q = np.array([r[2] for r in rows]); T = np.array([r[3] for r in rows])
-    base_speed = np.array([r[4] for r in rows]); arm_t = np.array([r[5] for r in rows])
-    print("\n=== neck test ===")
-    print(f"idle neck (ticks 0-{n(20) - 1}): drive pose {np.degrees(home).round(2)} deg; max |position - drive pose| = {np.degrees(np.abs(Q[:n(20)] - home).max()):.3f} deg; max |target - drive pose| = {np.abs(T[:n(20)] - home).max():.1e} rad")
-    dt = float(np.diff(t).mean())
-    step_max = np.abs(np.diff(T, axis=0)).max()
-    print(f"slew limit: largest per-tick target change {step_max:.4f} rad = {step_max / dt:.2f} rad/s (limit {robot_specs.NECK_SPECS['max_speed']} rad/s)")
-    i_neck = int(np.argmax(np.abs(T[:, pan] - home[pan]) > 1e-6))
-    print(f"neck command sent at tick {n(30)} (base moving at {base_speed[n(30)]:.2f} m/s, arms command waiting since tick {n(40)}): neck target started moving at tick {i_neck}")
-    print(f"  at tick {n(50)} (arms command still held, base speed {base_speed[n(50)]:.2f} m/s): neck pan target {np.degrees(T[n(50), pan]):.1f} deg, position {np.degrees(Q[n(50), pan]):.1f} deg; left joint-3 arm target {arm_t[n(50)]:.2f} (unchanged = held)")
-    print(f"  final neck position (deg): {np.degrees(Q[-1]).round(1)} (commanded pan 34.4, wrist -17.2); hold log: {[ (round(h['t_start'],2), round(h['duration'],2)) for h in res['hold_log']]}")
-
-
 if __name__ == "__main__":
     which = sys.argv[1] if len(sys.argv) > 1 else "headless"
     if which == "headless":
@@ -192,5 +139,3 @@ if __name__ == "__main__":
     elif which == "hold":
         hold_test(True)
         hold_test(False)
-    elif which == "neck":
-        neck_test()

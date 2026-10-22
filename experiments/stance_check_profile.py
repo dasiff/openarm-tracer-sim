@@ -39,7 +39,6 @@ import stance_from_map as SFM  # noqa: E402
 import stance_sensitivity as SS  # noqa: E402
 import stance_two_points as S2  # noqa: E402
 import src.arm_collision as AC  # noqa: E402
-import src.neck_framing as NF  # noqa: E402
 import src.stance_checks as SC  # noqa: E402
 from src.stance_checks import StanceChecks  # noqa: E402
 from src.task_beaker_hotplate import apply_task_poses  # noqa: E402
@@ -85,14 +84,8 @@ class Instr:
 
 def instrument(ins, chk, R):
     ctx = R.ctx
-    for n in ("home_clearance", "beaker_on_hotplate_clearance", "neck_spread", "occlusion", "framing_slack", "place"):
+    for n in ("home_clearance", "beaker_on_hotplate_clearance", "view_margin", "occlusion", "place"):
         ins.wrap(chk, n, f"check.{n}")
-    ins.wrap(SC, "frame_points", "neck.frame_points (one neck framing solve)")
-    ins.wrap(SC, "best_margin", "neck.best_margin (the framing slack search)")
-    ins.wrap(NF, "_evaluate", "neck._evaluate (one cost evaluation of the framing search)")
-    ins.wrap(NF._Scratch, "__init__", "neck._Scratch.__init__ (a framing workspace: a new MjData each time)")
-    ins.wrap(NF._Scratch, "pose", "neck._Scratch.pose (best_margin's forward kinematics)")
-    ins.wrap(NF._Scratch, "contacts", "neck._Scratch.contacts (neck collision check)")
     ins.wrap(mujoco, "mj_geomDistance", "mujoco.mj_geomDistance (one geom pair distance)")
     ins.wrap(mujoco.Renderer, "render", "render (one segmentation render)")
     ins.wrap(mujoco.Renderer, "update_scene", "render.update_scene")

@@ -11,7 +11,7 @@ reads the ctrl of left joint 3 back from the recording.
 2. "hold", same source: the ctrl steps to the target on the first physics step of the tick and stays.
 3. "interpolate", source at 150 Hz (the tick rate, no "hz"): the ramp is the 5 physics steps of one tick.
 4. a second command in the middle of a ramp restarts the ramp from the current ctrl value.
-5. the gripper is interpolated too (same ramp as the arm), and the pedestal and the neck are not (their ctrl is the target at once).
+5. the gripper is interpolated too (same ramp as the arm), and the pedestal is not (its ctrl is the target at once).
 6. the replay of a recording with 30 Hz ramps is bit-identical.
 7. src/sequential_policy.py: a stage with "hz" 30 is stepped only on every 5th tick and the policy's hz() reports it.
 """
@@ -61,7 +61,7 @@ def run(script_sources, mode, frames, out, owners="script"):
         _sim["sim"] = RobotSimulator(model_path=str(PROJECT_ROOT / SCENE), cameras=robot_specs.CAMERA_SPECS, pedestal_lift=robot_specs.PEDESTAL_SPECS)
     model, data = _sim["sim"].model, _sim["sim"].data
     mujoco.mj_resetData(model, data)
-    routes = {k: owners for k in ("base", "pedestal", "arms.left", "arms.right", "gripper.left", "gripper.right", "neck")}
+    routes = {k: owners for k in ("base", "pedestal", "arms.left", "arms.right", "gripper.left", "gripper.right")}
     cfg = {"spawn_pos": SPAWN, "cameras": False, "target_mode": mode, "routes": routes, "bench_frames": frames, "record_run": str(out),
            "record_meta": {"model": {"kind": "scene", "scene": SCENE}}}
     run_loop(model, data, script_sources, cfg, viewer=None)
@@ -127,8 +127,8 @@ def ramp_case(tmp):
     check("the first ramp was 15 of 25 steps along when the second command came", abs(at23 - (start + (0.5 - start) * 15 / 25)) < 1e-12, f"{at23:.4f}")
     check("the second ramp (5 steps) starts from that value and ends at its target", np.allclose(c[23 * STEPS:23 * STEPS + 5], at23 + (0.1 - at23) * np.arange(1, 6) / 5.0, atol=1e-12, rtol=0) and c[23 * STEPS + 4] == 0.1)
 
-    print("\n5. the gripper is interpolated; the pedestal and the neck are not")
-    gr = {20: {"mode": "arms", "gripper": {"left": 0.02}}, 30: {"mode": "pedestal", "height": 0.30}, 40: {"mode": "neck", "neck_targets": {"shoulder_pan": 0.02}}}
+    print("\n5. the gripper is interpolated; the pedestal is not")
+    gr = {20: {"mode": "arms", "gripper": {"left": 0.02}}, 30: {"mode": "pedestal", "height": 0.30}}
     rec, model = run({"script": scripted(gr, hz=30)}, "interpolate", 80, tmp / "misc")
     f1 = model.actuator("left_gripper_ctrl").id
     cg = rec["ctrl"][:, :, f1].reshape(-1)
@@ -136,13 +136,6 @@ def ramp_case(tmp):
     check("the gripper ctrl ramps over 25 steps", np.allclose(cg[s0:s0 + 25], g0 + (0.02 - g0) * np.arange(1, 26) / 25.0, atol=1e-12, rtol=0))
     cp = rec["ctrl"][:, :, model.actuator(robot_specs.PEDESTAL_SPECS["actuator_name"]).id].reshape(-1)
     check("the pedestal ctrl is the target on the first step", cp[30 * STEPS] == 0.30 and cp[30 * STEPS - 1] != 0.30)
-    from src.neck import neck_ids
-    nk = neck_ids(model, robot_specs.NECK_SPECS)
-    cn = rec["ctrl"][:, :, nk["act"][nk["names"].index("shoulder_pan")]].reshape(-1)
-    slew = robot_specs.NECK_SPECS["max_speed"] / 150.0                      # the loop moves the neck target at most this much per tick
-    d = np.abs(np.diff(cn[40 * STEPS - 1:46 * STEPS]))
-    check("the neck ctrl is the loop's slewed target: it changes only at tick starts, by the slew step (no ramp over the source's period)",
-          np.isclose(cn[40 * STEPS] - cn[40 * STEPS - 1], 0.02 - cn[40 * STEPS - 1] if abs(0.02 - cn[40 * STEPS - 1]) <= slew else slew) and np.count_nonzero(d[1:5]) == 0, f"first step {cn[40 * STEPS] - cn[40 * STEPS - 1]:+.5f} (slew {slew:.5f})")
 
     print("\n6. the replay of a recording with 30 Hz ramps is bit-identical")
     _sim.clear()                                          # the replay builds its own model

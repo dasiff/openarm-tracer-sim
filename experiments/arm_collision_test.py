@@ -4,9 +4,9 @@ Tests of src/arm_collision.py (the collision filter for one arm's joint vectors,
 
     MUJOCO_GL=egl python experiments/arm_collision_test.py
 
-1. The geom selection: only the arm under test is moving; the other arm, the torso, the three pedestal sections, the base, the battery and the neck are switched on; the scene (bench, objects, floor) is not.
-2. Known poses: the home pose and the hanging rest pose of each arm do not collide (the other arm at home, the pedestal at its lowest, the neck at its drive pose).
-3. Known collisions, made by IK of the hand's origin to a point inside the part: inside the torso, at the other hand, inside the neck's lower arm; and the battery (moved to the home hand's place in a copy of the model: the home pose is
+1. The geom selection: only the arm under test is moving; the other arm, the torso, the three pedestal sections, the base, the battery and the eagle camera's box are switched on; the scene (bench, objects, floor) is not.
+2. Known poses: the home pose and the hanging rest pose of each arm do not collide (the other arm at home, the pedestal at its lowest).
+3. Known collisions, made by IK of the hand's origin to a point inside the part: inside the torso, at the other hand, inside the eagle camera's box (fixed to the torso, M153, M160); and the battery (moved to the home hand's place in a copy of the model: the home pose is
    then flagged, and the unmodified model does not flag it). The margin is monotonic: a larger margin flags a superset.
 4. The same answers as the full model: on 300 random poses the filter equals the contacts of the full, unfiltered model restricted to the same geoms.
 5. The cost per check.
@@ -30,7 +30,6 @@ from src import robot_specs  # noqa: E402
 from src.arm_collision import ArmCollisionChecker  # noqa: E402
 from src.arm_kinematics import arm_chain, batch_fk, position_constraint, shoulder_origin, solve_ik  # noqa: E402
 from src.grasp_rules import joint_bounds  # noqa: E402
-from src.neck import set_neck_pose  # noqa: E402
 from src.robot_helpers import arm_ids  # noqa: E402
 from src.task_beaker_hotplate import home_targets, load_task  # noqa: E402
 from src.gripper_geometry import grasp_cfg  # noqa: E402
@@ -59,9 +58,9 @@ def main():
         static = {body(g) for g in np.nonzero(c.active & ~c.moving)[0]}
         other = "right" if sd == "left" else "left"
         check(f"{sd}: the moving geoms are the {sd} arm's links 1 to 7, hand and fingers only", moving and all(n.startswith(f"openarm_{sd}_") and not n.endswith("link0") for n in moving), f"{len(moving)} bodies")
-        check(f"{sd}: the other arm, the torso, the pedestal, the base, the battery and the neck are switched on",
+        check(f"{sd}: the other arm, the torso, the pedestal, the base, the battery and the camera box are switched on",
               any(n.startswith(f"openarm_{other}_") for n in static) and "openarm_body_link0" in static and {"pedestal_base", "pedestal_top"} <= static
-              and "base_link" in static and "battery" in static and any(n.startswith("neck_") for n in static), f"static bodies {sorted(static)[:4]}...")
+              and "base_link" in static and "battery" in static and "eagle_cam_body" in static, f"static bodies {sorted(static)[:4]}...")
         names_on = {body(g) for g in np.nonzero(c.active)[0]}
         check(f"{sd}: the scene (bench, hotplate, beaker, floor) is switched off", not (names_on & {"bench", "task_hotplate", "task_beaker", "world"}))
 
@@ -81,9 +80,9 @@ def main():
     hand_origin = np.array([0.0, 0.0, -0.08])
     right_hand, _ = batch_fk(arm_chain(m, "right"), np.array(home["right"])[None], hand_origin)
     ckl = ck["left"]
-    neck_geom = [g for g in np.nonzero(ckl.active)[0] if body(g) == "neck_lower_arm"][0]
+    cam_geom = [g for g in np.nonzero(ckl.active)[0] if body(g) == "eagle_cam_body"][0]
     torso_c = ckl.data.xpos[m.body("openarm_body_link0").id]
-    probes = {"inside the torso": np.array([0.0, 0.0, 0.55]), "at the right hand": right_hand[0], "inside the neck's lower arm": ckl.data.geom_xpos[neck_geom] - torso_c}
+    probes = {"inside the torso": np.array([0.0, 0.0, 0.55]), "at the right hand": right_hand[0], "inside the camera box": ckl.data.geom_xpos[cam_geom] - torso_c}
     for name, tgt in probes.items():
         Q, ok, _ = solve_ik(chain, rng.uniform(lo, hi, (200, 7)), lo, hi, position_constraint(np.tile(tgt, (200, 1)), 1e-3), hand_origin, 80)
         hit = ckl.check(Q[ok]) if ok.any() else np.zeros(0, bool)
@@ -114,7 +113,6 @@ def main():
     for sd in ("left", "right"):
         for j_ in arm_ids(m, sd)["finger_jnt"]:
             full.qpos[m.jnt_qposadr[j_]] = 0.044
-    set_neck_pose(m, full, robot_specs.NECK_SPECS)
     qadr = arm_ids(m, "left")["qadr"]
     Q = rng.uniform(lo, hi, (300, 7))
     ref = np.zeros(300, bool)

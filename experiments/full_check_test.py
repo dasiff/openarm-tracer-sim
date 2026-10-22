@@ -72,7 +72,7 @@ def main():
     tA = time.perf_counter() - t0
     check("the stance of TASK_CFG passes the full check", rA["ok"], f"{tA:.1f} s, {rA['seconds']}")
     check("all 9 stances of the error budget were solved, no collision, none failed", len(rA["ik"]) == 9 and all(e["ok"] for e in rA["ik"]), f"{[e['stance'] for e in rA['ik']]}")
-    check("three pedestal heights were checked (the middle, +2 cm, -2 cm) and each passed", [round(h["q"], 3) for h in rA["heights"]] == [0.155, 0.175, 0.135] and all(h.get("framing_slack", 0) >= 0.10 for h in rA["heights"]))
+    check("three pedestal heights were checked (the middle, +2 cm, -2 cm) and each passed", [round(h["q"], 3) for h in rA["heights"]] == [0.155, 0.175, 0.135] and all(h.get("view_margin", 0) >= 0.10 for h in rA["heights"]))
     t0 = time.perf_counter()
     rB = fc.check((0.855, 0.925, math.radians(-90.0), 0.12), pts)
     check("a candidate that fails the cheap checks fails fast with the reason", not rB["ok"] and rB["failed"] == ["home_clearance"] and time.perf_counter() - t0 < 1.5, f"{time.perf_counter() - t0:.2f} s: {rB['reason'][:90]}")
@@ -116,14 +116,26 @@ def main():
     fc.set_objects([])
     info0 = fc._solve_stance(A, pts, None)
     check("the same IK path check without the object solves every point", info0["ok"])
-    occluder = {"id": "u2", "outline": [[0.86, 0.72], [0.93, 0.72], [0.93, 0.79], [0.86, 0.79]], "height_range": (1.18, 1.34)}      # above the hand's reach, on the camera's line to the beaker
-    ns = fc.chk.neck_spread(A, n=1)
-    oc0 = fc.chk.occlusion(A, ns["targets"])
+    fc.chk.place(A)
+    cam = fc.chk.d.cam_xpos[fc.model.camera("eagle_cam").id].copy()
+    bk = np.array(pts[0]["p"])                                                      # a point of the grasp band at the beaker
+    c = cam + 0.6 * (bk - cam)                                                      # on the camera's line to the beaker, 60 % of the way
+    occluder = {"id": "u2", "outline": [[c[0] - 0.04, c[1] - 0.04], [c[0] + 0.04, c[1] - 0.04], [c[0] + 0.04, c[1] + 0.04], [c[0] - 0.04, c[1] + 0.04]], "height_range": (c[2] - 0.08, c[2] + 0.08)}
+    oc0 = fc.chk.occlusion(A)
     fc.set_objects([occluder])
-    oc1 = fc.chk.occlusion(A, ns["targets"])
+    oc1 = fc.chk.occlusion(A)
     fc.set_objects([])
     check("the occlusion check sees an object between the camera and the beaker (anything that hides a target counts, R2i)", oc1["beaker_hidden_frac"] > oc0["beaker_hidden_frac"] + 0.05,
           f"beaker hidden {100 * oc0['beaker_hidden_frac']:.1f} % without, {100 * oc1['beaker_hidden_frac']:.1f} % with the object")
+    # the fixed camera's collision box (A3, M160): the arm's collision filter treats it as a static obstacle, and a path that needs the hand inside it fails the full check
+    ck = fc._checker(A[3])
+    box_on = any(fc.model.body(int(fc.model.geom_bodyid[g])).name == "eagle_cam_body" for g in np.nonzero(ck.active & ~ck.moving)[0])
+    box_c = fc.chk.d.geom_xpos[fc.model.geom("eagle_cam_body_box").id].copy()
+    pt_in_box = [{"p": box_c.tolist(), "arm": "left", "bin": None, "path": "grasp"}]
+    r_box = fc.check(A, pt_in_box)
+    check("the camera box is a static obstacle of the arm's collision tests, and a task point inside it fails the full check (the hand cannot be there without touching it)",
+          box_on and not r_box["ok"] and "ik" in r_box["failed"], f"{r_box['failed']} {r_box['reason'][:100]}")
+    check("the camera box is part of the occluders' reference too: with the robot invisible the box is gone (it is under base_link)", fc.chk.meter is not None)
     rr = fc.check(A, pts, objects=[], source_data=None)
     check("with the objects removed again the answer is the first one (memory)", rr["cached"] and rr["ok"])
 

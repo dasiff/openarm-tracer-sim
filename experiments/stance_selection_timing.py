@@ -121,7 +121,7 @@ def main(args):
     print("\nfull check on one candidate")
     chk = StanceChecks(m, data, rg["base_z"])
     T = Timer()
-    for name in ("home_clearance", "beaker_on_hotplate_clearance", "neck_spread", "occlusion", "framing_slack"):
+    for name in ("home_clearance", "beaker_on_hotplate_clearance", "view_margin", "occlusion"):
         T.wrap(chk, name)
     T.wrap(R, "evaluate", "ik_verification")
     heading = math.radians(-90.0)

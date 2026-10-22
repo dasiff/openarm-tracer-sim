@@ -91,10 +91,6 @@ def show(summary, label):
         for c in lst:
             print(f"contact in {ph}: {c['pair'][0]} - {c['pair'][1]}, sim t {c['first_s']:.2f}..{c['last_s']:.2f} s ({c['ticks']} ticks)")
     print("holds logged:", [(round(h["t_start"], 2), h["blocked_by"], h["waiting"], round(h["duration"], 2)) for h in s["holds"]] or "none")
-    r = s["neck_framing_report"]
-    if r:
-        print(f"neck framing at HANDOFF: fits={r['fits']}, worst margin {100 * r['worst_margin']:.1f}%, aim error {r['aim_error_deg']:.2f} deg, contacts {r['contacts'] or 'none'}, "
-              f"neck targets (deg) { {k: round(v * 57.29578, 1) for k, v in r['neck_targets'].items()} }")
     print("success check:", {k: ('ok' if v['ok'] else 'NOT') for k, v in (s["success_check"] or {}).items()})
     print(f"wall clock: {s['wall_seconds']:.1f} s")
 

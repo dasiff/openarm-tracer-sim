@@ -12,7 +12,7 @@ Checks
   1. The load the lift carries (mass above the joint) and the static sag it gives at the servo's kp.
   2. For each setpoint: the joint gets within 2 mm of the command, holds it within 1.5 mm for 3 s, the torso stands 0.3048 + command above the pedestal base (within 2 mm), and the actuator's
      force at the end of the hold equals the weight it carries (within 15 %; at the collapsed limit: at most that weight, the joint limit may take part of it). Gravity compensation carries
-     the arms, so the load is the pedestal's moving part, the torso, the neck, the battery-free upper body: about 47 kg.
+     the arms, so the load is the pedestal's moving part, the torso, the camera box, the battery-free upper body: about 47 kg.
   3. No contact involves a pedestal geom at any time (the fixed base, the moving plate), so nothing but the joint limit stops the lift.
   4. The base does not lean: its tilt stays under 1 degree at every setpoint.
 Prints the shoulder height above the floor at each setpoint, the workbench top and the straight-arm reach (information, no check).

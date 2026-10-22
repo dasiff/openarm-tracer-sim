@@ -27,7 +27,6 @@ import mujoco  # noqa: E402
 import numpy as np  # noqa: E402
 
 import src.full_check as FCM  # noqa: E402
-import src.neck_framing as NF  # noqa: E402
 import src.stance_checks as SC  # noqa: E402
 from src.full_check import FullCheck, task_points  # noqa: E402
 from src.task_config import TASK_CFG  # noqa: E402
@@ -65,9 +64,8 @@ class Instr:
 
 
 def instrument(ins, fc):
-    ins.wrap(SC, "frame_points", "neck solves (frame_points)")
-    ins.wrap(SC, "best_margin", "framing slack searches (best_margin)")
-    ins.wrap(NF, "_evaluate", "neck cost evaluations")
+    ins.wrap(SC.StanceChecks, "view_margin", "fixed-view margin checks")
+    ins.wrap(SC.StanceChecks, "occlusion", "occlusion checks")
     ins.wrap(mujoco.Renderer, "render", "renders")
     ins.wrap(mujoco, "mj_geomDistance", "geom distance calls")
     ins.wrap(FCM, "solve_ik", "IK batches (solve_ik)", lambda a, k, r: {"starts": int(len(a[1])), "iterations": int(np.sum(r[2])), "converged": int(np.sum(r[1]))})

@@ -6,7 +6,7 @@ The eagle camera's placeholder mount (design plan 14.1, decisions-log M161): a s
 
 At the TASK_CFG stance and pedestal command (TASK_CFG["pedestal_q"]), with both arms at the zombie pose and the fingers open, the camera faces straight forward (no roll) and every candidate is judged by:
   1. both hands (tool point, hand origin, finger tips) and the beaker's and the hotplate's corners (src/task_beaker_hotplate.view_points) inside the image with at least 10 % of the image width and
-     height to every edge (STANCE_REQUIREMENTS["framing_min_slack"]);
+     height to every edge (STANCE_REQUIREMENTS["view_min_margin"]);
   2. the robot hides none of the beaker and at most 20 % of the hotplate (a segmentation render, src/stance_checks.OcclusionMeter, STANCE_REQUIREMENTS["occlusion_max_hidden"]);
   3. the camera's collision box is at least 5 mm from everything at the zombie pose (the torso link it is mounted on excepted).
 Among the candidates that pass everything the one with the largest smallest margin wins. If none does, the closest candidate and what fails are reported and the script exits with 1.
@@ -31,6 +31,7 @@ import mujoco  # noqa: E402
 import numpy as np  # noqa: E402
 
 from src import robot_specs  # noqa: E402
+from src.eagle_view import view_margins  # noqa: E402
 from src.robot_helpers import arm_ids  # noqa: E402
 from src.stance_checks import OcclusionMeter  # noqa: E402
 from src.task_beaker_hotplate import view_points, home_targets, load_task, spawn_and_settle, yaw_to_quat  # noqa: E402
@@ -67,18 +68,7 @@ def set_mount(model, data, pos, pitch_deg):
     mujoco.mj_forward(model, data)
 
 
-def margins(model, data, pts):
-    """Margin of each point to the nearest image edge (fraction of the image; -1 if closer than 5 cm to the camera): the camera looks along -z of its own frame."""
-    c = model.camera("eagle_cam").id
-    pos, R = data.cam_xpos[c], data.cam_xmat[c].reshape(3, 3)
-    W, H = model.cam_resolution[c]
-    names = list(pts)
-    pc = (np.array([pts[n] for n in names]) - pos) @ R
-    depth = -pc[:, 2]
-    th = math.tan(math.radians(float(model.cam_fovy[c])) / 2)
-    u, v = pc[:, 0] / np.maximum(depth, 1e-6) / (th * W / H), pc[:, 1] / np.maximum(depth, 1e-6) / th
-    m = np.where(depth < 0.05, -1.0, np.minimum((1 - np.abs(u)) / 2, (1 - np.abs(v)) / 2))
-    return {n: float(m[i]) for i, n in enumerate(names)}
+margins = view_margins                                   # src/eagle_view.py: the one projection every camera check uses
 
 
 def box_clearance(model, data, others):
@@ -106,7 +96,7 @@ def main(out):
               and int(model.geom_type[g]) != int(mujoco.mjtGeom.mjGEOM_PLANE)]
     meter = OcclusionMeter(model)
     lim = STANCE_REQUIREMENTS["occlusion_max_hidden"]
-    need = STANCE_REQUIREMENTS["framing_min_slack"]
+    need = STANCE_REQUIREMENTS["view_min_margin"]
     rows = []
     for dx, dz, pitch in itertools.product(DX, DZ, PITCHES):
         pos = base_pos + np.array([dx, 0.0, dz])

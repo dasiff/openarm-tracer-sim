@@ -487,3 +487,24 @@ FULLCHECK_CFG = {
     "object_slots": 6,                      # count: boxes of the private model that stand for unknown objects on the table (more objects than this make the check refuse; row M147 PENDING David)
     "checkers_kept": 3,                     # count: arm collision checkers kept (one per pedestal height, a model copy each) (row M136: memory)
 }
+
+# Navigation core (src/nav_*.py; overnight queue stage 2; navigation proposal docs/reports/20261021_2121_navigation_design.md). Names follow Nav2 where an equivalent exists (proposal section 11).
+# The starting values that David did not set himself are in row M148 ([PENDING David]).
+NAV_CFG = {
+    "cell": 0.05,                          # m: the planning grid's cell edge (Nav2 `resolution`); fixed 5 cm, 2.5 cm only if the one-heading gap test shows rejections the exact check would accept (row M053)
+    "min_block_height": 0.01,              # m: an obstacle lower than this does not block (Nav2 `min_obstacle_height`); a placeholder until the hardware team says what the Tracer can drive over (row M054)
+    "inflation_radius_extra": 0.30,        # m: the inflation reaches this far beyond the inscribed radius (Nav2 `inflation_radius` = inscribed radius + this) [row M148 PENDING David: start value of the proposal]
+    "cost_scaling_factor": 3.0,            # 1/m: how fast the inflation cost falls with the distance (Nav2 `cost_scaling_factor`; Nav2's default 10 is for a small robot) [row M148 PENDING David]
+    "cost_travel_multiplier": 2.0,         # dimensionless: how much the A* step cost grows with the inflation cost (Smac 2D `cost_travel_multiplier`) [row M148 PENDING David]
+    "track_tol": 0.05,                     # m: the footprint is grown by this when the path is verified, and a cross-track error above it stops and replans (proposal N7, N8) [row M148 PENDING David]
+    "lead_in_m": 0.8,                      # m: the path ends with a straight lead-in this long along the stance heading (row M129)
+    "lead_in_min_m": 0.4,                  # m: if the lead-in does not fit, shorter ones are tried down to this before the checked in-place turn (row M129)
+    "lead_out_m": 0.3,                     # m: the path starts straight along the robot's heading for this long (row M129)
+    "w_data": 0.2, "w_smooth": 0.3,        # the iterative smoother's weights: stay near the A* path, smoothness (Nav2 SimpleSmoother `w_data`, `w_smooth`) [row M148 PENDING David]
+    "w_obs": 0.3,                          # the smoother's extra term: push away from obstacles (not in Nav2; David's third term of N6) [row M148 PENDING David]
+    "smooth_max_its": 400, "smooth_tol_m": 0.001,   # the smoother stops after this many iterations or when no point moves more than this (m) [row M148 PENDING David]
+    "spline_s_per_point": 1.0e-4,          # m^2 per point: the B-spline's smoothing (splprep `s` = this * number of points: the fit stays within about 1 cm of the smoothed points) [row M148 PENDING David]
+    "verify_step_m": 0.025, "verify_heading_deg": 2.0,   # the dense verification samples the spline every 2.5 cm of arc length and at every 2 degrees of heading change (proposal N7) [row M148 PENDING David]
+    "turn_in_place_deg": 90.0,             # degrees: when the path's first (last) stretch leaves the robot's (goal's) heading by more than this, the lead-out (lead-in) is dropped for a checked in-place turn, so the route has no cusp (Nav2's rotate-to-heading) [row M148 PENDING David]
+    "max_replans": 3,                      # count: replans per approach after a drift or a new obstacle, then the operator (row M057)
+}

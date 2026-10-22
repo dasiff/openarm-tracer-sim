@@ -181,9 +181,15 @@ def make_scripted_manipulation(model, data, world, side, home_q, task_cfg=TASK_C
         z_carry = max(hp[2] + frac * height + cfg["carry_gap_m"], hg + 0.05)
         stand = b[:2] - a[:2] * cfg["standoff_m"]
         S["ctx"]["z_rise_ref"] = float(b[2])
-        return [move("OVER", [*stand, z_clear], cfg["speed_m_s"], R), move("DOWN", [*stand, hg], cfg["slow_speed_m_s"], R),
-                move("IN", [b[0], b[1], hg], cfg["slow_speed_m_s"], R), {"kind": "close", "name": "CLOSE"},
-                move("UP", [b[0], b[1], z_carry], cfg["slow_speed_m_s"], R), {"kind": "held", "name": "CHECK"}]
+        steps = [move("OVER", [*stand, z_clear], cfg["speed_m_s"], R), move("DOWN", [*stand, hg], cfg["slow_speed_m_s"], R),
+                 move("IN", [b[0], b[1], hg], cfg["slow_speed_m_s"], R), {"kind": "close", "name": "CLOSE"},
+                 move("UP", [b[0], b[1], z_carry], cfg["slow_speed_m_s"], R), {"kind": "held", "name": "CHECK"}]
+        if S["ctx"].get("end_at_zombie"):                    # M074 (bench rectangle selection): the next step is a navigation step that moves, so the arm goes home holding the beaker, as the recovery does
+            back = np.array([b[0], b[1], z_carry])
+            back[:2] -= a[:2] * cfg["retreat_m"]
+            hp_pose, hR = home_pad_pose()
+            steps += [move("BACK", back, cfg["slow_speed_m_s"], R), move("HOME", hp_pose, cfg["speed_m_s"], hR), {"kind": "joints", "name": "HOME"}]
+        return steps
 
     def plan_place(obj, dest):
         """The waypoints of a place from where the arm and the held object are now."""
@@ -209,6 +215,7 @@ def make_scripted_manipulation(model, data, world, side, home_q, task_cfg=TASK_C
         S["ctx"]["task_text"] = {"group_description": segment.get("group_description"), "group_completion_criteria": segment.get("group_completion_criteria")}
         ids = segment.get("grounded") or {}
         S["ctx"]["obj"] = ids.get("manipulated")
+        S["ctx"]["end_at_zombie"] = bool(segment.get("end_at_zombie"))
         arm.reset(data)
         C["p"], C["r"] = np.zeros(3), np.zeros(3)
         try:

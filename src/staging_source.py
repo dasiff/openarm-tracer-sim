@@ -62,7 +62,7 @@ from src.rate_limit import min_jerk, rate_limit
 from src.neck import neck_ids
 from src.neck_framing import frame_points
 from src.task_beaker_hotplate import arm_ids, framing_points, home_targets, wrap
-from src.task_config import STAGING_CFG, TASK_CFG
+from src.task_config import NAV_CFG, STAGING_CFG, TASK_CFG
 
 
 def _slew(cur, target, up, down, dt):
@@ -388,7 +388,7 @@ def staging_approach_xy(task_cfg=TASK_CFG):
     return (gx - back * math.cos(task_cfg["staging_yaw"]), gy - back * math.sin(task_cfg["staging_yaw"]))
 
 
-def make_staging_source(model, data, task_cfg=TASK_CFG, cfg=STAGING_CFG, points_fn=framing_points):
+def make_staging_source(model, data, task_cfg=TASK_CFG, cfg=STAGING_CFG, points_fn=framing_points, nav_cfg=NAV_CFG):
     """Makes the staging source: it drives the robot from the spawn state to the HANDOFF state, phase by phase.
 
     The phases are ARMS, PEDESTAL, DRIVE, (CREEP_IN,) NECK and DONE (see the module docstring). The source keeps
@@ -407,6 +407,8 @@ def make_staging_source(model, data, task_cfg=TASK_CFG, cfg=STAGING_CFG, points_
             Defaults to TASK_CFG.
         cfg (dict): The staging configuration (STAGING_CFG): the speeds, ramps, tolerances, settle values and timeouts of the phases.
             Defaults to STAGING_CFG.
+        nav_cfg (dict): NAV_CFG. With nav_cfg["follow"] True the DRIVE phase plans a route with the navigation core and drives it with the follower (src/nav_follower.py), then today's go-to-pose controller
+            settles the arrival; False (the default) is today's scripted DRIVE, unchanged. Defaults to NAV_CFG.
         points_fn (callable): points_fn(model, data, task_cfg) -> {name: world-frame (x, y, z) point in metres}, the points the neck
             camera must keep in view. Defaults to framing_points (src/task_beaker_hotplate.py).
 
@@ -462,6 +464,32 @@ def make_staging_source(model, data, task_cfg=TASK_CFG, cfg=STAGING_CFG, points_
                                  cfg["drive_max_reapproach"])
     creep_ctl = _creep_controller(cfg, goal, frac * pos_tol, frac * yaw_tol, pos_tol, yaw_tol, cfg["creep_in_max_pos"], cfg["correction_arms_max_yaw"])
     drive_ctl["started"] = False
+    nav = {"ctl": None, "build_s": 0.0}
+
+    def nav_build():
+        """Builds the navigation grid from the model (the robot's footprint at the drive pedestal height with the arms at home, the static geoms as obstacles) and the route follower. Imports lazily."""
+        import time
+        from src.nav_footprint import obstacles_from_model, robot_footprint
+        from src.nav_follower import route_controller
+        from src.nav_grid import NavGrid
+        from src.nav_smooth import FineRaster, plan_route
+        t0 = time.time()
+        fp = robot_footprint(model, data, task_cfg["pedestal_q"])
+        obstacles = obstacles_from_model(model, data)
+        xs = np.concatenate([np.asarray(o["outline"])[:, 0] for o in obstacles])
+        ys = np.concatenate([np.asarray(o["outline"])[:, 1] for o in obstacles])
+        bounds = (math.floor(xs.min()) - 0.5, math.ceil(xs.max()) + 0.5, math.floor(ys.min()) - 0.5, math.ceil(ys.max()) + 0.5)
+        grid = NavGrid(fp["polygon"], nav_cfg, bounds, fp["h_top"])
+        grid.rebuild(obstacles)
+        fine = FineRaster(obstacles, grid.origin, (bounds[1] - bounds[0], bounds[3] - bounds[2]), fp["polygon"], grid.blocks_floor)
+
+        def clearance_at(x, y):
+            ix, iy = grid.cell_of((x, y))
+            ix, iy = min(max(ix, 0), grid.shape[1] - 1), min(max(iy, 0), grid.shape[0] - 1)
+            return float(grid.dist[iy, ix] - grid.r_in)
+        nav["ctl"] = route_controller(nav_cfg, lambda x, y, yaw: plan_route(grid, fine, (x, y, yaw), goal0, nav_cfg), drive_ctl, clearance_at, max_ang=nav_cfg["rotate_to_heading_angular_vel"])
+        nav["build_s"] = time.time() - t0
+        nav["footprint"] = {"r_in": fp["r_in"], "r_out": fp["r_out"], "h_top": fp["h_top"]}
 
     # Clearances to everything in the scene (the walls, the bench, the furniture, the hotplate: every collidable geom that is neither part of the robot nor an object with a free
     # joint, the floor plane excluded), watched while the arms move and while the robot drives. Pairs farther apart than the look-up distance are skipped by their bounding spheres.
@@ -637,11 +665,20 @@ def make_staging_source(model, data, task_cfg=TASK_CFG, cfg=STAGING_CFG, points_
         Returns:
             list: The base command from the controller (empty when it failed).
         """
-        if not drive_ctl["started"]:
+        ctl = drive_ctl
+        if nav_cfg["follow"]:
+            if nav["ctl"] is None:
+                nav_build()
+                nav["ctl"]["reset"](*obs["base_pose"])
+            ctl = nav["ctl"]
+        elif not drive_ctl["started"]:
             drive_ctl["started"] = True
             drive_ctl["reset"](*obs["base_pose"])
-        cmds, status = drive_ctl["step"](obs, t, dt)
-        S = drive_ctl["S"]
+        cmds, status = ctl["step"](obs, t, dt)
+        S = ctl["S"]
+        if nav_cfg["follow"]:
+            state["nav"] = {"routes": S["routes"], "replans": S["replans"], "cross_track_max_mm": S["cross_track_max"] * 1000, "plan_seconds": S["plan_seconds"], "build_seconds": nav["build_s"],
+                            "footprint": nav.get("footprint"), "fail_kind": S["fail_kind"], "max_curvature_used": S.get("max_curvature_used", 0.0)}
         state["first_turn_deg"], state["final_turn_deg"], state["reapproaches"] = S["first_turn"], S["final_turn"], S["reapproach"]
         if status == "failed":
             state["arrival"] = {"pos_err": math.hypot(px - obs["base_pose"][0], py - obs["base_pose"][1]),
@@ -963,7 +1000,8 @@ def make_staging_source(model, data, task_cfg=TASK_CFG, cfg=STAGING_CFG, points_
             "min_base_to_obstacle_clearance_mm_by_phase": {k: 1000 * v for k, v in W["min_base"].items()},
             "min_arm_to_obstacle_clearance_mm_by_phase": {k: 1000 * v for k, v in W["min_arm"].items()},
             "max_base_lean_deg_by_phase": dict(lean_max),
-            "neck_framing_report": state["framing_report"], "home_pose_rad": state["home_q"]}
+            "neck_framing_report": state["framing_report"], "home_pose_rad": state["home_q"],
+            **({"nav": state["nav"]} if "nav" in state else {})}      # only with NAV_CFG["follow"]: the routes, replans, cross-track error and planning time of the DRIVE
 
     # ------------------------------------------------------------------ restoring what the operator moved
     AFTER_PEDESTAL = ("DRIVE", "CREEP_IN", "NECK", "DONE")

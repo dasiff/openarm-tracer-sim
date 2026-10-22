@@ -95,48 +95,48 @@ from src.neck import neck_ids
 from src.run_record import RunRecorder
 
 LOOP_CFG = {
-    "source_hz": 150.0,            # command / viewer tick; the physics rate must be a whole multiple (5 steps at 750 Hz)
-    "target_mode": "interpolate",  # arm and gripper targets between commands: "interpolate" (ramp over the source's period) or "hold"
-    "camera_hz": None,             # None = robot_specs.CAMERA_HZ (30)
-    "camera_roundrobin": True,     # one camera per render tick (a virtual-machine performance setting); False renders all each tick
-    "camera_shadows": True,
-    "cameras": True,               # policy cameras. False: no policy rig (pure physics run, or a viewer run that only needs the insets)
-    "viewer_draw_hz": 30,          # window redraw rate; the tick is quantised to a whole number of ticks per redraw (5 -> 30 Hz)
-    "inset_cameras": True,         # operator insets from their own cheap rig (used only when there is a viewer)
-    "inset_hz": 1.0,               # update rate of EACH inset camera (they take turns: 3 x this many renders per second)
-    "inset_res": (320, 240),       # inset render size (the viewer draws them at most this big)
-    "inset_shadows": False,
-    "spawn_pos": None,             # [x, y, z] for the base free joint, or None for the XML default
-    "warmup_s": 1.0,               # settle durations in seconds, converted to steps from the physics rate
-    "resettle_s": 0.4,
-    "routes": {},                  # overrides of DEFAULT_ROUTES
-    "claimed_ids": (),             # actuators owned by auto groups: not held at the captured rest pose (as before)
-    "hotkeys": {},                 # key codes (or tuples of codes) by name: "toggle_route" (F2), "toggle_log" (F5), "quit" (Esc), and with an
+    "source_hz": 150.0,            # command / viewer tick; the physics rate must be a whole multiple (5 steps at 750 Hz) [row M121 PENDING David: no decision recorded]
+    "target_mode": "interpolate",  # arm and gripper targets between commands: "interpolate" (ramp over the source's period) or "hold" [row M121 PENDING David: no decision recorded]
+    "camera_hz": None,             # None = robot_specs.CAMERA_HZ (30) [row M121 PENDING David: no decision recorded]
+    "camera_roundrobin": True,     # one camera per render tick (a virtual-machine performance setting); False renders all each tick [row M121 PENDING David: no decision recorded]
+    "camera_shadows": True,  # True: the policy cameras draw shadows (slower, closer to a real camera) [row M121 PENDING David: no decision recorded]
+    "cameras": True,               # policy cameras. False: no policy rig (pure physics run, or a viewer run that only needs the insets) [row M121 PENDING David: no decision recorded]
+    "viewer_draw_hz": 30,          # window redraw rate; the tick is quantised to a whole number of ticks per redraw (5 -> 30 Hz) [row M121 PENDING David: no decision recorded]
+    "inset_cameras": True,         # operator insets from their own cheap rig (used only when there is a viewer) [row M121 PENDING David: no decision recorded]
+    "inset_hz": 1.0,               # update rate of EACH inset camera (they take turns: 3 x this many renders per second) [row M121 PENDING David: no decision recorded]
+    "inset_res": (320, 240),       # inset render size (the viewer draws them at most this big) [row M121 PENDING David: no decision recorded]
+    "inset_shadows": False,  # False: the operator insets draw no shadows (cheaper) [row M121 PENDING David: no decision recorded]
+    "spawn_pos": None,             # [x, y, z] for the base free joint, or None for the XML default [row M121 PENDING David: no decision recorded]
+    "warmup_s": 1.0,               # settle durations in seconds, converted to steps from the physics rate [row M121 PENDING David: no decision recorded]
+    "resettle_s": 0.4,  # s: after the warm-up the drooped pose is captured and held this long [row M121 PENDING David: no decision recorded]
+    "routes": {},                  # overrides of DEFAULT_ROUTES [row M121 PENDING David: no decision recorded]
+    "claimed_ids": (),             # actuators owned by auto groups: not held at the captured rest pose (as before) [row M121 PENDING David: no decision recorded]
+    "hotkeys": {},                 # key codes (or tuples of codes) by name: "toggle_route" (F2), "toggle_log" (F5), "quit" (Esc), and with an [row M121 PENDING David: no decision recorded]
                                    # auto source "take_over", "hand_back", "abort"; a missing name or None = no such key
-    "held": None,                  # held(key code) -> bool, from the launcher; None = no keys
-    "tick_ref": None,              # a one-element list the loop keeps equal to the tick number (for key injection)
-    "exclusive": False,
+    "held": None,                  # held(key code) -> bool, from the launcher; None = no keys [row M121 PENDING David: no decision recorded]
+    "tick_ref": None,              # a one-element list the loop keeps equal to the tick number (for key injection) [row M121 PENDING David: no decision recorded]
+    "exclusive": False,  # False: only one subsystem moves at a time is OFF by default (the episode runner turns it on) [row M121 PENDING David: no decision recorded]
     # "settled" thresholds (measured velocities below the limit for the dwell time), provisional
-    "settle_base_lin": 0.01, "settle_base_ang": 0.02, "settle_base_dwell": 0.1,
-    "settle_ped_speed": 0.004, "settle_ped_dwell": 0.2,
-    "settle_arm_speed": 0.02, "settle_finger_speed": 0.002, "settle_arm_dwell": 0.2,
-    "base_stop_lin_decel": 1.875,  # m/s^2, bringing the base to rest during a hold (= the keyboard's SPACE ramp rate)
-    "base_stop_ang_decel": 2.5,    # rad/s^2
+    "settle_base_lin": 0.01, "settle_base_ang": 0.02, "settle_base_dwell": 0.1,  # [row M121 PENDING David: no decision recorded]
+    "settle_ped_speed": 0.004, "settle_ped_dwell": 0.2,  # m/s and s: the pedestal counts as settled when slower than the speed for the dwell time [row M121 PENDING David: no decision recorded]
+    "settle_arm_speed": 0.02, "settle_finger_speed": 0.002, "settle_arm_dwell": 0.2,  # rad/s, m/s and s: the arms (fingers) count as settled when slower than the speeds for the dwell time [row M121 PENDING David: no decision recorded]
+    "base_stop_lin_decel": 1.875,  # m/s^2, bringing the base to rest during a hold (= the keyboard's SPACE ramp rate) [row M121 PENDING David: no decision recorded]
+    "base_stop_ang_decel": 2.5,    # rad/s^2 [row M121 PENDING David: no decision recorded]
     # test / benchmark hooks
-    "bench_frames": 0,             # run this many ticks (after 0.16 s of warm-up ticks), print timings, then stop
-    "bench_log": None,             # comma-separated values (CSV) path: base pose, pedestal height, arm joints, fingers every 75 physics steps
-    "preview": False,              # teleop: the operator preview inset is shown
-    "on_tick": None,               # supervisor hook, see above
-    "spawn_yaw": None,             # rad, base yaw at spawn (None = leave the XML's); used only when spawn_pos is set
-    "neck_specs": None,            # None = robot_specs.NECK_SPECS (the neck is skipped if the model has none)
-    "neck_max_speed": None,        # rad/s; None = NECK_SPECS["max_speed"]
-    "mode": "teleop",              # who is in charge at the start: "teleop" (the router as configured) or "auto" (see auto_source)
-    "auto_source": None,           # name of the task-policy source. With it the loop has an "auto" mode in which that source owns every router field;
+    "bench_frames": 0,             # run this many ticks (after 0.16 s of warm-up ticks), print timings, then stop [row M121 PENDING David: no decision recorded]
+    "bench_log": None,             # comma-separated values (CSV) path: base pose, pedestal height, arm joints, fingers every 75 physics steps [row M121 PENDING David: no decision recorded]
+    "preview": False,              # teleop: the operator preview inset is shown [row M121 PENDING David: no decision recorded]
+    "on_tick": None,               # supervisor hook, see above [row M121 PENDING David: no decision recorded]
+    "spawn_yaw": None,             # rad, base yaw at spawn (None = leave the XML's); used only when spawn_pos is set [row M121 PENDING David: no decision recorded]
+    "neck_specs": None,            # None = robot_specs.NECK_SPECS (the neck is skipped if the model has none) [row M121 PENDING David: no decision recorded]
+    "neck_max_speed": None,        # rad/s; None = NECK_SPECS["max_speed"] [row M121 PENDING David: no decision recorded]
+    "mode": "teleop",              # who is in charge at the start: "teleop" (the router as configured) or "auto" (see auto_source) [row M121 PENDING David: no decision recorded]
+    "auto_source": None,           # name of the task-policy source. With it the loop has an "auto" mode in which that source owns every router field; [row M121 PENDING David: no decision recorded]
                                    # the hotkeys "take_over" (F9: auto -> teleop), "hand_back" (Enter: teleop -> auto) and "abort" (ends the run;
                                    # only while teleop) and the source's request_teleop command switch between the modes
-    "record_run": None,            # directory: record the run's physics inputs and verification hashes (src/run_record.py)
-    "record_meta": None,           # dict stored in the recording's meta.json: {"model": recipe to rebuild the model, ...}
-    "replay": None,                # src/replay.py: {"ctrl", "basevel", "on_start", "on_step", "on_tick_end"}: no sources, inputs from a recording
+    "record_run": None,            # directory: record the run's physics inputs and verification hashes (src/run_record.py) [row M121 PENDING David: no decision recorded]
+    "record_meta": None,           # dict stored in the recording's meta.json: {"model": recipe to rebuild the model, ...} [row M121 PENDING David: no decision recorded]
+    "replay": None,                # src/replay.py: {"ctrl", "basevel", "on_start", "on_step", "on_tick_end"}: no sources, inputs from a recording [row M121 PENDING David: no decision recorded]
 }
 
 ROUTE_KEYS = ("base", "pedestal", "arms.left", "arms.right", "gripper.left", "gripper.right", "neck")

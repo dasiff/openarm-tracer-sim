@@ -38,7 +38,7 @@ from pathlib import Path
 from src.task_config import LLM_CFG
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-RETRY_CODES = (429, 500, 502, 503, 504)
+RETRY_CODES = (429, 500, 502, 503, 504)  # HTTP status codes of Gemini errors that are retried with a backoff (a per-day quota 429 is not: M043) [row M127 PENDING David: no decision recorded]
 
 
 class LLMError(RuntimeError):

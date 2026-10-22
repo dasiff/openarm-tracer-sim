@@ -61,7 +61,7 @@ from src.keyboard_source import DRIVE_CFG, make_keyboard_source
 from src.neck import neck_ids
 from src.robot_helpers import arm_ids, make_contact_monitor
 
-TICK_HZ = 150           # the command tick: physics_hz / TICK_HZ = 5 physics steps (the window is redrawn every 5th tick, 30 Hz)
+TICK_HZ = 150           # the command tick: physics_hz / TICK_HZ = 5 physics steps (the window is redrawn every 5th tick, 30 Hz) [row M127 PENDING David: no decision recorded]
 
 
 def run_episode(task, model, data, mode="auto", viewer=None, out_dir=None, handoff_frame=None, held=None, loop_cfg=None, record_dir=None,

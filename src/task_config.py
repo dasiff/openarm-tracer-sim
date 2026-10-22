@@ -42,20 +42,20 @@ import math
 # Scene, objects and poses
 # ----------------------------------------------------------------------------------------------------------
 TASK_CFG = {
-    "scene": "models/scenes/chemistry_lab_beaker_hotplate.xml",
+    "scene": "models/scenes/chemistry_lab_beaker_hotplate.xml",  # the scene file the task loads (path from the project root) [row M078]
 
     # Objects (xy in the world; z comes from the bench top). These equal the defaults in
     # models/objects/*.xml; the values here are the ones applied at load. 20 cm centre to centre; the hotplate is on
     # the robot's right of the beaker (the left arm and shoulder hide the robot's left side from the eagle camera).
     # y = 0.66 puts the 18 cm deep hotplate 5 cm from the bench's front edge (the layout search's rule).
-    "beaker_xy": (1.00, 0.66),
-    "hotplate_xy": (0.80, 0.66),
-    "beaker_settle_clearance": 0.002,      # m, the beaker is dropped from this height above the bench top
+    "beaker_xy": (1.00, 0.66),  # [row M078]
+    "hotplate_xy": (0.80, 0.66),  # world x, y of the hotplate's centre, m (20 cm from the beaker along the bench) [row M078]
+    "beaker_settle_clearance": 0.002,      # m, the beaker is dropped from this height above the bench top [row M101 PENDING David: no decision recorded]
     # ASSUMPTION until the real lab bench is measured (design plan 4.1): the bench is open below its top, i.e. only the top and the four legs are collidable (the four frame rails
     # are removed from the model), so the base may drive partly under it. False gives the solid bench (the rails included). A cfg without the key (old recordings) is solid.
-    "bench_open": True,
-    "warmup_s": 1.0,                       # start-up as combined_controller.py: arms held at zero while the robot settles,
-    "resettle_s": 0.4,                     # then the drooped pose is captured as the resting pose and held
+    "bench_open": True,  # [row M078]
+    "warmup_s": 1.0,                       # start-up as combined_controller.py: arms held at zero while the robot settles, [row M101 PENDING David: no decision recorded]
+    "resettle_s": 0.4,                     # then the drooped pose is captured as the resting pose and held [row M101 PENDING David: no decision recorded]
 
     # Robot spawn on open floor, 2.6 m from the bench edge and facing +y, away from the bench, so DRIVE needs a real
     # turn (about 180 deg) and a real drive (about 2.2 m). It is roughly north of the staging area on purpose: the
@@ -63,8 +63,8 @@ TASK_CFG = {
     # side the final turn is large and sweeps a footprint corner (0.46 m from base_link's origin) into the bench unless
     # the standoff is large, which puts the objects out of reach. Re-run the layout search after moving the spawn: it
     # checks the swept footprint for the configured spawn.
-    "spawn_xy": (0.70, 3.40),
-    "spawn_yaw": math.radians(90.0),
+    "spawn_xy": (0.70, 3.40),  # [row M101 PENDING David: no decision recorded]
+    "spawn_yaw": math.radians(90.0),  # rad: the robot's heading at the spawn (+y, away from the bench) [row M101 PENDING David: no decision recorded]
 
     # --- from experiments/beaker_hotplate_layout_search.py (results in data/beaker_hotplate_layout/); re-run it if the
     # --- objects, spawn, pedestal or the grasp orientation constraint change ---
@@ -76,63 +76,63 @@ TASK_CFG = {
     # 7 cm, heading +-8 deg, pedestal +-4.2 cm). The pedestal height is the middle of its passing range 0.10 to 0.21 m (11 cm wide: the finder prefers the widest range). Finder tolerance (distance to the
     # edge of the valid reach region) 7.1 cm; the xy region around it that passes everything is 39 of 49 points of a +-6 cm grid, radius 5.7 cm. Re-run the finder when the scene, the band, the
     # home pose or the robot changes. (History: (0.655, 0.995) pedestal 0.11 for the old placeholder home pose; (0.750, 1.221) pedestal 0.0452 for the old band and the solid bench.)
-    "staging_xy": (0.7650, 1.0850),        # base_link origin, m (finder output)
+    "staging_xy": (0.7650, 1.0850),        # base_link origin, m (finder output) [row M079]
     # Approach spot: the staging pose is under the open bench, so DRIVE (at normal speed, arms at home) ends this far behind it along its heading (0.2063 m: the old staging spot, where the straight
     # arm move was verified at the old stance) and the staging phase CREEP_IN covers the last stretch at creep speed with the clearance and lean checks running every tick. None or 0 = DRIVE
     # goes straight to the staging pose. Not finder output (a staging setting).
-    "staging_approach_back_m": 0.2063,
-    "staging_yaw": math.radians(-90.0),    # facing the bench
-    "pedestal_q": 0.1550,                  # pedestal_lift command, m of height above the collapsed pedestal (0 = collapsed, 0.418 = raised); the torso is 0.3048 + 0.155 = 0.460 m above the pedestal base (finder output: the middle of the passing range 0.10 to 0.21)
-    "arm": "left",                         # the arm of the task's scripted grasp poses below (LEGACY: staging now moves both arms to home)
+    "staging_approach_back_m": 0.2063,  # [row M079]
+    "staging_yaw": math.radians(-90.0),    # facing the bench [row M079]
+    "pedestal_q": 0.1550,                  # pedestal_lift command, m of height above the collapsed pedestal (0 = collapsed, 0.418 = raised); the torso is 0.3048 + 0.155 = 0.460 m above the pedestal base (finder output: the middle of the passing range 0.10 to 0.21) [row M079]
+    "arm": "left",                         # the arm of the task's scripted grasp poses below (LEGACY: staging now moves both arms to home) [row M101 PENDING David: no decision recorded]
 
     # --- Home pose ("zombie pose"; 2026-10-20, David: the search's rank 1, chosen over A and ranks 2 and 3; design plan 1 and 3.4): where the staging ARMS phase puts both arms and where the handoff
     # --- happens. PLACEHOLDER until the hardware team gives the real OpenArm home. Both arms in front of the chest, elbows bent 126 deg, forearms forward, the grippers facing forward (6 deg outward) and
     # --- open, the hands 30 cm in front of the torso and 15 cm either side of the centre line, 17 cm below the shoulders. Found by experiments/home_pose_search.py to meet the requirements of
     # --- STANCE_REQUIREMENTS with the most margin (the search's rank 1, rounded to 0.001 deg). The right arm is the mirror image: qR = (-q1, -q2, -q3, q4, -q5, -q6, -q7) (exact to ~1 cm: the model's
     # --- right elbow offset differs by 3 cm). The old home (12.5, 0, 0, 120, 0, 0, 15) deg hid 26.8 % of the hotplate from the eagle camera and had a framing slack of 9.8 %.
-    "home_q_left": tuple(math.radians(v) for v in (22.598, -14.709, 15.531, 126.122, -3.746, 27.308, 13.018)),      # rad
-    "home_q_right": tuple(math.radians(v) for v in (-22.598, 14.709, -15.531, 126.122, 3.746, -27.308, -13.018)),   # rad
-    "home_variation_rad": (0.0,) * 7,      # per joint (the same for both arms): the home pose is drawn uniformly within +-this around the values above, clipped to
+    "home_q_left": tuple(math.radians(v) for v in (22.598, -14.709, 15.531, 126.122, -3.746, 27.308, 13.018)),      # rad [row M080]
+    "home_q_right": tuple(math.radians(v) for v in (-22.598, 14.709, -15.531, 126.122, 3.746, -27.308, -13.018)),   # rad [row M080]
+    "home_variation_rad": (0.0,) * 7,      # per joint (the same for both arms): the home pose is drawn uniformly within +-this around the values above, clipped to [row M101 PENDING David: no decision recorded]
                                            # the joint limits. All zeros = off (the default); the demo generator will set it. The right arm gets its own draw.
-    "home_variation_seed": 0,              # seed of that draw (one draw per episode, both arms)
-    "framing_arms": ("left", "right"),     # the grippers the neck camera frames at the handoff, next to the beaker and the hotplate
+    "home_variation_seed": 0,              # seed of that draw (one draw per episode, both arms) [row M101 PENDING David: no decision recorded]
+    "framing_arms": ("left", "right"),     # the grippers the neck camera frames at the handoff, next to the beaker and the hotplate [row M101 PENDING David: no decision recorded]
 
     # --- LEGACY (not used by the staging any more; still read by the layout / staging searches, the pose check and the grasp force test source):
     # --- the task-specific ready pose of the left arm, found by the layout search, and the waypoint of its path from the hanging pose.
-    "ready_q": (-1.00748, -0.70464, 0.47191, 1.24247, -0.77442, -0.08043, 0.61180),   # that arm's 7 joints, rad (margin 40 deg)
-    "ready_tcp": (1.0000, 0.7100, 1.1750), # LEGACY. world xyz of the TCP at ready_q when the base is at the staging pose
-    "ready_via_q": (-0.64235, -1.42671, -0.28301, 0.51899, 0.02738, 0.07867, 0.21018),  # waypoint hanging pose -> via -> ready (joint margin 29.7 deg; 16 cm from the bench along the staging path, re-planned with a 12 cm path margin because the arm's servo lag plus base drift used up the earlier 6.5 cm); a straight move hits the bench
+    "ready_q": (-1.00748, -0.70464, 0.47191, 1.24247, -0.77442, -0.08043, 0.61180),   # that arm's 7 joints, rad (margin 40 deg) [row M101 PENDING David: no decision recorded]
+    "ready_tcp": (1.0000, 0.7100, 1.1750), # LEGACY. world xyz of the TCP at ready_q when the base is at the staging pose [row M101 PENDING David: no decision recorded]
+    "ready_via_q": (-0.64235, -1.42671, -0.28301, 0.51899, 0.02738, 0.07867, 0.21018),  # waypoint hanging pose -> via -> ready (joint margin 29.7 deg; 16 cm from the bench along the staging path, re-planned with a 12 cm path margin because the arm's servo lag plus base drift used up the earlier 6.5 cm); a straight move hits the bench [row M101 PENDING David: no decision recorded]
     # Left-arm joint solutions of the other task poses (from the layout search; the beaker is held upright for the last two)
-    "grasp_q": (-1.07325, -0.36123, 0.79668, 0.53576, -1.02172, 0.19696, 0.19506),        # TCP at beaker mid-height, fingers open (margin 30.7 deg)
-    "above_plate_q": (-1.36316, -0.26016, 1.13214, 0.74114, -0.94935, -0.13076, 0.37412), # TCP 10 cm above hotplate_top, beaker held (24.9 deg)
-    "setdown_q": (-1.25683, -0.23374, 1.16252, 0.69941, -1.15110, -0.01193, 0.24228),      # beaker bottom 2 mm above the hotplate top, beaker held (23.4 deg)
+    "grasp_q": (-1.07325, -0.36123, 0.79668, 0.53576, -1.02172, 0.19696, 0.19506),        # TCP at beaker mid-height, fingers open (margin 30.7 deg) [row M101 PENDING David: no decision recorded]
+    "above_plate_q": (-1.36316, -0.26016, 1.13214, 0.74114, -0.94935, -0.13076, 0.37412), # TCP 10 cm above hotplate_top, beaker held (24.9 deg) [row M101 PENDING David: no decision recorded]
+    "setdown_q": (-1.25683, -0.23374, 1.16252, 0.69941, -1.15110, -0.01193, 0.24228),      # beaker bottom 2 mm above the hotplate top, beaker held (23.4 deg) [row M101 PENDING David: no decision recorded]
 }
 
 # ----------------------------------------------------------------------------------------------------------
 # The beaker and the grip force (src/beaker.py builds the beaker into the model at load time)
 # ----------------------------------------------------------------------------------------------------------
 BEAKER_CFG = {
-    "body": "task_beaker",                 # the body in models/objects/beaker.xml (free joint and the site "beaker_base" at its origin, the bottom centre)
-    "outer_diameter": 0.070,               # m. The gripper opens to ~84 mm between the finger pads (7 mm of margin a side)
-    "height": 0.100,                       # m
-    "wall": 0.002,                         # m, glass wall thickness (also the bottom disk's thickness)
-    "n_segments": 24,                      # thin box geoms in the wall ring; 24 keeps the polygon 0.29 mm from a circle (16: 0.65 mm, 32: 0.16 mm)
-    "glass_mass": 0.100,                   # kg, shared by the wall and the bottom by volume (a 250 ml borosilicate beaker of this size)
-    "liquid_mass": 0.100,                  # kg, a rigid mass inside, low in the beaker (100 g of water fills 29 mm); 0 = an empty beaker. No visuals yet
-    "liquid_density": 1000.0,              # kg/m^3, gives the height of the liquid column (where its mass sits)
-    "rgba": (0.55, 0.85, 0.95, 0.35),      # translucent glass
-    "friction": (1.0, 0.005, 0.0001),      # the beaker's own (sliding, torsional, rolling), against the bench and the hotplate: unchanged from the solid beaker
+    "body": "task_beaker",                 # the body in models/objects/beaker.xml (free joint and the site "beaker_base" at its origin, the bottom centre) [row M102 PENDING David: no decision recorded]
+    "outer_diameter": 0.070,               # m. The gripper opens to ~84 mm between the finger pads (7 mm of margin a side) [row M102 PENDING David: no decision recorded]
+    "height": 0.100,                       # m [row M102 PENDING David: no decision recorded]
+    "wall": 0.002,                         # m, glass wall thickness (also the bottom disk's thickness) [row M102 PENDING David: no decision recorded]
+    "n_segments": 24,                      # thin box geoms in the wall ring; 24 keeps the polygon 0.29 mm from a circle (16: 0.65 mm, 32: 0.16 mm) [row M081]
+    "glass_mass": 0.100,                   # kg, shared by the wall and the bottom by volume (a 250 ml borosilicate beaker of this size) [row M081]
+    "liquid_mass": 0.100,                  # kg, a rigid mass inside, low in the beaker (100 g of water fills 29 mm); 0 = an empty beaker. No visuals yet [row M081]
+    "liquid_density": 1000.0,              # kg/m^3, gives the height of the liquid column (where its mass sits) [row M102 PENDING David: no decision recorded]
+    "rgba": (0.55, 0.85, 0.95, 0.35),      # translucent glass [row M102 PENDING David: no decision recorded]
+    "friction": (1.0, 0.005, 0.0001),      # the beaker's own (sliding, torsional, rolling), against the bench and the hotplate: unchanged from the solid beaker [row M102 PENDING David: no decision recorded]
     # Contact of the beaker with the gripper. The finger / palm geoms have priority 1 in the robot model, so their own friction (1.0) wins over
     # the beaker's: setting the beaker's friction would do nothing. Explicit contact pairs set it instead (finger and palm geoms of both hands
     # against every beaker geom); everything else the beaker touches (bench, hotplate) keeps its own friction.
-    "contact_friction": (0.4, 0.005, 0.0001),   # sliding, torsional, rolling: glass on the gripper pads
-    "contact_solref": (0.005, 1.0),        # the same softness the finger geoms have in the robot model, so only the friction changes
-    "contact_solimp": (0.9, 0.95, 0.001, 0.5, 2.0),
-    "gripper_geoms": ("hand_collision", "left_finger_collision", "right_finger_collision"),   # per hand: "openarm_<side>_" + these
+    "contact_friction": (0.4, 0.005, 0.0001),   # sliding, torsional, rolling: glass on the gripper pads [row M081]
+    "contact_solref": (0.005, 1.0),        # the same softness the finger geoms have in the robot model, so only the friction changes [row M102 PENDING David: no decision recorded]
+    "contact_solimp": (0.9, 0.95, 0.001, 0.5, 2.0),  # MuJoCo solimp (contact impedance) of the beaker-gripper contact, dimensionless; the same as the finger geoms' own [row M102 PENDING David: no decision recorded]
+    "gripper_geoms": ("hand_collision", "left_finger_collision", "right_finger_collision"),   # per hand: "openarm_<side>_" + these [row M102 PENDING David: no decision recorded]
     # Grasp band (David 2026-10-19; design plan 5): side grasps pinch the beaker between these heights, as fractions of its height above the bottom. The lower end is above the empty
     # beaker's centre of mass (43 % of the height; the liquid only lowers it, 30 % with the 100 g liquid setting), so a grip never sits below it, and the upper end stays away from the
     # rim. It was 25 to 60 % until then. The reachability map, the stance finder and the demo generator take their grasp heights from it (5 % steps in the stance checks).
-    "grasp_band": (0.45, 0.60),
+    "grasp_band": (0.45, 0.60),  # [row M082]
 }
 
 # Gripper force cap per object, N per finger (the loop's "max_force" of a gripper command, at most robot_specs.ARM_ACTUATOR_SPECS["fingers"]["force_limit"]).
@@ -141,7 +141,7 @@ BEAKER_CFG = {
 # with creep for tiny changes, and it lost the beaker at friction 0.32). The grip force sweep (docs/grip_force_sweep.md: 5 to 9 N, three battery masses, friction 0.4 and 0.32) found 8 N
 # the lowest force that holds in all six cases (slip 0.1 to 0.6 mm, no creep): safety factor 3.3 at friction 0.4 and 2.6 at 0.32 (2 x force x friction / the 0.2 kg beaker's weight).
 GRIP_FORCE_TABLE = {
-    "glass_beaker": 8.0,
+    "glass_beaker": 8.0,  # N per finger: the gripper force cap for the glass beaker [row M083]
 }
 
 # ----------------------------------------------------------------------------------------------------------
@@ -150,23 +150,23 @@ GRIP_FORCE_TABLE = {
 POUR_CFG = {
     # Two identical hollow beakers (BEAKER_CFG with no rigid "liquid" mass: the contents are the balls). Which one starts full and how many balls it holds are drawn per demo
     # from `seed` by pour_scene.draw_setup unless set here (None = draw).
-    "second_body": "task_beaker_2",
-    "second_xy": (1.20, 0.66),             # m, 20 cm beyond the first beaker (1.00, 0.66) along the bench, the hotplate on its other side
-    "full": None,                          # "first" or "second": the beaker that starts with the balls; None = drawn
-    "n_balls": None,                       # the number of balls; None = drawn from n_range
-    "n_range": (30, 60),
-    "seed": 0,
+    "second_body": "task_beaker_2",  # [row M103 PENDING David: no decision recorded]
+    "second_xy": (1.20, 0.66),             # m, 20 cm beyond the first beaker (1.00, 0.66) along the bench, the hotplate on its other side [row M084]
+    "full": None,                          # "first" or "second": the beaker that starts with the balls; None = drawn [row M103 PENDING David: no decision recorded]
+    "n_balls": None,                       # the number of balls; None = drawn from n_range [row M103 PENDING David: no decision recorded]
+    "n_range": (30, 60),  # count: the number of balls is drawn from this range when n_balls is None [row M084]
+    "seed": 0,  # integer seed of the per-demo draws (which beaker starts full, the number of balls) [row M103 PENDING David: no decision recorded]
     # The balls: free spheres of glass-bead size. Diameter 11 mm: the beaker's inside is 66 mm wide, so the mouth is 6 balls across (a free flow through an opening needs about 5 to 6
     # diameters or more to avoid arching and jams). 2.5 g each (glass beads' density, 3.6 g/cm^3): 40 of them are the 100 g of the old rigid liquid mass. The ball's friction wins over the
     # glass's (the glass's is 1.0) through the geom priority, so ball on glass, bench and ball on ball slide with 0.3; the contact is soft and damped (solref damping ratio above 1) so the
     # balls hardly bounce.
-    "ball_radius": 0.0055,                 # m
-    "ball_mass": 0.0025,                   # kg
-    "ball_friction": (0.3, 0.005, 0.0001), # sliding, torsional, rolling
-    "ball_solref": (0.004, 1.2),
-    "ball_solimp": (0.9, 0.95, 0.001, 0.5, 2.0),
-    "ball_rgba": (0.95, 0.45, 0.10, 1.0),
-    "layer_gap": 0.9,                      # the starting layers are this fraction of a ball spacing apart (the balls settle in the first second)
+    "ball_radius": 0.0055,                 # m [row M084]
+    "ball_mass": 0.0025,                   # kg [row M084]
+    "ball_friction": (0.3, 0.005, 0.0001), # sliding, torsional, rolling [row M084]
+    "ball_solref": (0.004, 1.2),  # MuJoCo solref (time constant s, damping ratio) of the ball contacts: soft and damped so the balls hardly bounce [row M084]
+    "ball_solimp": (0.9, 0.95, 0.001, 0.5, 2.0),  # MuJoCo solimp (contact impedance) of the ball contacts, dimensionless [row M103 PENDING David: no decision recorded]
+    "ball_rgba": (0.95, 0.45, 0.10, 1.0),  # RGBA colour of the balls (0 to 1) [row M103 PENDING David: no decision recorded]
+    "layer_gap": 0.9,                      # the starting layers are this fraction of a ball spacing apart (the balls settle in the first second) [row M103 PENDING David: no decision recorded]
 }
 
 # ----------------------------------------------------------------------------------------------------------
@@ -179,147 +179,147 @@ GRASP_MAP_CFG = {
     # patch near the fingertips, 2.5 mm beyond the tool point and on its axis, because the fingers are symmetric about the hand's origin now; the old model's were not), approach +z, closing +y.
     # What counts as a grasp: level and a side grasp. Both the approach axis (hand z) and the finger-closing axis (hand y) within level_deg of horizontal. If the pilot shows
     # the map is too small, David decides whether to loosen it to 10 deg.
-    "level_deg": 5.0,
+    "level_deg": 5.0,  # [row M085]
     # Approach directions: n_bins bins that tile the circle, bin k centred at k * 360 / n_bins deg measured from the robot's forward axis (+x of the torso frame) towards its left
     # (+y), each accepting +-bin_half_deg around its centre.
-    "n_bins": 12,
-    "bin_half_deg": 15.0,
-    "joint_margin_deg": 10.0,           # every joint at least this far from both of its limits
+    "n_bins": 12,  # [row M085]
+    "bin_half_deg": 15.0,  # degrees: each approach-direction bin accepts this far either side of its centre (30 degree bins tile the circle) [row M085]
+    "joint_margin_deg": 10.0,           # every joint at least this far from both of its limits [row M085]
     # The map: 5 mm voxels in the shoulder frame (the origin of the arm's link0 frame, axes parallel to the torso's: x forward, y left, z up); a 1 cm cube counts only if
     # all 8 of its voxels are reachable.
-    "voxel": 0.005,                     # m
-    "cube": 0.010,                      # m
+    "voxel": 0.005,                     # m [row M085]
+    "cube": 0.010,                      # m [row M085]
     # Inverse kinematics of one voxel centre (damped least squares with the analytic Jacobian, joint bounds shrunk by the margin).
-    "ik_pos_tol": 0.0005,               # m, a voxel centre counts as reached within this
-    "ik_max_iter": 40,
-    "ik_damping": 0.02,
-    "ik_max_step": 0.3,                 # rad, largest joint change of one iteration
-    "ik_soft": 0.8,                     # the rule rows push back only past this fraction of the tolerance, so solutions end inside it
-    "ik_retries": 5,                    # retries before a voxel is marked unreachable (IK failed, or the pose collides)
-    "ik_neighbour_rounds": 3,           # of those, the first rounds start from other reached neighbours' joint angles, the rest from random vectors
+    "ik_pos_tol": 0.0005,               # m, a voxel centre counts as reached within this [row M104 PENDING David: no decision recorded]
+    "ik_max_iter": 40,  # count: iterations at most of the inverse kinematics of one voxel centre [row M104 PENDING David: no decision recorded]
+    "ik_damping": 0.02,  # damping term of that inverse kinematics solve (dimensionless, damped least squares) [row M104 PENDING David: no decision recorded]
+    "ik_max_step": 0.3,                 # rad, largest joint change of one iteration [row M104 PENDING David: no decision recorded]
+    "ik_soft": 0.8,                     # the rule rows push back only past this fraction of the tolerance, so solutions end inside it [row M104 PENDING David: no decision recorded]
+    "ik_retries": 5,                    # retries before a voxel is marked unreachable (IK failed, or the pose collides) [row M104 PENDING David: no decision recorded]
+    "ik_neighbour_rounds": 3,           # of those, the first rounds start from other reached neighbours' joint angles, the rest from random vectors [row M104 PENDING David: no decision recorded]
     # Flood fill: the quick random sample that gives the convex outer bound and the extra seeds
-    "quick_samples": 10_000_000,
-    "hull_margin": 0.03,                # m, the convex outer bound is grown by this
-    "n_seeds": 8,                       # spread-out seed points from the quick sample (plus the home pose point)
-    "grid_margin": 0.03,                # m, the voxel grid extends this far beyond the outer bound's box
-    "seed": 0,
+    "quick_samples": 10_000_000,  # [row M104 PENDING David: no decision recorded]
+    "hull_margin": 0.03,                # m, the convex outer bound is grown by this [row M104 PENDING David: no decision recorded]
+    "n_seeds": 8,                       # spread-out seed points from the quick sample (plus the home pose point) [row M104 PENDING David: no decision recorded]
+    "grid_margin": 0.03,                # m, the voxel grid extends this far beyond the outer bound's box [row M104 PENDING David: no decision recorded]
+    "seed": 0,  # integer seed of the map builder's random draws [row M104 PENDING David: no decision recorded]
     # Holes (design plan 3.1 c, revised 2026-10-19): enclosed unreached pockets whose bounding box is at most this wide are filled without any IK test (about one cube); larger ones
     # stay as real holes.
-    "hole_fill_max_m": 0.010,
-    "sampler_version": 1,               # bump when the flood fill or the hole rule changes: it is part of the map files' staleness hash
+    "hole_fill_max_m": 0.010,  # [row M085]
+    "sampler_version": 1,               # bump when the flood fill or the hole rule changes: it is part of the map files' staleness hash [row M104 PENDING David: no decision recorded]
     # Stand-in for the base's stopping error (the real value is a hardware question, design plan §11): the sim's own pose-correction thresholds
-    "stop_error_xy": 0.01,              # m
-    "stop_error_yaw_deg": 1.0,          # deg
+    "stop_error_xy": 0.01,              # m [row M085]
+    "stop_error_yaw_deg": 1.0,          # deg [row M085]
 }
 
 # ----------------------------------------------------------------------------------------------------------
 # Layered furniture map and stance finder (design plan §3.4), src/furniture_map.py and src/stance_finder.py
 # ----------------------------------------------------------------------------------------------------------
 FURNITURE_CFG = {
-    "resolution": 0.01,                 # m, cell edge of the floor grids
-    "bounds": (-6.0, 6.0, -6.0, 6.0),   # x min, x max, y min, y max of the grid: the room's inside (its walls' inner faces are at +-5.92); everything outside the grid is blocked
+    "resolution": 0.01,                 # m, cell edge of the floor grids [row M105 PENDING David: no decision recorded]
+    "bounds": (-6.0, 6.0, -6.0, 6.0),   # x min, x max, y min, y max of the grid: the room's inside (its walls' inner faces are at +-5.92); everything outside the grid is blocked [row M105 PENDING David: no decision recorded]
     # Two layers, by height above the floor. A piece of furniture is in a layer when its vertical extent overlaps the layer's band. The base layer is what the chassis can hit (the
     # chassis and battery top out at 0.41 m with the base resting at 0.1527 m); the arm layer is what the torso, the pedestal and the arms can hit above that (a table top that
     # the base can drive under is in the arm layer only).
-    "base_band": (0.0, 0.43),           # m
-    "arm_band": (0.43, 2.0),            # m
+    "base_band": (0.0, 0.43),           # m [row M105 PENDING David: no decision recorded]
+    "arm_band": (0.43, 2.0),            # m [row M105 PENDING David: no decision recorded]
     # First approximation of what the arms and torso sweep: obstacles in the arm layer are grown by a disc of this radius around the base origin (the torso column, the pedestal and
     # the arms hanging at the sides reach about 0.2 m from the centre line). The real arm-to-furniture check is the verification step (B2.12).
-    "arm_layer_radius": 0.25,           # m, used when the robot has no column function (synthetic tests)
+    "arm_layer_radius": 0.25,           # m, used when the robot has no column function (synthetic tests) [row M105 PENDING David: no decision recorded]
     # Since 2026-10-19 (David) the arm layer is grown by the torso and pedestal column's real horizontal cross-section at the bench top's height (src/stance_finder.column_polygon_fn: the
     # hull of the cross-sections of the torso and the pedestal sections in the band from the bench top's underside to its surface, at the pedestal command of the stance), plus this
     # margin; the arms are not part of it (the IK verification checks them against the bench). Set column_margin to None to go back to the disc.
-    "column_margin": 0.02,              # m
-    "column_slab": None,                # (z_lo, z_hi) metres above the floor, or None: from the geom "bench_top"
+    "column_margin": 0.02,              # m [row M105 PENDING David: no decision recorded]
+    "column_slab": None,                # (z_lo, z_hi) metres above the floor, or None: from the geom "bench_top" [row M105 PENDING David: no decision recorded]
 }
 
 STANCE_CFG = {
-    "heading_step_deg": 5.0,            # headings searched
-    "heading_robust_deg": 1.0,          # a stance must also be valid at the heading +- this (the base's stopping error in yaw)
-    "pedestal_step": 0.04,              # m of height between the pedestal heights searched (the lowest command to the raised limit)
-    "window": 1.3,                      # m, the floor window around the task points that is searched (the arm reaches about 0.7 m)
-    "nms_distance": 0.10,               # m, ranked stances closer than this (and within nms_heading_deg) to a better one are dropped
-    "nms_heading_deg": 15.0,
-    "max_stances": 20,
-    "score_resolution": 0.01,           # m, the arm rule (design plan §5) rounds each arm's reach score to this, so near-ties go to the left arm
+    "heading_step_deg": 5.0,            # headings searched [row M086]
+    "heading_robust_deg": 1.0,          # a stance must also be valid at the heading +- this (the base's stopping error in yaw) [row M086]
+    "pedestal_step": 0.04,              # m of height between the pedestal heights searched (the lowest command to the raised limit) [row M106 PENDING David: no decision recorded]
+    "window": 1.3,                      # m, the floor window around the task points that is searched (the arm reaches about 0.7 m) [row M106 PENDING David: no decision recorded]
+    "nms_distance": 0.10,               # m, ranked stances closer than this (and within nms_heading_deg) to a better one are dropped [row M106 PENDING David: no decision recorded]
+    "nms_heading_deg": 15.0,  # degrees: with nms_distance, a ranked stance within this heading difference of a better one is dropped [row M106 PENDING David: no decision recorded]
+    "max_stances": 20,  # count: the most stances the finder returns per call [row M106 PENDING David: no decision recorded]
+    "score_resolution": 0.01,           # m, the arm rule (design plan §5) rounds each arm's reach score to this, so near-ties go to the left arm [row M086]
 }
 
 # The requirements on the robot at a stance with both arms at the home pose (David 2026-10-19: one set for the stance finder, the home pose search and home_pose_test).
 STANCE_REQUIREMENTS = {
-    "home_min_clearance": 0.040,        # m: every moving arm part stays this far from the bench, the hotplate and every other object (home_pose_test's bench / hotplate limit)
-    "placed_beaker_min_clearance": 0.040,   # m: and from a beaker resting on the hotplate (the home pose must not touch the beaker once it has been set down; David 2026-10-19)
-    "neck_max_spread": 0.06,            # rad: the neck framing moves no joint more than this under 0.1 degree of arm noise (the neck_once_test limit)
-    "framing_min_slack": 0.10,          # fraction of the image: with the neck at its best pose the beaker's and hotplate's corners and both grippers (tool point, hand, finger tips) are
+    "home_min_clearance": 0.040,        # m: every moving arm part stays this far from the bench, the hotplate and every other object (home_pose_test's bench / hotplate limit) [row M087]
+    "placed_beaker_min_clearance": 0.040,   # m: and from a beaker resting on the hotplate (the home pose must not touch the beaker once it has been set down; David 2026-10-19) [row M087]
+    "neck_max_spread": 0.06,            # rad: the neck framing moves no joint more than this under 0.1 degree of arm noise (the neck_once_test limit) [row M087]
+    "framing_min_slack": 0.10,          # fraction of the image: with the neck at its best pose the beaker's and hotplate's corners and both grippers (tool point, hand, finger tips) are [row M087]
                                         # at least this far from every image edge (the neck framing's margin, FRAMING_CFG["margin"])
     # Occlusion by the pixel-area measure (src/stance_checks.OcclusionMeter): the share of the object's pixels in the eagle camera image (neck at its framing pose) that the robot hides.
-    "occlusion_max_hidden": {"beaker": 0.0, "hotplate": 0.20},
+    "occlusion_max_hidden": {"beaker": 0.0, "hotplate": 0.20},  # [row M087]
 }
 
 # ----------------------------------------------------------------------------------------------------------
 # Staging pose search (offline), experiments/beaker_hotplate_staging_search.py
 # ----------------------------------------------------------------------------------------------------------
 SEARCH_CFG = {
-    "n_samples": 6_000_000,                # random joint-space samples per arm (uniform within joint limits)
-    "seed": 0,
+    "n_samples": 6_000_000,                # random joint-space samples per arm (uniform within joint limits) [row M107 PENDING David: no decision recorded]
+    "seed": 0,  # integer seed of the legacy staging search's random draws [row M107 PENDING David: no decision recorded]
     # Which gripper poses count as "reachable". The grasp is a side pinch at beaker mid-height, so the
     # approach axis (hand +z) must point forward and down, and the fingers must open sideways, not up/down.
-    "approach_down_deg": 45.0,             # nominal approach axis: this far below horizontal, towards the bench
-    "approach_cone_deg": 45.0,             # allowed angle between the approach axis and the nominal one
-    "finger_axis_max_z": 0.5,              # |z of the finger-opening axis (hand y)| <= this (30 deg off horizontal)
+    "approach_down_deg": 45.0,             # nominal approach axis: this far below horizontal, towards the bench [row M107 PENDING David: no decision recorded]
+    "approach_cone_deg": 45.0,             # allowed angle between the approach axis and the nominal one [row M107 PENDING David: no decision recorded]
+    "finger_axis_max_z": 0.5,              # |z of the finger-opening axis (hand y)| <= this (30 deg off horizontal) [row M107 PENDING David: no decision recorded]
     # Candidate grid
-    "standoffs": (0.05, 0.08, 0.11, 0.14, 0.18, 0.22),   # m, base front edge to bench edge at the final yaw
-    "laterals": tuple(round(0.05 * i, 2) for i in range(-6, 7)),   # m along the bench from the objects' midpoint
-    "pedestal_qs": (0.0, 0.0452, 0.1252, 0.2052, 0.2852, 0.3652, 0.418),   # torso heights 0.305 to 0.723 m above the pedestal base (the old list's heights, 0.04 m apart, from the old 0.294 up to its raised 0.75)
-    "pedestal_stop_margin": 0.01,          # m, candidates this close to the lowest command (fully collapsed) are skipped
-    "min_clearance": 0.05,                 # m, base footprint to bench at the staging pose (the requirement)
-    "required_clearance": 0.08,            # m, wanted: footprint to bench at the staging pose (the hard minimum is min_clearance)
-    "required_turn_clearance": 0.05,       # m, wanted: swept footprint of the final turn (hard minimum min_turn_clearance)
-    "min_turn_clearance": 0.02,            # m, the footprint swept by the final in-place turn (the drive stops short, on the far side)
-    "gap_resolution": 0.03,                # m, sampled gaps within this of the best go on to IK (the sample density limits them; IK then gives the exact gap)
-    "gap_flag": 0.03,                      # m, report anything above this
-    "reach_radius": 0.03,                  # m, neighbour count radius, the tie-break for how deep inside the workspace a target is
+    "standoffs": (0.05, 0.08, 0.11, 0.14, 0.18, 0.22),   # m, base front edge to bench edge at the final yaw [row M107 PENDING David: no decision recorded]
+    "laterals": tuple(round(0.05 * i, 2) for i in range(-6, 7)),   # m along the bench from the objects' midpoint [row M107 PENDING David: no decision recorded]
+    "pedestal_qs": (0.0, 0.0452, 0.1252, 0.2052, 0.2852, 0.3652, 0.418),   # torso heights 0.305 to 0.723 m above the pedestal base (the old list's heights, 0.04 m apart, from the old 0.294 up to its raised 0.75) [row M107 PENDING David: no decision recorded]
+    "pedestal_stop_margin": 0.01,          # m, candidates this close to the lowest command (fully collapsed) are skipped [row M107 PENDING David: no decision recorded]
+    "min_clearance": 0.05,                 # m, base footprint to bench at the staging pose (the requirement) [row M107 PENDING David: no decision recorded]
+    "required_clearance": 0.08,            # m, wanted: footprint to bench at the staging pose (the hard minimum is min_clearance) [row M107 PENDING David: no decision recorded]
+    "required_turn_clearance": 0.05,       # m, wanted: swept footprint of the final turn (hard minimum min_turn_clearance) [row M107 PENDING David: no decision recorded]
+    "min_turn_clearance": 0.02,            # m, the footprint swept by the final in-place turn (the drive stops short, on the far side) [row M107 PENDING David: no decision recorded]
+    "gap_resolution": 0.03,                # m, sampled gaps within this of the best go on to IK (the sample density limits them; IK then gives the exact gap) [row M107 PENDING David: no decision recorded]
+    "gap_flag": 0.03,                      # m, report anything above this [row M107 PENDING David: no decision recorded]
+    "reach_radius": 0.03,                  # m, neighbour count radius, the tie-break for how deep inside the workspace a target is [row M107 PENDING David: no decision recorded]
     # Ready pose: TCP this far above the beaker top and this far back towards the robot
-    "ready_clear_above_top": 0.115,        # m; the fingertips are 15 mm past the TCP, so they end up ~10 cm clear
-    "ready_back_off": 0.05,                # m, horizontal, towards the robot ("in front of" the beaker)
-    "grasp_height_frac": 0.5,              # grasp point = beaker mid-height
-    "place_clear_above_plate": 0.10,       # m, second reach target above hotplate_top
-    "finger_open": 0.044,                  # m, fully open (both fingers)
-    "path_margin": 0.03,                   # m, the arm path stays this far from the bench, objects and furniture
+    "ready_clear_above_top": 0.115,        # m; the fingertips are 15 mm past the TCP, so they end up ~10 cm clear [row M107 PENDING David: no decision recorded]
+    "ready_back_off": 0.05,                # m, horizontal, towards the robot ("in front of" the beaker) [row M107 PENDING David: no decision recorded]
+    "grasp_height_frac": 0.5,              # grasp point = beaker mid-height [row M107 PENDING David: no decision recorded]
+    "place_clear_above_plate": 0.10,       # m, second reach target above hotplate_top [row M107 PENDING David: no decision recorded]
+    "finger_open": 0.044,                  # m, fully open (both fingers) [row M107 PENDING David: no decision recorded]
+    "path_margin": 0.03,                   # m, the arm path stays this far from the bench, objects and furniture [row M107 PENDING David: no decision recorded]
 }
 
 # ----------------------------------------------------------------------------------------------------------
 # Joint layout + staging search with slack at every task pose (experiments/beaker_hotplate_layout_search.py)
 # ----------------------------------------------------------------------------------------------------------
 LAYOUT_CFG = {
-    "arm": "left",
-    "n_samples": 20_000_000,               # random joint samples of that arm (the usable ones are kept, with their joint margin)
-    "seed": 1,
+    "arm": "left",  # which arm the legacy layout search plans for [row M108 PENDING David: no decision recorded]
+    "n_samples": 20_000_000,               # random joint samples of that arm (the usable ones are kept, with their joint margin) [row M108 PENDING David: no decision recorded]
+    "seed": 1,  # integer seed of the legacy layout search's random draws [row M108 PENDING David: no decision recorded]
     # Object pair: slid together along the bench (hotplate to the robot's right of the beaker, i.e. smaller world x)
-    "spacings": (0.20, 0.25, 0.30),        # m, beaker to hotplate centre
-    "bench_edge_margin": 0.05,             # m, objects at least this far from every bench edge; fixes the pair's y
-    "pair_xs": (0.6, 0.8, 1.0, 1.2, 1.4),  # beaker x positions tried (reach does not depend on x; furniture and the turn do)
+    "spacings": (0.20, 0.25, 0.30),        # m, beaker to hotplate centre [row M108 PENDING David: no decision recorded]
+    "bench_edge_margin": 0.05,             # m, objects at least this far from every bench edge; fixes the pair's y [row M108 PENDING David: no decision recorded]
+    "pair_xs": (0.6, 0.8, 1.0, 1.2, 1.4),  # beaker x positions tried (reach does not depend on x; furniture and the turn do) [row M108 PENDING David: no decision recorded]
     # Staging pose, relative to the pair: standoff (base front to bench edge), lateral offset from the pair midpoint
     # along the bench, yaw offset from facing the bench, pedestal command
-    "standoffs": (0.08, 0.10, 0.12, 0.14, 0.16),
-    "laterals": tuple(round(0.05 * i, 2) for i in range(-8, 3)),
-    "yaw_offsets_deg": (-20.0, -10.0, 0.0, 10.0, 20.0),
-    "pedestal_qs": (0.0452, 0.1252, 0.2052, 0.2852, 0.3652, 0.418),
+    "standoffs": (0.08, 0.10, 0.12, 0.14, 0.16),  # [row M108 PENDING David: no decision recorded]
+    "laterals": tuple(round(0.05 * i, 2) for i in range(-8, 3)),  # m: lateral offsets the legacy layout search tries (-0.40 to +0.10 in 0.05 steps) [row M108 PENDING David: no decision recorded]
+    "yaw_offsets_deg": (-20.0, -10.0, 0.0, 10.0, 20.0),  # degrees: yaw offsets from the nominal heading the legacy layout search tries [row M108 PENDING David: no decision recorded]
+    "pedestal_qs": (0.0452, 0.1252, 0.2052, 0.2852, 0.3652, 0.418),  # m: pedestal commands the legacy layout search tries [row M108 PENDING David: no decision recorded]
     # Requirements
-    "required_clearance": 0.08,            # m, base footprint to bench at the staging pose
-    "required_turn_clearance": 0.05,       # m, footprint swept by the final in-place turn
-    "min_furniture_clearance": 0.03,       # m
-    "required_margin_deg": 10.0,           # every arm joint this far from its limit at every task pose
-    "clear_margin": 0.003,                 # m, arm geoms (except the fingers on the beaker) stay this far from everything else
-    "path_margin": 0.03,                   # m, the rest -> via -> ready path stays this far from everything
-    "holding_finger_q": 0.0368,            # m per finger: gap 70 mm = the beaker diameter (gap = 2 q - 3.6 mm)
-    "setdown_clearance": 0.002,            # m, the held beaker's bottom starts this far above the hotplate top
+    "required_clearance": 0.08,            # m, base footprint to bench at the staging pose [row M108 PENDING David: no decision recorded]
+    "required_turn_clearance": 0.05,       # m, footprint swept by the final in-place turn [row M108 PENDING David: no decision recorded]
+    "min_furniture_clearance": 0.03,       # m [row M108 PENDING David: no decision recorded]
+    "required_margin_deg": 10.0,           # every arm joint this far from its limit at every task pose [row M108 PENDING David: no decision recorded]
+    "clear_margin": 0.003,                 # m, arm geoms (except the fingers on the beaker) stay this far from everything else [row M108 PENDING David: no decision recorded]
+    "path_margin": 0.03,                   # m, the rest -> via -> ready path stays this far from everything [row M108 PENDING David: no decision recorded]
+    "holding_finger_q": 0.0368,            # m per finger: gap 70 mm = the beaker diameter (gap = 2 q - 3.6 mm) [row M108 PENDING David: no decision recorded]
+    "setdown_clearance": 0.002,            # m, the held beaker's bottom starts this far above the hotplate top [row M108 PENDING David: no decision recorded]
     # Robustness: base perturbed by +-dx, +-dy, +-dyaw (all 8 corners)
-    "robust_xy": 0.02,
-    "robust_yaw_deg": 2.0,
+    "robust_xy": 0.02,  # [row M108 PENDING David: no decision recorded]
+    "robust_yaw_deg": 2.0,  # degrees: the yaw perturbation a candidate of the legacy layout search must survive [row M108 PENDING David: no decision recorded]
     # Search effort
-    "reach_radius": 0.015,                 # m, samples within this of a target give the screening margin
-    "n_screen_keep": 120,                  # candidates (by screening margin) that get the exact IK
-    "n_seeds": 100,
+    "reach_radius": 0.015,                 # m, samples within this of a target give the screening margin [row M108 PENDING David: no decision recorded]
+    "n_screen_keep": 120,                  # candidates (by screening margin) that get the exact IK [row M108 PENDING David: no decision recorded]
+    "n_seeds": 100,  # count: random inverse-kinematics seeds per pose in the legacy layout search [row M108 PENDING David: no decision recorded]
 }
 
 # ----------------------------------------------------------------------------------------------------------
@@ -328,146 +328,146 @@ LAYOUT_CFG = {
 STAGING_CFG = {
     # DRIVE: turn in place toward the staging xy, drive straight, turn to the staging yaw (ground-truth base pose).
     # Gentle starts: the base's yaw drifts when it starts to move (the arms swing), so the acceleration is slow.
-    "drive_max_lin_vel": 0.3,              # m/s
-    "drive_lin_accel": 0.1,                # m/s^2
-    "drive_lin_decel": 0.15,               # m/s^2
-    "drive_max_ang_vel": 0.4,              # rad/s
-    "drive_ang_accel": 0.2,                # rad/s^2
-    "drive_ang_decel": 0.2,                # rad/s^2
-    "drive_pos_tol": 0.01,                 # m, arrival tolerance (never loosened: a miss is reported)
-    "drive_yaw_tol": math.radians(0.5),    # rad (was 1.0 before the base lean fix; also the yaw trigger of the base pose corrections)
-    "drive_creep_lin": 0.02,               # m/s, lowest speed while still outside the tolerance (so the base converges)
-    "drive_creep_ang": 0.03,               # rad/s
-    "drive_turn_first_tol": math.radians(2.0),   # the turn toward the goal ends within this; the drive steers the rest
-    "drive_steer_gain": 1.0,               # 1/s, heading error -> yaw rate while driving
-    "drive_cross_track_gain": 1.5,         # 1/s: heading aimed at the line, further along it the further off the line (Stanley)
-    "drive_steer_max": 0.1,                # rad/s
-    "drive_settle_s": 0.3,                 # the arrival must hold this long with the base at rest
-    "drive_max_reapproach": 3,             # corrective re-approaches before DRIVE gives up (-> the episode is STAGING_FAILED)
-    "drive_timeout": 120.0,                # s
+    "drive_max_lin_vel": 0.3,              # m/s [row M109 PENDING David: no decision recorded]
+    "drive_lin_accel": 0.1,                # m/s^2 [row M109 PENDING David: no decision recorded]
+    "drive_lin_decel": 0.15,               # m/s^2 [row M109 PENDING David: no decision recorded]
+    "drive_max_ang_vel": 0.4,              # rad/s [row M109 PENDING David: no decision recorded]
+    "drive_ang_accel": 0.2,                # rad/s^2 [row M109 PENDING David: no decision recorded]
+    "drive_ang_decel": 0.2,                # rad/s^2 [row M109 PENDING David: no decision recorded]
+    "drive_pos_tol": 0.01,                 # m, arrival tolerance (never loosened: a miss is reported) [row M109 PENDING David: no decision recorded]
+    "drive_yaw_tol": math.radians(0.5),    # rad (was 1.0 before the base lean fix; also the yaw trigger of the base pose corrections) [row M109 PENDING David: no decision recorded]
+    "drive_creep_lin": 0.02,               # m/s, lowest speed while still outside the tolerance (so the base converges) [row M109 PENDING David: no decision recorded]
+    "drive_creep_ang": 0.03,               # rad/s [row M109 PENDING David: no decision recorded]
+    "drive_turn_first_tol": math.radians(2.0),   # the turn toward the goal ends within this; the drive steers the rest [row M109 PENDING David: no decision recorded]
+    "drive_steer_gain": 1.0,               # 1/s, heading error -> yaw rate while driving [row M109 PENDING David: no decision recorded]
+    "drive_cross_track_gain": 1.5,         # 1/s: heading aimed at the line, further along it the further off the line (Stanley) [row M109 PENDING David: no decision recorded]
+    "drive_steer_max": 0.1,                # rad/s [row M109 PENDING David: no decision recorded]
+    "drive_settle_s": 0.3,                 # the arrival must hold this long with the base at rest [row M109 PENDING David: no decision recorded]
+    "drive_max_reapproach": 3,             # corrective re-approaches before DRIVE gives up (-> the episode is STAGING_FAILED) [row M109 PENDING David: no decision recorded]
+    "drive_timeout": 120.0,                # s [row M109 PENDING David: no decision recorded]
     # Staging order since 2026-10-19 (David): the arms stay at home at all times except during manipulation, so ARMS and PEDESTAL come first, at the spawn in open space, then DRIVE
     # and CREEP_IN with the arms out. The pose corrections after the pedestal and arm moves that used to be here are gone (nothing moves the base after the drive any more).
-    "correction_aim_frac": 0.5,            # the creep goes to within this fraction of the tolerance (aim for the centre, not the edge)
-    "correction_arms_max_yaw": math.radians(2.0),   # rad: the largest yaw error the creep controller turns away before it moves (2 deg = the layout search's verified base-perturbation range)
-    "correction_arms_min_base_clearance": 0.05,     # m: base to anything in the scene, checked every few ticks while driving (DRIVE and CREEP_IN)
-    "correction_arms_min_arm_clearance": 0.03,      # m: the arms (forearms and hands included) to anything in the scene, same check
-    "arms_open_space_min_clearance": 0.10,          # m: the arms raising to home at the spawn must stay this far from everything (checked along the whole path before the first move, then every few ticks)
-    "drive_max_lean_deg": 1.0,                      # deg: the base's tilt while it drives with the arms out (the pedestal lift test's bound, experiments/pedestal_lift_test.py); above it the staging fails
-    "watch_every_ticks": 5,                         # the clearance monitor runs every this many control ticks
+    "correction_aim_frac": 0.5,            # the creep goes to within this fraction of the tolerance (aim for the centre, not the edge) [row M109 PENDING David: no decision recorded]
+    "correction_arms_max_yaw": math.radians(2.0),   # rad: the largest yaw error the creep controller turns away before it moves (2 deg = the layout search's verified base-perturbation range) [row M109 PENDING David: no decision recorded]
+    "correction_arms_min_base_clearance": 0.05,     # m: base to anything in the scene, checked every few ticks while driving (DRIVE and CREEP_IN) [row M109 PENDING David: no decision recorded]
+    "correction_arms_min_arm_clearance": 0.03,      # m: the arms (forearms and hands included) to anything in the scene, same check [row M109 PENDING David: no decision recorded]
+    "arms_open_space_min_clearance": 0.10,          # m: the arms raising to home at the spawn must stay this far from everything (checked along the whole path before the first move, then every few ticks) [row M109 PENDING David: no decision recorded]
+    "drive_max_lean_deg": 1.0,                      # deg: the base's tilt while it drives with the arms out (the pedestal lift test's bound, experiments/pedestal_lift_test.py); above it the staging fails [row M109 PENDING David: no decision recorded]
+    "watch_every_ticks": 5,                         # the clearance monitor runs every this many control ticks [row M109 PENDING David: no decision recorded]
     # CREEP_IN (only with TASK_CFG["staging_approach_back_m"]): from the approach spot to the staging pose with the arms at home, at creep speed, same clearance minimums as above
-    "creep_in_max_pos": 0.35,              # m: the largest along-heading travel (the arms-first spot is 0.21 m behind the staging pose)
-    "creep_in_timeout": 90.0,              # s (0.21 m at the creep speed of 0.02 m/s takes about 11 s plus the ramps)
-    "creep_in_trace_mm": 10.0,             # mm of travel between the clearance samples kept in the correction record's "trace"
+    "creep_in_max_pos": 0.35,              # m: the largest along-heading travel (the arms-first spot is 0.21 m behind the staging pose) [row M109 PENDING David: no decision recorded]
+    "creep_in_timeout": 90.0,              # s (0.21 m at the creep speed of 0.02 m/s takes about 11 s plus the ramps) [row M109 PENDING David: no decision recorded]
+    "creep_in_trace_mm": 10.0,             # mm of travel between the clearance samples kept in the correction record's "trace" [row M109 PENDING David: no decision recorded]
     # PEDESTAL
-    "pedestal_speed": 0.10,                # m/s of command change (the lift's jog speed; the command is now the height, so this moves the torso as fast as the old 0.05 m/s of stage travel)
-    "pedestal_tol": 0.006,                 # m (the old 0.003 m of stage travel)
-    "pedestal_settle_vel": 0.004,          # m/s (the old 0.002 m/s of stage travel)
-    "pedestal_settle_s": 0.3,
-    "pedestal_timeout": 30.0,
+    "pedestal_speed": 0.10,                # m/s of command change (the lift's jog speed; the command is now the height, so this moves the torso as fast as the old 0.05 m/s of stage travel) [row M109 PENDING David: no decision recorded]
+    "pedestal_tol": 0.006,                 # m (the old 0.003 m of stage travel) [row M109 PENDING David: no decision recorded]
+    "pedestal_settle_vel": 0.004,          # m/s (the old 0.002 m/s of stage travel) [row M109 PENDING David: no decision recorded]
+    "pedestal_settle_s": 0.3,  # s: the pedestal speed must stay below pedestal_settle_vel this long before the PEDESTAL phase ends [row M109 PENDING David: no decision recorded]
+    "pedestal_timeout": 30.0,  # s: the PEDESTAL phase fails after this long (operator time not counted) [row M109 PENDING David: no decision recorded]
     # ARMS: minimum-jerk move along rest -> ready_via_q -> ready_q (joint-space arc length), gripper opening on the way
-    "arms_move_s": 10.0,                   # s; was 6: at 6 s the servos lagged the path by up to 6 deg and the fingers grazed the bench top
-    "gripper_max_speed": 0.05,             # m/s of finger travel: snap-back limit on the gripper target after a hand-back (staging itself peaks at ~0.008)
-    "arm_max_speed": 1.0,                  # rad/s per joint: snap-back limit on the arm targets (staging itself peaks at 0.52 rad/s). NEW value, to be approved
-    "arms_tol": 0.03,                      # rad, every joint
-    "arms_settle_vel": 0.02,               # rad/s
-    "arms_settle_s": 0.3,
-    "arms_timeout": 30.0,
-    "finger_open": 0.044,                  # m
+    "arms_move_s": 10.0,                   # s; was 6: at 6 s the servos lagged the path by up to 6 deg and the fingers grazed the bench top [row M109 PENDING David: no decision recorded]
+    "gripper_max_speed": 0.05,             # m/s of finger travel: snap-back limit on the gripper target after a hand-back (staging itself peaks at ~0.008) [row M109 PENDING David: no decision recorded]
+    "arm_max_speed": 1.0,                  # rad/s per joint: snap-back limit on the arm targets (staging itself peaks at 0.52 rad/s). NEW value, to be approved [row M109 PENDING David: no decision recorded]
+    "arms_tol": 0.03,                      # rad, every joint [row M109 PENDING David: no decision recorded]
+    "arms_settle_vel": 0.02,               # rad/s [row M109 PENDING David: no decision recorded]
+    "arms_settle_s": 0.3,  # s: the arm joint speeds must stay below arms_settle_vel this long before the ARMS phase ends [row M109 PENDING David: no decision recorded]
+    "arms_timeout": 30.0,  # s: the ARMS phase fails after this long (operator time not counted) [row M109 PENDING David: no decision recorded]
+    "finger_open": 0.044,                  # m [row M098]
     # NECK: frame_points() on the task points, then hold
-    "neck_tol": 0.01,                      # rad
-    "neck_settle_vel": 0.02,               # rad/s
-    "neck_settle_s": 0.3,
-    "neck_timeout": 15.0,
+    "neck_tol": 0.01,                      # rad [row M109 PENDING David: no decision recorded]
+    "neck_settle_vel": 0.02,               # rad/s [row M109 PENDING David: no decision recorded]
+    "neck_settle_s": 0.3,  # s: the neck joint speeds must stay below neck_settle_vel this long before the NECK phase ends [row M109 PENDING David: no decision recorded]
+    "neck_timeout": 15.0,  # s: the NECK phase fails after this long (operator time not counted) [row M109 PENDING David: no decision recorded]
 }
 
 # ----------------------------------------------------------------------------------------------------------
 # Episode runner (src/episode_runner.py)
 # ----------------------------------------------------------------------------------------------------------
 EPISODE_CFG = {
-    "timeout_after_handoff": 60.0,         # s of sim time under AUTO control after HANDOFF with no success -> outcome TIMEOUT (paused while the operator has control)
-    "operator_timeout": 300.0,             # s of sim time under operator (teleop) control with no success -> outcome TIMEOUT (also the budget of a teleop-start episode)
-    "success_linger_s": 2.0,               # s the episode runs on after the success check passes (the face smiles), then stops
-    "log_hz": 10.0,                        # state / command log, written on the first tick of every 1/log_hz s of sim time
-    "exclusive": True,                     # one subsystem moves at a time (the neck is exempt); off by default elsewhere
-    "spawn_z": 0.22,                       # m, height the base is dropped from at spawn (it settles onto its wheels)
+    "timeout_after_handoff": 60.0,         # s of sim time under AUTO control after HANDOFF with no success -> outcome TIMEOUT (paused while the operator has control) [row M110 PENDING David: no decision recorded]
+    "operator_timeout": 300.0,             # s of sim time under operator (teleop) control with no success -> outcome TIMEOUT (also the budget of a teleop-start episode) [row M110 PENDING David: no decision recorded]
+    "success_linger_s": 2.0,               # s the episode runs on after the success check passes (the face smiles), then stops [row M110 PENDING David: no decision recorded]
+    "log_hz": 10.0,                        # state / command log, written on the first tick of every 1/log_hz s of sim time [row M110 PENDING David: no decision recorded]
+    "exclusive": True,                     # one subsystem moves at a time (the neck is exempt); off by default elsewhere [row M110 PENDING David: no decision recorded]
+    "spawn_z": 0.22,                       # m, height the base is dropped from at spawn (it settles onto its wheels) [row M110 PENDING David: no decision recorded]
 }
 
 # ----------------------------------------------------------------------------------------------------------
 # The scripted pick and place of the MPVI skeleton (src/mink_arm.py, src/mpvi_skills.py)
 # ----------------------------------------------------------------------------------------------------------
 MINK_CFG = {
-    "solver": "daqp",
-    "damping": 1e-3,                       # solve_ik's Levenberg-Marquardt term
-    "position_cost": 1.0, "orientation_cost": 0.5,   # the frame task on the pad centre
-    "posture_cost": 0.01,                  # toward the home pose, on the arm's 7 joints only (it picks the elbow, the 7th degree of freedom)
-    "joint_margin_rad": math.radians(10.0),          # stay this far from every joint limit (the map's rule)
-    "max_joint_speed": 0.5,                # rad/s, the real bridge's joint speed limit (the bridge itself is LATER); the plan's speeds stay below it
-    "collision_gain": 0.85, "detect_distance": 0.05,
-    "min_distance": {"furniture": 0.008, "right_arm": 0.040},   # m: the left arm's links 3 to 7, hand and fingers against the bench and hotplate, and against the right arm
+    "solver": "daqp",  # name of the quadratic-programming solver mink uses [row M088]
+    "damping": 1e-3,                       # solve_ik's Levenberg-Marquardt term [row M088]
+    "position_cost": 1.0, "orientation_cost": 0.5,   # the frame task on the pad centre [row M088] [row M111 PENDING David: no decision recorded]
+    "posture_cost": 0.01,                  # toward the home pose, on the arm's 7 joints only (it picks the elbow, the 7th degree of freedom) [row M088]
+    "joint_margin_rad": math.radians(10.0),          # stay this far from every joint limit (the map's rule) [row M088]
+    "max_joint_speed": 0.5,                # rad/s, the real bridge's joint speed limit (the bridge itself is LATER); the plan's speeds stay below it [row M111 PENDING David: no decision recorded]
+    "collision_gain": 0.85, "detect_distance": 0.05,  # dimensionless gain (0 to 1) of mink's collision-avoidance constraint; and m: the distance at which a pair of geoms starts to be considered [row M088] [row M111 PENDING David: no decision recorded]
+    "min_distance": {"furniture": 0.008, "right_arm": 0.040},   # m: the left arm's links 3 to 7, hand and fingers against the bench and hotplate, and against the right arm [row M088]
 }
 
 PICK_PLACE_CFG = {
-    "grasp_height_frac": 0.525,            # pad centre height on the beaker, fraction of its height (the middle of BEAKER_CFG["grasp_band"])
-    "standoff_m": 0.12,                    # the descent is this far back from the beaker (or the set-down point) along the approach direction
-    "retreat_m": 0.05,                     # after the release the hand backs out this far along the approach direction (clears the beaker: 23 mm for the open fingers plus their half length), then goes home diagonally;
+    "grasp_height_frac": 0.525,            # pad centre height on the beaker, fraction of its height (the middle of BEAKER_CFG["grasp_band"]) [row M089]
+    "standoff_m": 0.12,                    # the descent is this far back from the beaker (or the set-down point) along the approach direction [row M089]
+    "retreat_m": 0.05,                     # after the release the hand backs out this far along the approach direction (clears the beaker: 23 mm for the open fingers plus their half length), then goes home diagonally; [row M112 PENDING David: no decision recorded]
                                            # a full standoff runs the left hand into the right hand at home (first run: stopped at 39.9 mm, the 40 mm limit)
-    "clearance_m": 0.20,                   # pad centre height above the surface the target sits on for the 'over' waypoints (design plan 3.3); if unreachable: ~0.12, recorded
-    "carry_gap_m": 0.04,                   # the held beaker's bottom passes this far above the hotplate top
-    "setdown_gap_m": 0.002,                # the beaker's bottom is this far above the plate when the gripper opens
-    "speed_m_s": 0.12, "slow_speed_m_s": 0.04,       # pad centre speed in transit, and for the descent, the move in and the set-down
-    "turn_rad_s": 0.5,                     # orientation speed limit of a waypoint move
-    "min_move_s": 1.0,
-    "tol_m": 0.003, "tol_rad": math.radians(2.0),    # a waypoint is reached within these (measured pad pose) and settled
-    "settle_speed_rad_s": 0.02, "settle_dwell_s": 0.2,
-    "sag_gain_per_s": 3.0, "sag_max_m": 0.04, "sag_max_rad": 0.1,   # the simple sag correction: integral gain on the measured pad pose error (1/s) and its limits
-    "timeout_factor": 3.0, "timeout_extra_s": 6.0,    # a waypoint move times out after factor * its planned time + extra
-    "close_min_s": 1.0, "close_timeout_s": 5.0, "open_timeout_s": 4.0,
-    "stall_speed_m_s": 0.002, "stall_dwell_s": 0.3,  # m/s and s: the fingers count as stopped when slower than 0.002 m/s for 0.3 s; chosen so the gripper event fires once the grip has settled and the image is not taken mid-motion (row M020)
-    "held_travel_range_m": (0.003, 0.040),            # m: finger travel at the stall must lie in this range: under 3 mm is "closed on nothing" (no event, a module error), over 40 mm is "did not close"; the 3 mm is the "stopped short of fully closed" margin (row M020)
-    "open_reached_margin_m": 0.003,        # m: the open event needs the fingers within 3 mm of the open travel, not only at rest; the same margin the sim oracle uses for "gripper open" (row M020)
-    "drop_margin_m": 0.003, "drop_dwell_s": 0.05,     # m and s: the drop monitor reports "dropped" when the finger opening stays more than 3 mm below the opening measured at the grasp for 0.05 s (about 7 control ticks, so one noisy tick does not fire it); 3 mm is well above the 1 mm noise of a held grasp (rows M025, M044)
-    "drop_monitor_decides": True,           # True: a "dropped" report fails the current step and starts the retry path (David, 2026-10-21: with the VLM checker there is no scripted stand-in check; row M044); False: it only logs
+    "clearance_m": 0.20,                   # pad centre height above the surface the target sits on for the 'over' waypoints (design plan 3.3); if unreachable: ~0.12, recorded [row M089]
+    "carry_gap_m": 0.04,                   # the held beaker's bottom passes this far above the hotplate top [row M112 PENDING David: no decision recorded]
+    "setdown_gap_m": 0.002,                # the beaker's bottom is this far above the plate when the gripper opens [row M112 PENDING David: no decision recorded]
+    "speed_m_s": 0.12, "slow_speed_m_s": 0.04,       # pad centre speed in transit, and for the descent, the move in and the set-down [row M112 PENDING David: no decision recorded]
+    "turn_rad_s": 0.5,                     # orientation speed limit of a waypoint move [row M112 PENDING David: no decision recorded]
+    "min_move_s": 1.0,  # s: the shortest duration of a waypoint move [row M112 PENDING David: no decision recorded]
+    "tol_m": 0.003, "tol_rad": math.radians(2.0),    # a waypoint is reached within these (measured pad pose) and settled [row M112 PENDING David: no decision recorded]
+    "settle_speed_rad_s": 0.02, "settle_dwell_s": 0.2,  # rad/s and s: a waypoint counts as settled when the arm's joints are slower than the speed for the dwell time [row M112 PENDING David: no decision recorded]
+    "sag_gain_per_s": 3.0, "sag_max_m": 0.04, "sag_max_rad": 0.1,   # the simple sag correction: integral gain on the measured pad pose error (1/s) and its limits [row M112 PENDING David: no decision recorded]
+    "timeout_factor": 3.0, "timeout_extra_s": 6.0,    # a waypoint move times out after factor * its planned time + extra [row M112 PENDING David: no decision recorded]
+    "close_min_s": 1.0, "close_timeout_s": 5.0, "open_timeout_s": 4.0,  # s: the gripper's closing is not judged before close_min_s; it fails after close_timeout_s (closing) or open_timeout_s (opening) without stopping [row M020] [row M112 PENDING David: no decision recorded]
+    "stall_speed_m_s": 0.002, "stall_dwell_s": 0.3,  # m/s and s: the fingers count as stopped when slower than 0.002 m/s for 0.3 s; chosen so the gripper event fires once the grip has settled and the image is not taken mid-motion (row M020) [row M020]
+    "held_travel_range_m": (0.003, 0.040),            # m: finger travel at the stall must lie in this range: under 3 mm is "closed on nothing" (no event, a module error), over 40 mm is "did not close"; the 3 mm is the "stopped short of fully closed" margin (row M020) [row M020]
+    "open_reached_margin_m": 0.003,        # m: the open event needs the fingers within 3 mm of the open travel, not only at rest; the same margin the sim oracle uses for "gripper open" (row M020) [row M020]
+    "drop_margin_m": 0.003, "drop_dwell_s": 0.05,     # m and s: the drop monitor reports "dropped" when the finger opening stays more than 3 mm below the opening measured at the grasp for 0.05 s (about 7 control ticks, so one noisy tick does not fire it); 3 mm is well above the 1 mm noise of a held grasp (rows M025, M044) [row M044]
+    "drop_monitor_decides": True,           # True: a "dropped" report fails the current step and starts the retry path (David, 2026-10-21: with the VLM checker there is no scripted stand-in check; row M044); False: it only logs [row M044]
 
-    "episode_timeout_s": 180.0,
+    "episode_timeout_s": 180.0,  # s: the sim-time budget of a pipeline episode after the handoff (replaces the task's own timeout) [row M112 PENDING David: no decision recorded]
 }
 
 # ----------------------------------------------------------------------------------------------------------
 # Success check: check_success(model, data, cfg=SUCCESS_CFG)
 # ----------------------------------------------------------------------------------------------------------
 SUCCESS_CFG = {
-    "beaker_site": "beaker_base",
-    "hotplate_site": "hotplate_top",
-    "hotplate_plate_geom": "task_hotplate_top_plate",   # its half extents are the top footprint
-    "beaker_body": "task_beaker",
-    "footprint_margin": 0.01,              # m, beaker_base must be inside the top footprint minus this
-    "height_tol": 0.005,                   # m, |beaker_base z - hotplate_top z|
-    "upright_max_deg": 15.0,               # beaker local z against world z
-    "speed_max": 0.01,                     # m/s
+    "beaker_site": "beaker_base",  # name of the model site at the beaker's bottom centre [row M113 PENDING David: no decision recorded]
+    "hotplate_site": "hotplate_top",  # name of the model site at the hotplate's top [row M113 PENDING David: no decision recorded]
+    "hotplate_plate_geom": "task_hotplate_top_plate",   # its half extents are the top footprint [row M113 PENDING David: no decision recorded]
+    "beaker_body": "task_beaker",  # name of the beaker's body in the model [row M113 PENDING David: no decision recorded]
+    "footprint_margin": 0.01,              # m, beaker_base must be inside the top footprint minus this [row M113 PENDING David: no decision recorded]
+    "height_tol": 0.005,                   # m, |beaker_base z - hotplate_top z| [row M113 PENDING David: no decision recorded]
+    "upright_max_deg": 15.0,               # beaker local z against world z [row M113 PENDING David: no decision recorded]
+    "speed_max": 0.01,                     # m/s [row M113 PENDING David: no decision recorded]
 }
 
 
 # The Gemini calls of the MPVI pipeline (design plan 8; src/llm_gemini.py, src/mpvi_planner.py, src/mpvi_postprocess.py).
 LLM_CFG = {
-    "model": "gemini-3.8-flash",           # the exact model name, pinned here (a change of model changes every cache key). gemini-2.5-flash, the paper's, is refused for new API users (404, 2026-10-20); 3.8 is what the API itself suggests
-    "temperature": 0.0,
-    "thinking_budget": 0,                  # tokens for the model's own thinking; 0 = off (the plan and the labels are short and fixed-schema, and the free tier is small)
-    "planner_prompt_version": "planner-appendix-d-v1",    # the paper's Task Planning Prompt (src/mpvi_prompts.py); bump when the text changes: the cache key includes it
-    "vlm_prompt_version": "vlm-check-appendix-d-v1",      # the paper's VLM Completion Checking Prompt (the completion checker, next step)
-    "vlm_cameras": {"gripper_closed": "eagle_cam", "gripper_opened": "eagle_cam"},   # which camera the VLM sees at each gripper event ("wrist_cam" would be the gripper's own); the eagle camera for both, because the wrist view at the grip is filled by the beaker and gave a false NO, and Appendix C.4 says the checker gets the head camera; provisional (row M016)
-    "label_prompt_version": "label-v0",                   # LABEL_PROMPT in src/mpvi_postprocess.py
-    "mode": "cache_only",                  # "cache_only": a cache miss is an error, the API is never called (tests, replays); "cache_or_live": read the cache, call on a miss and store;
+    "model": "gemini-3.8-flash",           # the exact model name, pinned here (a change of model changes every cache key). gemini-2.5-flash, the paper's, is refused for new API users (404, 2026-10-20); 3.8 is what the API itself suggests [row M010]
+    "temperature": 0.0,  # sampling temperature of every Gemini call (0 = as deterministic as the model allows) [row M114 PENDING David: no decision recorded]
+    "thinking_budget": 0,                  # tokens for the model's own thinking; 0 = off (the plan and the labels are short and fixed-schema, and the free tier is small) [row M090]
+    "planner_prompt_version": "planner-appendix-d-v1",    # the paper's Task Planning Prompt (src/mpvi_prompts.py); bump when the text changes: the cache key includes it [row M002]
+    "vlm_prompt_version": "vlm-check-appendix-d-v1",      # the paper's VLM Completion Checking Prompt (the completion checker, next step) [row M002]
+    "vlm_cameras": {"gripper_closed": "eagle_cam", "gripper_opened": "eagle_cam"},   # which camera the VLM sees at each gripper event ("wrist_cam" would be the gripper's own); the eagle camera for both, because the wrist view at the grip is filled by the beaker and gave a false NO, and Appendix C.4 says the checker gets the head camera; provisional (row M016) [row M016]
+    "label_prompt_version": "label-v0",                   # LABEL_PROMPT in src/mpvi_postprocess.py [row M013]
+    "mode": "cache_only",                  # "cache_only": a cache miss is an error, the API is never called (tests, replays); "cache_or_live": read the cache, call on a miss and store; [row M090]
                                            # "live": always call and store the reply (the cache is bypassed for reading)
-    "cache_dir": "experiments/llm_cache",  # committed: the stored replies the tests replay
-    "max_retries": 6,                      # retries after the first try, on rate limits (429) and server errors (500, 503, 504) and network errors
-    "backoff_base_s": 4.0,                 # wait base * 2**retry (plus up to 1 s of jitter), at least the server's own "retry in" hint, at most backoff_max_s
-    "backoff_max_s": 65.0,
-    "timeout_s": 60.0,                     # per request
-    "secrets_file": "~/.config/openarm-tracer-sim/secrets.env",   # holds GEMINI_API_KEY=...; read when the environment variable is not set; never in the repository
+    "cache_dir": "experiments/llm_cache",  # committed: the stored replies the tests replay [row M090]
+    "max_retries": 6,                      # retries after the first try, on rate limits (429) and server errors (500, 503, 504) and network errors [row M114 PENDING David: no decision recorded]
+    "backoff_base_s": 4.0,                 # wait base * 2**retry (plus up to 1 s of jitter), at least the server's own "retry in" hint, at most backoff_max_s [row M114 PENDING David: no decision recorded]
+    "backoff_max_s": 65.0,  # s: the longest wait between two retries of a Gemini call [row M114 PENDING David: no decision recorded]
+    "timeout_s": 60.0,                     # per request [row M114 PENDING David: no decision recorded]
+    "secrets_file": "~/.config/openarm-tracer-sim/secrets.env",   # holds GEMINI_API_KEY=...; read when the environment variable is not set; never in the repository [row M114 PENDING David: no decision recorded]
 }
 
 # The orchestrator's failure handling (design plan 8 D4 item 2; docs/mpvi_decisions.md). A failed manipulation step is retried (the failing arm returns to its zombie pose, the world model is refreshed,
 # the objects are grounded again, the skill runs again), then the operator is asked, or in an unattended run the plan stops.
 ORCH_CFG = {
-    "retry_max": 1,                        # count: retries of a failed manipulation step before the operator is asked (or the plan stops); 1 because a second identical try rarely changes a failure the first one had, and each retry costs a full skill (row M026)
-    "knocked_over_deg": 30.0,              # degrees: the manipulated object's up axis (world model) this far from vertical counts as knocked over and is not retried; between the success check's upright limit (15) and the angle at which the beaker tips (49.5), my choice (row M029)
+    "retry_max": 1,                        # count: retries of a failed manipulation step before the operator is asked (or the plan stops); 1 because a second identical try rarely changes a failure the first one had, and each retry costs a full skill (row M026) [row M026]
+    "knocked_over_deg": 30.0,              # degrees: the manipulated object's up axis (world model) this far from vertical counts as knocked over and is not retried; between the success check's upright limit (15) and the angle at which the beaker tips (49.5), my choice (row M029) [row M029]
 }

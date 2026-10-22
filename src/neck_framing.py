@@ -39,19 +39,19 @@ from src import robot_specs
 from src.neck import neck_ids
 
 FRAMING_CFG = {
-    "camera": "eagle_cam",
-    "margin": 0.10,            # fraction of the image width / height kept free on every side
-    "coarse_steps": 7,         # grid points per joint for the coarse search
-    "n_refine": 6,             # best coarse candidates refined
-    "refine_evals": 1500,
-    "simplex_step": 0.1,       # rad: the initial simplex of the refinement steps this far along every joint (scipy's default is 5 % of the value, which is
+    "camera": "eagle_cam",  # name of the camera the framing aims [row M091]
+    "margin": 0.10,            # fraction of the image width / height kept free on every side [row M091]
+    "coarse_steps": 7,         # grid points per joint for the coarse search [row M122 PENDING David: no decision recorded]
+    "n_refine": 6,             # best coarse candidates refined [row M122 PENDING David: no decision recorded]
+    "refine_evals": 1500,  # count: objective evaluations of the framing's final refinement search [row M122 PENDING David: no decision recorded]
+    "simplex_step": 0.1,       # rad: the initial simplex of the refinement steps this far along every joint (scipy's default is 5 % of the value, which is [row M122 PENDING David: no decision recorded]
                                # 0.00025 for a joint at zero, so such a joint barely moves); 0 gives scipy's default
-    "contact_margin": 0.005,   # m, neck geoms stay this far from everything that is not the neck
-    "aim_weight": 1.0,         # cost of the aim error (rad^2) next to the fit violation
-    "move_weight": 0.0,        # cost of moving away from the start pose (rad^2). 0: the answer does not depend on where the neck was, only on the points
-    "posture_weight": 0.003,   # cost of leaving the posture pose (rad^2): the weak term that picks one answer among the poses that aim and fit equally well
-    "posture_pose": None,      # the posture pose, in the order of the active joints; None = the neck's default aim (NECK_SPECS["drive_pose"])
-    "near_depth": 0.05,        # m, points closer to the camera than this count as not visible
+    "contact_margin": 0.005,   # m, neck geoms stay this far from everything that is not the neck [row M091]
+    "aim_weight": 1.0,         # cost of the aim error (rad^2) next to the fit violation [row M122 PENDING David: no decision recorded]
+    "move_weight": 0.0,        # cost of moving away from the start pose (rad^2). 0: the answer does not depend on where the neck was, only on the points [row M091]
+    "posture_weight": 0.003,   # cost of leaving the posture pose (rad^2): the weak term that picks one answer among the poses that aim and fit equally well [row M091]
+    "posture_pose": None,      # the posture pose, in the order of the active joints; None = the neck's default aim (NECK_SPECS["drive_pose"]) [row M122 PENDING David: no decision recorded]
+    "near_depth": 0.05,        # m, points closer to the camera than this count as not visible [row M122 PENDING David: no decision recorded]
 }
 
 

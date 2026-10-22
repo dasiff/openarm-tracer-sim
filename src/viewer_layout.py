@@ -20,11 +20,11 @@ import numpy as np
 
 from src.base_control import base_yaw
 
-CAM_DISTANCE = 3.5      # follow camera: distance behind the base in metres
-CAM_ELEVATION = -45     # follow camera: angle above the horizon in degrees (negative = looking down)
-FOVY_DEG = 90           # vertical field of view of the follow camera in degrees
-REFERENCE_HEIGHT = 960  # the live viewer window is 1280 x 960 pixels; sizes below are for this height
-BANNER_HEIGHT = 56      # pixels (at scale 1.0) of the banner bar
+CAM_DISTANCE = 3.5      # follow camera: distance behind the base in metres [row M127 PENDING David: no decision recorded]
+CAM_ELEVATION = -45     # follow camera: angle above the horizon in degrees (negative = looking down) [row M127 PENDING David: no decision recorded]
+FOVY_DEG = 90           # vertical field of view of the follow camera in degrees [row M127 PENDING David: no decision recorded]
+REFERENCE_HEIGHT = 960  # the live viewer window is 1280 x 960 pixels; sizes below are for this height [row M127 PENDING David: no decision recorded]
+BANNER_HEIGHT = 56      # pixels (at scale 1.0) of the banner bar [row M127 PENDING David: no decision recorded]
 
 
 def hud_key_list(has_teleop, legend_extra=()):

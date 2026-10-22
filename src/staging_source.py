@@ -86,8 +86,8 @@ def _slew(cur, target, up, down, dt):
     return cur + max(-lim, min(lim, target - cur))
 
 
-RESTORE_ON_RESUME = True      # tests set these False for the control runs
-COMPENSATE_PAUSES = True
+RESTORE_ON_RESUME = True      # tests set these False for the control runs [row M127 PENDING David: no decision recorded]
+COMPENSATE_PAUSES = True  # True: the staging's timeouts do not count the time an operator had control [row M127 PENDING David: no decision recorded]
 
 
 def _start_from_applied(S, obs):

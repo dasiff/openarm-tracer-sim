@@ -26,8 +26,8 @@ that is held back by the hold rule does not wind up while it waits.
 import glfw
 import numpy as np
 
-JOG_JOINT_SPEED = 3.125   # rad/s while a jog key is held (the command moves this much per second of sim time, whatever the tick rate)
-JOG_GRIP_SPEED = 0.1875   # m/s (finger travel is 0 closed .. 0.044 open)
+JOG_JOINT_SPEED = 3.125   # rad/s while a jog key is held (the command moves this much per second of sim time, whatever the tick rate) [row M127 PENDING David: no decision recorded]
+JOG_GRIP_SPEED = 0.1875   # m/s (finger travel is 0 closed .. 0.044 open) [row M127 PENDING David: no decision recorded]
 GRIP_IDX = 7            # item 0-6 = joints 1-7, 7 = gripper
 
 # One fixed key pair per joint, shoulder (j1) to wrist (j7) then gripper,
@@ -36,19 +36,19 @@ GRIP_IDX = 7            # item 0-6 = joints 1-7, 7 = gripper
 # the home and bottom rows.
 JOG_KEYS = {
     "left":  {"plus":  ["1", "2", "3", "4", "5", "6", "7", "8"],
-              "minus": ["Q", "W", "E", "R", "T", "Y", "U", "I"]},
+              "minus": ["Q", "W", "E", "R", "T", "Y", "U", "I"]},  # key names that jog the left arm: per joint a plus and a minus key [row M123 PENDING David: no decision recorded]
     "right": {"plus":  ["A", "S", "D", "F", "G", "H", "J", "K"],
-              "minus": ["Z", "X", "C", "V", "B", "N", "M", "COMMA"]},
+              "minus": ["Z", "X", "C", "V", "B", "N", "M", "COMMA"]},  # key names that jog the right arm: per joint a plus and a minus key [row M123 PENDING David: no decision recorded]
 }
 
 # Pedestal lift (placeholder actuator, robot_specs.PEDESTAL_SPECS): Page Up raises, Page Down
 # lowers while held. The command moves at jog_speed per second of SIM time (the launcher passes
 # jog_speed * tick period as ped_step), so it does not depend on the viewer's frame rate.
-PEDESTAL_KEYS = {"up": "PAGE_UP", "down": "PAGE_DOWN"}
+PEDESTAL_KEYS = {"up": "PAGE_UP", "down": "PAGE_DOWN"}  # [row M124 PENDING David: no decision recorded]
 
 # Camera neck: the same layout idea as the arms (plus on the upper row, minus below, one column per joint, shoulder to wrist)
-NECK_KEYS = {"plus": ["9", "0", "MINUS", "EQUAL"], "minus": ["O", "P", "LEFT_BRACKET", "RIGHT_BRACKET"],
-             "frame": "F7", "home": "F8"}
+NECK_KEYS = {"plus": ["9", "0", "MINUS", "EQUAL"], "minus": ["O", "P", "LEFT_BRACKET", "RIGHT_BRACKET"],  # [row M125 PENDING David: no decision recorded]
+             "frame": "F7", "home": "F8"}  # key names: F7 frames the neck on the task's targets, F8 sends it to its drive pose [row M125 PENDING David: no decision recorded]
 
 # Base drive keys and ramp (was CONTROL_GROUPS[0]["keys"] / ["drive_params"])
 DRIVE_CFG = {
@@ -58,13 +58,13 @@ DRIVE_CFG = {
         "left":     ["LEFT"],
         "right":    ["RIGHT"],
         "stop":     ["SPACE"],
-    },
+    },  # key names that drive the base: forward, backward, left, right [row M126 PENDING David: no decision recorded]
     "drive_params": {
         "max_linear_vel":  1.5,   # m/s (real Tracer max ~1.6 m/s)
         "max_angular_vel": 2.0,   # rad/s
         "ramp_rate":       1.25,  # 1/s: change of the normalised command per second (full speed in 0.8 s). A gentle
                                    # ramp: a fast one flings the arms because velocity control decouples base from arm inertia
-    },
+    },  # [row M126 PENDING David: no decision recorded]
 }
 
 

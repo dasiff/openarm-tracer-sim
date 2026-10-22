@@ -25,7 +25,7 @@ import numpy as np
 # move toward the solver's goal, so the first engaged frame (drooped rest
 # pose -> tracked pose) ramps instead of snapping. step() applies it as
 # TELEOP_MAX_JOINT_VEL times the tick length (obs["timestep"] * obs["steps_per_frame"]) radians per control tick.
-TELEOP_MAX_JOINT_VEL = 3.0   # rad/s
+TELEOP_MAX_JOINT_VEL = 3.0   # rad/s [row M127 PENDING David: no decision recorded]
 PREVIEW_WINDOW = "MediaPipe Pose Estimation"   # title set by xrt_devices
 
 

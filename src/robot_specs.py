@@ -35,8 +35,8 @@ calibration to-do list) are in docs/robot_reference.md.
 # Teleop targets are NOT clocked here: SEW-Mimic computes faster (retargeting
 # 60 kHz, safety filter 3 kHz per Kong), but on hardware the 750 Hz loop is
 # the ceiling, so the sim uses the latest target on each PD step.
-PHYSICS_HZ = 750
-CAMERA_HZ = 30  # camera tick rate; set CC_ROUNDROBIN=0 in the viewer so every camera updates at this rate
+PHYSICS_HZ = 750  # Hz: the physics rate (equal to the real arms' control rate) [row M099]
+CAMERA_HZ = 30  # camera tick rate; set CC_ROUNDROBIN=0 in the viewer so every camera updates at this rate [row M100]
 SIMULATION_TIMESTEP = 1 / PHYSICS_HZ  # seconds (sim choice: one physics step per PD step)
 
 # MuJoCo's soft friction contacts act like a viscous damper, so a steady load makes a gripped body creep even far below the friction limit (a contact-model
@@ -45,7 +45,7 @@ SIMULATION_TIMESTEP = 1 / PHYSICS_HZ  # seconds (sim choice: one physics step pe
 # real time at 750 Hz is 1.33 ms). Measured on the 5 N grasp of the 200 g beaker, 2 s lift then a 10 s hold: 0 -> 10.3 mm of slip and creeping at 3.8 mm/s;
 # 3 -> 3.9 mm and still creeping 0.03 mm/s (3.6 mm after 2 s, +0.3 mm in the next 8 s); 10 -> 2.7 mm, no creep at all. 3 costs the same as 10 and does not stop the creep: 10 it is.
 # A side effect: with it on, the two fingers' normal forces differ by up to ~1 N at the 10 N ceiling (9.5 and 10.5 N; the mean is still the cap). 0 turns it off.
-NOSLIP_ITERATIONS = 10
+NOSLIP_ITERATIONS = 10  # count: MuJoCo's no-slip iterations for the contact solver [row M127 PENDING David: no decision recorded]
 
 # Pedestal lift actuator -- PLACEHOLDER hardware numbers, real geometry
 # The pedestal is the updated robot description's (Luke-kC/mobile_bimanual_ros2, pedestal_openarm): ONE prismatic joint, "pedestal_joint", from 0 (collapsed) to 0.418 m (raised); the
@@ -54,20 +54,20 @@ NOSLIP_ITERATIONS = 10
 # The lift hardware itself (speed, force, mass) is still unconfirmed (design plan section 11), so the one stand-in position actuator, added at load time by
 # src/pedestal.add_pedestal_lift(), keeps its old placeholder numbers. The joint value is the height above the collapsed pedestal; the torso is 0.3048 + q above the pedestal base.
 PEDESTAL_SPECS = {
-    "actuator_name": "pedestal_lift",
-    "joints": ("pedestal_joint",),                # one slide joint (a tuple so that "for joint in joints" code works for any number of stages)
-    "range": (0.0, 0.418),                        # m: the joint range (collapsed, raised), from the description
-    "collapsed_height": 0.3048,                   # m: torso origin above the pedestal base at q = 0
+    "actuator_name": "pedestal_lift",  # name of the lift's actuator in the model [row M115 PENDING David: no decision recorded]
+    "joints": ("pedestal_joint",),                # one slide joint (a tuple so that "for joint in joints" code works for any number of stages) [row M096]
+    "range": (0.0, 0.418),                        # m: the joint range (collapsed, raised), from the description [row M096]
+    "collapsed_height": 0.3048,                   # m: torso origin above the pedestal base at q = 0 [row M096]
     # Lowest command (also the Page Down clamp): fully collapsed, the description's lower limit. (The old model stopped at a torso contact 458 mm below its fully raised
     # position; the collapsed height 0.3048 m is the same 0.4452 m below the raised 0.7228 m torso height, and nothing touches there.)
-    "lowest_command": 0.0,
-    "target_height": 0.418,                       # default command: fully raised (the model starts there)
+    "lowest_command": 0.0,  # [row M096]
+    "target_height": 0.418,                       # default command: fully raised (the model starts there) [row M096]
     # Stand-in position servo on pedestal_joint. Load it must hold (from the body masses, see src/pedestal.pedestal_load): the whole robot above the joint, about 59 kg, 580 N;
     # kp = 1e6 N/m sags ~0.6 mm under that. forcerange is ~5x the hold force: the joint damping (50000 N s/m, the old coupled pair's 800 + 50000) makes the lift speed ~ force / 50 kN s/m.
-    "kp": 1.0e6,                                  # N/m
-    "kv": 0.0,                                    # N s/m (joint damping already dominates)
-    "force_limit": 5000.0,                        # N
-    "jog_speed": 0.10,                            # m/s of height while a key is held (the old 0.05 m/s of stage travel moved the torso 0.10 m/s)
+    "kp": 1.0e6,                                  # N/m [row M115 PENDING David: no decision recorded]
+    "kv": 0.0,                                    # N s/m (joint damping already dominates) [row M115 PENDING David: no decision recorded]
+    "force_limit": 5000.0,                        # N [row M115 PENDING David: no decision recorded]
+    "jog_speed": 0.10,                            # m/s of height while a key is held (the old 0.05 m/s of stage travel moved the torso 0.10 m/s) [row M115 PENDING David: no decision recorded]
 }
 
 # Base floor contact points (src/base_contacts.py). The Tracer's wheels and casters are meshes that cannot roll in the simulation (the base is
@@ -83,16 +83,16 @@ PEDESTAL_SPECS = {
 #   bit: the collision bit the spheres and the floor share; the spheres have contype = bit and conaffinity 0, and the floor's conaffinity
 #       gains this bit, so the spheres touch only the floor.
 BASE_CONTACT_SPECS = {
-    "body": "base_link",
-    "floor_geom": "floor",
+    "body": "base_link",  # the body the floor contact spheres are attached to [row M116 PENDING David: no decision recorded]
+    "floor_geom": "floor",  # name of the floor geom the spheres touch [row M116 PENDING David: no decision recorded]
     "mesh_geoms": ("right_link_geom", "left_Link_geom", "right_front_link_geom", "right_rear_link_geom", "left_front_link_geom",
-                   "left_rear_link_geom"),
-    "radius": 0.010,                              # m
-    "friction": (0.1, 0.005, 0.0001),
-    "bit": 2,
+                   "left_rear_link_geom"),  # the wheel and caster mesh geoms of the Tracer: their own collisions are switched off, the spheres replace them [row M116 PENDING David: no decision recorded]
+    "radius": 0.010,                              # m [row M116 PENDING David: no decision recorded]
+    "friction": (0.1, 0.005, 0.0001),  # sliding, torsional and rolling friction of the contact spheres (low, so the velocity-driven base does not pitch) [row M116 PENDING David: no decision recorded]
+    "bit": 2,  # the collision bit the spheres and the floor share (the spheres touch only the floor) [row M116 PENDING David: no decision recorded]
     "points": {"wheel_right": (-0.0184, -0.258, -0.1427), "wheel_left": (-0.0188, 0.259, -0.1427),
                "caster_right_front": (0.2186, -0.200, -0.1427), "caster_left_front": (0.2186, 0.200, -0.1427),
-               "caster_right_rear": (-0.291, -0.180, -0.1427), "caster_left_rear": (-0.291, 0.180, -0.1427)},
+               "caster_right_rear": (-0.291, -0.180, -0.1427), "caster_left_rear": (-0.291, 0.180, -0.1427)},  # m: where the six contact spheres sit in the base_link frame (two wheels, four casters) [row M116 PENDING David: no decision recorded]
 }
 
 # Battery pack: Anker SOLIX C800 portable power station (model A1753), strapped to the robot -- PLACEHOLDER MOUNT
@@ -110,13 +110,13 @@ BASE_CONTACT_SPECS = {
 #   would be ignored).   size: length, depth, height in metres along the box's own x, y, z axes.   mass: kg.   pos, quat: the box centre and orientation in
 #   the mount body's frame (the quaternion is a 90 degree turn about z, so the length runs across the robot and the box's +y face, the front panel, faces -x).
 BATTERY_SPECS = {
-    "name": "battery",
-    "mount_body": "base_link",
-    "size": (0.384, 0.208, 0.244),
-    "mass": 11.3,
-    "pos": (-0.187, 0.0, 0.1397),
-    "quat": (0.7071067811865476, 0.0, 0.0, 0.7071067811865476),
-    "rgba": (0.15, 0.55, 0.30, 1.0),
+    "name": "battery",  # name of the battery's body and geom in the model [row M095]
+    "mount_body": "base_link",  # the body the battery is welded to [row M095]
+    "size": (0.384, 0.208, 0.244),  # m: length, width and height of the battery box [row M095]
+    "mass": 11.3,  # kg: the battery pack's mass [row M095]
+    "pos": (-0.187, 0.0, 0.1397),  # m: the box centre in the mount body's frame (a placeholder mount) [row M095]
+    "quat": (0.7071067811865476, 0.0, 0.0, 0.7071067811865476),  # unit quaternion (w, x, y, z): the box's orientation in the mount body's frame [row M095]
+    "rgba": (0.15, 0.55, 0.30, 1.0),  # RGBA colour of the box (0 to 1) [row M117 PENDING David: no decision recorded]
 }
 
 # Camera neck: an SO-101 arm carrying the eagle camera -- PLACEHOLDER.
@@ -130,18 +130,18 @@ BATTERY_SPECS = {
 #     masses and servo gains (STS3215) are upstream's, not measured on our hardware. src/neck.py attaches it at load.
 # Joint limits (deg): shoulder_pan +-110, shoulder_lift +-100, elbow_flex +-97, wrist_flex +-95.
 NECK_SPECS = {
-    "model_xml": "models/so101/so101_new_calib_camera.xml",
-    "prefix": "neck_",                       # prefix of every neck body / joint / actuator name in the combined model
-    "mount_body": "openarm_body_link0",
-    "mount_pos": (-0.01, 0.0, 0.773),        # m in the mount body's frame
-    "mount_quat": (1.0, 0.0, 0.0, 0.0),
-    "active_joints": ("shoulder_pan", "shoulder_lift", "elbow_flex", "wrist_flex"),
-    "removed_bodies": ("moving_jaw_so101_v1",),   # the gripper's moving jaw (its joint and actuator go with the inactive joints)
+    "model_xml": "models/so101/so101_new_calib_camera.xml",  # the neck's model file (an SO-101 arm with the camera module) [row M092]
+    "prefix": "neck_",                       # prefix of every neck body / joint / actuator name in the combined model [row M118 PENDING David: no decision recorded]
+    "mount_body": "openarm_body_link0",  # the torso link the neck stands on [row M092]
+    "mount_pos": (-0.01, 0.0, 0.773),        # m in the mount body's frame [row M092]
+    "mount_quat": (1.0, 0.0, 0.0, 0.0),  # unit quaternion: the neck's base orientation in the mount body's frame [row M092]
+    "active_joints": ("shoulder_pan", "shoulder_lift", "elbow_flex", "wrist_flex"),  # the neck joints the loop and the framing move (the others are removed) [row M092]
+    "removed_bodies": ("moving_jaw_so101_v1",),   # the gripper's moving jaw (its joint and actuator go with the inactive joints) [row M118 PENDING David: no decision recorded]
     # The neck's default aim, used at start-up, by the home key and while driving: optical axis 30 degrees below the
     # horizon, straight ahead, so the operator sees where the robot is going (about 10 degrees on each flex joint).
-    "drive_pose": (0.0, 0.1677, 0.1784, 0.1775),   # rad, in the order of active_joints
-    "max_speed": 1.5,                        # rad/s: the loop moves the neck's position targets no faster than this
-    "jog_speed": 1.25,                       # rad/s while a neck jog key is held
+    "drive_pose": (0.0, 0.1677, 0.1784, 0.1775),   # rad, in the order of active_joints [row M092]
+    "max_speed": 1.5,                        # rad/s: the loop moves the neck's position targets no faster than this [row M092]
+    "jog_speed": 1.25,                       # rad/s while a neck jog key is held [row M118 PENDING David: no decision recorded]
 }
 
 # The robot's face (visual only; src/face.py): a head-sized ellipsoid at the end of the neck with a face image on its front. The eagle camera looks out from the
@@ -149,18 +149,18 @@ NECK_SPECS = {
 # never appear in an image the policy sees, and only the viewer and the rendered notebook videos turn the group on. No mass, no collision. The images are private
 # (assets/private/ is git-ignored): if one is missing the head is plain and a one-line notice is printed. "enabled" False (or --no-face) leaves the head out altogether.
 FACE_CFG = {
-    "enabled": True,
-    "image_dir": "assets/private/face",    # relative to the project root
-    "neutral": "neutral.png",              # shown normally
-    "smile": "smile.png",                  # shown when the success check passes
-    "group": 5,                            # geom group of the head (hidden from the policy cameras)
-    "head_radii": (0.075, 0.09, 0.08),     # m: half width, half height, half depth of the head ellipsoid
-    "camera_above_center": 0.055,          # m: the eagle camera is this far above the head's centre ...
-    "camera_forward_of_center": 0.075,     # ... and this far in front of it, so it sits just outside the forehead (the head never covers it)
-    "face_size": (0.125, 0.156),           # m: width and height the face image covers on the front of the head
-    "face_center_up": -0.01,               # m: the centre of the face image relative to the head's centre, up (eyes a little above the centre)
-    "color": (138, 143, 150),              # RGB of the plain head: the grey of the face images' margin, so the image blends into the head
-    "texture_size": (2048, 1024),          # pixels of the head's texture (longitude x latitude): the face covers a quarter of the width
+    "enabled": True,  # True: the head is built when the images exist (the command line can turn it off) [row M094]
+    "image_dir": "assets/private/face",    # relative to the project root [row M094]
+    "neutral": "neutral.png",              # shown normally [row M094]
+    "smile": "smile.png",                  # shown when the success check passes [row M094]
+    "group": 5,                            # geom group of the head (hidden from the policy cameras) [row M094]
+    "head_radii": (0.075, 0.09, 0.08),     # m: half width, half height, half depth of the head ellipsoid [row M119 PENDING David: no decision recorded]
+    "camera_above_center": 0.055,          # m: the eagle camera is this far above the head's centre ... [row M119 PENDING David: no decision recorded]
+    "camera_forward_of_center": 0.075,     # ... and this far in front of it, so it sits just outside the forehead (the head never covers it) [row M119 PENDING David: no decision recorded]
+    "face_size": (0.125, 0.156),           # m: width and height the face image covers on the front of the head [row M119 PENDING David: no decision recorded]
+    "face_center_up": -0.01,               # m: the centre of the face image relative to the head's centre, up (eyes a little above the centre) [row M119 PENDING David: no decision recorded]
+    "color": (138, 143, 150),              # RGB of the plain head: the grey of the face images' margin, so the image blends into the head [row M119 PENDING David: no decision recorded]
+    "texture_size": (2048, 1024),          # pixels of the head's texture (longitude x latitude): the face covers a quarter of the width [row M119 PENDING David: no decision recorded]
 }
 
 # Automatic neck behavior (src/neck_source.py). "teleop": only while the arms are on the webcam operator (F2); "always";
@@ -169,14 +169,14 @@ FACE_CFG = {
 # policy). "follow" True makes it follow the grippers instead, but only where nothing is recorded (never while --record / --record-run
 # is on). A neck key press pauses it.
 NECK_AUTO_SPECS = {
-    "mode": "teleop",
-    "follow": False,              # True: follow the grippers (unrecorded runs only); False: frame once per stop, then hold
-    "follow_period": 0.5,         # s between framing updates (follow only)
-    "deadband": 0.03,             # rad: smaller changes are not sent (no jitter; follow only)
-    "pause_after_key": 3.0,       # s the keyboard has the neck after any neck key
-    "drive_lin": 0.05,            # m/s: the base counts as driving above this commanded speed
-    "drive_ang": 0.10,            # rad/s
-    "resume_delay": 1.0,          # s at rest before following the grippers again
+    "mode": "teleop",  # when the neck frames automatically: 'teleop' (only while the arms are on the webcam operator), 'always' or 'off' [row M120 PENDING David: no decision recorded]
+    "follow": False,              # True: follow the grippers (unrecorded runs only); False: frame once per stop, then hold [row M093]
+    "follow_period": 0.5,         # s between framing updates (follow only) [row M120 PENDING David: no decision recorded]
+    "deadband": 0.03,             # rad: smaller changes are not sent (no jitter; follow only) [row M120 PENDING David: no decision recorded]
+    "pause_after_key": 3.0,       # s the keyboard has the neck after any neck key [row M120 PENDING David: no decision recorded]
+    "drive_lin": 0.05,            # m/s: the base counts as driving above this commanded speed [row M120 PENDING David: no decision recorded]
+    "drive_ang": 0.10,            # rad/s [row M120 PENDING David: no decision recorded]
+    "resume_delay": 1.0,          # s at rest before following the grippers again [row M120 PENDING David: no decision recorded]
 }
 
 # Arm and finger actuators. src/arm_actuators.py reads ONLY from this section; the same numbers apply to
@@ -202,12 +202,12 @@ ARM_ACTUATOR_SPECS = {
         5: {"motor": "DM4310", "armature": 0.0100, "kp": 10.0, "kv": 0.7, "torque_nm": 7.0},
         6: {"motor": "DM4310", "armature": 0.0100, "kp": 10.0, "kv": 0.6, "torque_nm": 7.0},
         7: {"motor": "DM4310", "armature": 0.0100, "kp": 10.0, "kv": 0.5, "torque_nm": 7.0},
-    },
+    },  # [row M097]
 
     # Gravity compensation: on, for these bodies of both arms (link1 through the hand and fingers; link0, the
     # fixed arm mount, is left out; the updated description has no link8). Assumes the real controller compensates for gravity.
     "gravcomp_bodies": ("link1", "link2", "link3", "link4", "link5", "link6", "link7",
-                        "hand", "hand_tcp", "right_finger", "left_finger"),
+                        "hand", "hand_tcp", "right_finger", "left_finger"),  # [row M097]
 
     # Gripper: ONE position actuator per hand, on finger_joint1; finger_joint2 follows it through the joint equality (finger 2 = finger 1), like the real hand, whose single motor
     # moves both fingers through a linkage. The travel is the joint range, 0-0.044 m per finger. The numbers below are PER FINGER (what each finger does on its own); the actuator
@@ -222,13 +222,13 @@ ARM_ACTUATOR_SPECS = {
     #                table accordingly). It is below the 11 N the servo asks for at the beaker's width, so it is a real limit.
     # The real hand's own gains (control_gains.yaml, "hand": kp 5, kd 0.1) are in motor units (N m/rad at the gripper motor); the linkage ratio from motor angle to finger travel is
     # not in the description repositories (it is in the hardware driver), so they cannot be converted here and the finger servo keeps the placeholder gains above.
-    "fingers": {"kp": 300.0, "kv": 4.6, "force_limit": 9.0, "fingers_per_actuator": 2},
+    "fingers": {"kp": 300.0, "kv": 4.6, "force_limit": 9.0, "fingers_per_actuator": 2},  # [row M097]
 }
 
 # Cameras
 # PLACEHOLDER: exact Orbbec model unknown, so resolution and FOV are guesses.
-ORBBEC_RESOLUTION = (640, 480)  # (width, height)
-ORBBEC_FOVY_DEG = 58.0
+ORBBEC_RESOLUTION = (640, 480)  # (width, height) [row M100]
+ORBBEC_FOVY_DEG = 58.0  # [row M100]
 
 # All camera poses are PLACEHOLDERS until mounting info arrives.
 # - The eagle cam is confirmed robot mounted. Parent openarm_body_link0 is a
@@ -237,7 +237,7 @@ ORBBEC_FOVY_DEG = 58.0
 # - pos / look_at / up are in the parent body's frame.
 # - The hand frame has the gripper along +Z (TCP at 0.08) and fingers along Y,
 #   so the wrist cam sits off to +X and set back so the fingertips are in view.
-CAMERA_SPECS = [
+CAMERA_SPECS = [  # the three policy cameras (eagle, left and right wrist): mounts, look-at points and up vectors in the parent body's frame, placeholders until the mounts are known [row M100]
     {
         "name": "eagle_cam",
         # Placeholder pending real mount: the camera module at the end of the SO-101 neck (NECK_SPECS), looking along the

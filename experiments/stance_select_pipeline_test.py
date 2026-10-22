@@ -5,6 +5,7 @@ The bench rectangle stance selection in the live pipeline: the plan "navigate to
 
     MUJOCO_GL=egl python experiments/stance_select_pipeline_test.py [--plumbing]
 
+--plumbing-same: a hand-set rectangle (forward 0.38 to 0.47, 0.05 m right to 0.32 m left) whose centred spot is exactly TASK_CFG's stance: the plumbing alone.
 --plumbing: a hand-set rectangle (forward 0.39 to 0.48 m, 0.10 m right to 0.35 m left), NOT the measured one, whose centred spot passes the full check: it tests the plumbing (one stance, the null second navigation
 step, the staging at the chosen spot, record and replay). With the measured rectangle (BENCH_RECT_CFG["rectangle"]) the selection finds no spot that passes the full check today (see the Stage 5 report): the
 test then reports the selection and fails at its first check.
@@ -51,10 +52,11 @@ def check(name, ok, detail=""):
 
 
 PLUMBING_RECT = {"forward_near": 0.39, "forward_far": 0.48, "right": -0.10, "left": 0.35}
+SAME_RECT = {"forward_near": 0.38, "forward_far": 0.47, "right": -0.05, "left": 0.32}
 
 
-def main(plumbing=False):
-    cfg = {**BENCH_RECT_CFG, "mode": "bench_rectangle", **({"rectangle": PLUMBING_RECT} if plumbing else {})}
+def main(plumbing=None):
+    cfg = {**BENCH_RECT_CFG, "mode": "bench_rectangle", **({"rectangle": {"same": SAME_RECT, "shifted": PLUMBING_RECT}[plumbing]} if plumbing else {})}
     if cfg["rectangle"] is None:
         print("the rectangle is not measured yet")
         return False
@@ -89,10 +91,11 @@ def main(plumbing=False):
     print(f"  outcome {s['outcome']}; plan failure {state['failure']}; status {state['status']}")
     check("the episode outcome is SUCCESS", s["outcome"] == "SUCCESS", s["outcome"])
     check("the plan finished, every segment done (the second navigation step too)", state["finished"] and all(x == "done" for x in state["status"]) and len(state["status"]) == 4, f"{state['status']}")
-    a = s.get("arrival_at_end_of_drive") or {}
-    h = s.get("base_pose_error_at_handoff") or {}
+    srep = s.get("report", s)
+    a = srep.get("arrival_at_end_of_drive") or {}
+    h = srep.get("base_pose_error_at_handoff") or {}
     print(f"  arrival at the approach spot {a}; handoff pose error {h}")
-    check("the staging arrived within 1 cm and 1 degree at the chosen stance", bool(a) and a["pos_err_mm"] <= 10.0 and abs(a["yaw_err_deg"]) <= 1.0 and h["pos_err_mm"] <= 10.0 and abs(h["yaw_err_deg"]) <= 1.0)
+    check("the staging arrived within 1 cm and 1 degree at the chosen stance", bool(a) and bool(h) and a["pos_err_mm"] <= 10.0 and abs(a["yaw_err_deg"]) <= 1.0 and h["pos_err_mm"] <= 10.0 and abs(h["yaw_err_deg"]) <= 1.0)
     ok, diag = task["check_success"](sim.model, sim.data)
     check("the beaker stands on the hotplate", ok, str({k: diag[k]["ok"] for k in diag if isinstance(diag[k], dict) and "ok" in diag[k]}))
     print("\n3. the replay", flush=True)
@@ -111,4 +114,5 @@ def main(plumbing=False):
 
 
 if __name__ == "__main__":
-    sys.exit(0 if main("--plumbing" in sys.argv) else 1)
+    mode = "same" if "--plumbing-same" in sys.argv else "shifted" if "--plumbing" in sys.argv else None
+    sys.exit(0 if main(mode) else 1)

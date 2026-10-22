@@ -531,6 +531,13 @@ BENCH_RECT_CFG = {
     "margin_m": 0.03,                      # m: the measured rectangle is shrunk by this on every side [row M150]
     # The rectangle, measured offline by experiments/bench_rectangle_measure.py from the reach maps at the pedestal height and the work heights: in the base frame facing the bench (x forward, y left), metres.
     # None until measured. Plain words: "forward_near" is the nearest distance from the base origin to the rectangle's near edge, "forward_far" the farthest; "right" and "left" are the rectangle's sides.
-    "rectangle": None,                     # {"forward_near": m, "forward_far": m, "right": m (negative), "left": m} [row M150]
+    # Measured 2026-10-22 (experiments/bench_rectangle_measure.py; picture docs/reports/bench_rectangle.png): bench top 0.960 m, pedestal 0.155 m, pad centre 0.02, 0.06 and 0.10 m above the top, 24 reach maps, margin 3 cm.
+    # The LEFT arm's rectangle is stored because the pipeline's manipulating arm is the left one (raw: forward 0.12 to 0.37 m, 0.08 m right to 0.44 m left, 0.130 m^2). For comparison, shrunk: the right arm
+    # alone forward 0.07 to 0.34, left -0.42 to -0.07; both arms united (either arm reaches each point) forward 0.13 to 0.39, right -0.35 to left 0.36 (it is wide only because the right arm covers the right half).
+    "arm": "left",                         # the arm whose reach the rectangle is [row M150 PENDING David: left because the pipeline's arm is left]
+    "rectangle": {"forward_near": 0.15,    # m: the nearest the targets may be to the base origin along the base's forward direction (toward the bench)
+                  "forward_far": 0.34,     # m: the farthest
+                  "right": -0.05,          # m: the rectangle's right side (negative: to the base's right)
+                  "left": 0.41},           # m: the rectangle's left side [row M150]
     "shift_along_m": 0.05, "shift_across_m": 0.03, "max_shifts": 4,   # the shifted parking spots tried when the full check fails: +-5 cm along the bench, +-3 cm toward/away, at most 4, then stop and report [row M150]
 }

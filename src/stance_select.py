@@ -85,7 +85,7 @@ def plan_runs(tagged, world, yaw, rect, max_steps=MAX_RUN_STEPS):
 
 
 def _extend(cur, tagged, nav_index, world, yaw, rect, max_steps):
-    """Whether the manipulation steps after navigation step `nav_index` can join the current run (the union of the targets fits from one spot, at most max_steps steps)."""
+    """Whether the manipulation steps after navigation step `nav_index` can join the current run (the union of the targets fits from one spot, at most max_steps steps). Changes nothing."""
     nxt = []
     for j in range(nav_index + 1, len(tagged["segments"])):
         if tagged["segments"][j]["type"] == "navigation":
@@ -100,12 +100,7 @@ def _extend(cur, tagged, nav_index, world, yaw, rect, max_steps):
             return False
         new += t
     all_t = np.array([*cur["targets"], *new]).reshape(-1, 2)
-    _, ok = parking_pose(rect, all_t, yaw)
-    if not ok:
-        return False
-    cur["steps"] += nxt
-    cur["targets"] = list(all_t)
-    return True
+    return parking_pose(rect, all_t, yaw)[1]
 
 
 def select_bench_stance(tagged, world, task_cfg, cfg=BENCH_RECT_CFG, full_check=None, points=None, say=print):

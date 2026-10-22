@@ -128,3 +128,5 @@ Suite part 3 (restart after the session ended): tmux suite_p3, TAG 20261022_1547
 Baseline regeneration (E3): tmux regen, log data/logs/cc_bench_regen_20261022_181814.log, started 18:18:14: experiments/cc_bench_regen.sh (manual, teleop, policy, twice each, then replace references). Reach maps restamped (24, voxels unchanged). Part D done and committed; E2 tests updated, not yet run.
 
 VLM refresh (E4): tmux vlm, log data/logs/vlm_refresh_20261022_182126.log, out data/mpvi_text_run/fixedcam_20261022_182126, started 18:21:26: experiments/mpvi_text_test.py --mode cache_or_live --checker vlm (live Gemini calls for the new eagle images only).
+
+FULL SUITE (step 2, E5): tmux suite_s2, TAG 20261022_183500, data/logs/suite_20261022_183500_summary.txt, SKIP=face_test mpvi_text_test (the Gemini API gave 503 for the new eagle images; the VLM replies are refreshed later; face_test alone at the end). Started 18:35:00. DO NOT EDIT run_tests.sh OR src/ WHILE IT RUNS.

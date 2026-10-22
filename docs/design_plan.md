@@ -60,7 +60,7 @@ Status markers:
 
 ## 2. Robot face [DONE]
 
-- Head shape at the end of the camera neck, face image on its front; eagle camera looks out from the forehead area, never blocked.
+- [MOVED 2026-10-22, M159: the head is on the top of the torso next to the fixed camera; visual only] Head shape at the end of the camera neck, face image on its front; eagle camera looks out from the forehead area, never blocked.
 - **[DONE 2026-10-20, David]** The head always faces the camera of the view being drawn (the viewer window and the notebook video composite): at render time only, `Face.facing` overwrites the head's pose matrix for that draw and puts it back (the model, the physics, the hashes and the policy cameras are untouched; the eagle camera on the forehead does not turn with it). It exists for the person watching the viewer or the video, not for people in the room.
 - Neutral and smile images from a git-ignored folder (assets/private/face/, path in config). Missing images: plain head plus a one-line notice, no error. Command-line option to turn the face off even when images exist.
 - Neutral normally; smile when the success check passes.
@@ -72,6 +72,8 @@ Status markers:
 **[DONE 2026-10-19; the pour map (§3.2, B2.14) is LATER]** The grasp maps were built on the imported robot (B1c, §9): both arms, all 12 approach directions, collision filter on, 24 maps in 63 min (`experiments/reach_map_build.py`; files in git-ignored `data/reach_map/`, build settings in `GRASP_MAP_CFG`). Validation: 183,741 of 184,342 collision-free random level poses (99.67 %) land in a reached voxel (98.5 % in a reachable cube, lower by design). Small enclosed pockets (up to 1 cm) are filled without an IK test, larger ones kept as real holes (3.1 c). The stance finder (`experiments/stance_from_map.py`) runs on these maps with the furniture map (the arm layer grown by the torso and pedestal column's real cross-section at bench-top height plus 2 cm, 3.4) and verifies the top stances by IK. The earlier pilots (B2.3, below) were for the old geometry and are history. Not done: the cleanup of B2.13 (the old search scripts, `stance_two_points*.py`, `stance_sensitivity*`, the layout and staging searches, are still in `experiments/`; the finder script reuses their checks).
 
 ### 3.1 The grasp map [DECIDED]
+
+- **[DECIDED 2026-10-22, David, M160]** The 24 maps are ACCEPTED after the neck is removed (not rebuilt): removing the neck only removes an obstacle (the maps were built with the neck at its drive pose in the arm collision filter), so they are safe and slightly conservative. Their staleness stamp is updated deliberately, with that reason in the log. The full check's collision tests include the new camera's collision box. A partial rebuild of the region near the camera only if the camera causes MANY rejected stances; a few are acceptable.
 
 Built once per arm and approach direction, saved.
 
@@ -121,7 +123,7 @@ Fast queries, no brute-force floor search.
 
 ### 3.5 B2 breakdown (B2.1 to B2.14, each separately testable)
 
-B2.1 move the arm FK and IK from the old search scripts into `src/` (test: FK against MuJoCo). B2.2 grasp-rule module. B2.3 sampler pilot (yield, cubes found vs samples, time for full coverage, is the current staging stance inside the map). B2.4 collision filter (reduced model: arm, torso, pedestal, base with battery, neck, other arm). B2.5 the full flood fill for all 12 bins and both arms. B2.6 holes (flood fill, IK fill test). B2.7 cube rule and erosion. B2.8 map file, staleness hash, pictures. B2.9 furniture layers (and collision for the room walls). B2.10 stance finder core. B2.11 skill paths. B2.12 verification of the top stances. B2.13 output, delete the old search scripts, docs. B2.14 pour map (§3.2 open definitions). The flood fill (B2.5) and the pour map (B2.14) are the expensive builds: the VM or PACE.
+**[A5, 2026-10-22, M162: the zombie pose search `experiments/home_pose_search.py` (with `home_pose_candidates`, `home_pose_coverage`, `home_pose_compare`) is RETIRED: marked obsolete, deleted with the B2.13 cleanup; the zombie pose is unchanged, the camera adapts to it.]** B2.1 move the arm FK and IK from the old search scripts into `src/` (test: FK against MuJoCo). B2.2 grasp-rule module. B2.3 sampler pilot (yield, cubes found vs samples, time for full coverage, is the current staging stance inside the map). B2.4 collision filter (reduced model: arm, torso, pedestal, base with battery, neck, other arm). B2.5 the full flood fill for all 12 bins and both arms. B2.6 holes (flood fill, IK fill test). B2.7 cube rule and erosion. B2.8 map file, staleness hash, pictures. B2.9 furniture layers (and collision for the room walls). B2.10 stance finder core. B2.11 skill paths. B2.12 verification of the top stances. B2.13 output, delete the old search scripts, docs. B2.14 pour map (§3.2 open definitions). The flood fill (B2.5) and the pour map (B2.14) are the expensive builds: the VM or PACE.
 
 B2.9 and B2.10 are built and tested on made-up cases only (2026-10-16; `src/furniture_map.py` with `experiments/furniture_map_test.py` 22/22, `src/stance_finder.py` with `experiments/stance_finder_test.py` 28/28): the furniture map rasterizes the scene's collidable geoms into the base layer (0 to 0.43 m) and the arm layer (0.43 to 2.0 m), grown by the rotated base footprint (base layer) and a 0.25 m disc (arm layer, a first approximation of the torso and arm sweep until the verification step B2.12); the finder gathers each point's flipped map slice per heading and pedestal height, intersects with the headings +-1 degree, subtracts the blocked cells, scores by distance to the edge, picks the middle of the valid pedestal range and ranks stances where both arms reach first. The room walls of the task scene now collide (`models/scenes/chemistry_lab_beaker_hotplate.xml`; the manual and policy baselines are still byte-identical, the model fingerprint of recordings changes). No real map has been built or searched.
 
@@ -382,6 +384,8 @@ Build steps are referred to only as B-numbers. Each step shows the section that 
 
 ## 11. Open questions for the hardware team [PENDING]
 
+- **Note (David, 2026-10-22, M164; no decision):** the project may stay sim-only; hardware-matching work should not be over-engineered.
+
 - Real OpenArm home pose
 - Gripper: max force, stiffness, current limit and readback
 - Gripper max opening (gripper owner)
@@ -408,7 +412,7 @@ Build steps are referred to only as B-numbers. Each step shows the section that 
 - Yuanshao (arm control, 2026-10-21): the real motors (Damiao) use MIT impedance control, Kp and Kd only, no Ki. Does `mobile_bimanual_ros2` send a gravity tau_ff in MIT mode's feedforward slot, from the same openarm_description URDF (v1.0), including the gripper and a held object? (The sim's placeholder is a model-based feedforward torque from our arm and gripper links, no payload, no integral term, §10.) **Proposal to the hardware team:** a payload-aware tau_ff (add the held object's mass while gripping).
 - Tracer: what height can the base drive over (a threshold, a cable)? The navigation placeholder is that obstacles lower than 1 cm do not block (M054).
 - Eagle camera depth (asked): does the real camera give a depth image? It decides whether the depth-based obstacle task (§9) is built or moved to §10 (M064).
-- Localization sensors: which the robot will have (lidar, depth cameras, wheel odometry access). SLAM is decided (§13, M143); the rest (the filter, the camera corrections) waits for this answer, and camera SLAM needs longer-range depth than the Gemini 305's about 1 m (§14.3)
+- Localization sensors: a lidar is LIKELY (David, 2026-10-22, M163; to be confirmed), plus depth cameras and wheel odometry access. SLAM is decided (§13, M143); the rest (the filter, the camera corrections) waits for this answer, and camera SLAM needs longer-range depth than the Gemini 305's about 1 m (§14.3)
 - Finger pad torsional (twisting) friction on the real gripper (sim currently 0.005)
 
 ## 12. Real-robot replacements for sim ground truth [LATER]
@@ -420,6 +424,7 @@ Rule: each replacement is first tested in sim with simulated noisy sensors. The 
 - **Robot position** [LATER]
   - Sim ground truth: the base pose (x, y, heading) is read straight from the simulation state into every observation (`obs["base_pose"]`). The staging drive and creep-in, the handoff pose error and the logs all use it. §§3.1 and 3.4 assume only a stopping error.
   - Real replacement: localization with a particle filter over a lab map, likely ROS 2 navigation's AMCL rather than our own, using wheel odometry plus lidar or depth. Building the map while localizing (SLAM) instead of using a prebuilt map is an open option: §13, [PENDING] Dan's call.
+  - **[UPDATED 2026-10-22, David, M163]** A lidar is likely on the real robot: lidar for floor obstacles and localization (SLAM once with the lidar, for example slam_toolbox, then localization against that map); the camera's depth for objects on work surfaces. Stage 4 (observation slots, M152) stays deferred until the lidar is confirmed. The camera corrections named below become lidar localization.
   - **[DECIDED 2026-10-22, David, M143]** SLAM, once, to build the lab map, then localization only against that fixed map; leading candidate for the rest: a Kalman filter (for example robot_localization's EKF) fusing wheel odometry with camera corrections (markers such as AprilTags on the benches, or visual landmarks) plus a final visual alignment at the approach spot; details deferred until the hardware team says which sensors exist (§11). A sim test with a noisy, drifting pose estimate stays in §10.
   - Consequence: stance margins must cover the stopping error plus the localization error.
 - **Lab map and fixtures** [LATER]
@@ -461,6 +466,7 @@ Built after VLA manipulation works (B8), on top of the MPVI pipeline of §8. It 
 - Exploration: frontier exploration when the object is not visible (drive to the edge between known and unknown floor, look, repeat). [DECIDED]
 - Knowledge base of the objects found, as in the paper: what, where, when seen. The world model (§8) reads it; a new or moved object triggers the replan of §8. [DECIDED]
 - Navigation: A* path planning on a floor map plus a path follower; arms fixed while driving; the robot treated as wider and driven gentler when carrying (moved here from §8, text kept). The scripted staging stands in until then. [DECIDED]
+- **[UPDATED 2026-10-22, M163]** A lidar is likely: lidar for floor obstacles and localization (SLAM once, e.g. slam_toolbox, then localization), camera depth for objects on work surfaces; Stage 4 stays deferred until the lidar is confirmed.
 - Mapping and localization: a prebuilt lab map with AMCL (§12, "Robot position") or SLAM, which builds the map while localizing. SLAM: **[DECIDED 2026-10-22, David, M143: SLAM once to build the lab map, then localization only against that fixed map (AMCL-style); not pending Dan]**.
 - Depth for object positions: [PENDING] decided during this work. Options on record:
   - The known-surface trick with the eagle camera: a ray from the camera through the detection, intersected with the known bench height (needs the camera pose from the neck kinematics, which the framing already uses, and the surface heights from the map).
@@ -474,8 +480,10 @@ One place for everything that defines what the eagle camera shows, because its i
 
 ### 14.1 The camera and the rule (fixed camera)
 
-- **Camera model (David, 2026-10-22, M154):** "Galexia Avant Pro", with depth. Its datasheet was not found (§11): official name, field of view of the colour and depth sensors, resolutions, frame rates and depth range are open; none is guessed. **Depth is for navigation and perception only (§13); the VLA uses colour images only.** The sim keeps the placeholder `CAMERA_SPECS` until the datasheet and the mount are known (vertical field of view 58 degrees, 640 x 480, 30 Hz, the same for all three policy cameras; shadows off for this camera).
+- **Camera model [STAND-IN, David 2026-10-22, M158]:** the Orbbec Gemini 335 (same family as the Gemini 305 wrist camera, §14.3), with depth; the specs are in 14.4. The camera David first named, the "Galexia Avant Pro", stays unidentified (M154: no datasheet found). **Depth is for navigation and perception only (§13); the VLA uses colour images only.** The sim's camera optics become the Gemini 335's colour sensor in step 2 part B (vertical field of view 55 degrees, 16:9, 640 x 360); the wrist cameras are unchanged.
 - **Mount [FIXED, position and angle PLACEHOLDER until the hardware team decides, §11; the placeholder is chosen in step 2]:** the camera is fixed to the torso link `openarm_body_link0`, so it rides with the pedestal. There is no neck and no camera joint.
+- **Face / head [David 2026-10-22, M159]:** the head moves to the top of the torso, right next to the camera; visual only (no mass, no collision), hidden from all policy cameras; the "faces the viewer" drawing trick stays.
+- **Mount search [M161]:** the camera's tilt (pitch) and a few mount spots on top of the torso (a little forward or back, a little higher), facing straight forward, no roll, are chosen by a search at the TASK_CFG stance and pedestal command 0.155 with the arms at the zombie pose: both hands, the beaker and the hotplate inside the image with the 10 % margin, 0 % of the beaker and at most 20 % of the hotplate hidden, and the camera's collision box at least 5 mm from everything; the candidate with the largest smallest margin wins. The result is a PLACEHOLDER until the hardware team decides (`experiments/camera_mount_search.py`).
 - **The view moves only with the pedestal height.** Nothing moves the camera while driving, parking or during a step; there is no drive pose, no look-ahead, no framing, no follow mode and no neck key. For bench work the pedestal stays at one height (`TASK_CFG["pedestal_q"]`), so the view is the same at every stance.
 - **The rule: "inside the fixed view".** A target counts as in view when its image position keeps at least 10 % of the image width and height from every edge and nothing hides it (occlusion by the pixel-area measure, `OcclusionMeter`, from a segmentation render of this camera with and without the robot). Every camera check is this one question: the stance requirements, the null navigation step (F3, M155: every target of the next step within the arm's reach and inside the view), the stance selection and the stop of B6 ("outside the fixed view"). Nothing aims or optimises; no solver, no repeatability check.
 - **Visibility requirements (the stance and home pose checks, §3.4):** with the camera at its fixed pose (and the pedestal at its height), the robot hides none (0 %) of the beaker's pixels and at most 20 % of the hotplate's, and the beaker, the hotplate and both grippers at home are inside the view with the 10 % margin. The neck spread requirement (0.06 rad) is dropped; the framing slack becomes the same "inside the fixed view" test. Among stances that pass, the one whose arms cover the least of the image is preferred (§3.4).
@@ -504,6 +512,24 @@ From the hardware team (via David, 2026-10-21): the real wrist camera for now is
 | Other | IP54; -10 to 45 degrees C; hardware and software multi-camera sync (page); Orbbec SDK V2; a 305g variant (GMSL2, 116 g, 42 x 42 x 40 mm) exists for arms in motion (page) | table, page |
 
 Against the sim's placeholder (`ORBBEC_FOVY_DEG` 58 degrees vertical, `ORBBEC_RESOLUTION` 640 x 480, 30 Hz, the same for all three policy cameras, §14.1): the real colour sensor is 94 x 68 degrees at up to 1280 x 800 and 60 fps, much wider than the placeholder, and has depth that the sim does not render. The wrist views of the training data therefore differ from the real ones until `CAMERA_SPECS` is updated (a data regeneration, decided when the mount is known). The depth range matters for any use of the wrist depth: closer than 4 cm and farther than 100 cm give no depth.
+
+### 14.4 The eagle camera stand-in: Orbbec Gemini 335 (specs recorded 2026-10-22, M158)
+
+Values as printed on Orbbec's official page https://www.orbbec.com/products/stereo-vision-camera/gemini-335/ (read 2026-10-22); Orbbec's shop listing (https://shop.orbbec3d.com/Gemini-335) gives the same fields. Not guessed.
+
+| Item | Gemini 335 |
+|---|---|
+| Depth field of view (H x V) | 90 x 65 degrees |
+| Colour (RGB) field of view (H x V) | 86 x 55 degrees |
+| Depth resolution and rate | up to 1280 x 800 at 30 fps |
+| Colour resolution and rate | up to 1920 x 1080 at 30 fps |
+| Depth range | 0.10 to 20 m+ (optimal range 0.26 to 3 m); theoretical maximum 65 m (footnote of the page) |
+| Baseline | 50 mm (overview text; not in the table) |
+| Size (W x H x D) | 90 x 25 x 30 mm |
+| Weight | 97 g |
+| Mounting | 1/4-20 UNC on the bottom, 2 x M3 on the back |
+
+In the sim: the colour sensor's 55 degrees vertical field of view (86 x 55 is 16:9), rendered 640 x 360 (a placeholder rate of 30 Hz); the body (90 x 25 x 30 mm) is a collision box; the depth is not rendered (it is for navigation and perception, §13).
 
 ### 14.2 Must match the real robot
 

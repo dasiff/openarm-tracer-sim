@@ -244,8 +244,12 @@ EAGLE_BODY_SPECS = {
 # frame (x forward, y left, z up; the torso link's axes are parallel to the base's) and its tilt: pitch_deg is how far the optical axis points below the horizontal; facing straight forward, no roll.
 EAGLE_MOUNT = {
     "parent": "openarm_body_link0",    # the torso link (it rides with the pedestal) [row M161]
-    "pos": (-0.01, 0.0, 0.7855),       # m: on top of the torso, where the old neck stood (0.773 m up) plus half the box height [row M161 PENDING David: first guess, replaced by the search]
-    "pitch_deg": 20.0,                 # degrees below the horizontal [row M161 PENDING David: first guess, replaced by the search]
+    # Chosen 2026-10-22 by experiments/camera_mount_search.py (280 candidates, 35 pass everything): the camera body's centre is 4 cm in front of where the old neck stood, 13 cm above the torso top
+    # (0.773 m up in that frame) and the camera looks 50 degrees below the horizontal, straight forward, no roll. Smallest margin of the hands, the beaker and the hotplate: 24.3 % of the image
+    # (10 % needed); the beaker 0 % hidden, the hotplate 5.6 % (20 % allowed); the camera box more than 50 mm from everything. The height is the top of the search range (+12 cm; each
+    # 4 cm more would gain about 2 % of margin). A placeholder, in plain words: "a small camera on a short mast on top of the torso, looking down at the bench".
+    "pos": (0.03, 0.0, 0.9055),        # m: where the camera body's centre is, in the torso link's frame (x forward, y left, z up) [row M166 PENDING David: placeholder from the search]
+    "pitch_deg": 50.0,                 # degrees below the horizontal [row M166 PENDING David: placeholder from the search]
 }
 
 # All camera poses are PLACEHOLDERS until mounting info arrives.

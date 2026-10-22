@@ -242,6 +242,7 @@ STANCE_CFG = {
     "nms_heading_deg": 15.0,  # degrees: with nms_distance, a ranked stance within this heading difference of a better one is dropped [row M106 PENDING David: no decision recorded]
     "max_stances": 20,  # count: the most stances the finder returns per call [row M106 PENDING David: no decision recorded]
     "score_resolution": 0.01,           # m, the arm rule (design plan §5) rounds each arm's reach score to this, so near-ties go to the left arm [row M086]
+    "heading_window_deg": 45.0,         # degrees: the quick search tries the cells whose heading is within this of facing the targets first, all headings only if none passes (R2h; row M138)
 }
 
 # The requirements on the robot at a stance with both arms at the home pose (David 2026-10-19: one set for the stance finder, the home pose search and home_pose_test).
@@ -470,4 +471,19 @@ LLM_CFG = {
 ORCH_CFG = {
     "retry_max": 1,                        # count: retries of a failed manipulation step before the operator is asked (or the plan stops); 1 because a second identical try rarely changes a failure the first one had, and each retry costs a full skill (row M026) [row M026]
     "knocked_over_deg": 30.0,              # degrees: the manipulated object's up axis (world model) this far from vertical counts as knocked over and is not retried; between the success check's upright limit (15) and the angle at which the beaker tips (49.5), my choice (row M029) [row M029]
+}
+
+# The full check (src/full_check.py): the slow checks on a stance candidate, sped up in the overnight queue of 2026-10-22 (decisions-log M130 to M140; navigation proposal 12.7).
+# Rows M145 to M147 hold the choices that were not decided and are [PENDING David].
+FULLCHECK_CFG = {
+    "height_offsets": (0.0, 0.02, -0.02),   # m: the pedestal heights tested, as offsets from the middle height; all must pass (R2a, row M131). 3 heights span the 4 cm minimum range (row M141)
+    "error_budget": {"x": 0.01, "y": 0.01, "heading_deg": 1.0, "pedestal": 0.02},   # the errors the IK is tested at, each on its own, plus the nominal stance: 9 stances (R2b, row M132); m, m, degrees, m
+    "ik_seeds": 24,                         # count: random starts per tried approach direction when the warm starts fail [row M145 PENDING David: the number of random starts was not decided; the old search used 24]
+    "ik_flip_rad": 1.0,                     # rad: along one skill path the solution may not change by more than this on any joint between consecutive points; more is an elbow flip, a failure (R2d, row M134; the 1.0 is my choice, row M145)
+    "hand_clearance": 0.01,                 # m: the hand and fingers must stay this far from the bench, the hotplate and every other object at the IK solutions (the old case 'open_b45' used 1 cm; row M146 PENDING David)
+    "arm_clearance": 0.0,                   # m: the other arm parts must not touch the furniture or the objects (row M146 PENDING David)
+    "body_clearance": 0.0,                  # m: the whole robot at the stance must not touch the bench or an object (the old check: no contact; row M146 PENDING David)
+    "neck_draws": 8,                        # count: perturbed neck solves of the repeatability check (the old value; the new framing rule will use 2, R2e, row M135)
+    "object_slots": 6,                      # count: boxes of the private model that stand for unknown objects on the table (more objects than this make the check refuse; row M147 PENDING David)
+    "checkers_kept": 3,                     # count: arm collision checkers kept (one per pedestal height, a model copy each) (row M136: memory)
 }

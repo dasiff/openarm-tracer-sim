@@ -74,8 +74,15 @@ class OcclusionMeter:
         targets (dict): {"beaker": body id, "hotplate": body id} of the objects measured.
     """
 
-    def __init__(self, model, camera="eagle_cam", targets=(("beaker", "task_beaker"), ("hotplate", "task_hotplate"))):
-        self.model, self.camera = model, camera
+    def __init__(self, model, camera="eagle_cam", targets=(("beaker", "task_beaker"), ("hotplate", "task_hotplate")), occluders="robot"):
+        """Args:
+            model (mujoco.MjModel): The compiled model.
+            camera (str): The camera. Defaults to "eagle_cam".
+            targets (tuple): (name, body name) of the objects measured.
+            occluders (str): "robot" (the default and the old behaviour: only the robot is taken away in the reference render, so only the robot's hiding is counted) or "all" (R2i,
+                decisions-log M139: every geom that is not a target is taken away, so anything that hides a target counts: the robot, the bench's edge, any other object).
+        """
+        self.model, self.camera, self.occluders = model, camera, occluders
         self.targets = {name: model.body(body).id for name, body in targets}
         self._free_model, self._renderers = None, {}
         bname = lambda g: model.body(int(model.geom_bodyid[g])).name
@@ -99,8 +106,17 @@ class OcclusionMeter:
                     return False
 
                 self._free_model = copy.copy(m)
+                target_bodies = set(self.targets.values())
+
+                def under_target(b):
+                    while b > 0:
+                        if b in target_bodies:
+                            return True
+                        b = int(m.body_parentid[b])
+                    return False
                 for g in range(m.ngeom):
-                    if under_root(int(m.geom_bodyid[g])):
+                    b = int(m.geom_bodyid[g])
+                    if (under_root(b) if self.occluders == "robot" else not under_target(b)):
                         self._free_model.geom_rgba[g, 3] = 0.0
             r = mujoco.Renderer(self._free_model if key == "free" else self.model, self.height, self.width)
             r.enable_segmentation_rendering()
@@ -163,7 +179,7 @@ class StanceChecks:
         home (dict): {"left": 7 angles, "right": 7 angles}, the home pose with the configured variation.
     """
 
-    def __init__(self, model, data, base_z, task_cfg=TASK_CFG, finger_open=STAGING_CFG["finger_open"], points_fn=framing_points):
+    def __init__(self, model, data, base_z, task_cfg=TASK_CFG, finger_open=STAGING_CFG["finger_open"], points_fn=framing_points, occluders="robot"):
         """Builds the checks.
 
         Args:
@@ -173,8 +189,9 @@ class StanceChecks:
             task_cfg (dict): The task configuration (the home pose and the neck framing points come from it). Defaults to TASK_CFG.
             finger_open (float): The finger opening at home, metres. Defaults to STAGING_CFG["finger_open"].
             points_fn (callable): points_fn(model, data) -> {name: world point}, the points the neck must frame. Defaults to framing_points.
+            occluders (str): "robot" (the default, the old behaviour) or "all": what the occlusion check counts as hiding a target (see OcclusionMeter).
         """
-        self.model, self.base_z, self.finger_open, self.points_fn, self.task_cfg = model, float(base_z), finger_open, points_fn, task_cfg
+        self.model, self.base_z, self.finger_open, self.points_fn, self.task_cfg, self.occluders = model, float(base_z), finger_open, points_fn, task_cfg, occluders
         self.d = mujoco.MjData(model)
         self.d.qpos[:] = data.qpos
         self.home = home_targets(model, task_cfg)
@@ -344,7 +361,7 @@ class StanceChecks:
         set_neck_pose(self.model, self.d, robot_specs.NECK_SPECS, [targets[n] for n in robot_specs.NECK_SPECS["active_joints"]])
         mujoco.mj_forward(self.model, self.d)
         if self.meter is None:
-            self.meter = OcclusionMeter(self.model)
+            self.meter = OcclusionMeter(self.model, occluders=self.occluders)
         return self.meter.measure(self.d)
 
     def requirements(self, stance, req=STANCE_REQUIREMENTS, n_spread=8):

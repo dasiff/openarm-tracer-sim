@@ -211,8 +211,20 @@ def _window(furniture, points, cfg, centre):
     return (iy0, iy1, ix0, ix1), X, Y
 
 
-def _heading_scores(points, arms, maps, furniture, robot, theta, qs, X, Y, win, cfg):
-    """Scores of every floor cell of the window for each allowed arm at a heading, robust to the heading error: {arm: (nq, ncells)}."""
+def _facing_mask(theta, facing, X, Y):
+    """Which cells face the targets at this heading: the heading is within the window of the bearing from the cell to the targets' centre. facing = (cx, cy, window radians)."""
+    cx, cy, win = facing
+    bearing = np.arctan2(cy - Y, cx - X)
+    diff = np.abs((theta - bearing + math.pi) % (2 * math.pi) - math.pi)
+    return (diff <= win) | (np.hypot(cx - X, cy - Y) < 1e-6)
+
+
+def _heading_scores(points, arms, maps, furniture, robot, theta, qs, X, Y, win, cfg, facing=None):
+    """Scores of every floor cell of the window for each allowed arm at a heading, robust to the heading error: {arm: (nq, ncells)}.
+
+    Two optional restrictions (both off by default, so the old results do not change): `facing` = (cx, cy, window radians) keeps only the cells whose bearing to (cx, cy) is within the window of
+    the heading (R2h, decisions-log M138); robot["home_clear"] (src/home_clearance_map.HomeClearanceMap.clear_mask) keeps only the cells and pedestal commands where the arms at home are clear of the
+    furniture (R4, M142), so the valid pedestal range means "reachable and clear"."""
     iy0, iy1, ix0, ix1 = win
     res = furniture.res
     delta = math.radians(cfg["heading_robust_deg"])
@@ -226,6 +238,15 @@ def _heading_scores(points, arms, maps, furniture, robot, theta, qs, X, Y, win, 
             blocked = np.stack([furniture.blocked(th, robot["footprint"], col(float(q)))[iy0:iy1, ix0:ix1] for q in qs])
         for a in arms:
             region[a] &= _region(points, a, maps, furniture, robot, th, qs, X, Y, blocked, res)
+    if facing is not None:
+        fm = _facing_mask(theta, facing, X, Y).ravel()[None, :]
+        for a in arms:
+            region[a] &= fm
+    hc = robot.get("home_clear")
+    if hc is not None:
+        clear = hc(theta, qs, X, Y).reshape(len(qs), -1)
+        for a in arms:
+            region[a] &= clear
     S = {}
     for a in arms:
         Sa = np.zeros((len(qs), X.size))
@@ -263,7 +284,7 @@ def region_scores(points, maps, furniture, robot, heading, pedestal_qs, cfg=STAN
     return X, Y, {a: v.reshape(len(qs), *X.shape) for a, v in S.items()}
 
 
-def find_stances(points, maps, furniture, robot, cfg=STANCE_CFG, headings=None, pedestal_qs=None, centre=None):
+def find_stances(points, maps, furniture, robot, cfg=STANCE_CFG, headings=None, pedestal_qs=None, centre=None, heading_window_deg=None):
     """Finds and ranks stances for a set of task points.
 
     Args:
@@ -275,6 +296,7 @@ def find_stances(points, maps, furniture, robot, cfg=STANCE_CFG, headings=None, 
         headings (iterable of float or None): Headings to search, radians. Defaults to None, every cfg["heading_step_deg"] degrees around the circle.
         pedestal_qs (iterable of float or None): Pedestal stage commands to search, metres. Defaults to None, from the lowest command to 0 in steps of cfg["pedestal_step"].
         centre (array-like or None): The centre (x, y) of the searched floor window, metres. Defaults to None, the mean of the points' xy.
+        heading_window_deg (float or None): Keep only the cells whose heading is within this many degrees of facing the points' centre (R2h). Defaults to None: every heading, as before.
 
     Returns:
         list of dict: Ranked, spread-out stances (best first, at most cfg["max_stances"]), each with "x", "y", "heading" (radians), "heading_deg", "q" (the chosen pedestal command), "q_lo",
@@ -291,8 +313,10 @@ def find_stances(points, maps, furniture, robot, cfg=STANCE_CFG, headings=None, 
     Xr, Yr = X.ravel(), Y.ravel()
     arms = _allowed_arms(points)
     cand = []
+    P_all = np.array([pt["p"] for pt in points], float)
+    facing = None if heading_window_deg is None else (float(P_all[:, 0].mean()), float(P_all[:, 1].mean()), math.radians(heading_window_deg))
     for theta in headings:
-        S = _heading_scores(points, arms, maps, furniture, robot, theta, qs, X, Y, win, cfg)
+        S = _heading_scores(points, arms, maps, furniture, robot, theta, qs, X, Y, win, cfg, facing)
         combos = []
         if len(arms) == 2:
             Sb = np.minimum(S["left"], S["right"])
@@ -340,3 +364,17 @@ def arm_for(stance, resolution=STANCE_CFG["score_resolution"]):
     if sl is None:
         return "right"
     return "right" if round(sr / resolution) > round(sl / resolution) else "left"
+
+
+def find_stances_windowed(points, maps, furniture, robot, cfg=STANCE_CFG, headings=None, pedestal_qs=None, centre=None):
+    """The quick search with the heading window first (R2h, decisions-log M138): the cells within cfg["heading_window_deg"] of facing the targets first; all headings only if that gives none.
+
+    Returns:
+        tuple: (stances as find_stances gives them, window_used (bool): True when the windowed search gave the result).
+    """
+    win = cfg.get("heading_window_deg")
+    if win is not None:
+        found = find_stances(points, maps, furniture, robot, cfg, headings, pedestal_qs, centre, heading_window_deg=win)
+        if found:
+            return found, True
+    return find_stances(points, maps, furniture, robot, cfg, headings, pedestal_qs, centre), False

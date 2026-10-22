@@ -110,3 +110,5 @@ Stage 2 suite (only tests importing world_model + nav_core_test): tmux session s
 
 ## Stage 3 in progress (follower integrated behind NAV_CFG["follow"], default False)
 Done: nav_follower.py + nav_follow_test (kinematic 10/10), staging DRIVE hook, report key "nav". Running: experiments/nav_follow_sim_test.py (off then on, separate processes), tmux nav_sim, log data/logs/nav_follow_sim_20261022_125601.log, started 12:52:57. Next: read the log, N9 lean sweep (experiments/nav_lean_sweep.py), one MPVI pipeline run with follow on (recorded, replayed), Stage 3 report.
+
+Stage 3 chain running: tmux nav_chain, logs data/logs/nav_chain_20261022_130744.{old,new,lean,pipe}.log, done marker .done (off-run old vs new code compare, N9 lean sweep, pipeline run with follow on). Started 13:07:44.

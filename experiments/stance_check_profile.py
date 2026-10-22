@@ -7,7 +7,7 @@ in the code paths or the settings is changed (the wrappers below only count and 
     MUJOCO_GL=egl python experiments/stance_check_profile.py [--out data/logs]
 
 One sim and render job: run it alone. The full check is the one of experiments/stance_selection_timing.py (the same code): for each pedestal height of the candidate's range on a 1 cm grid,
-src/stance_checks.StanceChecks.requirements (cheap checks first, the neck, occlusion and framing only where those pass), then, if any height passes, the IK verification
+src/stance_checks.StanceChecks.requirements (cheap checks first, the fixed view and the occlusion only where those pass), then, if any height passes, the IK verification
 experiments/stance_sensitivity.Runner.evaluate at the middle of the passing heights.
 
 Runs, in this order (the scene is the "open_b45" case of experiments/stance_from_map.py, objects where they are now):

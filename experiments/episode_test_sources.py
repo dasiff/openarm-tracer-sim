@@ -17,7 +17,7 @@
         small damped-least-squares IK that keeps the hand's orientation), and measures whether the beaker follows (slip, finger forces). state["summary"] when done.
     make_clearance_monitor(model, data, every=5)
         A SOURCE (it commands nothing) that measures, every `every` ticks, the smallest distance from the moving parts of each arm to the bench, the beaker and
-        hotplate, the torso, the pedestal, the base, the neck and the other arm, per staging phase (state["min"]). For the home-pose verification.
+        hotplate, the torso, the pedestal, the base, the camera box and the other arm, per staging phase (state["min"]). For the home-pose verification.
     make_kick_source(model, data, phase, delay_s, along_mm, lateral_mm, yaw_deg, task_cfg=TASK_CFG)
         A SOURCE (it commands nothing) that displaces the base once (teleports it by along_mm along the staging heading, lateral_mm
         to the left, and yaw_deg of rotation) delay_s seconds into a staging phase. It was added with the base pose corrections to

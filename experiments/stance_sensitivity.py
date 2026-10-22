@@ -16,7 +16,7 @@ Cases (beaker and hotplate stay 20 cm apart; "edge" distances are the objects' c
   mid4      only the 4 middle grasp heights (35, 40, 45, 50 % of the beaker's height) instead of 8: 12 points instead of 24
   open      the bench is open below its top (what-if; the scene is not changed): its four frame rails are left out and only the top and the legs remain, so the base may drive partly under
             the bench. The stance y is then searched from 8 cm outside the edge to 32 cm under it (footprint clearance +8 to -32 cm), a stance must have the whole robot (both arms at home,
-            the neck at its drive pose) clear of the bench top and legs, and so must the shifted stances of the tolerance checks. The result file also has the deepest the base gets under
+            the eagle camera's box) clear of the bench top and legs, and so must the shifted stances of the tolerance checks. The result file also has the deepest the base gets under
             the bench at x 0.75 and headings -90 and -100 for each pedestal height (first contact when driving in 1 cm at a time) and where the torso's front is then.
   warm      the IK check of stage 2 and of the margins also starts from the solutions of neighbouring points (the next height, the set-down below the 'above' point, the grasp
             of the same height) after the random starts, so it can only find more than the random starts; stage 1 keeps stances that reach 5 of the 6 extreme points (not all 6), so
@@ -142,7 +142,7 @@ class FurnitureCheck:
 
 
 class BodyCheck:
-    """The whole robot (base, battery, pedestal, torso, neck, both arms at the home pose, grippers open) against the bench, for stances (x, y, heading, pedestal command)."""
+    """The whole robot (base, battery, pedestal, torso, camera box, both arms at the home pose, grippers open) against the bench, for stances (x, y, heading, pedestal command)."""
 
     def __init__(self, ctx, open_bench=False):
         self.model = m = copy.copy(ctx.m)

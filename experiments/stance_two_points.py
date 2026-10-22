@@ -12,7 +12,7 @@ The points (world frame, the pad centre of the hand, the mapped point of design 
   setdown the hotplate's centre, the same 8 heights above the hotplate's top (the beaker held at the height it was grasped, its bottom 2 mm above the plate);
   above   10 cm higher than each setdown height (the approach to the set-down).
 A stance supports a phase when every height of it has a grasp: level (approach axis and finger axis within 5 degrees of horizontal), in some approach bin of the 12, every joint 10 degrees
-inside its limits (and, in the last stage, the arm clear of the rest of the robot: torso, pedestal, neck, battery, base, the other arm at home, with the grippers open).
+inside its limits (and, in the last stage, the arm clear of the rest of the robot: torso, pedestal, camera box, battery, base, the other arm at home, with the grippers open).
 A stance is (base x, base y, heading, pedestal height); y is the smallest that keeps the base footprint (chassis and battery) at least `clearance` from the bench's front edge.
 
 Stages (each result is written to OUT/, temporary file then rename, and --resume skips stages already done):
@@ -70,7 +70,7 @@ class Ctx:
     """Everything the checks need, built once: the model, the arm, the object geometry and the stance geometry."""
 
     def __init__(self, layout, task_cfg=TASK_CFG, cameras=False):
-        sim = load_task(task_cfg, cameras=cameras)         # cameras=True when the neck framing is needed (the eagle camera is in the model then)
+        sim = load_task(task_cfg, cameras=cameras)         # cameras=True when the eagle camera is needed (the view and occlusion checks)
         self.data = sim.data                       # the scene's state (the objects placed), for checks that need it
         self.m = m = sim.model
         self.C = C = grasp_cfg(m, SIDE)

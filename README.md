@@ -29,9 +29,6 @@ the teleop path can be tried without a camera.
 | `1`-`8` / `Q`-`I` | left arm joints 1-7 and gripper: upper key increases, lower decreases |
 | `A`-`K` / `Z`-`,` | right arm joints 1-7 and gripper: same layout |
 | `Page Up` / `Page Down` | raise / lower the pedestal (placeholder lift actuator; the real hardware is unconfirmed) |
-| `9` `0` `-` `=` / `O` `P` `[` `]` | camera neck pan, shoulder lift, elbow, wrist flex: upper row increases, lower row decreases |
-| `F7` | frame the task points with the neck camera (beaker, hotplate and both grippers, when the scene has the beaker task; says so if they cannot all fit) |
-| `F8` | neck back to its default aim: looking ahead, 30 degrees down |
 | `F2` | (teleop mode) switch the arms between the keyboard and the webcam operator |
 | `F3` | save the simulated camera images to `data/camera_snapshots/` |
 | `F4` | save a snapshot of the viewer |
@@ -45,7 +42,7 @@ grippers respond to the keys then. If the operator leaves the camera's view the 
 last pose. The same legend is shown in the viewer's status panel.
 
 **Operator keys in episodes** (`experiments/beaker_hotplate_episode.py --viewer`; they come on top of the keys above, and the keyboard source is
-the same, so the base, arm, neck and pedestal keys drive the robot whenever the operator is in charge):
+the same, so the base, arm and pedestal keys drive the robot whenever the operator is in charge):
 
 | Key | Action |
 |---|---|
@@ -67,23 +64,11 @@ The viewer shows the three simulated cameras (eagle and both wrists) along the b
 operator webcam in teleop mode. Camera poses, field of view and resolution are placeholders until
 the real mounting and Orbbec model are known (`src/robot_specs.py`).
 
-**Camera neck.** The eagle camera is on the end of a 4-DOF SO-101 arm (the "neck") mounted on top of the torso
-(`NECK_SPECS` in `src/robot_specs.py`: the mount and the choice of joints are assumptions pending the real
-specs). The model is vendored in `models/so101/` (Apache-2.0, see `PROVENANCE.md`) and attached at load time by
-`src/neck.py`. The neck starts looking ahead and 30 degrees down. It moves (it is exempt from the
-one-subsystem-at-a-time rule) at no more than 1.5 rad/s. In teleop mode it looks ahead while the base drives and frames the task once each time the base stops, then holds
-(see the design decision below); any neck key takes over for 3 s (the keys are off while a replayable recording is written).
-`src/neck_framing.py: frame_points()` finds neck angles that keep a set of points in the image with a 10 % margin
-(and reports the points that do not fit).
-
-**Design decision (2026-10-14, implemented): the neck frames once per skill, then holds.** The eagle camera is a policy input, so its behaviour must be identical in
-generated demos, recorded teleop and policy runs, and a following neck would create a feedback loop with the policy. At the start of each skill (after staging, before the operator or
-the policy takes over) the neck frames the scene once and holds until the skill ends. Following stays only where nothing is recorded for training: the look-ahead while driving,
-and an unrecorded free teleop mode. What is built: the framing solve (`src/neck_framing.py`) is repeatable (a weak posture term of 0.003 towards the drive pose, no cost for moving from the
-start pose, a wide initial simplex; 0.1 degree of noise on the arms moves the neck by under 0.01 rad where it used to move it by about 1 rad); the staging NECK stage solves once per
-episode and a hand-back re-sends the stored targets; `neck_auto` (free teleop) looks ahead while driving, frames the task points (as F7 does) once each time the base stops, then holds
-(`NECK_AUTO_SPECS["follow"]` = True follows the grippers instead, never while recording); and the operator's neck keys (jog, F7, F8) are off, with a one-line notice, in any run that writes a
-replayable recording (`--record` / `--record-run`). `experiments/neck_once_test.py` tests all of it.
+**Eagle camera (fixed, no neck).** Since 2026-10-22 (decisions-log M153) the eagle camera is FIXED to the torso, on a small body on top of it (`EAGLE_BODY_SPECS`, `EAGLE_MOUNT` in `src/robot_specs.py`),
+and there is no neck. The model is the Orbbec Gemini 335 as a stand-in (M158: colour field of view 86 x 55 degrees, rendered 640 x 360; the body, 90 x 25 x 30 mm, is a collision box); the mount (a
+small mast on top of the torso, looking 50 degrees down) was chosen by a search (`experiments/camera_mount_search.py`, M166) and is a placeholder until the hardware team decides. The view moves only
+with the pedestal height. Every camera check is "inside the fixed view": the targets inside the image with a 10 % margin (`src/eagle_view.py`) and not hidden (`src/stance_checks.OcclusionMeter`).
+Nothing frames, follows or looks ahead; the neck, its keys, its solver and its tests were removed in step 2 of the fixed-camera change (docs/design_plan.md section 14).
 
 ### Performance on the VM
 
@@ -103,19 +88,19 @@ openarm-tracer-sim/
 │   ├── simulator.py         # Generic MuJoCo simulator (injects the cameras at load)
 │   ├── cameras.py           # Simulated Orbbec cameras, offscreen rendering
 │   ├── control_loop.py      # run_loop(): the control loop (router, command validation, optional exclusivity / hold); headless-capable
-│   ├── commands.py          # Mode-tagged command format (base / pedestal / arms / neck / idle / request_teleop; gripper position + max_force) and validate_command()
+│   ├── commands.py          # Mode-tagged command format (base / pedestal / arms / idle / request_teleop; gripper position + max_force) and validate_command()
 │   ├── base_control.py      # Twist -> free-joint velocity base drive
 │   ├── base_contacts.py     # The base stands on six low-friction contact spheres (the wheel and caster meshes do not collide), added at load
 │   ├── keyboard_source.py, teleop_source.py, policy_source.py   # command sources
 │   ├── glfw_viewer.py       # Window, HUD, camera insets, recorder, snapshots
-│   ├── neck.py, neck_framing.py, neck_source.py   # camera neck: attach the SO-101 at load, frame points, auto follow / look-ahead
+│   ├── eagle_view.py        # the fixed eagle camera's view: where points fall in its image (the one projection every camera check uses)
 │   ├── arm_kinematics.py, gripper_geometry.py, grasp_rules.py   # B2: arm FK / Jacobian / IK in numpy; the approach axis, closing axis and pad centre derived from the model; the grasp rules (level, 12 bins)
 │   ├── reach_map.py, arm_collision.py   # B2: the IK flood fill that builds the grasp reachability map (one arm, one approach bin), the collision filter, ReachMap (maps live in git-ignored data/)
 │   ├── furniture_map.py, stance_finder.py   # B2: the two-layer furniture map from the scene's geometry, the stance finder core (tested on made-up cases; real maps wait for the URDF import)
 │   ├── pour_scene.py        # B3: the pouring scene (a second beaker and balls for the liquid; opt in with load_task(pour=POUR_CFG)); experiments/pour_scene_test.py, pour_timing_test.py
 │   ├── battery.py           # The battery pack (Anker SOLIX C800, 11.3 kg box on the deck behind the pedestal, BATTERY_SPECS; mount is a placeholder)
-│   ├── face.py              # The robot's face: a visual-only head at the end of the neck, neutral / smile images from assets/private/face/ (git-ignored)
-│   ├── staging_source.py    # Scripted staging: DRIVE -> PEDESTAL -> ARMS -> NECK -> DONE (HANDOFF), beaker-on-hotplate task
+│   ├── face.py              # The robot's face: a visual-only head on the eagle camera's body (top of the torso), neutral / smile images from assets/private/face/ (git-ignored)
+│   ├── staging_source.py    # Scripted staging: ARMS -> PEDESTAL -> DRIVE -> CREEP_IN -> DONE (HANDOFF), beaker-on-hotplate task
 │   ├── sequential_policy.py # Generic policy of stages that run one after the other (any navigation stage, then any manipulation stage); hold / request-operator stages
 │   ├── task_policy.py       # The beaker task's policy: the staging stage + an arm stage, combined by sequential_policy.py
 │   ├── episode_runner.py    # Generic episode runner (a task supplies reset, policy, success check and time limits): timeouts, success, log, summary
@@ -134,7 +119,6 @@ openarm-tracer-sim/
 ├── models/robot/            # The generated robot file combined_robot.xml (Tracer, one-joint pedestal, torso, arms, hands) and the URDF numbers it was made from (tools/import_openarm_description.py; do not edit by hand)
 ├── tools/                   # import_openarm_description.py: fetches the pinned updated robot description and generates models/robot/
 ├── deps/OpenArm-Combined/   # Old robot model (submodule, never edited): the Tracer, materials and meshes the generated file still uses
-├── models/so101/            # Vendored SO-101 model for the camera neck (upstream files, unmodified; see PROVENANCE.md)
 ├── experiments/
 │   ├── combined_controller.py     # Launcher for the interactive sim: keyboard, webcam teleop, policy, cameras (loop is in src/)
 │   ├── cc_bench_scenarios.sh, cc_bench_compare.py, cc_loop_tests.py   # before/after regression scenarios, headless and hold-rule tests
@@ -162,10 +146,10 @@ openarm-tracer-sim/
 The controller is told who is in charge, `auto` or `teleop` (`cfg["mode"]` of `src/control_loop.py`). In `auto`, ONE task policy
 (`src/task_policy.py`) owns the whole task: its staging stage (`src/staging_source.py`, speeds / ramps / tolerances in `STAGING_CFG`,
 poses in `TASK_CFG`) drives to the staging pose, sets the pedestal, moves both arms to the home pose (`home_q_left` / `home_q_right`: the "zombie pose" found by the home pose search, a placeholder
-until the hardware team gives the real one; an optional random variation per joint, `home_variation_rad`, is off by default) and frames the beaker,
-the hotplate and both grippers with the neck camera; then its arm stage takes over (for now `hold`, or `request_operator`). The policy can ask for operator
+until the hardware team gives the real one; an optional random variation per joint, `home_variation_rad`, is off by default) and the beaker,
+the hotplate and both grippers are then inside the fixed eagle camera's view; then its arm stage takes over (for now `hold`, or `request_operator`). The policy can ask for operator
 control: the controller switches to `teleop` at once (the base stops, everything holds). In the viewer F9 takes over from the policy, Enter hands control back (the policy
-continues its current stage, its arm targets gliding from where the operator left them, `src/rate_limit.py`; the pedestal and the neck framing are put back too, and the operator's time does not count toward a phase timeout) and Delete aborts the episode
+continues its current stage, its arm targets gliding from where the operator left them, `src/rate_limit.py`; the pedestal is put back too, and the operator's time does not count toward a phase timeout) and Delete aborts the episode
 (`ABORTED_BY_OPERATOR`); a banner shows "OPERATOR NEEDED: <reason>" (with a sound) after a request and the available keys while the operator
 has control. Every switch is logged (`mode_switches` in the summary).
 Exclusivity and the hold rule stay in the controller (on in episodes).
@@ -184,7 +168,7 @@ save the log: success (`check_success`, after the handoff, whoever is in charge;
 (1 cm / 1 degree after 3 corrective re-approaches, or a correction that is too large). Each episode writes `episode_log.csv` (10 Hz) and
 `episode_summary.json`. The `hold` arm stage (expect TIMEOUT) and `cheat` (test only: teleports the beaker onto the hotplate 2 s after
 the handoff, expect SUCCESS) exist to test the runner; `experiments/cc_mode_tests.py` tests the modes, the operator keys, the timeouts, the snap-back
-safety (arm, gripper, base, pedestal) and the restore of the pedestal and neck after a hand-back.
+safety (arm, gripper, base, pedestal) and the restore of the pedestal after a hand-back.
 
 Outcomes: `SUCCESS`, `TIMEOUT` (auto time or operator time ran out; `timeout_kind` says which), `STAGING_FAILED`, `ABORTED_BY_OPERATOR` (Delete),
 `OPERATOR_NO_RESPONSE` (the policy asked for the operator and the operator timeout expired with no key pressed at all), `ABORTED` (viewer closed / Esc).
@@ -193,7 +177,7 @@ The base pose is corrected after PEDESTAL (full controller) and after ARMS (cree
 
 **Snap-back safety.** On resume every subsystem starts from where the operator left it and the policy then moves it toward what it wants: the base controllers
 slew from the applied Twist, the arm and gripper targets are rate-limited from the applied targets (`src/rate_limit.py`; `arm_max_speed` 1.0 rad/s,
-`gripper_max_speed` 0.05 m/s), the pedestal and the neck are put back, and the operator's time does not count toward a phase timeout.
+`gripper_max_speed` 0.05 m/s), the pedestal is put back, and the operator's time does not count toward a phase timeout.
 
 **Gripper force limit.** A gripper command is a finger travel or `{"position": m, "max_force": N}` (per finger, like the ROS gripper command). The grippers stay
 position-controlled; the loop writes `max_force` into the finger actuators' force range each tick, clipped to the hardware ceiling (9 N per finger, `ARM_ACTUATOR_SPECS["fingers"]["force_limit"]`; one actuator drives both fingers, so its force range is twice that). Omitted means the ceiling; `max_force <= 0` is rejected. The limit is recorded per tick and replayed.
@@ -202,7 +186,7 @@ position-controlled; the loop writes `max_force` into the finger actuators' forc
 time from `BEAKER_CFG` (`src/beaker.py`); its friction against the gripper is 0.4 (explicit contact pairs: the finger geoms' priority would otherwise win), and the
 per-object gripper force cap is `GRIP_FORCE_TABLE` (glass beaker 8 N). `experiments/beaker_hollow_test.py`, `home_pose_test.py` and `grasp_lift_test.py` test them.
 
-**The robot's face** (`src/face.py`, `FACE_CFG` in `src/robot_specs.py`; visual only). The neck carries a head-sized ellipsoid with a face image on its front, and the eagle camera
+**The robot's face** (`src/face.py`, `FACE_CFG` in `src/robot_specs.py`; visual only). The eagle camera's body (on top of the torso) carries a head-sized ellipsoid with a face image on its front, and the eagle camera
 sits on its forehead, outside the surface. The two images (`neutral.png`, `smile.png`) are loaded from `assets/private/face/`, which is git-ignored; if one is missing the
 head is plain grey and one line is printed, no error. `--no-face` (`combined_controller.py`, `beaker_hotplate_episode.py`, `replay_run.py`) leaves the head out. The episode
 runner shows the neutral face and switches to the smile when the success check passes; after a success the episode runs 2 more seconds (`success_linger_s`), then stops.
@@ -243,9 +227,9 @@ MP4 at 30 frames per sim second with shadows on everywhere, plus a PNG of the sa
 - [x] Keyboard control of base and both arms and grippers
 - [x] Simulated cameras (placeholder poses)
 - [x] Webcam teleop wired into the controller (tested with a scripted operator only)
-- [x] Camera neck, beaker-on-hotplate task, scripted staging with base pose corrections, auto / teleop modes with operator handoff, gripper force limits
+- [x] Fixed eagle camera (the neck was removed, M153), beaker-on-hotplate task, scripted staging with base pose corrections, auto / teleop modes with operator handoff, gripper force limits
 - [x] Record a live run and replay it exactly, rendering the cameras offline
-- [ ] Hand tests with a real keyboard and the real gripper / neck / pedestal specs (see `docs/TODO.md`)
+- [ ] Hand tests with a real keyboard and the real gripper / camera / pedestal specs (see `docs/TODO.md`)
 - [ ] Teleop tested with a real camera
 - [ ] Learned policy integration
 - [ ] Sim-to-real validation

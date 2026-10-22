@@ -10,7 +10,7 @@ are at home then, the base and the pedestal at the staging pose, the beaker on t
 grasp_q: the pad centre (the centre of the finger pads' contact patch, src/gripper_geometry.py) on the beaker's axis at `frac` of its height above the bench top, as a grasp in the sense of
 the reachability maps (src/grasp_rules.py: the hand's approach axis and finger-closing axis within level_deg of horizontal, the approach direction inside one of the 12 bins), found by the
 same damped-least-squares solver as the maps (src/arm_kinematics.solve_ik with src/grasp_rules.make_constraint) from the home pose and random starts. A solution must keep the arm clear of
-the robot's own parts (src/arm_collision.ArmCollisionChecker: the other arm as it is now, the torso, the pedestal at its current height, the base, the neck) and, with the fingers open, at
+the robot's own parts (src/arm_collision.ArmCollisionChecker: the other arm as it is now, the torso, the pedestal at its current height, the base, the camera box) and, with the fingers open, at
 least `min_clear` from the bench, the hotplate and everything else in the scene except the beaker; of the solutions the one with the largest joint margin wins.
 ready_q: the waypoint on the way from home, the pad centre 11.5 cm above the beaker's top and 5 cm back from the beaker towards the robot along the
 grasp's approach direction (the legacy ready pose's rule, SEARCH_CFG), the solution closest to the grasp in joint space. The straight joint-space moves home -> ready -> grasp (what the

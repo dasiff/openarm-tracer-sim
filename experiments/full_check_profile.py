@@ -5,7 +5,7 @@ Re-profile of ONE full check with the sped-up code (src/full_check.py), next to 
     MUJOCO_GL=egl python experiments/full_check_profile.py [--out data/logs]
 
 Runs: A cold (the stance in TASK_CFG; first call: builds the renderers, the arm collision checkers), A warm (the same, answer memory off), A under cProfile, B (the first quick-search candidate at
-heading -90 degrees that fails early, as in the old profile). Prints the time per part, the counts (IK batches, starts and iterations, neck solves and cost evaluations, renders) and the top
+heading -90 degrees that fails early, as in the old profile). Prints the time per part, the counts (IK batches, starts and iterations, fixed-view and occlusion checks, renders) and the top
 functions by cumulative time; writes data/logs/full_check_profile_<time>.json and .prof. One sim and render job: run it alone.
 """
 

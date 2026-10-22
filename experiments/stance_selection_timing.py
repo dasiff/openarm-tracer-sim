@@ -11,7 +11,7 @@ Quick search (the map query, src/stance_finder.find_stances): the scene of exper
 points labeled "either" (the VLA picks the hand; both arms preferred), headings -150 to -30 in 5 degree steps (the same headings as the finder runs), every pedestal height. Prints the time per
 heading and the ranked candidates over all headings (score = distance to the edge of the valid region, cm; arm; the valid pedestal range), and how many are above a floor of 0, 0.5, 1, 2 and 3 cm.
 full check on one candidate (the first of the ranking, heading restricted to -90 degrees as the staging does; and the stance now in TASK_CFG): the checks of src/stance_checks.StanceChecks at each
-pedestal height of the candidate's valid range on a 1 cm grid (home clearance, placed-beaker clearance, then, where those pass, the neck solves, the pixel occlusion renders and the framing
+pedestal height of the candidate's valid range on a 1 cm grid (home clearance, placed-beaker clearance, then, where those pass, the fixed-view margin, the pixel occlusion renders and the framing
 slack), then the IK verification of experiments/stance_sensitivity.Runner.evaluate at the chosen height. Times each component and prints cold (the first stance: includes building the renderer) and
 warm numbers. The IK verification is the left arm's (as in the current selection).
 """

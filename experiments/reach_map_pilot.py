@@ -233,5 +233,5 @@ if __name__ == "__main__":
     ap.add_argument("--quick-samples", type=int, default=None, help="override GRASP_MAP_CFG quick_samples")
     ap.add_argument("--validation-samples", type=int, default=6_000_000)
     ap.add_argument("--out", default=str(PROJECT_ROOT / "data" / "reach_map_pilot"))
-    ap.add_argument("--collisions", action="store_true", help="B2.4: filter the poses with src/arm_collision.py (the other arm at the home pose, the pedestal at its lowest, the neck at its drive pose)")
+    ap.add_argument("--collisions", action="store_true", help="B2.4: filter the poses with src/arm_collision.py (the other arm at the home pose, the pedestal at its lowest, the eagle camera box)")
     main(ap.parse_args())

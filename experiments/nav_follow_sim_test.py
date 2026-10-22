@@ -39,7 +39,7 @@ def check(name, ok, detail=""):
 def staging_run(follow):
     NAV_CFG["follow"] = follow
     try:
-        sim = load_task(cameras=False)
+        sim = load_task(cameras=True)
         task = make_task(None)
         t0 = time.time()
         with contextlib.redirect_stdout(io.StringIO()):
@@ -53,6 +53,9 @@ def staging_run(follow):
 
 def show(tag, s):
     a, h = s["arrival_at_end_of_drive"], s["base_pose_error_at_handoff"]
+    if a is None or h is None:
+        print(f"  [{tag}] outcome {s['outcome']}: {s.get('staging_error')}", flush=True)
+        return
     print(f"  [{tag}] outcome {s['outcome']}; DRIVE {s['phase_durations_s'].get('DRIVE', float('nan')):.1f} s, CREEP_IN {s['phase_durations_s'].get('CREEP_IN', float('nan')):.1f} s; "
           f"arrival at the approach spot {a['pos_err_mm']:.1f} mm, {abs(a['yaw_err_deg']):.2f} deg; handoff pose error {h['pos_err_mm']:.1f} mm, {abs(h['yaw_err_deg']):.2f} deg; "
           f"peak lean DRIVE {s['max_base_lean_deg_by_phase'].get('DRIVE', float('nan')):.2f} deg; min clearance to the bench {s['min_base_to_bench_clearance_during_drive_mm']:.0f} mm; wall {s['_wall_s']:.0f} s", flush=True)

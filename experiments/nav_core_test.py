@@ -166,7 +166,7 @@ def main(args):
         mujoco.mj_forward(sim.model, sim.data)
         fp = robot_footprint(sim.model, sim.data, TASK_CFG["pedestal_q"])
         print(f"  polygon of {len(fp['polygon'])} vertices, r_in {fp['r_in']:.3f} m, r_out {fp['r_out']:.3f} m, h_top {fp['h_top']:.3f} m")
-        check("the footprint's radii are sensible (inscribed 0.2 to 0.5 m, circumscribed 0.3 to 1.0 m, top 0.8 to 2.0 m; the top is what the model has loaded, not the zombie pose)", 0.2 < fp["r_in"] < 0.5 and 0.3 < fp["r_out"] < 1.0 and 0.8 < fp["h_top"] < 2.0)
+        check("the footprint's radii are sensible (inscribed 0.2 to 0.5 m, circumscribed 0.3 to 1.0 m, top 0.8 to 2.0 m; the footprint is the robot with its arms at home, the zombie pose)", 0.2 < fp["r_in"] < 0.5 and 0.3 < fp["r_out"] < 1.0 and 0.8 < fp["h_top"] < 2.0)
         from src.world_model import SimGroundTruthSource, WorldModel
         wm = WorldModel([SimGroundTruthSource(sim.model, sim.data)])
         wm.refresh()
@@ -176,9 +176,15 @@ def main(args):
         bo = np.asarray(wm.get("bench").outline)
         check("the world model's obstacle list holds the bench, outline x +-2.2, y +-0.8, from the floor to the top; refreshing again does not change the version",
               [e.id for e in obs] == ["bench"] and np.allclose(sorted(set(np.round(np.abs(bo).ravel(), 3))), [0.8, 2.2], atol=0.01) and wm.get("bench").height_range[0] == 0.0 and wm.obstacle_version == v, f"{[e.id for e in obs]} {bo.round(2).tolist()}")
-        grid, fine = build(obs + walls, foot=fp["polygon"], h_top=fp["h_top"])
+        from src.nav_footprint import obstacles_from_model
+        mo = obstacles_from_model(sim.model, sim.data)
+        xs = np.concatenate([np.asarray(o["outline"])[:, 0] for o in mo]); ys = np.concatenate([np.asarray(o["outline"])[:, 1] for o in mo])
+        print(f"  {len(mo)} obstacles from the model: {[o['id'] for o in mo][:12]}; extent x {xs.min():.2f}..{xs.max():.2f}, y {ys.min():.2f}..{ys.max():.2f}")
+        check("the model's obstacles hold the bench top and reach the room's walls", any("bench" in o["id"] for o in mo) and xs.max() > 2.5 and ys.max() > 2.5)
+        bounds = (math.floor(xs.min()) - 0.5, math.ceil(xs.max()) + 0.5, math.floor(ys.min()) - 0.5, math.ceil(ys.max()) + 0.5)
+        grid, fine = build(mo, foot=fp["polygon"], h_top=fp["h_top"], bounds=bounds)
         r = plan_route(grid, fine, sp, ap)
-        check("the bench approach with the real footprint and the world model's bench: found, verified, ends within 1 cm and 1 degree", r["ok"] and ends_ok(r, ap), f"{r['reason']} length {r['length']:.2f} m, smoothed {r['smoothed']}, lead-in {r['lead_in_m']}, lead-out {r['lead_out_m']}, max curvature {r['max_curvature']:.2f}")
+        check("the bench approach with the real footprint and the model's own obstacles: found, verified, ends within 1 cm and 1 degree", r["ok"] and ends_ok(r, ap), f"{r['reason']} length {r['length']:.2f} m, smoothed {r['smoothed']}, lead-in {r['lead_in_m']}, lead-out {r['lead_out_m']}, max curvature {r['max_curvature']:.2f}")
     print(f"\n{sum(results)}/{len(results)} checks passed")
     return all(results)
 

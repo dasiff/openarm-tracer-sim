@@ -186,6 +186,11 @@ def verify(samples, fine, cfg=NAV_CFG):
     return np.array([fine.footprint_hit(sm[:2], sm[2], cfg["track_tol"]) for sm in samples])
 
 
+def kappa_max(cfg):
+    """The largest curvature the follower can drive: its yaw rate limit over its lowest regulated speed (proposal N7), 1/m."""
+    return cfg["rotate_to_heading_angular_vel"] / cfg["regulated_linear_scaling_min_speed"]
+
+
 def _wrap(a):
     return (a + math.pi) % (2 * math.pi) - math.pi
 
@@ -351,7 +356,7 @@ def _route(grid, fine, start, goal, lead_in, cfg, direct=False):
     for rnd in range(4):
         spl = Spline(cur, cfg, weights)
         smp = spl.samples(cfg)
-        bad = verify(smp, fine, cfg)
+        bad = verify(smp, fine, cfg) | (np.abs(smp[:, 3]) > kappa_max(cfg))     # the footprint test and the curvature the regulated speed allows
         if not bad.any():
             ok = True
             break

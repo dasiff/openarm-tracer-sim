@@ -8,7 +8,7 @@ fingers open) with the pedestal at the drive height; `h_top` is the highest poin
 circumscribed radius the largest distance to a vertex. Today's staging drives with the arms at the zombie pose at `TASK_CFG["pedestal_q"]`.
 
 Contents:
-    robot_footprint.
+    robot_footprint, obstacles_from_model.
 """
 
 import mujoco
@@ -51,3 +51,44 @@ def robot_footprint(model, data, pedestal_q, spacing=0.02):
     poly = P[hull.vertices, :2]
     r_in, r_out = footprint_radii(poly)
     return {"polygon": poly, "r_in": r_in, "r_out": r_out, "h_top": float(P[:, 2].max())}
+
+
+def obstacles_from_model(model, data, exclude_bodies=("task_beaker", "task_hotplate"), exclude_geom_prefix="fc_slot", spacing=0.05):
+    """The scene's static collidable geoms as navigation obstacles: the convex hull from above of each geom's surface and the heights it spans.
+
+    The room's walls, the bench top and legs and the other furniture; the robot, the objects on the bench (the hotplate and the beaker stand inside the bench's outline), the floor plane and the object
+    slots are left out. The ground-truth stand-in for the map (found = "map") until the world model's own obstacle entries are fed by a sensor.
+
+    Args:
+        model (mujoco.MjModel): The compiled model.
+        data (mujoco.MjData): Its data after a kinematics pass.
+        exclude_bodies (tuple of str): Bodies that are objects, not obstacles.
+        exclude_geom_prefix (str): Geoms whose names start with this are object slots.
+        spacing (float): The surface sample spacing, metres. Defaults to 0.05.
+
+    Returns:
+        list of dict: {"id", "outline" ((K, 2) world xy, counter-clockwise hull), "height_range" ((z_low, z_high)), "found": "map"}.
+    """
+    root = model.body("base_link").id
+    skip = {model.body(n).id for n in exclude_bodies if mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, n) >= 0}
+
+    def under(b, targets):
+        while b > 0:
+            if b in targets:
+                return True
+            b = int(model.body_parentid[b])
+        return False
+    out = []
+    for g in range(model.ngeom):
+        if not (model.geom_contype[g] or model.geom_conaffinity[g]) or int(model.geom_type[g]) == int(mujoco.mjtGeom.mjGEOM_PLANE):
+            continue
+        b = int(model.geom_bodyid[g])
+        name = mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_GEOM, g) or ""
+        if under(b, {root}) or under(b, skip) or name.startswith(exclude_geom_prefix):
+            continue
+        P = surface_samples(model, data, g, spacing)
+        if len(P) < 3:
+            continue
+        hull = ConvexHull(P[:, :2])
+        out.append({"id": name or f"geom{g}", "outline": P[hull.vertices, :2], "height_range": (float(P[:, 2].min()), float(P[:, 2].max())), "found": "map"})
+    return out

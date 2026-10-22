@@ -61,7 +61,7 @@ def show(tag, s):
           f"peak lean DRIVE {s['max_base_lean_deg_by_phase'].get('DRIVE', float('nan')):.2f} deg; min clearance to the bench {s['min_base_to_bench_clearance_during_drive_mm']:.0f} mm; wall {s['_wall_s']:.0f} s", flush=True)
 
 
-def main(only):
+def main(only, dump=None):
     out = {}
     for tag, follow in (("off", False), ("on", True)):
         if only and only != tag:
@@ -69,6 +69,11 @@ def main(only):
         print(f"\nstaging with follow {tag}", flush=True)
         out[tag] = staging_run(follow)
         show(tag, out[tag])
+        if dump and tag == "off":
+            import json
+            tmp = Path(dump).with_suffix(".tmp")
+            tmp.write_text(json.dumps({k: v for k, v in out[tag].items() if k != "_wall_s"}, indent=1, sort_keys=True, default=str))
+            tmp.replace(dump)
     if "on" in out:
         s = out["on"]
         nav = s.get("nav") or {}
@@ -90,4 +95,6 @@ def main(only):
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--only", choices=("on", "off"))
-    sys.exit(0 if main(ap.parse_args().only) else 1)
+    ap.add_argument("--dump", help="write the follow-off run's summary (without wall time) to this JSON file, to compare two code versions")
+    a = ap.parse_args()
+    sys.exit(0 if main(a.only, a.dump) else 1)

@@ -518,3 +518,18 @@ NAV_CFG = {
     "k_fb": 0.5,                           # the curvature feed-forward: yaw rate = v * (kappa_path + k_fb * (kappa_pursuit - kappa_path)); 1 is Nav2's plain RPP [row M149 PENDING David]
     "max_replans": 3,                      # count: replans per approach after a drift or a new obstacle, then the operator (row M057)
 }
+
+
+# ----------------------------------------------------------------------------------------------------------
+# Bench rectangle stance selection (overnight queue stage 5, replaces the S1 to S6 ranking; David 2026-10-22)
+# ----------------------------------------------------------------------------------------------------------
+BENCH_RECT_CFG = {
+    "mode": "task_cfg",                    # "task_cfg": today's fixed stance (TASK_CFG), nothing else changes; "bench_rectangle": park where the next step's targets sit in the rectangle below [row M150]
+    # ASSUMPTION (David 2026-10-22): manipulation happens on the lab bench only, with the pedestal at one fixed height (TASK_CFG["pedestal_q"], the finder's output); nothing is beaker-specific.
+    "work_heights_m": (0.02, 0.06, 0.10),  # m above the bench top: the hand's pad centre heights the rectangle must cover (placeholder band for a hand working on the bench: a 10 cm beaker's grasp band is 0.045 to 0.06) [row M150 PENDING David]
+    "margin_m": 0.03,                      # m: the measured rectangle is shrunk by this on every side [row M150]
+    # The rectangle, measured offline by experiments/bench_rectangle_measure.py from the reach maps at the pedestal height and the work heights: in the base frame facing the bench (x forward, y left), metres.
+    # None until measured. Plain words: "forward_near" is the nearest distance from the base origin to the rectangle's near edge, "forward_far" the farthest; "right" and "left" are the rectangle's sides.
+    "rectangle": None,                     # {"forward_near": m, "forward_far": m, "right": m (negative), "left": m} [row M150]
+    "shift_along_m": 0.05, "shift_across_m": 0.03, "max_shifts": 4,   # the shifted parking spots tried when the full check fails: +-5 cm along the bench, +-3 cm toward/away, at most 4, then stop and report [row M150]
+}

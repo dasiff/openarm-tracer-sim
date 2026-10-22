@@ -97,3 +97,10 @@ Earlier (one line each): reachability maps (24, 63 min), open bench default, col
 - Teleop neck investigation: not the finger gain (kp 100 gives the same); the old solver had a redundant lift/elbow/wrist direction (1 rad spread on 0.1 degree noise).
 - Neck frames once per skill, then holds (2026-10-14): solver defaults (posture 0.003 to the drive pose, move weight 0, wide simplex), staging re-sends stored targets, neck_auto once per stop, neck keys off while --record / --record-run. Tests: neck_once_test 21/21, neck_framing_test, home_pose_test 28/28, face_test 23/23. kp 100 vs 300 teleop: neck differs <= 3.5e-5 rad, same final pose.
 - Baselines regenerated (temp file, checked, renamed) and committed as the new reference: ab903d0 (manual and policy equal the 12:16 files; teleop neck is new by design).
+
+## Queue changes (David, 2026-10-22, received during Stage 2)
+- Stage 1: append suite result to report; R2j not needed (27 s < 30 s target), kept as LATER option.
+- turn_in_place_deg = 90 accepted (M148). Stage 2: fix wrong tests and explain, never loosen a check/margin; genuinely impossible scenarios expect the reported failure.
+- Stage 4 (observation slots): DEFERRED (no sensor yet). Skip.
+- Stage 5 REPLACED: "bench rectangle" stance selection behind a setting (default = TASK_CFG stance); one-off offline rectangle from reach maps at pedestal 0.155 and bench-top height, margin 3 cm; runtime: park so targets centred in rectangle, runs extended while targets fit; full check as safety net, up to 4 shifted spots (+-5 cm along, +-3 cm toward/away), then stop; ranking/neighbourhood/shrinking/pedestal search recorded, NOT built.
+- Stage 6 as planned. No Stage 7. Summary lists deferred and replaced items.

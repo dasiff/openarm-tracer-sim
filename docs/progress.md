@@ -104,3 +104,6 @@ Earlier (one line each): reachability maps (24, 63 min), open bench default, col
 - Stage 4 (observation slots): DEFERRED (no sensor yet). Skip.
 - Stage 5 REPLACED: "bench rectangle" stance selection behind a setting (default = TASK_CFG stance); one-off offline rectangle from reach maps at pedestal 0.155 and bench-top height, margin 3 cm; runtime: park so targets centred in rectangle, runs extended while targets fit; full check as safety net, up to 4 shifted spots (+-5 cm along, +-3 cm toward/away), then stop; ranking/neighbourhood/shrinking/pedestal search recorded, NOT built.
 - Stage 6 as planned. No Stage 7. Summary lists deferred and replaced items.
+
+## Run in progress
+Stage 2 suite (only tests importing world_model + nav_core_test): tmux session suite6, TAG 20261022_124509, summary data/logs/suite_20261022_124509_summary.txt, started 12:45:09.

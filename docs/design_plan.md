@@ -160,7 +160,7 @@ Second hollow beaker (which of the two starts with the liquid stand-in is random
 
 ## 6. Skills and success checks [DECIDED]
 
-- Pick: start at home, grasp, lift, end at home holding the beaker. Success: held, lifted, upright, arm at home.
+- Pick: start at home, grasp, lift, end at home holding the beaker. **[Rule decided 2026-10-21, David, M074]** A pick returns to the zombie pose UNLESS the next navigation step is null (B2, §8 plan structure): before a null step it stays lifted (at the clearance height, holding the object) and the place continues from there. The scripted pick today always ends lifted at the carry height (drift: §8 plan structure); it is what B2 prescribes for the live plan, whose "navigate to the hotplate" step will be null, so it is not changed now; the rule is built with stance selection and the null steps, so the baselines change once. Success: held, lifted, upright, arm at home.
 - Demos are single skills (pick, place) [David, 2026-10-21, M048]. Place demos start from two poses: the zombie pose, and the lifted post-pick pose (at the clearance height, holding the object), the pose a place starts from in the null case (§8, plan structure).
 - Place: start at home holding something (run pick first, record only the place), place on the hotplate, release, end at home. Success: existing on-hotplate check, gripper open, arm at home.
 - Pour: start with both beakers held (chain the two picks, the full beaker first, then the empty one with the free arm; record only the pour). The destination beaker stays upright and still.
@@ -271,7 +271,7 @@ The bare "mode" display of the viewer is replaced by a compact status window of 
 - **B5** The eagle camera frames once per step, after parking; at a null step it may reframe while the arm pauses, only if the next step's targets need it (§14.1).
 - **B6** If no stance passes for a step: stop and report the reason (out of reach, or out of view). LATER (§10): a paused reframe inside a step for objects that are reachable but not all in view.
 - **L1 (M068)** Longest-run stance selection: at each non-null navigation step, stance selection first tries one stance for the points of the next k steps together (k = the run cap, a setting, default 4), then k-1, down to 1; the first k that passes wins, and the following steps in that run get null navigation steps (their arm stays where it is, B2). The step order stays the LLM's: no reordering. This gives the fewest moves for a fixed step order. **L2 (M069)** The objects of the later steps in the run are grounded early; the S-Q11 rule (re-check reach on every world-model update of an object the next step needs) covers their changes. **Where a run stops (R7, M071 to M073):** it continues past an LLM-written navigation step whose target grounds to an object (or that object's location) the NEXT manipulation step uses ("navigate to the hotplate" before "place the beaker on the hotplate"; the LLM writes "navigate to X" before each object, as the paper's prompt teaches it, so most of its navigation steps are not a real change of place): that step is null if the run's stance serves it, like an inserted one; it stops at any other LLM-written navigation step (a different target, or no manipulation after it: a real change of location) and at a step whose object is not in the world model yet (that step needs a search first). A null LLM navigation step still leaves the robot where the target is.
-- Status today: the scripted pick ends at the carry height with the arm extended (not at the zombie pose) and the place starts from there (the skeleton cut D3's single pick-and-place run in two); under B2 and B3 the pick ends at the zombie pose except before a null step. The 2026-10-21 report answers why.
+- Status today (M074): the scripted pick ends lifted at the carry height with the arm extended, and the place starts from there. That is drift, not a decision: D3's approved design was one continuous pick-and-place run with the return home only at its end, and the MPVI skeleton cut that run in two without adding a return home to the pick. The rule (§6): a pick returns to the zombie pose unless the next navigation step is null, in which case it stays lifted and the place continues from there. For the live plan (navigate to the beaker, pick, navigate to the hotplate, place) that next step will be null (B2), so today's behaviour is what B2 prescribes; the return to the zombie pose is built with stance selection and the null steps (they decide whether a step is null), so the baselines change once.
 
 ### Fidelity to the MPVI paper [DECIDED 2026-10-19]
 
@@ -317,6 +317,7 @@ Build steps are referred to only as B-numbers. Each step shows the section that 
 - Continuous slip monitor with a failure plan (beyond the paper; David, 2026-10-21): today the drop monitor (M044) fires only when the fingers close past the held width, so it is blind while a beaker slides down between pads that stay at the held width (the 2 N forced slip test); a continuous monitor of the grasp (finger position and effort over time) with a plan for what to do on a slip.
 - Rolling-window smoother for long trips and replanning on the move, with a seam that keeps position, heading and curvature continuous (David, 2026-10-21; the navigation proposal smooths the whole trip).
 - Coarse-to-fine or quadtree grids for building-size maps (David, 2026-10-21, M053; the navigation grid is a fixed 5 cm).
+- Carry height (the pedestal raised while carrying) (David, 2026-10-21, M077): it only matters if a two-layer map (a base layer and an arm layer, as `FurnitureMap` has for the stance finder; the navigation proposal uses one layer, N2) ever lets the robot drive partly under or beside tables with the arms above them; decide it together with that two-layer map.
 - Naming of unknown obstacles (M058; they stay "unknown obstacle" until then) and tracking of moving objects (a Kalman filter; M063: objects are assumed still between sightings).
 - A paused reframe inside a manipulation step, for objects that are reachable but not all in view (B6, M050).
 - A MoveIt-style arm motion planner that can go around obstacles, plus demos with tall objects on the bench, for the demo generator (B4/Phase B; C2, M052).
@@ -375,7 +376,8 @@ Build steps are referred to only as B-numbers. Each step shows the section that 
 - Gripper max opening (gripper owner)
 - Arm controller: interpolate between targets? (assumed yes)
 - Eagle camera / neck: real mount, which 4 SO-101 joints, camera mass (the full list of what must match the real robot: §14.2)
-- Wrist camera mounts and angles
+- Wrist camera mounts and angles (open: the mount position and angle). **[Hardware team via David, 2026-10-21, M075]** The real wrist camera for now is the Orbbec Gemini 305, which has depth: specs in §14.3 (from Orbbec's pages). `CAMERA_SPECS` is not changed yet (the mount is open, and a camera change regenerates data).
+- Is the eagle (head) camera also a Gemini 305, and does it give depth? (M076) This decides the navigation sensing task (obstacles and unknown objects from depth, V1, M064): if the eagle camera has depth the task is built, if colour only it moves to §10.
 - Camera model (field of view, resolution), and whether the eagle camera gives depth (for object positions, §13)
 - Base: how the real Tracer holds position when stopped
 - Base stopping accuracy, position and heading (Michael)
@@ -469,6 +471,30 @@ One place for everything that defines what the eagle camera shows, because its i
   - Neck keys are disabled while recording (`--record`, `--record-run`); following the grippers exists only in unrecorded runs.
 - **Framing rule (`src/neck_framing.py`, `FRAMING_CFG`):** the targets are the points the step needs in view: the beaker and the hotplate (their corners) and both grippers (tool point, hand, finger tips) at home. The neck aims the optical axis at the centre of the targets' bounding box and keeps every target at least 10 % of the image width and height from every edge (`margin` 0.10); if they cannot all fit it returns the best attempt and reports which are outside, never cropping silently. The result is collision-checked (neck geoms at least 5 mm from everything else). Repeatability: the camera has more neck joints than the aim and the margin need, so a weak posture term toward the drive pose (`posture_weight` 0.003, `move_weight` 0 so the start pose does not matter, a wide initial simplex) picks one answer; the same targets give the same joints bit for bit, and 0.1 degree of arm noise moves no neck joint by more than 0.06 rad.
 - **Visibility requirements (the stance and home pose checks, §3.4; pixel areas from a segmentation render of this camera with and without the robot):** with the neck at its framing pose, the robot hides none (0 %) of the beaker's pixels and at most 20 % of the hotplate's; the framing slack is at least 10 % with both grippers in frame; the neck framing spread is at most 0.06 rad. Among stances that pass, the one whose arms cover the least of the image is preferred (§3.4). Current stance: beaker 0 %, hotplate 0.1 % hidden, slack 12.7 %.
+
+### 14.3 The wrist camera: the real one is an Orbbec Gemini 305 (specs recorded 2026-10-21, M075)
+
+From the hardware team (via David, 2026-10-21): the real wrist camera for now is the Orbbec Gemini 305, which has depth. The values below are Orbbec's, copied from two pages read on 2026-10-22 and not guessed: the comparison table (https://www.orbbec.com/compare-products-spec/, "table") and the product page (https://www.orbbec.com/gemini-305/, "page"; its Documentation button points to https://doc.orbbec.com/documentation/Gemini%20305%20Documentation, not read). No separate PDF datasheet was found; check the documentation page for the authoritative values before relying on a number. Where the two pages differ, both are given.
+
+| Item | Gemini 305 | Source |
+|---|---|---|
+| Depth technology | passive stereo, baseline 18 mm | table (page: "stereo vision") |
+| Depth range | working 4 cm to 100 cm+; ideal 7 cm to 50 cm | table, page |
+| Depth resolution and rate | up to 1280 x 800 at 30 fps, and 848 x 530 at 60 fps (the page says 848 x 480 at 60 fps: a discrepancy) | table / page |
+| Depth field of view (H x V) | 88 x 65 degrees, +-3 (at 1280 x 800, 20 cm) | table, page |
+| Depth aligned to colour (D2C) | up to 88 x 65 degrees +-3 at 20 cm (page: H 88 x V 65 x D 98) | table / page |
+| Infrared field of view | 91 x 65 degrees +-3 | table |
+| Colour resolution and rate | up to 1280 x 800 at 60 fps | table, page |
+| Colour field of view (H x V) | 94 x 68 degrees +-3 (page: diagonal 104 for full colour) | table / page |
+| Shutter | global shutter (colour and depth sensors) | table, page |
+| Spatial precision | at most 1 % (1280 x 800, 50 cm, 90 % x 90 % region of interest) | table |
+| IMU | none | table |
+| Interface and power | USB Type-C (USB 3.0 recommended, USB 2.0 supported); 5 V, at least 0.7 A; average at most 2.0 W (peak at most 3.0 W) | table, page |
+| Size and weight | 42 x 42 x 23 mm; 68 g +-3 g (page: +-10 g) | table / page |
+| Mounting | bottom: one 1/4-20 UNC and two M3; back: two M3; the page describes the camera as designed for wrist-mounted robot applications | table, page |
+| Other | IP54; -10 to 45 degrees C; hardware and software multi-camera sync (page); Orbbec SDK V2; a 305g variant (GMSL2, 116 g, 42 x 42 x 40 mm) exists for arms in motion (page) | table, page |
+
+Against the sim's placeholder (`ORBBEC_FOVY_DEG` 58 degrees vertical, `ORBBEC_RESOLUTION` 640 x 480, 30 Hz, the same for all three policy cameras, §14.1): the real colour sensor is 94 x 68 degrees at up to 1280 x 800 and 60 fps, much wider than the placeholder, and has depth that the sim does not render. The wrist views of the training data therefore differ from the real ones until `CAMERA_SPECS` is updated (a data regeneration, decided when the mount is known). The depth range matters for any use of the wrist depth: closer than 4 cm and farther than 100 cm give no depth.
 
 ### 14.2 Must match the real robot
 

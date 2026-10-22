@@ -3,7 +3,7 @@
 
     fp = robot_footprint(model, data, pedestal_q)       # {"polygon": (K, 2) base frame, "r_in", "r_out", "h_top"}
 
-The outline is the convex hull, seen from above, of the surface of every collision geom of the robot (the base, the battery, the pedestal and torso, the neck, both arms and hands at the zombie pose with the
+The outline is the convex hull, seen from above, of the surface of every collision geom of the robot (the base, the battery, the pedestal and torso, the camera box, both arms and hands at the zombie pose with the
 fingers open) with the pedestal at the drive height; `h_top` is the highest point above the floor. The inscribed radius is the smallest distance from the base origin to an edge of the polygon and the
 circumscribed radius the largest distance to a vertex. Today's staging drives with the arms at the zombie pose at `TASK_CFG["pedestal_q"]`.
 
@@ -25,7 +25,7 @@ def robot_footprint(model, data, pedestal_q, spacing=0.02):
     """The footprint polygon, radii and height of the robot at a pedestal command.
 
     Args:
-        model (mujoco.MjModel): The compiled model (with the neck and the battery).
+        model (mujoco.MjModel): The compiled model (with the camera body and the battery).
         data (mujoco.MjData): Its data (any state).
         pedestal_q (float): The drive pedestal command, metres.
         spacing (float): The surface sample spacing, metres. Defaults to 0.02.

@@ -44,7 +44,7 @@ from src import robot_specs  # noqa: E402
 from src.neck import neck_ids, set_neck_pose  # noqa: E402
 from src.neck_framing import best_margin, frame_points  # noqa: E402   (best_margin: the framing slack; also imported from here by the home pose scripts)
 from src.robot_helpers import arm_ids  # noqa: E402
-from src.task_beaker_hotplate import framing_points, home_targets, load_task, run_beaker_episode, yaw_to_quat  # noqa: E402
+from src.task_beaker_hotplate import view_points, home_targets, load_task, run_beaker_episode, yaw_to_quat  # noqa: E402
 from src.stance_checks import OcclusionMeter, StanceChecks, occlusion_ok  # noqa: E402
 from src.stance_finder import robot_geometry  # noqa: E402
 from src.task_config import EPISODE_CFG, STAGING_CFG, STANCE_REQUIREMENTS, TASK_CFG  # noqa: E402
@@ -125,7 +125,7 @@ def staging(sim):
         check(f"the robot hides at most {100 * lim[name]:.0f} % of the {name}'s pixels in the eagle camera's image (pixel area)", occlusion_ok(oc, {name: lim[name]}),
               f"{100 * oc[name + '_hidden_frac']:.1f} % hidden ({oc[name + '_px']} of {oc[name + '_px_free']} px)")
     place_home(sim, {sd: np.array(TASK_CFG[f"home_q_{sd}"]) for sd in ("left", "right")})
-    bm, who, free = best_margin(sim, framing_points(sim.model, sim.data))
+    bm, who, free = best_margin(sim, view_points(sim.model, sim.data))
     print(f"      best possible worst margin over all neck poses at the nominal home: {100 * bm:.1f} % (limited by {who}; that neck pose {'is' if free else 'is NOT'} collision-free); "
           f"the requirement is 10 %")
     chk = StanceChecks(sim.model, sim.data, robot_geometry(sim.model)["base_z"])
@@ -174,7 +174,7 @@ def variation(sim, deg=3.0, n=10):
             ok_range &= bool((dev <= spread + 1e-12).all())
             ok_limit &= bool(((q[sd] >= lim[sd][:, 0]) & (q[sd] <= lim[sd][:, 1])).all())
         place_home(sim, q)
-        pts = framing_points(m, sim.data)
+        pts = view_points(m, sim.data)
         targets, rep = frame_points(m, sim.data, pts)
         worst = min(rep["points"].items(), key=lambda kv: kv[1]["margin"])
         bm, who, free = best_margin(sim, pts)

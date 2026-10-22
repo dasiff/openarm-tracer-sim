@@ -19,7 +19,6 @@ Each iteration ("tick", cfg["source_hz"] = 150 hertz (Hz) = 5 physics steps at 7
   2. hotkeys (F2 = router switch, F5 = trajectory logging); call every source; keep the commands the router routes to
      that source; validate them
   3. apply them: at once, or, with cfg["exclusive"], one subsystem at a time with the hold rule
-  3b. the neck (exempt from exclusivity) moves its position targets toward the commanded ones at cfg["neck_max_speed"]
   4. step physics 5 times, writing the position targets (data.ctrl) and the base velocity before every step, and rendering a camera every
      cam_every (25) steps (every 5th tick, 30 Hz). The arm and finger targets between two commands follow cfg["target_mode"], see below.
   5. logging, then viewer["frame"](info) if there is a viewer. The window is redrawn at cfg["viewer_draw_hz"] (30 Hz: every
@@ -31,8 +30,8 @@ command arrives to the new target over the source's command period (1 / the sour
 the source's next command is due; a new command before that restarts the ramp from the current ctrl value. It adds up to one source period of
 delay (33 ms at 30 Hz, 6.7 ms at 150 Hz). "hold" keeps each target unchanged until the next one arrives. A source may have "hz" (a number, or a
 function returning the rate of the commands it is giving now); without it the source's period is one tick. A source that gives commands at less
-than the tick rate gives them only on its due ticks (see src/sequential_policy.py). The pedestal and the neck are not interpolated (the
-pedestal ramps itself at its own speed limit, the neck is slewed by the loop every tick), and obs["applied"] always holds the final target.
+than the tick rate gives them only on its due ticks (see src/sequential_policy.py). The pedestal is not interpolated (it
+ramps itself at its own speed limit), and obs["applied"] always holds the final target.
 
 Controller mode (cfg["mode"], cfg["auto_source"]): "teleop" is the router exactly as configured (keyboard, webcam teleop, a policy on some
 fields: what the manual / teleop / policy launcher modes have always been). With cfg["auto_source"] naming a task-policy source there is
@@ -41,14 +40,14 @@ the hotkeys (cause "operator_key"; take_over acts only in auto mode; hand_back c
 hand_back and abort act only while the operator has control) and the source's
 {"mode": "request_teleop", "reason": ...} command (cause "policy_request"; the tick's other commands are dropped). On every switch the
 exclusivity state is cleared, the base is brought to a stop at cfg["base_stop_*_decel"] (base commands wait until it is at rest), the arms /
-grippers / pedestal / neck hold their targets, and the switch is logged: {tick, time, from, to, cause, reason, stage} in the returned "mode_log".
+grippers / pedestal hold their targets, and the switch is logged: {tick, time, from, to, cause, reason, stage} in the returned "mode_log".
 obs["mode"] and obs["policy"] (the auto source's status(), if it has one) are available to hooks and sources. After a policy request obs["operator"]
 = {"requested", "responded"} says whether the operator has done anything (pressed any key) since. The viewer is given a banner ("OPERATOR NEEDED:
 <reason>" until the operator responds, then "OPERATOR CONTROL: <hand-back key> = hand back to policy, <abort key> = abort episode") and an alert
 counter that rings the alert sound once per request.
 
 Router: cfg["routes"] maps each field to the source that owns it. Fields: "base", "pedestal", "arms.left", "arms.right",
-"gripper.left", "gripper.right", "neck". A value is a source name or a tuple of names (several sources may command the
+"gripper.left", "gripper.right". A value is a source name or a tuple of names (several sources may command the
 field; later ones in the sources dict win a tick). By default everything is the keyboard. The F2 hotkey (teleop runs) moves both
 "arms.*" fields between "keyboard" and "teleop" at run time (calling the teleop source's enable / disable); a policy
 source owns the fields of its auto groups for the whole run. Sources that are not routed still get step() called (the
@@ -90,8 +89,7 @@ import numpy as np
 from src import robot_specs
 from src.base_control import apply_base_velocity, base_yaw, find_base_dof, twist_to_world_velocity
 from src.cameras import CameraRig
-from src.commands import EXEMPT_SUBSYSTEMS, validate_command
-from src.neck import neck_ids
+from src.commands import validate_command
 from src.run_record import RunRecorder
 
 LOOP_CFG = {
@@ -128,8 +126,6 @@ LOOP_CFG = {
     "preview": False,              # teleop: the operator preview inset is shown [row M121 PENDING David: no decision recorded]
     "on_tick": None,               # supervisor hook, see above [row M121 PENDING David: no decision recorded]
     "spawn_yaw": None,             # rad, base yaw at spawn (None = leave the XML's); used only when spawn_pos is set [row M121 PENDING David: no decision recorded]
-    "neck_specs": None,            # None = robot_specs.NECK_SPECS (the neck is skipped if the model has none) [row M121 PENDING David: no decision recorded]
-    "neck_max_speed": None,        # rad/s; None = NECK_SPECS["max_speed"] [row M121 PENDING David: no decision recorded]
     "mode": "teleop",              # who is in charge at the start: "teleop" (the router as configured) or "auto" (see auto_source) [row M121 PENDING David: no decision recorded]
     "auto_source": None,           # name of the task-policy source. With it the loop has an "auto" mode in which that source owns every router field; [row M121 PENDING David: no decision recorded]
                                    # the hotkeys "take_over" (F9: auto -> teleop), "hand_back" (Enter: teleop -> auto) and "abort" (ends the run;
@@ -139,7 +135,7 @@ LOOP_CFG = {
     "replay": None,                # src/replay.py: {"ctrl", "basevel", "on_start", "on_step", "on_tick_end"}: no sources, inputs from a recording [row M121 PENDING David: no decision recorded]
 }
 
-ROUTE_KEYS = ("base", "pedestal", "arms.left", "arms.right", "gripper.left", "gripper.right", "neck")
+ROUTE_KEYS = ("base", "pedestal", "arms.left", "arms.right", "gripper.left", "gripper.right")
 DEFAULT_ROUTES = {k: "keyboard" for k in ROUTE_KEYS}
 
 
@@ -192,17 +188,16 @@ def _headless_context(model):
 def _filter_by_route(cmd, name, routes):
     """Keeps only the part of a command that a source owns according to the router.
 
-    The loop calls it for base, pedestal, arms and idle commands. It does not call it for neck commands, so in practice the "neck" route
-    entry is not enforced, although this function would handle one.
+    The loop calls it for base, pedestal, arms and idle commands.
 
     Args:
         cmd (dict): A command with a "mode" key (not "request_teleop"; see src/commands.py for the format).
         name (str): Name of the source that produced the command.
-        routes (dict): Router table mapping each field ("base", "pedestal", "arms.left", "arms.right", "gripper.left", "gripper.right",
-            "neck") to a source name or a tuple of source names.
+        routes (dict): Router table mapping each field ("base", "pedestal", "arms.left", "arms.right", "gripper.left", "gripper.right")
+            to a source name or a tuple of source names.
 
     Returns:
-        dict or None: `cmd` itself for an idle command, or for a base, pedestal or neck command whose field the source owns; for an arms
+        dict or None: `cmd` itself for an idle command, or for a base or pedestal command whose field the source owns; for an arms
         command a new dict with only the arm_targets and gripper entries of the sides the source owns; None if the source owns nothing
         of the command.
     """
@@ -210,7 +205,7 @@ def _filter_by_route(cmd, name, routes):
     owns = lambda field: name in ((routes.get(field),) if not isinstance(routes.get(field), tuple) else routes[field])
     if mode == "idle":
         return cmd
-    if mode in ("base", "pedestal", "neck"):
+    if mode in ("base", "pedestal"):
         return cmd if owns(mode) else None
     at = {sd: q for sd, q in cmd.get("arm_targets", {}).items() if owns(f"arms.{sd}")}
     gr = {sd: g for sd, g in cmd.get("gripper", {}).items() if owns(f"gripper.{sd}")}
@@ -234,7 +229,7 @@ def run_loop(model, data, sources, cfg, viewer=None, logger=None):
     The observation `obs` that sources and the "on_tick" hook receive holds the keys of `observation()` and also:
     "tick" (int, tick number), "timestep" (float, physics step in seconds), "steps_per_frame" (int, physics steps per tick),
     "base_pose" ((x, y, yaw) of the base in metres and radians), "pedestal_height" (float, metres), "applied" (dict of the loop's current
-    targets: "twist", "gripper_force", "pedestal", "arm_targets", "gripper", "mode", "neck_targets", "neck_goal"), "cameras" (dict of camera
+    targets: "twist", "gripper_force", "pedestal", "arm_targets", "gripper", "mode"), "cameras" (dict of camera
     name to image, or None without policy cameras), "render" (the hook API's render(camera_name): one frame of a camera from the current state, on demand; a source that needs an image at one tick, such as a completion check, calls it), "mode" ("teleop" or "auto"), "operator" ({"requested", "responded"}), and "policy"
     (the auto source's status(), only if it has one).
 
@@ -366,15 +361,6 @@ def run_loop(model, data, sources, cfg, viewer=None, logger=None):
     limits = {"gripper_force_ceiling": float(robot_specs.ARM_ACTUATOR_SPECS["fingers"]["force_limit"]), "arm": {s: (np.array([jr(a)[0] for a in arm_act[s]]), np.array([jr(a)[1] for a in arm_act[s]])) for s in sides},
               "gripper": tuple(jr(fing_act["left"][0])), "pedestal": (float(ped_lo), float(ped_hi))}
 
-    neck_specs = cfg["neck_specs"] or robot_specs.NECK_SPECS
-    neck = neck_ids(model, neck_specs)                    # None if the model has no neck
-    neck_max_speed = cfg["neck_max_speed"] or neck_specs["max_speed"]
-    if neck is not None:
-        limits["neck"] = {n: (float(l), float(h)) for n, l, h in zip(neck["names"], neck["lo"], neck["hi"])}
-        neck_home = np.array(neck_specs["drive_pose"], float)
-        print(f"  neck: {neck['names']} actuators {neck['act']}, default aim (drive pose) {np.degrees(neck_home).round(1)} deg, "
-              f"max {neck_max_speed:g} rad/s")
-
     base_body_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, "base_link")
     if base_body_id < 0:
         base_body_id = 1
@@ -386,19 +372,12 @@ def run_loop(model, data, sources, cfg, viewer=None, logger=None):
             data.qpos[3:7] = [math.cos(cfg["spawn_yaw"] / 2), 0.0, 0.0, math.sin(cfg["spawn_yaw"] / 2)]
         mujoco.mj_forward(model, data)
 
-    if neck is not None:                      # start with the neck at its default aim, not in a transient from zero
-        for a, v in zip(neck["qadr"], neck_home):
-            data.qpos[a] = v
-        mujoco.mj_forward(model, data)
-
     print("Settling physics ...")
-    # Hold the unclaimed position actuators at home (zero; the pedestal and neck at their default targets) during warmup so the joints settle under
+    # Hold the unclaimed position actuators at home (zero; the pedestal at its default target) during warmup so the joints settle under
     # proportional-derivative (PD) control instead of drooping limp and then oscillating when the
     # main loop starts.
     hold_qpos_targets = np.zeros(model.nu)
     hold_qpos_targets[ped_aid] = robot_specs.PEDESTAL_SPECS["target_height"]
-    if neck is not None:
-        hold_qpos_targets[neck["act"]] = neck_home
     for i in range(warmup_steps):
         # Only apply hold targets for unclaimed position actuators; zero the rest
         for a in range(model.nu):
@@ -420,8 +399,6 @@ def run_loop(model, data, sources, cfg, viewer=None, logger=None):
         va = model.jnt_dofadr[model.actuator_trnid[a, 0]]
         data.qvel[va] = 0.0  # kill any residual swing
     hold_qpos_targets[ped_aid] = robot_specs.PEDESTAL_SPECS["target_height"]
-    if neck is not None:                      # the neck holds its default aim exactly (its servos are stiff; no sag capture)
-        hold_qpos_targets[neck["act"]] = neck_home
     mujoco.mj_forward(model, data)
 
     # Brief re-settle with PD active so everything stabilizes
@@ -434,7 +411,7 @@ def run_loop(model, data, sources, cfg, viewer=None, logger=None):
 
     # Arm and finger targets in "interpolate" mode: the ctrl of actuator a at physics step k of its ramp is ramp_from + (target - ramp_from) * k / ramp_len
     # (the target itself once k >= ramp_len). A command for the actuator starts a new ramp from the ctrl of the last physics step (`last_ctrl`).
-    # Actuators without a ramp (the pedestal, the neck, the wheel motors) have ramp_k huge, so their ctrl is the target.
+    # Actuators without a ramp (the pedestal, the wheel motors) have ramp_k huge, so their ctrl is the target.
     last_ctrl = np.where(is_pos, hold_qpos_targets, 0.0)
     ramp_from, ramp_len, ramp_k = last_ctrl.copy(), np.ones(model.nu), np.full(model.nu, 1e12)
     steps_axis = np.arange(1, steps_per_frame + 1, dtype=float)[:, None]
@@ -505,7 +482,6 @@ def run_loop(model, data, sources, cfg, viewer=None, logger=None):
 
     # --- The loop's state: the applied targets, the base Twist, the exclusivity / hold bookkeeping ---
     st = {"twist": (0.0, 0.0)}
-    neck_goal = neck_home.copy() if neck is not None else None
     ex = {"active": None, "pending": None, "hold_t0": None, "hold_blocker": None, "log": [], "warned": set(),
           "still": {"base": 0.0, "pedestal": 0.0, "arms": 0.0}}
     msgs_seen = set()
@@ -538,7 +514,7 @@ def run_loop(model, data, sources, cfg, viewer=None, logger=None):
     def applied():
         """Reports the targets the loop is currently applying (the "applied" entry of the observation).
 
-        Reads the base Twist, the gripper force limits, the hold targets and the neck goal from the enclosing function.
+        Reads the base Twist, the gripper force limits, the hold targets from the enclosing function.
 
         Returns:
             dict: With the keys
@@ -548,21 +524,16 @@ def run_loop(model, data, sources, cfg, viewer=None, logger=None):
                 "arm_targets": {side: list of 7 joint targets in radians}.
                 "gripper": {side: finger travel target in metres}.
                 "mode": the active subsystem under exclusivity (a name or None).
-                "neck_targets": {joint name: current neck position target in radians}, empty if the model has no neck.
-                "neck_goal": {joint name: commanded neck goal in radians the targets move toward}, empty if the model has no neck.
         """
         return {"twist": st["twist"], "gripper_force": dict(grip_force), "pedestal": float(hold_qpos_targets[ped_aid]),
                 "arm_targets": {s: [float(hold_qpos_targets[a]) for a in arm_act[s]] for s in sides},
-                "gripper": {s: float(hold_qpos_targets[fing_act[s][0]]) for s in sides}, "mode": ex["active"],
-                "neck_targets": {n: float(hold_qpos_targets[a]) for n, a in zip(neck["names"], neck["act"])} if neck is not None else {},
-                "neck_goal": {n: float(g) for n, g in zip(neck["names"], neck_goal)} if neck is not None else {}}
+                "gripper": {s: float(hold_qpos_targets[fing_act[s][0]]) for s in sides}, "mode": ex["active"]}
 
     def apply_cmd(cmd):
         """Stores a validated command in the loop's targets (nothing is moved yet).
 
         An arms command also starts, in "interpolate" mode, the ramp of every actuator it sets (over cmd["period_steps"], one tick if absent).
-        A base command sets the Twist `st["twist"]`; a pedestal command sets the pedestal entry of `hold_qpos_targets`; a neck command sets
-        the entries of `neck_goal` (the neck targets then follow at the maximum speed); an arms command sets the arm and finger entries of
+        A base command sets the Twist `st["twist"]`; a pedestal command sets the pedestal entry of `hold_qpos_targets`; an arms command sets the arm and finger entries of
         `hold_qpos_targets` and the gripper force limits `grip_force` (None means the ceiling). Other modes change nothing.
 
         Args:
@@ -573,10 +544,6 @@ def run_loop(model, data, sources, cfg, viewer=None, logger=None):
             st["twist"] = cmd["twist"]
         elif mode == "pedestal":
             hold_qpos_targets[ped_aid] = cmd["height"]
-        elif mode == "neck":
-            if neck is not None:
-                for n, v in cmd["neck_targets"].items():
-                    neck_goal[neck["names"].index(n)] = v
         elif mode == "arms":
             moved = []
             for s, q in cmd.get("arm_targets", {}).items():
@@ -630,7 +597,7 @@ def run_loop(model, data, sources, cfg, viewer=None, logger=None):
         waiting command, and a moving base is brought to a stop meanwhile.
 
         Args:
-            cmds (list of dict): This tick's validated commands, without the neck's.
+            cmds (list of dict): This tick's validated commands.
             t (float): Simulation time in seconds.
 
         Returns:
@@ -790,8 +757,7 @@ def run_loop(model, data, sources, cfg, viewer=None, logger=None):
             + [model.joint(f"openarm_{sd}_finger_joint{k}").qposadr[0] for sd in ("left", "right") for k in (1, 2)]
         bench_csv.writerow(["sim_time", "base_x", "base_y", "base_yaw_deg", "pedestal_m"]
                            + [f"{sd}_joint{i}" for sd in ("left", "right") for i in range(1, 8)]
-                           + [f"{sd}_finger{k}" for sd in ("left", "right") for k in (1, 2)]
-                           + ([f"neck_{n}" for n in neck["names"]] if neck is not None else []))
+                           + [f"{sd}_finger{k}" for sd in ("left", "right") for k in (1, 2)])
     tm = {"phys": 0.0, "cam": 0.0, "inset": 0.0}
     bench_warmup = max(1, round(0.16 / tick_dt))      # ticks discarded before the benchmark timing (0.16 s: 10 ticks at 62.5 Hz)
     t_bench0 = None
@@ -857,8 +823,7 @@ def run_loop(model, data, sources, cfg, viewer=None, logger=None):
             if bench_log is not None and step_count % 75 == 0:
                 bench_csv.writerow([f"{data.time:.6f}", f"{data.qpos[0]:.9f}", f"{data.qpos[1]:.9f}",
                                     f"{math.degrees(base_yaw(data)):.9f}",
-                                    f"{data.qpos[ped_qadr]:.9f}"] + [f"{data.qpos[a]:.9f}" for a in log_joints]
-                                   + ([f"{data.qpos[a]:.9f}" for a in neck["qadr"]] if neck is not None else []))
+                                    f"{data.qpos[ped_qadr]:.9f}"] + [f"{data.qpos[a]:.9f}" for a in log_joints])
             if replay is not None:
                 replay["on_step"](step_count, data)
             if rig is not None and step_count % cam_every == 0:
@@ -983,13 +948,6 @@ def run_loop(model, data, sources, cfg, viewer=None, logger=None):
             if st["twist"] == (0.0, 0.0):
                 ctl["ramp"] = False
         measure_still()
-        exempt = [c for c in cmds if c["mode"] in EXEMPT_SUBSYSTEMS]          # the neck: never held, never exclusive
-        cmds = [c for c in cmds if c["mode"] not in EXEMPT_SUBSYSTEMS]
-        for cmd in exempt:
-            apply_cmd(cmd)
-        if neck is not None:                                                  # position targets move at most neck_max_speed
-            step_ = neck_max_speed * tick_dt
-            hold_qpos_targets[neck["act"]] += np.clip(neck_goal - hold_qpos_targets[neck["act"]], -step_, step_)
         to_apply = exclusive_select(cmds, t) if cfg["exclusive"] else [c for c in cmds if c["mode"] != "idle"]
         if not cfg["exclusive"] and any(c["mode"] == "idle" for c in cmds):
             stop_base()
@@ -1040,8 +998,7 @@ def run_loop(model, data, sources, cfg, viewer=None, logger=None):
                 "teleop_status": teleop["status"]() if teleop is not None else None,
                 "preview_frame": teleop["state"].get("preview_frame") if teleop is not None else None,
                 "preview": cfg["preview"], "status": status, "mode": ctl["mode"] if auto_src is not None else None, "mode_note": ctl["note"],
-                "banner": banner(), "alert_seq": ctl["alert_seq"],
-                "neck_deg": [math.degrees(float(data.qpos[a])) for a in neck["qadr"]] if neck is not None else None})
+                "banner": banner(), "alert_seq": ctl["alert_seq"]})
             quit_now = res["quit"]
             yaw_deg = res["yaw_deg"]
         else:

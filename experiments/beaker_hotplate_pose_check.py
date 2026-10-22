@@ -32,7 +32,7 @@ import beaker_hotplate_layout_search as L  # noqa: E402
 from src import robot_specs  # noqa: E402
 from src.neck import neck_ids, set_neck_pose  # noqa: E402
 from src.neck_framing import frame_points  # noqa: E402
-from src.task_beaker_hotplate import load_task, spawn_and_settle, framing_points, yaw_to_quat  # noqa: E402
+from src.task_beaker_hotplate import load_task, spawn_and_settle, view_points, yaw_to_quat  # noqa: E402
 from src.task_config import TASK_CFG  # noqa: E402
 
 POSE_KEYS = {"grasp": "grasp_q", "above_plate": "above_plate_q", "setdown": "setdown_q", "ready": "ready_q", "via": "ready_via_q"}
@@ -84,7 +84,7 @@ def main():
             L.set_scene(ctx, TASK_CFG["staging_xy"], TASK_CFG["staging_yaw"], TASK_CFG["pedestal_q"], q, finger_q, beaker_origin, layout["hotplate_xy"])
             set_neck_pose(model, data, robot_specs.NECK_SPECS)
             if neck_label == "framed":
-                targets, rep = frame_points(model, data, framing_points(model, data))
+                targets, rep = frame_points(model, data, view_points(model, data))
                 set_neck_pose(model, data, robot_specs.NECK_SPECS, [targets[n] for n in neck["names"]])
             mujoco.mj_collision(model, data)
             err = float(np.linalg.norm(data.body(tcp_body).xpos - pts[name])) if name in pts else float("nan")

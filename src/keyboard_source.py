@@ -5,7 +5,7 @@ This is the key handling of experiments/combined_controller.py (jog keys, pedest
 drive ramp), moved here and turned into a source with step(obs) returning a list of commands. There is no other
 logic.
 
-    source = make_keyboard_source(model, held, drive_cfg, ped_step, ped_range, data=data, neck_specs=neck_specs)
+    source = make_keyboard_source(model, held, drive_cfg, ped_step, ped_range)
     commands = source["step"](obs)
 
 `held(key_code)` says whether a graphics library framework (GLFW) key is down (the real keyboard or the test key
@@ -16,9 +16,6 @@ up to four commands (see src/commands.py):
             are released, exactly as before
   pedestal  Page Up / Page Down: the applied height plus or minus one step, clipped to the pedestal range
   arms      jog keys: the applied joint and gripper targets plus or minus one step for each key held
-  neck      jog keys 9 0 - = (plus) and O P [ ] (minus) for pan, lift, elbow and wrist; F7 frames the task points
-            (src/neck_framing.py, when the scene has a task); F8 returns the neck to its default aim. None of these
-            keys is used for anything else.
 Targets are computed from obs["applied"] (what the loop currently holds), not from an internal integrator, so a command
 that is held back by the hold rule does not wind up while it waits.
 """
@@ -45,10 +42,6 @@ JOG_KEYS = {
 # lowers while held. The command moves at jog_speed per second of SIM time (the launcher passes
 # jog_speed * tick period as ped_step), so it does not depend on the viewer's frame rate.
 PEDESTAL_KEYS = {"up": "PAGE_UP", "down": "PAGE_DOWN"}  # [row M124 PENDING David: no decision recorded]
-
-# Camera neck: the same layout idea as the arms (plus on the upper row, minus below, one column per joint, shoulder to wrist)
-NECK_KEYS = {"plus": ["9", "0", "MINUS", "EQUAL"], "minus": ["O", "P", "LEFT_BRACKET", "RIGHT_BRACKET"],  # [row M125 PENDING David: no decision recorded]
-             "frame": "F7", "home": "F8"}  # key names: F7 frames the neck on the task's targets, F8 sends it to its drive pose [row M125 PENDING David: no decision recorded]
 
 # Base drive keys and ramp (was CONTROL_GROUPS[0]["keys"] / ["drive_params"])
 DRIVE_CFG = {
@@ -130,7 +123,7 @@ def build_jog_tables(model, mujoco):
     return tables
 
 
-def make_keyboard_source(model, held, drive_cfg, ped_step, ped_range, data=None, neck_specs=None, points_fn=None, framing_cfg=None, neck_locked=False):
+def make_keyboard_source(model, held, drive_cfg, ped_step, ped_range):
     """Create the keyboard source.
 
     Args:
@@ -147,21 +140,6 @@ def make_keyboard_source(model, held, drive_cfg, ped_step, ped_range, data=None,
             a pedestal key is held, in metres (the caller multiplies the jog speed by the tick length).
         ped_range (tuple[float, float]): (lowest, highest) pedestal height
             command in metres.
-        data (mujoco.MjData | None): Simulation state, needed only to frame the
-            task points with F7. Defaults to None.
-        neck_specs (dict | None): Neck settings (robot_specs.NECK_SPECS: joint
-            names, "jog_speed" in radians per second, "drive_pose" in radians).
-            None means no neck keys. Defaults to None.
-        points_fn (Callable | None): Called as points_fn(model, data) and
-            returns a dictionary of world points (metres) that F7 should frame,
-            or an empty one if the scene has no task. Defaults to None (F7
-            then reports that no task is loaded).
-        framing_cfg (dict | None): Settings passed to
-            src.neck_framing.frame_points when F7 is pressed. Defaults to None
-            (an empty dictionary, so the framing defaults apply).
-        neck_locked (bool): True while a replayable recording is being written (--record / --record-run): the neck keys (jog, F7, F8)
-            do nothing and each key press prints one line saying so. The eagle camera is a policy input, so in a recorded run only the
-            scripted framing may aim it. Defaults to False (the keys work).
 
     Returns:
         dict: The source, with these keys:
@@ -172,11 +150,7 @@ def make_keyboard_source(model, held, drive_cfg, ped_step, ped_range, data=None,
             "state" (dict): Live state that other code reads. "drive" is the
                 normalised drive command {"linear": float, "angular": float},
                 each between -1 and 1. "was_moving" (bool) is whether the
-                ramp was away from zero on the last tick. With a neck,
-                "neck_active_t" is the simulated time in seconds of the last
-                neck key press (-1e9 before any), which the automatic neck
-                source reads, and "prev_f7" and "prev_f8" are the last key
-                states of F7 and F8.
+                ramp was away from zero on the last tick.
 
     Raises:
         ValueError: If a key name is not a GLFW key.
@@ -199,21 +173,12 @@ def make_keyboard_source(model, held, drive_cfg, ped_step, ped_range, data=None,
     ped_keys = {d: key_code(k) for d, k in PEDESTAL_KEYS.items()}
     ped_lo, ped_hi = ped_range
 
-    # --- neck keys (only if the model has a neck) ---
-    from src.neck import neck_ids
-    nk = neck_ids(model, neck_specs) if neck_specs is not None else None
-    if nk is not None:
-        neck_pairs = list(zip([key_code(k) for k in NECK_KEYS["plus"]], [key_code(k) for k in NECK_KEYS["minus"]]))
-        k_frame, k_home = key_code(NECK_KEYS["frame"]), key_code(NECK_KEYS["home"])
-        state.update(neck_active_t=-1e9, prev_f7=False, prev_f8=False, prev_neck_locked_press=frozenset())
-
     def step(obs):
         """Read the keys and return this tick's commands.
 
-        Ramps the drive command, then looks at the pedestal, jog and neck keys.
+        Ramps the drive command, then looks at the pedestal and jog keys.
         Changes the enclosing scope's drive state `ds` and `state` (the ramp
-        values, "was_moving", and the neck key times and edge flags). Prints a
-        message when F7 is pressed.
+        values and "was_moving").
 
         Args:
             obs (dict): Observation from the control loop. Uses:
@@ -222,8 +187,7 @@ def make_keyboard_source(model, held, drive_cfg, ped_step, ped_range, data=None,
                   drive ramp rate are multiplied by it.
                 "applied" (dict): The targets the loop holds: "pedestal"
                   (height in metres), "arm_targets" ({side: 7 joint angles in
-                  radians}), "gripper" ({side: finger travel in metres}) and,
-                  with a neck, "neck_goal" ({joint name: radians}).
+                  radians}) and "gripper" ({side: finger travel in metres}).
 
         Returns:
             list[dict]: Zero or more commands:
@@ -232,8 +196,6 @@ def make_keyboard_source(model, held, drive_cfg, ped_step, ped_range, data=None,
                 {"mode": "arms", "arm_targets": {side: [7 radians]},
                   "gripper": {side: metres}} (either entry may be missing;
                   only the sides with a key held are included)
-                {"mode": "neck", "neck_targets": {joint name: radians}}
-                  (up to three of these: jog, F7 framing and F8 home)
         """
         applied = obs["applied"]
         cmds = []
@@ -300,38 +262,6 @@ def make_keyboard_source(model, held, drive_cfg, ped_step, ped_range, data=None,
             if grip:
                 cmd["gripper"] = grip
             cmds.append(cmd)
-
-        # --- Camera neck: jog, frame the task points (F7), default aim (F8). Exempt from exclusivity. ---
-        if nk is not None and neck_locked:
-            pressed = frozenset(k for k in [k for pair in neck_pairs for k in pair] + [k_frame, k_home] if held(k))
-            if pressed - state["prev_neck_locked_press"]:          # a neck key that was not down on the last tick: one line per press
-                print("Neck keys are disabled while a replayable recording is being written (--record / --record-run).")
-            state["prev_neck_locked_press"] = pressed
-        elif nk is not None:
-            goal = applied["neck_goal"]
-            moved = {}
-            for j, (k_plus, k_minus) in enumerate(neck_pairs):
-                d = int(held(k_plus)) - int(held(k_minus))
-                if d:
-                    moved[nk["names"][j]] = float(np.clip(goal[nk["names"][j]] + d * neck_specs["jog_speed"] * dt, nk["lo"][j], nk["hi"][j]))
-            if moved:
-                cmds.append({"mode": "neck", "neck_targets": moved})
-                state["neck_active_t"] = obs["time"]
-            f7, f8 = held(k_frame), held(k_home)
-            if f7 and not state["prev_f7"]:
-                state["neck_active_t"] = obs["time"]
-                points = points_fn(model, data) if points_fn is not None else None
-                if not points:
-                    print("F7: no task loaded in this scene, nothing to frame")
-                else:
-                    from src.neck_framing import frame_points, summarize
-                    targets, report = frame_points(model, data, points, framing_cfg or {})
-                    print("F7 " + summarize(report))
-                    cmds.append({"mode": "neck", "neck_targets": targets})
-            if f8 and not state["prev_f8"]:
-                state["neck_active_t"] = obs["time"]
-                cmds.append({"mode": "neck", "neck_targets": dict(zip(nk["names"], neck_specs["drive_pose"]))})
-            state["prev_f7"], state["prev_f8"] = f7, f8
         return cmds
 
     return {"name": "keyboard", "step": step, "state": state}

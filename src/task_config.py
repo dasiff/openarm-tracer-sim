@@ -29,7 +29,7 @@ Entries marked NEW in the comments of STAGING_CFG were chosen recently and are n
 simulation, not measurements of the real hardware.
 
 Staging sequence (built in src/staging_source.py from STAGING_CFG): ARMS (both arms) to the home pose at the spawn, in open space, with a clearance check -> PEDESTAL to pedestal_q ->
-DRIVE to the approach spot (staging_approach_back_m) with the arms at home -> CREEP_IN to the staging pose -> NECK frames the beaker, the hotplate and both grippers -> HANDOFF (the
+DRIVE to the approach spot (staging_approach_back_m) with the arms at home -> CREEP_IN to the staging pose -> HANDOFF (the
 vision-language-action (VLA) policy takes over the arm from here). The arms stay at home at all times except during manipulation. The base and the arms never move at the same time.
 
 World frame: the bench is centred on the origin (top z = 0.96, x +-2.2, y +-0.8). The robot faces its own
@@ -71,7 +71,7 @@ TASK_CFG = {
     # STAGING STANCE = FINDER OUTPUT for this scene (not hand-typed; 2026-10-20; `MUJOCO_GL=egl python experiments/home_pose_search.py --finder 1 --tag widest_range`, result
     # data/home_pose_search/search_rank1_widest_range/open_b45_selected.json; design plan 3.4). Scene: the OPEN bench (bench_open), the objects where they are (centres 14 cm from the bench edge),
     # the grasp band 45 to 60 % (BEAKER_CFG["grasp_band"]), heading -90 deg, left arm, the home pose below. It passes every requirement of STANCE_REQUIREMENTS (src/stance_checks.py): home clearance
-    # 116 mm (limit 40), a beaker placed on the hotplate 97 mm (40), neck spread 0.007 rad (0.06), beaker 0 % and hotplate 0.1 % hidden by the robot in the eagle image (0 % / 20 %), framing slack 12.7 %
+    # 116 mm (limit 40), a beaker placed on the hotplate 97 mm (40), beaker 0 % and hotplate 0.1 % hidden by the robot in the (old, neck-mounted) eagle image (0 % / 20 %), framing slack 12.7 % [numbers of the old camera: the fixed camera of M153 sees the same points with a smallest margin of 24 %, M166]
     # with both grippers in frame (10 %), and the IK verification (all 12 points solve, the open fingers at least 15 mm from the bench and the hotplate, joint margin 30 deg, xy tolerance at least
     # 7 cm, heading +-8 deg, pedestal +-4.2 cm). The pedestal height is the middle of its passing range 0.10 to 0.21 m (11 cm wide: the finder prefers the widest range). Finder tolerance (distance to the
     # edge of the valid reach region) 7.1 cm; the xy region around it that passes everything is 39 of 49 points of a +-6 cm grid, radius 5.7 cm. Re-run the finder when the scene, the band, the
@@ -95,7 +95,7 @@ TASK_CFG = {
     "home_variation_rad": (0.0,) * 7,      # per joint (the same for both arms): the home pose is drawn uniformly within +-this around the values above, clipped to [row M101 PENDING David: no decision recorded]
                                            # the joint limits. All zeros = off (the default); the demo generator will set it. The right arm gets its own draw.
     "home_variation_seed": 0,              # seed of that draw (one draw per episode, both arms) [row M101 PENDING David: no decision recorded]
-    "framing_arms": ("left", "right"),     # the grippers the neck camera frames at the handoff, next to the beaker and the hotplate [row M101 PENDING David: no decision recorded] [OBSOLETE, removed in step 2: fixed camera, no neck, M153]
+    "view_arms": ("left", "right"),     # the grippers that must be inside the eagle camera's fixed view at the handoff, next to the beaker and the hotplate [row M101 PENDING David: no decision recorded]
 
     # --- LEGACY (not used by the staging any more; still read by the layout / staging searches, the pose check and the grasp force test source):
     # --- the task-specific ready pose of the left arm, found by the layout search, and the waypoint of its path from the hanging pose.
@@ -249,10 +249,9 @@ STANCE_CFG = {
 STANCE_REQUIREMENTS = {
     "home_min_clearance": 0.040,        # m: every moving arm part stays this far from the bench, the hotplate and every other object (home_pose_test's bench / hotplate limit) [row M087]
     "placed_beaker_min_clearance": 0.040,   # m: and from a beaker resting on the hotplate (the home pose must not touch the beaker once it has been set down; David 2026-10-19) [row M087]
-    "neck_max_spread": 0.06,            # rad: the neck framing moves no joint more than this under 0.1 degree of arm noise (the neck_once_test limit) [row M087] [OBSOLETE, removed in step 2: fixed camera, no neck, M153]
-    "framing_min_slack": 0.10,          # fraction of the image: with the neck at its best pose the beaker's and hotplate's corners and both grippers (tool point, hand, finger tips) are [row M087] [becomes "inside the fixed view" with the 10 % edge margin in step 2, M153]
-                                        # at least this far from every image edge (the neck framing's margin, FRAMING_CFG["margin"])
-    # Occlusion by the pixel-area measure (src/stance_checks.OcclusionMeter): the share of the object's pixels in the eagle camera image (neck at its framing pose) that the robot hides.
+    # Camera checks (fixed eagle camera, no neck: design plan 14.1, M153): every target must be INSIDE THE FIXED VIEW with this margin, and not hidden (occlusion below).
+    "view_min_margin": 0.10,            # fraction of the image: the beaker's and hotplate's corners and both grippers (tool point, hand, finger tips) are at least this far from every image edge (src/eagle_view.py) [row M087, M153]
+    # Occlusion by the pixel-area measure (src/stance_checks.OcclusionMeter): the share of the object's pixels in the eagle camera image that the robot hides.
     "occlusion_max_hidden": {"beaker": 0.0, "hotplate": 0.20},  # [row M087]
 }
 
@@ -324,7 +323,7 @@ LAYOUT_CFG = {
 }
 
 # ----------------------------------------------------------------------------------------------------------
-# Scripted staging (src/staging_source.py): spawn -> DRIVE -> PEDESTAL -> ARMS -> NECK -> DONE (= HANDOFF)
+# Scripted staging (src/staging_source.py): spawn -> ARMS -> PEDESTAL -> DRIVE -> CREEP_IN -> DONE (= HANDOFF)
 # ----------------------------------------------------------------------------------------------------------
 STAGING_CFG = {
     # DRIVE: turn in place toward the staging xy, drive straight, turn to the staging yaw (ground-truth base pose).
@@ -374,11 +373,6 @@ STAGING_CFG = {
     "arms_settle_s": 0.3,  # s: the arm joint speeds must stay below arms_settle_vel this long before the ARMS phase ends [row M109 PENDING David: no decision recorded]
     "arms_timeout": 30.0,  # s: the ARMS phase fails after this long (operator time not counted) [row M109 PENDING David: no decision recorded]
     "finger_open": 0.044,                  # m [row M098]
-    # NECK: frame_points() on the task points, then hold
-    "neck_tol": 0.01,                      # rad [row M109 PENDING David: no decision recorded] [OBSOLETE, removed in step 2: fixed camera, no neck, M153]
-    "neck_settle_vel": 0.02,               # rad/s [row M109 PENDING David: no decision recorded] [OBSOLETE, removed in step 2: fixed camera, no neck, M153]
-    "neck_settle_s": 0.3,  # s: the neck joint speeds must stay below neck_settle_vel this long before the NECK phase ends [row M109 PENDING David: no decision recorded] [OBSOLETE, removed in step 2: fixed camera, no neck, M153]
-    "neck_timeout": 15.0,  # s: the NECK phase fails after this long (operator time not counted) [row M109 PENDING David: no decision recorded] [OBSOLETE, removed in step 2: fixed camera, no neck, M153]
 }
 
 # ----------------------------------------------------------------------------------------------------------
@@ -389,7 +383,7 @@ EPISODE_CFG = {
     "operator_timeout": 300.0,             # s of sim time under operator (teleop) control with no success -> outcome TIMEOUT (also the budget of a teleop-start episode) [row M110 PENDING David: no decision recorded]
     "success_linger_s": 2.0,               # s the episode runs on after the success check passes (the face smiles), then stops [row M110 PENDING David: no decision recorded]
     "log_hz": 10.0,                        # state / command log, written on the first tick of every 1/log_hz s of sim time [row M110 PENDING David: no decision recorded]
-    "exclusive": True,                     # one subsystem moves at a time (the neck is exempt); off by default elsewhere [row M110 PENDING David: no decision recorded]
+    "exclusive": True,                     # one subsystem moves at a time; off by default elsewhere [row M110 PENDING David: no decision recorded]
     "spawn_z": 0.22,                       # m, height the base is dropped from at spawn (it settles onto its wheels) [row M110 PENDING David: no decision recorded]
 }
 
@@ -483,8 +477,6 @@ FULLCHECK_CFG = {
     "hand_clearance": 0.01,                 # m: the hand and fingers must stay this far from the bench, the hotplate and every other object at the IK solutions (the old case 'open_b45' used 1 cm; row M146 PENDING David)
     "arm_clearance": 0.0,                   # m: the other arm parts must not touch the furniture or the objects (row M146 PENDING David)
     "body_clearance": 0.0,                  # m: the whole robot at the stance must not touch the bench or an object (the old check: no contact; row M146 PENDING David)
-    "neck_draws_least_movement": 2,         # count: perturbed neck solves of the repeatability check under the least_movement framing rule (a sanity check, R2e, row M151) [OBSOLETE, removed in step 2: fixed camera, no neck, M153]
-    "neck_draws": 8,                        # count: perturbed neck solves of the repeatability check (the old value; the new framing rule will use 2, R2e, row M135) [OBSOLETE, removed in step 2: fixed camera, no neck, M153]
     "object_slots": 6,                      # count: boxes of the private model that stand for unknown objects on the table (more objects than this make the check refuse; row M147 PENDING David)
     "checkers_kept": 3,                     # count: arm collision checkers kept (one per pedestal height, a model copy each) (row M136: memory)
 }

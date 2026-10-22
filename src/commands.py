@@ -8,8 +8,6 @@ or None / [] for "nothing new". Commands are plain dicts tagged with a mode (val
     {"mode": "pedestal", "height": h}             pedestal_lift command [m]: 0 = fully raised, negative = lowered (lowest -0.228)
     {"mode": "arms",     "arm_targets": {"left": [7 rad], "right": [7 rad]},     joint targets, joints 1-7
                          "gripper":     {"left": g, "right": g}}                  finger travel [m], 0 closed .. 0.044 open
-    {"mode": "neck",     "neck_targets": {"shoulder_pan": rad, ...}}      camera neck joint targets (joint names of
-                                                                          NECK_SPECS["active_joints"]); partial dicts are fine
     {"mode": "idle"}                              nothing is commanded; the base is brought to a stop
     {"mode": "request_teleop", "reason": str}     not a subsystem command: the task policy asks for operator control. The loop honours it
                                                   only from its auto source while the controller is in "auto" mode: it switches to "teleop"
@@ -25,22 +23,17 @@ command carries it as "gripper_force": {side: N or None (= the ceiling)}.
 present changes. Targets are absolute, not increments. Subsystems that are not commanded hold their last targets
 (the base holds a zero Twist once it has been stopped).
 
-The neck is EXEMPT from exclusivity (EXEMPT_SUBSYSTEMS): it may move while the base, pedestal or arms move, and it is never held
-back or counted as the active subsystem. The loop moves the neck's position targets toward the commanded ones at no more than
-cfg["neck_max_speed"].
-
 Exclusivity (LOOP_CFG["exclusive"] in src/control_loop.py, off by default): when on, only one subsystem moves at a time. If a command for a
 different subsystem arrives while the active one is still moving, the loop holds it until the active subsystem has
 settled (logged), then applies it; a newer command replaces an older waiting one. When off, every command is applied
 at once, so base, pedestal and arms can move together (the behavior of the keyboard / teleop / policy modes today).
 
-Adding a subsystem (a camera neck, say) means adding its name to SUBSYSTEMS and a branch in validate_command().
+Adding a subsystem means adding its name to SUBSYSTEMS and a branch in validate_command().
 """
 
 import math
 
-SUBSYSTEMS = ("base", "pedestal", "arms", "neck")
-EXEMPT_SUBSYSTEMS = ("neck",)                  # not subject to exclusivity / the hold rule
+SUBSYSTEMS = ("base", "pedestal", "arms")
 MODES = SUBSYSTEMS + ("idle", "request_teleop")
 SIDES = ("left", "right")
 
@@ -75,8 +68,6 @@ def validate_command(cmd, limits=None):
             * "arm": {side: (lo, hi)}, where side is "left" or "right" and lo and hi are 7-element arrays of joint limits in radians.
             * "gripper": (lo, hi), the finger travel limits in metres.
             * "pedestal": (lo, hi), the pedestal lift command limits in metres.
-            * "neck": {joint name: (lo, hi)}, the neck joint limits in radians. When present, an unknown joint name makes the command
-              malformed.
             * "gripper_force_ceiling": the largest force one finger may apply, in newtons. A larger requested "max_force" is clipped to
               it, and a gripper entry without "max_force" is given it.
 
@@ -85,7 +76,7 @@ def validate_command(cmd, limits=None):
 
         * clean_command (dict or None): None if the command is malformed. Otherwise a new dict with plain floats and tuples:
           {"mode": "idle"}; {"mode": "request_teleop", "reason": str}; {"mode": "base", "twist": (vx, wz)};
-          {"mode": "pedestal", "height": float}; {"mode": "neck", "neck_targets": {joint name: float}}; or {"mode": "arms"} with
+          {"mode": "pedestal", "height": float}; or {"mode": "arms"} with
           the optional keys "arm_targets" ({side: list of 7 floats}), "gripper" ({side: finger travel as a float}) and, whenever "gripper" is
           present, "gripper_force" ({side: force limit in newtons, or None to mean the loop's hardware ceiling}).
         * messages (list of str): One text for each reason the command was rejected (then clean_command is None), or for each value that
@@ -120,24 +111,6 @@ def validate_command(cmd, limits=None):
             msgs.append(f"pedestal height {h:.4f} clipped to [{lo:.3f}, {hi:.3f}]")
             h = min(max(h, lo), hi)
         return {"mode": "pedestal", "height": h}, msgs
-    if mode == "neck":
-        nt = cmd.get("neck_targets")
-        if not isinstance(nt, dict) or not nt:
-            return None, ["neck command needs a non-empty neck_targets dict"]
-        out = {"mode": "neck", "neck_targets": {}}
-        for name, v in nt.items():
-            if not _finite(v):
-                return None, [f"neck_targets[{name!r}] must be a finite angle, got {v!r}"]
-            v = float(v)
-            if "neck" in limits:
-                if name not in limits["neck"]:
-                    return None, [f"unknown neck joint {name!r}"]
-                lo, hi = limits["neck"][name]
-                if not lo <= v <= hi:
-                    msgs.append(f"neck_targets[{name!r}] {v:.3f} clipped to [{lo:.3f}, {hi:.3f}]")
-                    v = min(max(v, lo), hi)
-            out["neck_targets"][name] = v
-        return out, msgs
     # arms
     out = {"mode": "arms"}
     at = cmd.get("arm_targets")

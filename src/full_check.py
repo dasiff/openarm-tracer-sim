@@ -11,7 +11,8 @@ What it checks, cheapest first so that a stance fails early:
      success (R2c); a point with a required approach direction uses that direction, a point without one tries the directions the reach maps say work there first; warm starts from the previous path
      point and from the nominal stance's solution, random starts only as the fallback (R2d); an elbow flip along a skill path is a failure; every solution must be collision-free against the robot
      itself and clear of the bench, the hotplate and every object, known or unknown (R2i); the whole robot must clear the bench and the objects at the stance;
-  3. at each of the 3 heights: the neck framing and its repeatability, the pixel occlusion (anything that hides a target counts, R2i) and the framing slack (the old neck rule, until stage 6).
+  3. at each of the 3 heights: the targets inside the fixed eagle camera's view with the 10 % margin and the pixel occlusion (anything that hides a target counts, R2i); the camera is fixed to the torso (M153), so it
+     is the pedestal height that moves the view, which is why the three heights are checked.
 The check works on the check's OWN copy of the model and on scratch data: the running simulation is only read (its object poses are copied in), never changed (R2f). The answer of a check is
 remembered under a key made of everything it depends on (R2g).
 
@@ -33,13 +34,13 @@ import numpy as np
 from src import robot_specs
 from src.arm_collision import ArmCollisionChecker
 from src.arm_kinematics import arm_chain, solve_ik
-from src.neck_framing import FRAMING_CFG
 from src.grasp_rules import bin_center, joint_bounds, make_constraint
 from src.gripper_geometry import grasp_cfg
 from src.robot_helpers import arm_ids
 from src.stance_checks import StanceChecks
 from src.stance_finder import robot_geometry
 from src.task_beaker_hotplate import bench_top_z, load_task
+from src.robot_specs import EAGLE_MOUNT
 from src.task_config import BEAKER_CFG, FULLCHECK_CFG, STAGING_CFG, STANCE_REQUIREMENTS, TASK_CFG
 
 SIDE = "left"
@@ -154,7 +155,7 @@ class PathClearance:
         return hm, am, hp, ap
 
     def body_distance(self, stance):
-        """The smallest distance of the whole robot (both arms at home, neck at its drive pose) to the world geoms (bench, hotplate, objects) at a stance."""
+        """The smallest distance of the whole robot (both arms at home, the camera box on the torso included) to the world geoms (bench, hotplate, objects) at a stance."""
         self.place(stance)
         d, m = self.d, self.model
         mujoco.mj_kinematics(m, d)
@@ -168,7 +169,7 @@ class FullCheck:
         sim (RobotSimulator): The check's own simulation (its model has the object slots).
         model (mujoco.MjModel): Its model (private: the slots, the arm collision checkers' copies and the renderers belong to the check).
         scene_data (mujoco.MjData): Its scene data (the objects placed).
-        chk (StanceChecks): The clearance, neck, occlusion and framing checks on the private model (occluders "all").
+        chk (StanceChecks): The clearance, view and occlusion checks on the private model (occluders "all").
         stats (dict): Counters of the last check: IK batches and starts, solves, cache hits.
         seconds (dict): Seconds spent per part in the last check.
     """
@@ -244,7 +245,7 @@ class FullCheck:
             h.update(np.round(np.asarray(pt["p"], float), 6).tobytes() + repr((pt.get("bin"), pt.get("path"), pt.get("arm"))).encode())
         for o in objects:
             h.update(np.round(np.asarray(o["outline"], float), 6).tobytes() + np.round(np.asarray(o["height_range"], float), 6).tobytes() + str(o.get("id")).encode())
-        h.update(repr(approach_bin).encode() + repr(sorted(self.cfg.items(), key=lambda kv: kv[0])).encode() + repr(sorted(STANCE_REQUIREMENTS.items())).encode() + repr(sorted(FRAMING_CFG.items(), key=lambda kv: kv[0])).encode())      # the framing rule is part of the answer
+        h.update(repr(approach_bin).encode() + repr(sorted(self.cfg.items(), key=lambda kv: kv[0])).encode() + repr(sorted(STANCE_REQUIREMENTS.items())).encode() + repr(sorted(EAGLE_MOUNT.items())).encode())      # the camera's mount is part of the answer (it sets the view)
         h.update(np.round(self.chk.q_scene[self._beaker_free:self._beaker_free + 7], 6).tobytes())                    # the beaker's pose
         hp = self.model.body("task_hotplate").id
         h.update(np.round(self.model.body_pos[hp], 6).tobytes())
@@ -376,7 +377,7 @@ class FullCheck:
             use_cache (bool): Reuse the answer if nothing it depends on has changed. Defaults to True.
 
         Returns:
-            dict: "ok", "failed" (names), "reason", "heights" (per height: the clearances, the neck, occlusion and framing numbers), "ik" (per error stance: ok, the failed point, sources), "seconds"
+            dict: "ok", "failed" (names), "reason", "heights" (per height: the clearances, the view margin and the occlusion numbers), "ik" (per error stance: ok, the failed point, sources), "seconds"
             (per part), "stats" (IK counters), "cached" (bool), "key" (the first 12 hex digits).
         """
         t_all = time.perf_counter()
@@ -432,20 +433,16 @@ class FullCheck:
                 return finish(["ik"], f"at the stance '{name}' point {info['failed_point']} ({pt.get('path')}, {np.round(pt['p'], 3).tolist()}) has no collision-free solution")
             if nominal is None:
                 nominal = info
-        # 3. neck, occlusion, framing slack at the heights
+        # 3. the fixed view and the occlusion at the heights
         for h, row in zip(heights, res["heights"]):
             st = (x, y, th, h)
-            ns = timed("neck", chk.neck_spread, st, n=cfg["neck_draws_least_movement"] if FRAMING_CFG["rule"] == "least_movement" else cfg["neck_draws"])
-            row["neck_spread"] = ns["spread"]
-            if ns["spread"] > STANCE_REQUIREMENTS["neck_max_spread"]:
-                return finish(["neck_spread"], f"at pedestal {h:.3f} the neck framing moves {ns['spread']:.3f} rad under arm noise (the limit is {STANCE_REQUIREMENTS['neck_max_spread']})")
-            oc = timed("occlusion", chk.occlusion, st, ns["targets"])
+            vm = timed("view", chk.view_margin, st)
+            row["view_margin"] = vm["margin"]
+            if vm["margin"] < STANCE_REQUIREMENTS["view_min_margin"]:
+                return finish(["view"], f"at pedestal {h:.3f} {vm['limit']} is {100 * vm['margin']:.1f} % from the nearest edge of the eagle image (limit {100 * STANCE_REQUIREMENTS['view_min_margin']:.0f} %)")
+            oc = timed("occlusion", chk.occlusion, st)
             row.update(beaker_hidden=oc["beaker_hidden_frac"], hotplate_hidden=oc["hotplate_hidden_frac"], arm_frac=oc["arm_frac"])
             lim = STANCE_REQUIREMENTS["occlusion_max_hidden"]
             if oc["beaker_hidden_frac"] > lim["beaker"] or oc["hotplate_hidden_frac"] > lim["hotplate"]:
                 return finish(["occlusion"], f"at pedestal {h:.3f} something hides {100 * oc['beaker_hidden_frac']:.1f} % of the beaker and {100 * oc['hotplate_hidden_frac']:.1f} % of the hotplate in the eagle image")
-            fr = timed("framing", chk.framing_slack, st)
-            row["framing_slack"] = fr["slack"]
-            if fr["slack"] < STANCE_REQUIREMENTS["framing_min_slack"]:
-                return finish(["framing"], f"at pedestal {h:.3f} the framing slack is {100 * fr['slack']:.1f} % (limit {100 * STANCE_REQUIREMENTS['framing_min_slack']:.0f} %, limited by {fr['limit']})")
         return finish([], "")

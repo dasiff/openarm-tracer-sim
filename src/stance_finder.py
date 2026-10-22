@@ -53,7 +53,7 @@ def _slab_points(P, z_lo, z_hi):
 def column_polygon_fn(model, z_lo, z_hi, margin, base_z):
     """Makes the function that gives the torso and pedestal column's horizontal cross-section in a height band, for a pedestal command (David 2026-10-19: replaces the 25 cm disc).
 
-    The column is the collision geoms of the torso (openarm_body_link0) and the pedestal sections (pedestal_*); the arms, the neck, the base and the battery are not part of it (the arms are
+    The column is the collision geoms of the torso (openarm_body_link0) and the pedestal sections (pedestal_*); the arms, the camera box, the base and the battery are not part of it (the arms are
     checked by the IK verification, the base is in the base layer). At a pedestal command q the parts are placed by kinematics (the base at the origin, resting on the floor: base_z), each
     geom's convex hull is cut to the height band above the floor, and the hull of all the cross-sections, grown by `margin`, is the polygon.
 

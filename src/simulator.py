@@ -1,7 +1,7 @@
 """Generic MuJoCo robot simulator — single environment controller for any scene.
 
 RobotSimulator loads a scene file that includes the Tracer mobile base with the OpenArm bimanual arms, adds the parts that are
-not in the robot XML at load time (arm and finger position actuators, the battery pack, the optional pedestal lift, the camera neck and the
+not in the robot XML at load time (arm and finger position actuators, the battery pack, the optional pedestal lift, the eagle camera's body and the
 cameras, all through MjSpec and configured by src/robot_specs.py), compiles the model and offers stepping, resetting and
 observation methods. Scene-specific logic does not belong here.
 

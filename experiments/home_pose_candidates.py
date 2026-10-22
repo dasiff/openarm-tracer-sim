@@ -58,7 +58,7 @@ from src.neck_framing import _project  # noqa: E402
 from src.robot_helpers import arm_ids  # noqa: E402
 from src.stance_finder import robot_geometry  # noqa: E402
 from src.stance_checks import StanceChecks, occlusion_ok  # noqa: E402
-from src.task_beaker_hotplate import apply_task_poses, framing_points  # noqa: E402
+from src.task_beaker_hotplate import apply_task_poses, view_points  # noqa: E402
 from src.task_config import STANCE_REQUIREMENTS, TASK_CFG  # noqa: E402
 
 OCC_MAX = STANCE_REQUIREMENTS["occlusion_max_hidden"]
@@ -230,7 +230,7 @@ class Evaluator:
         self.chk.place(stance)
         set_neck_pose(m, d, robot_specs.NECK_SPECS, [t1[n] for n in robot_specs.NECK_SPECS["active_joints"]])
         mujoco.mj_forward(m, d)
-        pts = dict(framing_points(m, d))
+        pts = dict(view_points(m, d))
         for body, up in (("task_beaker", 0.05), ("task_hotplate", 0.068)):
             pts[body + "_centre"] = d.body(body).xpos + [0, 0, up]
         out = {}

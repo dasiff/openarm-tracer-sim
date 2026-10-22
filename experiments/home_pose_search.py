@@ -54,7 +54,7 @@ from home_pose_test import MIN_CLEARANCE, best_margin  # noqa: E402
 from src import robot_specs  # noqa: E402
 from src.gripper_geometry import grasp_cfg  # noqa: E402
 from src.neck import set_neck_pose  # noqa: E402
-from src.task_beaker_hotplate import framing_points  # noqa: E402
+from src.task_beaker_hotplate import view_points  # noqa: E402
 from src.task_config import STANCE_REQUIREMENTS  # noqa: E402
 
 HEIGHTS = [round(h, 2) for h in np.arange(0.06, 0.2401, 0.02)]       # pedestal commands tried (the finder's valid range at this stance ends near 0.23)

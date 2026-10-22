@@ -435,8 +435,6 @@ def make_glfw_viewer(model, data, vcfg):
                   "preview" (bool): Whether to show the operator camera inset.
                   "status" (str | None): Episode status text for the panel.
                   "mode" (str | None): Controller mode, shown in upper case.
-                  "neck_deg" (list[float] | None): Neck joint angles in
-                    degrees.
                   "banner" (tuple[str, str] | None): (text, kind) for the bar
                     along the top: kind "needed" draws a red bar, any other kind
                     a blue bar.
@@ -536,7 +534,7 @@ def make_glfw_viewer(model, data, vcfg):
                      f"{ds.get('angular', 0):+.2f}"),
                     ("recording (F6)", "off" if not recorder.active else
                      f"REC {recorder.frames} frames, {recorder.frames / recorder.fps:.1f} s")],
-                status=info.get("status"), mode=info.get("mode"), neck_deg=info.get("neck_deg"),
+                status=info.get("status"), mode=info.get("mode"),
                 extra_rows=([("arms (F2 toggles)", teleop_status)] if teleop_status is not None else [])), hud_keys)
             hud_left, hud_top = hud_position(1.0, banner_h)
             blit(hud, hud_left, height - hud.shape[0] - hud_top)

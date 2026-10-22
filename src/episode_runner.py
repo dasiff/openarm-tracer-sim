@@ -15,7 +15,7 @@ The task dictionary (the beaker task's is built by src/task_beaker_hotplate.make
     "check_success"(model, data) -> (bool, diagnostics)
     "limits" (dict)                     "timeout_after_handoff" and "operator_timeout" (seconds), "log_hz" (hertz), "exclusive" (bool).
     "log_extras"(model) -> (names, row_fn)   optional: extra log columns, row_fn(data) -> list of formatted values.
-    "framing_points"(model, data) -> dict    optional: the world points the neck camera frames when the operator presses F7.
+    "view_points"(model, data) -> dict       optional: the world points the fixed eagle camera must see (not used by the runner itself).
     "handoff_camera" (str)              optional: the camera whose picture is saved at the handoff. Default "eagle_cam".
     "handoff_label" (str)               optional: the phase label that marks the handoff in a recording (used by replay). Default "DONE".
     "recipe" (dict)                     {"entry": "module:function", "cfg": {...}}: how replay rebuilds the model of a recording; see src/replay.py.
@@ -41,7 +41,7 @@ a factory make(model, data) -> {name: source} of additional sources, e.g. the ki
 
 The runner drives src/control_loop.run_loop through its cfg["on_tick"] hook (success, timeouts, contacts, the log). The summary: outcome,
 the policy's report (for the beaker task the staging stage's own: phase durations, arrival errors, pose corrections, drift, clearance, pose error
-at the handoff, neck framing, at the top level, and every stage's report under "stages"), contacts per phase (phase "OPERATOR" while the operator
+at the handoff, at the top level, and every stage's report under "stages"), contacts per phase (phase "OPERATOR" while the operator
 has control), the mode switches, operator_time_s, the holds the loop logged, and the success-check diagnostics.
 """
 
@@ -58,7 +58,6 @@ import numpy as np
 from src import robot_specs
 from src.control_loop import run_loop
 from src.keyboard_source import DRIVE_CFG, make_keyboard_source
-from src.neck import neck_ids
 from src.robot_helpers import arm_ids, make_contact_monitor
 
 TICK_HZ = 150           # the command tick: physics_hz / TICK_HZ = 5 physics steps (the window is redrawn every 5th tick, 30 Hz) [row M127 PENDING David: no decision recorded]
@@ -76,10 +75,8 @@ def run_episode(task, model, data, mode="auto", viewer=None, out_dir=None, hando
 
     The log, if `out_dir` is given, is out_dir/episode_log.csv: one row at the first tick of every 1/log_hz seconds of simulation time, with the
     columns sim_time (s), phase (the policy's phase, or "OPERATOR" while the operator has control), mode ("auto" or "teleop"), base_x and
-    base_y (m), base_yaw_deg, pedestal_m, <side>_joint1..7 (rad) and <side>_finger1..2 (m) for both arms, neck_<joint> (rad) for each active
-    neck joint, the task's extra columns (the beaker task: beaker_x, beaker_y, beaker_z in metres), then the applied commands: cmd_twist_lin
-    (m/s), cmd_twist_ang (rad/s), cmd_pedestal (m), cmd_<side>_joint1..7 (rad) and cmd_<side>_gripper (m) for both arms, cmd_neck_<joint>
-    (rad), and for both arms cmd_<side>_grip_max_force_N (newtons) and <side>_finger_force_N (the mean absolute finger actuator force,
+    base_y (m), base_yaw_deg, pedestal_m, <side>_joint1..7 (rad) and <side>_finger1..2 (m) for both arms, the task's extra columns (the beaker task: beaker_x, beaker_y, beaker_z in metres), then the applied commands: cmd_twist_lin
+    (m/s), cmd_twist_ang (rad/s), cmd_pedestal (m), cmd_<side>_joint1..7 (rad) and cmd_<side>_gripper (m) for both arms, and for both arms cmd_<side>_grip_max_force_N (newtons) and <side>_finger_force_N (the mean absolute finger actuator force,
     newtons).
 
     Args:
@@ -124,7 +121,7 @@ def run_episode(task, model, data, mode="auto", viewer=None, out_dir=None, hando
             The policy's report (only in "auto" mode), from its report(): the keys of the stages that report at the top level (for the
                 beaker task the staging stage's "staging_error", "phase_durations_s", "phase_times", "arrival_at_end_of_drive",
                 "base_pose_error_at_handoff", "first_turn_deg", "final_in_place_turn_deg", "planned_final_turn_deg", "drive_reapproaches",
-                "pose_corrections", "base_drift", "min_base_to_bench_clearance_during_drive_mm" and "neck_framing_report"; see
+                "pose_corrections", "base_drift", and "min_base_to_bench_clearance_during_drive_mm"; see
                 make_staging_source()), and "stages" (dict): stage name -> that stage's report.
             "contacts_by_phase" (dict): Phase name (or "OPERATOR") -> list of {"pair": [name, name], "first_s": float,
                 "last_s": float, "ticks": int} for each distinct robot contact pair seen in that phase.
@@ -155,14 +152,12 @@ def run_episode(task, model, data, mode="auto", viewer=None, out_dir=None, hando
         policy = task["make_policy"](model, data)
         sources["policy"] = policy
     sources["keyboard"] = make_keyboard_source(model, held_fn, DRIVE_CFG, robot_specs.PEDESTAL_SPECS["jog_speed"] * tick_dt,
-                                               tuple(model.actuator_ctrlrange[ped]), data=data, neck_specs=robot_specs.NECK_SPECS,
-                                               points_fn=task.get("framing_points"), neck_locked=record_dir is not None)
+                                               tuple(model.actuator_ctrlrange[ped]))
     sources.update(extra_sources(model, data) if extra_sources else {})
 
     contacts_now = make_contact_monitor(model)
     sides = ("left", "right")
     arm_act = {s: arm_ids(model, s) for s in sides}
-    neck = neck_ids(model, robot_specs.NECK_SPECS)
     finger_qadr = [int(model.jnt_qposadr[j]) for s in sides for j in arm_act[s]["finger_jnt"]]
     extra_names, extra_row = task["log_extras"](model) if "log_extras" in task else ([], None)
 
@@ -176,10 +171,9 @@ def run_episode(task, model, data, mode="auto", viewer=None, out_dir=None, hando
         log_csv = csv.writer(log_file)
         log_csv.writerow(["sim_time", "phase", "mode", "base_x", "base_y", "base_yaw_deg", "pedestal_m"]
                          + [f"{s}_joint{i}" for s in sides for i in range(1, 8)] + [f"{s}_finger{k}" for s in sides for k in (1, 2)]
-                         + [f"neck_{n}" for n in (neck["names"] if neck else [])] + list(extra_names)
+                         + list(extra_names)
                          + ["cmd_twist_lin", "cmd_twist_ang", "cmd_pedestal"]
                          + [c for s in sides for c in [f"cmd_{s}_joint{i}" for i in range(1, 8)] + [f"cmd_{s}_gripper"]]
-                         + [f"cmd_neck_{n}" for n in (neck["names"] if neck else [])]
                          + [c for s in sides for c in (f"cmd_{s}_grip_max_force_N", f"{s}_finger_force_N")])
 
     def on_tick(obs, loop):
@@ -214,10 +208,9 @@ def run_episode(task, model, data, mode="auto", viewer=None, out_dir=None, hando
             q = obs["joint_angles"]
             log_csv.writerow([f"{t:.4f}", phase, cur, f"{x:.9f}", f"{y:.9f}", f"{math.degrees(yaw):.9f}", f"{obs['pedestal_height']:.9f}"]
                              + [f"{q[a]:.9f}" for s in sides for a in arm_act[s]["qadr"]] + [f"{q[a]:.9f}" for a in finger_qadr]
-                             + ([f"{q[a]:.9f}" for a in neck["qadr"]] if neck else []) + (extra_row(data) if extra_row else [])
+                             + (extra_row(data) if extra_row else [])
                              + [f"{ap['twist'][0]:.9f}", f"{ap['twist'][1]:.9f}", f"{ap['pedestal']:.9f}"]
                              + [v for s in sides for v in [f"{v:.9f}" for v in ap["arm_targets"][s]] + [f"{ap['gripper'][s]:.9f}"]]
-                             + ([f"{ap['neck_goal'][n]:.9f}" for n in neck["names"]] if neck else [])
                              + [v for s in sides for v in (f"{ap['gripper_force'][s]:.9f}",
                                                            f"{abs(float(data.actuator_force[arm_act[s]['gripper']])) / robot_specs.ARM_ACTUATOR_SPECS['fingers']['fingers_per_actuator']:.9f}")])
         # end conditions

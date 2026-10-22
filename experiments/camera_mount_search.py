@@ -5,7 +5,7 @@ The eagle camera's placeholder mount (design plan 14.1, decisions-log M161): a s
     MUJOCO_GL=egl python experiments/camera_mount_search.py [--out docs/reports]
 
 At the TASK_CFG stance and pedestal command (TASK_CFG["pedestal_q"]), with both arms at the zombie pose and the fingers open, the camera faces straight forward (no roll) and every candidate is judged by:
-  1. both hands (tool point, hand origin, finger tips) and the beaker's and the hotplate's corners (src/task_beaker_hotplate.framing_points) inside the image with at least 10 % of the image width and
+  1. both hands (tool point, hand origin, finger tips) and the beaker's and the hotplate's corners (src/task_beaker_hotplate.view_points) inside the image with at least 10 % of the image width and
      height to every edge (STANCE_REQUIREMENTS["framing_min_slack"]);
   2. the robot hides none of the beaker and at most 20 % of the hotplate (a segmentation render, src/stance_checks.OcclusionMeter, STANCE_REQUIREMENTS["occlusion_max_hidden"]);
   3. the camera's collision box is at least 5 mm from everything at the zombie pose (the torso link it is mounted on excepted).
@@ -33,7 +33,7 @@ import numpy as np  # noqa: E402
 from src import robot_specs  # noqa: E402
 from src.robot_helpers import arm_ids  # noqa: E402
 from src.stance_checks import OcclusionMeter  # noqa: E402
-from src.task_beaker_hotplate import framing_points, home_targets, load_task, spawn_and_settle, yaw_to_quat  # noqa: E402
+from src.task_beaker_hotplate import view_points, home_targets, load_task, spawn_and_settle, yaw_to_quat  # noqa: E402
 from src.task_config import STANCE_REQUIREMENTS, TASK_CFG  # noqa: E402
 
 BOX_CLEARANCE = 0.005                                  # m: the camera box at least this far from everything (David 2026-10-22, part C)
@@ -111,7 +111,7 @@ def main(out):
     for dx, dz, pitch in itertools.product(DX, DZ, PITCHES):
         pos = base_pos + np.array([dx, 0.0, dz])
         set_mount(model, data, pos, pitch)
-        mg = margins(model, data, framing_points(model, data))
+        mg = margins(model, data, view_points(model, data))
         worst = min(mg, key=mg.get)
         clr, who = box_clearance(model, data, others)
         rows.append({"pos": pos.round(4).tolist(), "pitch_deg": pitch, "min_margin": mg[worst], "worst_point": worst, "box_clearance_mm": 1000 * clr,
@@ -152,7 +152,7 @@ def main(out):
     r = mujoco.Renderer(model, H, W)
     r.update_scene(data, camera="eagle_cam")
     img = r.render().copy()
-    mg_pts = framing_points(model, data)
+    mg_pts = view_points(model, data)
     c = model.camera("eagle_cam").id
     pos, R = data.cam_xpos[c], data.cam_xmat[c].reshape(3, 3)
     th = math.tan(math.radians(float(model.cam_fovy[c])) / 2)

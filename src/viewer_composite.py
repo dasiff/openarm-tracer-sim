@@ -17,7 +17,7 @@ all the cameras; the tiles come from full-size (640 by 480 pixel) renders of the
 (the live insets are 320 by 240 pixels, have shadows off and update once per second per camera); and the rows that only
 mean something live are replaced or left out (the viewer frame time becomes the video frame time, the F6 recording state
 and the keyboard's own normalised command are left out, and a "twist lin, ang" row shows the applied base command). The
-"episode", "controller" and neck rows are filled from the `info` dictionary that render() takes.
+"episode" and "controller" rows are filled from the `info` dictionary that render() takes.
 """
 
 import math
@@ -30,7 +30,6 @@ from src.cameras import CameraRig
 from src.face import Face, settle_renderer, show_face_group
 from src.viewer_layout import (FOVY_DEG, REFERENCE_HEIGHT, hud_bitmap, hud_key_list, hud_position, hud_rows, inset_layout, inset_tile, order_tiles,
                                setup_follow_camera, update_follow_camera)
-from src.neck import neck_ids
 
 
 class CompositeRenderer:
@@ -54,8 +53,6 @@ class CompositeRenderer:
             shadows on. The tiles are its images.
         base_body (int): Id of the body "base_link" that the follow camera
             tracks (1 if the model has no such body).
-        neck (dict | None): Neck joint ids from src.neck.neck_ids, or None if
-            the model has no neck. Used for the neck row of the panel.
         keys (list[tuple[str, str]]): Key legend entries of the panel (without
             the F2 entry).
     """
@@ -95,7 +92,6 @@ class CompositeRenderer:
         self.scene.flags[mujoco.mjtRndFlag.mjRND_REFLECTION] = 1
         self.rig = CameraRig(model, [{**cs, "shadows": True} for cs in camera_specs], context, shadows=True)
         self.base_body = max(mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, "base_link"), 1)
-        self.neck = neck_ids(model, robot_specs.NECK_SPECS)
         self.keys = hud_key_list(False, legend_extra)
 
     def render(self, data, info):
@@ -143,11 +139,10 @@ class CompositeRenderer:
 
         # --- the status panel, top left ---
         lin, ang = info["twist"]
-        neck_deg = [math.degrees(float(data.qpos[a])) for a in self.neck["qadr"]] if self.neck is not None else None
         hud = hud_bitmap(hud_rows(info["time"], info["base_vel"], yaw_deg, data.qpos[0:3],
                                   middle_rows=[("video (ms, fps)", f"{1000.0 / info['fps']:.0f}, {info['fps']:.1f}"),
                                                ("twist lin, ang", f"{lin:+.2f}, {ang:+.2f}")],
-                                  status=info.get("status"), mode=info.get("mode"), neck_deg=neck_deg), self.keys, self.s)
+                                  status=info.get("status"), mode=info.get("mode")), self.keys, self.s)
         left, top = hud_position(self.s)
         frame[top:top + hud.shape[0], left:left + hud.shape[1]] = hud
 

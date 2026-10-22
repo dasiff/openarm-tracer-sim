@@ -40,14 +40,14 @@ def hud_key_list(has_teleop, legend_extra=()):
 
     Returns:
         list[tuple[str, str]]: (key cap text, short label) pairs, in display
-        order. The fixed entries are the base, arm, pedestal and neck keys,
-        F7 and F8 (neck), then F3 (camera images), F4 (snapshot), F5 (log),
+        order. The fixed entries are the base, arm and pedestal keys,
+        then F3 (camera images), F4 (snapshot), F5 (log),
         F6 (record video) and Esc (quit).
     """
     return [("Arrows", "drive"), ("Spc", "stop"),
             ("1-8", "L arm +"), ("Q-I", "L arm -"),
             ("A-K", "R arm +"), ("Z-,", "R arm -"),
-            ("PgUp/Dn", "pedestal"), ("9 0 - =", "neck +"), ("O P [ ]", "neck -"), ("F7", "frame"), ("F8", "neck home")] + \
+            ("PgUp/Dn", "pedestal")] + \
         ([("F2", "man/tele")] if has_teleop else []) + \
         list(legend_extra) + \
         [("F3", "cam imgs"), ("F4", "snap"), ("F5", "log"),
@@ -133,12 +133,12 @@ def update_follow_camera(cam, data, body_id):
     return yaw_deg
 
 
-def hud_rows(time_s, base_vel, yaw_deg, position, middle_rows=(), status=None, mode=None, neck_deg=None, extra_rows=()):
+def hud_rows(time_s, base_vel, yaw_deg, position, middle_rows=(), status=None, mode=None, extra_rows=()):
     """Builds the rows of the status panel.
 
     The first six rows (time, speed, velocity, yaw rate, yaw, position) are the same everywhere. The middle rows are the ones that differ
     between the live window (frame time, keyboard command, recording state) and the video (video rate, applied twist). Then come the episode
-    status, the controller mode, the neck angles and any extra rows (the live window's arms row).
+    status, the controller mode and any extra rows (the live window's arms row).
 
     Args:
         time_s (float): Simulation time in seconds.
@@ -148,7 +148,6 @@ def hud_rows(time_s, base_vel, yaw_deg, position, middle_rows=(), status=None, m
         middle_rows (Sequence[tuple[str, str]]): (label, value) rows for the backend-specific part. Defaults to none.
         status (str | None): Episode status text for the "episode" row; no row if empty or None. Defaults to None.
         mode (str | None): "auto" or "teleop" for the "controller" row; no row if None. Defaults to None.
-        neck_deg (Sequence[float] | None): The four neck joint angles in degrees for the neck row; no row if None or empty. Defaults to None.
         extra_rows (Sequence[tuple[str, str]]): Rows appended at the end. Defaults to none.
 
     Returns:
@@ -166,8 +165,6 @@ def hud_rows(time_s, base_vel, yaw_deg, position, middle_rows=(), status=None, m
         rows.append(("episode", status))
     if mode:
         rows.append(("controller", mode.upper()))
-    if neck_deg:
-        rows.append(("neck pan,lift,elb,wrist", ", ".join(f"{v:+.0f}" for v in neck_deg)))
     return rows + list(extra_rows)
 
 

@@ -119,6 +119,7 @@ BATTERY_SPECS = {
     "rgba": (0.15, 0.55, 0.30, 1.0),  # RGBA colour of the box (0 to 1) [row M117 PENDING David: no decision recorded]
 }
 
+# [OBSOLETE 2026-10-22, David (design plan 14, M153): the eagle camera is FIXED to the torso and there is no neck; this block, NECK_AUTO_SPECS and the eagle entry of CAMERA_SPECS are removed in step 2.]
 # Camera neck: an SO-101 arm carrying the eagle camera -- PLACEHOLDER.
 # The team plans a 4-DOF SO-101 as the camera neck. The mounting and which joints are active are unconfirmed:
 #   * ASSUMPTION: the 4 neck DOF are shoulder_pan, shoulder_lift, elbow_flex, wrist_flex. Every other joint of the model

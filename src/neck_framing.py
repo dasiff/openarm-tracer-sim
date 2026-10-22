@@ -55,9 +55,9 @@ FRAMING_CFG = {
     # The framing rule (design plan 14.1, M135, overnight queue stage 6; M151). "aim_centre": today's rule, aim at the centre of the points' bounding box with a weak posture term (the default; every
     # existing result is unchanged). "least_movement": the least movement from the start pose (the driving pose after parking) that frames every point with `margin` (10 %): no aim term, no posture
     # term, the cost of moving from the start pose instead. The repeatability check then uses 2 jiggled solves (FULLCHECK_CFG["neck_draws_least_movement"]).
-    "rule": "aim_centre",      # "aim_centre" or "least_movement" [row M151]
-    "least_move_weight": 1.0,  # cost per rad^2 of moving from the start pose under the least_movement rule (the violation terms weigh 100 and 10 per unit of image, so the margin always wins) [row M151 PENDING David]
-    "keep_margin": 0.05,       # at a null step the neck keeps its pose while every point is more than this fraction of the image inside the edge (10 % is restored only below it) [row M135]
+    "rule": "aim_centre",      # "aim_centre" or "least_movement" [row M151]  [OBSOLETE, removed in step 2: fixed camera, no neck, M153]
+    "least_move_weight": 1.0,  # cost per rad^2 of moving from the start pose under the least_movement rule (the violation terms weigh 100 and 10 per unit of image, so the margin always wins) [row M151 PENDING David]  [OBSOLETE, removed in step 2: fixed camera, no neck, M153]
+    "keep_margin": 0.05,       # at a null step the neck keeps its pose while every point is more than this fraction of the image inside the edge (10 % is restored only below it) [row M135]  [OBSOLETE, removed in step 2: fixed camera, no neck, M153]
 }
 
 

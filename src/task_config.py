@@ -95,7 +95,7 @@ TASK_CFG = {
     "home_variation_rad": (0.0,) * 7,      # per joint (the same for both arms): the home pose is drawn uniformly within +-this around the values above, clipped to [row M101 PENDING David: no decision recorded]
                                            # the joint limits. All zeros = off (the default); the demo generator will set it. The right arm gets its own draw.
     "home_variation_seed": 0,              # seed of that draw (one draw per episode, both arms) [row M101 PENDING David: no decision recorded]
-    "framing_arms": ("left", "right"),     # the grippers the neck camera frames at the handoff, next to the beaker and the hotplate [row M101 PENDING David: no decision recorded]
+    "framing_arms": ("left", "right"),     # the grippers the neck camera frames at the handoff, next to the beaker and the hotplate [row M101 PENDING David: no decision recorded] [OBSOLETE, removed in step 2: fixed camera, no neck, M153]
 
     # --- LEGACY (not used by the staging any more; still read by the layout / staging searches, the pose check and the grasp force test source):
     # --- the task-specific ready pose of the left arm, found by the layout search, and the waypoint of its path from the hanging pose.
@@ -249,8 +249,8 @@ STANCE_CFG = {
 STANCE_REQUIREMENTS = {
     "home_min_clearance": 0.040,        # m: every moving arm part stays this far from the bench, the hotplate and every other object (home_pose_test's bench / hotplate limit) [row M087]
     "placed_beaker_min_clearance": 0.040,   # m: and from a beaker resting on the hotplate (the home pose must not touch the beaker once it has been set down; David 2026-10-19) [row M087]
-    "neck_max_spread": 0.06,            # rad: the neck framing moves no joint more than this under 0.1 degree of arm noise (the neck_once_test limit) [row M087]
-    "framing_min_slack": 0.10,          # fraction of the image: with the neck at its best pose the beaker's and hotplate's corners and both grippers (tool point, hand, finger tips) are [row M087]
+    "neck_max_spread": 0.06,            # rad: the neck framing moves no joint more than this under 0.1 degree of arm noise (the neck_once_test limit) [row M087] [OBSOLETE, removed in step 2: fixed camera, no neck, M153]
+    "framing_min_slack": 0.10,          # fraction of the image: with the neck at its best pose the beaker's and hotplate's corners and both grippers (tool point, hand, finger tips) are [row M087] [becomes "inside the fixed view" with the 10 % edge margin in step 2, M153]
                                         # at least this far from every image edge (the neck framing's margin, FRAMING_CFG["margin"])
     # Occlusion by the pixel-area measure (src/stance_checks.OcclusionMeter): the share of the object's pixels in the eagle camera image (neck at its framing pose) that the robot hides.
     "occlusion_max_hidden": {"beaker": 0.0, "hotplate": 0.20},  # [row M087]
@@ -375,10 +375,10 @@ STAGING_CFG = {
     "arms_timeout": 30.0,  # s: the ARMS phase fails after this long (operator time not counted) [row M109 PENDING David: no decision recorded]
     "finger_open": 0.044,                  # m [row M098]
     # NECK: frame_points() on the task points, then hold
-    "neck_tol": 0.01,                      # rad [row M109 PENDING David: no decision recorded]
-    "neck_settle_vel": 0.02,               # rad/s [row M109 PENDING David: no decision recorded]
-    "neck_settle_s": 0.3,  # s: the neck joint speeds must stay below neck_settle_vel this long before the NECK phase ends [row M109 PENDING David: no decision recorded]
-    "neck_timeout": 15.0,  # s: the NECK phase fails after this long (operator time not counted) [row M109 PENDING David: no decision recorded]
+    "neck_tol": 0.01,                      # rad [row M109 PENDING David: no decision recorded] [OBSOLETE, removed in step 2: fixed camera, no neck, M153]
+    "neck_settle_vel": 0.02,               # rad/s [row M109 PENDING David: no decision recorded] [OBSOLETE, removed in step 2: fixed camera, no neck, M153]
+    "neck_settle_s": 0.3,  # s: the neck joint speeds must stay below neck_settle_vel this long before the NECK phase ends [row M109 PENDING David: no decision recorded] [OBSOLETE, removed in step 2: fixed camera, no neck, M153]
+    "neck_timeout": 15.0,  # s: the NECK phase fails after this long (operator time not counted) [row M109 PENDING David: no decision recorded] [OBSOLETE, removed in step 2: fixed camera, no neck, M153]
 }
 
 # ----------------------------------------------------------------------------------------------------------
@@ -483,8 +483,8 @@ FULLCHECK_CFG = {
     "hand_clearance": 0.01,                 # m: the hand and fingers must stay this far from the bench, the hotplate and every other object at the IK solutions (the old case 'open_b45' used 1 cm; row M146 PENDING David)
     "arm_clearance": 0.0,                   # m: the other arm parts must not touch the furniture or the objects (row M146 PENDING David)
     "body_clearance": 0.0,                  # m: the whole robot at the stance must not touch the bench or an object (the old check: no contact; row M146 PENDING David)
-    "neck_draws_least_movement": 2,         # count: perturbed neck solves of the repeatability check under the least_movement framing rule (a sanity check, R2e, row M151)
-    "neck_draws": 8,                        # count: perturbed neck solves of the repeatability check (the old value; the new framing rule will use 2, R2e, row M135)
+    "neck_draws_least_movement": 2,         # count: perturbed neck solves of the repeatability check under the least_movement framing rule (a sanity check, R2e, row M151) [OBSOLETE, removed in step 2: fixed camera, no neck, M153]
+    "neck_draws": 8,                        # count: perturbed neck solves of the repeatability check (the old value; the new framing rule will use 2, R2e, row M135) [OBSOLETE, removed in step 2: fixed camera, no neck, M153]
     "object_slots": 6,                      # count: boxes of the private model that stand for unknown objects on the table (more objects than this make the check refuse; row M147 PENDING David)
     "checkers_kept": 3,                     # count: arm collision checkers kept (one per pedestal height, a model copy each) (row M136: memory)
 }

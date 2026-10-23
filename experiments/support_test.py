@@ -113,6 +113,8 @@ def main():
     cfg = {**copy.deepcopy(BENCH_STANCE_CFG), "bench_max_raise_m": 0.20}
     m = stance_method(place_info, w, "the hotplate", cfg)
     check("the test scene's place is inside the band", m["method"] == "bench" and abs(m["raise_m"] - (0.068 + gap + frac * 0.10)) < 1e-9, f"raise {m['raise_m']:.4f} m against limit {cfg['bench_max_raise_m']}")
+    real = stance_method(place_info, w, "the hotplate")
+    check("with the configured (measured) limit the test scene's place is inside the band too", real["raise_m"] <= BENCH_STANCE_CFG["bench_max_raise_m"], f"raise {real['raise_m']:.4f} m against limit {BENCH_STANCE_CFG['bench_max_raise_m']} m")
     check("a surface root with no settings stops with 'no stance method for surface: <name>'", stop(lambda: stance_method({**place_info, "surface": "cabinet"}, w, "the shelf", cfg)) == "no stance method for surface: cabinet")
     w = scene("bench")
     w.get("beaker").properties["held_by"] = "left"

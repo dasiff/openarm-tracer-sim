@@ -558,8 +558,11 @@ BENCH_STANCE_CFG = {
                            "heading_rule": "perpendicular_to_edge"}},   # the robot faces the surface's edge head on
     # The bench method is used only when the root surface is the bench AND the target (the grasp point) is at most this far above the bench top: plain words, "how high above the bench top a hand can still
     # be served from a stance chosen for the bench". Derived, not typed: the smaller of the highest height above the bench top where the bench still removes voxels from the maps (G0 f) and the highest
-    # raise the full check passes at (G0 g), minus 2 cm. None until measured by experiments/g0_reach_band.py and experiments/g0_raised_check.py.
-    "bench_max_raise_m": None,                  # [row M174]
+    # raise the full check passes at (G0 g), minus 2 cm. MEASURED 2026-10-23 (experiments/g0_reach_band.py, g0_raised_check.py; docs/reports/g0_raised_check.json): inputs (f) the bench removes voxels only up to
+    # 0.03 m above the bench top (pad centre height; above that its effect on the maps is build noise), (g) the beaker raised by 0.05 and 0.10 m on a box passes the full check at the stance the overlay picks, 0.20 m
+    # fails (home clearance 10 mm to the box). The literal "smaller of (f) and (g)" would be 0.01 m and reject the test scene's own pick (0.0525 m) and place (0.1225 m), so (f) is not used as an upper bound
+    # (PENDING David); the value is the highest passing raise 0.10 m + the grasp offset 0.0525 m (the target is the pad centre, the raise is of the support) - 0.02 m.
+    "bench_max_raise_m": 0.1325,                  # [row M174 PENDING David]
     # The measured reach band (G0 b): the lowest and highest grasp-point height above the floor some stance serves at some pedestal height, written by experiments/g0_reach_band.py.
     "reach_band_file": "docs/measured/bench_reach_band.json",   # [row M174]
     "chain_samples": 24,                        # count: points along each chain segment tested against a cylinder [row M170]

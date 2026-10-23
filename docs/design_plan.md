@@ -382,6 +382,13 @@ Build steps are referred to only as B-numbers. Each step shows the section that 
      **Needs:** an "open" skill (the handoff of a door or drawer: approach the handle, open, hold or pass) for the door variant; the second station and staging while holding (below); the stance finder run on the shelf or closet (§3.4), and the knowledge base entries with a `location` that is not the bench.
   - Randomize the positions per run. Log the failure reason (wrong hand, unreachable stance, spill), not just pass or fail.
   - Needs: a second station, staging while holding, and later the handoff skill.
+- **[LATER] Stance selection for non-bench surfaces (cabinet, shelf)** (David, 2026-10-23, step 3 part C; decisions-log M170 to M173). Not built; no cabinet is added now.
+  - The bin list may need approaches from above or below (BENCH_STANCE_CFG["approach_bins"] is the bench's: the hand moves forward or along the bench edge).
+  - The region is keyed by the depth from the surface's face and by the surface's height (the cache key of src/bench_stance.py has both).
+  - The maps may need a no-furniture build option: the bench is in the C1 maps at ONE position (the TASK_CFG stance and pedestal 0.155), so the bench collision is position-specific (F0 e); a surface elsewhere needs maps built without it, or with its own position.
+  - The full check (about 27 s) works on any loaded scene and is the fallback for a surface with no region yet.
+  - Keep the bench-specific values (surface height, depth, bin list, heading rule) as settings in BENCH_STANCE_CFG, not hard-coded in the region builder.
+  - The old maps stay in data/reach_map_before_bench (not to be deleted).
 
 ## 11. Open questions for the hardware team [PENDING]
 

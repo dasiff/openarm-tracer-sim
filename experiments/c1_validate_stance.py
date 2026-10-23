@@ -9,7 +9,7 @@ import sys
 
 import numpy as np
 
-from src.bench_rectangle import load_maps
+from src.bench_stance import load_maps
 from src.full_check import task_points
 from src.stance_finder import robot_geometry
 from src.task_beaker_hotplate import load_task

@@ -383,7 +383,48 @@ def filter_obstacles(reg, robot, arm, z_grasp, obstacles, cfg=BENCH_STANCE_CFG):
     return reach
 
 
-def make_extra_blocked(furniture, robot, yaw, home_clear=None, heading_robust_deg=STANCE_CFG["heading_robust_deg"]):
+def _shift(B, dy, dx):
+    """B shifted so that out[iy, ix] = B[iy + dy, ix + dx] (False outside)."""
+    out = np.zeros_like(B)
+    ny, nx = B.shape
+    ys, xs = slice(max(0, -dy), min(ny, ny - dy)), slice(max(0, -dx), min(nx, nx - dx))
+    yd, xd = slice(max(0, dy), min(ny, ny + dy)), slice(max(0, dx), min(nx, nx + dx))
+    out[ys, xs] = B[yd, xd]
+    return out
+
+
+def creep_blocked(furniture, footprint, yaw, back_m, margin_m=0.01, heading_err_deg=1.0):
+    """H2: the base positions from which the creep-in path to the stance is not clear: the stance is where the path ends, the path is a straight line of length back_m from the approach spot behind it (the robot
+    faces the bench along it); the base footprint, grown by the stopping error (margin_m, and the heading +- heading_err_deg), swept along it must stay clear of the furniture map's BASE layer (bench legs, walls).
+
+    Args:
+        furniture (src.furniture_map.FurnitureMap): The scene's furniture map.
+        footprint (numpy.ndarray): The base footprint (K, 2), base frame.
+        yaw (float): The heading (facing the bench).
+        back_m (float): The creep-in distance, metres (TASK_CFG["staging_approach_back_m"]).
+        margin_m, heading_err_deg (float): The stopping error the corridor is widened by.
+
+    Returns:
+        numpy.ndarray: Bool, the grid of the furniture map: True where the creep-in path ending at that cell clips something.
+    """
+    ring = margin_m * np.array([[math.cos(a), math.sin(a)] for a in np.linspace(0, 2 * math.pi, 8, endpoint=False)])
+    pts = (np.asarray(footprint, float)[:, None, :] + ring[None]).reshape(-1, 2)
+    from scipy.spatial import ConvexHull
+    grown = pts[ConvexHull(pts).vertices]
+    out = np.zeros(furniture.shape, bool)
+    steps = int(math.ceil(back_m / furniture.res))
+    for th in (yaw - math.radians(heading_err_deg), yaw, yaw + math.radians(heading_err_deg)):
+        c, s = math.cos(th), math.sin(th)
+        B = furniture._grow("base", grown @ np.array([[c, s], [-s, c]]))
+        for k in range(steps + 1):
+            d = min(k * furniture.res, back_m)
+            # the footprint is at the cell minus d along the heading when the robot has crept d metres of the way
+            dx, dy = int(round(-d * math.cos(yaw) / furniture.res)), int(round(-d * math.sin(yaw) / furniture.res))
+            out |= _shift(B, dy, dx)
+    return out
+
+
+def make_extra_blocked(furniture, robot, yaw, home_clear=None, heading_robust_deg=STANCE_CFG["heading_robust_deg"], creep_back_m=None, creep_error=None):
     """The `extra_blocked` function of overlay for the real scene: the stance finder's furniture map (base layer grown by the footprint, arm layer by the torso-and-pedestal column; at the heading and
     +- the heading robustness) and, if given, the arms-at-home clearance (HomeClearanceMap.clear_mask).
 
@@ -393,11 +434,14 @@ def make_extra_blocked(furniture, robot, yaw, home_clear=None, heading_robust_de
         yaw (float): The heading, radians.
         home_clear (callable or None): robot["home_clear"] style f(heading, qs, X, Y) -> bool (nq, ny, nx), True where clear.
         heading_robust_deg (float): The heading error the stance must survive.
+        creep_back_m (float or None): With it, a spot whose creep-in path (this long, straight, ending at the spot) clips the furniture's base layer is blocked at every height (H2, creep_blocked).
+        creep_error (tuple or None): (position margin m, heading error deg) the creep corridor is widened by. Defaults to (0.01, 1.0).
 
     Returns:
         callable: f(X, Y, qs) -> bool (nq, ny, nx), True where the base origin may not be.
     """
     d = math.radians(heading_robust_deg)
+    creep = None if creep_back_m is None else creep_blocked(furniture, robot["footprint"], yaw, creep_back_m, *(creep_error or (0.01, 1.0)))
 
     def f(X, Y, qs):
         ix = np.floor((X - furniture.origin[0]) / furniture.res).astype(int)
@@ -413,6 +457,8 @@ def make_extra_blocked(furniture, robot, yaw, home_clear=None, heading_robust_de
             out[qi] = blocked
         if home_clear is not None:
             out |= ~np.asarray(home_clear(yaw, qs, X, Y), bool)
+        if creep is not None:
+            out |= np.where(inb, creep[np.clip(iy, 0, furniture.shape[0] - 1), np.clip(ix, 0, furniture.shape[1] - 1)], True)[None]
         return out
     return f
 
@@ -626,7 +672,8 @@ def overlay(objects, maps, robot, cams, bench, extra_blocked=None, arm=None, cfg
 
     Args:
         objects (list of dict): Each {"name", "xy" (world), "depth" (from the bench edge), "z_points" (grasp-band heights, world), "surface_z", "corners" ((8, 3) world), "samples" ((K, 3) world),
-            "hidden_max", and, as an obstacle for the others, "radius", "z0", "z1"}.
+            "hidden_max", and, as an obstacle for the others, "radius", "z0", "z1"}; optional "supports" (H: the entries under the target, see support_ok) and "extra_obstacles" (cylinders {"name", "xy", "radius",
+            "z0", "z1"}: other objects on the table that are not targets of this run).
         maps (dict): {(side, bin): ReachMap}.
         robot (dict): From robot_geometry.
         cams (dict): From camera_poses (with the silhouettes).
@@ -665,6 +712,8 @@ def overlay(objects, maps, robot, cams, bench, extra_blocked=None, arm=None, cfg
         reg = regs[ob["name"]]
         others = [{"rel": (float((np.asarray(p["xy"]) - np.asarray(ob["xy"])) @ n), float((np.asarray(p["xy"]) - np.asarray(ob["xy"])) @ t)), "radius": p["radius"], "z0": p["z0"], "z1": p["z1"], "name": p["name"]}
                   for p in objects if p is not ob]
+        others += [{"rel": (float((np.asarray(p["xy"]) - np.asarray(ob["xy"])) @ n), float((np.asarray(p["xy"]) - np.asarray(ob["xy"])) @ t)), "radius": p["radius"], "z0": p["z0"], "z1": p["z1"], "name": p["name"]}
+                   for p in ob.get("extra_obstacles") or []]                              # the other things on the table that are not targets of this run
         zg = 0.5 * (min(ob["z_points"]) + max(ob["z_points"]))
         reach = filter_obstacles(reg, robot, arm, zg, others, cfg)
         sup_ok = support_ok(reg, robot, cams, [{**sp, "target_xy": ob["xy"]} for sp in ob.get("supports") or []], bench["yaw"], cfg)       # H: the supports under the target

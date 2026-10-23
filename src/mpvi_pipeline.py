@@ -24,11 +24,11 @@ from src.mpvi_monitors import make_drop_monitor
 from src.mpvi_vlm import make_vlm_checker
 from src.orchestrator import make_orchestrator
 from src.task_beaker_hotplate import make_task
-from src.task_config import EPISODE_CFG, PICK_PLACE_CFG, SUCCESS_CFG, STAGING_CFG, TASK_CFG
+from src.task_config import BENCH_STANCE_CFG, EPISODE_CFG, PICK_PLACE_CFG, SUCCESS_CFG, STAGING_CFG, TASK_CFG
 
 
 def make_pipeline_task(plan=BEAKER_ON_HOTPLATE_PLAN, task_cfg=TASK_CFG, staging_cfg=STAGING_CFG, episode_cfg=EPISODE_CFG, success_cfg=SUCCESS_CFG, arm="left",
-                       operator=None, search=None, stop_on_disagreement=False, checker="oracle", vlm_caller=None, drop_monitor=True, orch_cfg=None, grip_force=None, module_hook=None):
+                       operator=None, search=None, stop_on_disagreement=False, checker="oracle", vlm_caller=None, drop_monitor=True, orch_cfg=None, grip_force=None, module_hook=None, stance_mode=None):
     """Packages the pipeline as a task for the generic episode runner.
 
     Args:
@@ -46,17 +46,30 @@ def make_pipeline_task(plan=BEAKER_ON_HOTPLATE_PLAN, task_cfg=TASK_CFG, staging_
         drop_monitor (bool): Run the drop monitor (src/mpvi_monitors.py; it only logs). Defaults to True.
         orch_cfg (dict or None): The orchestrator's failure settings (ORCH_CFG: retry_max, knocked_over_deg). Defaults to ORCH_CFG.
         grip_force (float or None): Overrides the grip force per finger, newtons, for a test (the forced slip test); None uses the grip force table (GRIP_FORCE_TABLE is never changed).
+        stance_mode (str or None): Overrides BENCH_STANCE_CFG["mode"]: "task_cfg" (today's stance, TASK_CFG's) or "bench_region" (src/stance_select.py: the stance of the plan's first run comes from the inverse-reach
+            region and the full check, the plan gets the end_at_zombie flags; a plan that cannot be given a stance raises StanceSelectionError with the reason before anything starts). Defaults to the setting.
         module_hook (callable or None): A test seam: module_hook(modules, model, data) -> modules, called on the module dictionary before the orchestrator is built (a test wraps a module to inject a failure).
 
     Returns:
         dict: The task (see src/episode_runner.py); task["pipeline"] is filled with the orchestrator and the modules when the policy is made.
     """
-    task = make_task(None, task_cfg, staging_cfg, {**episode_cfg, "timeout_after_handoff": PICK_PLACE_CFG["episode_timeout_s"]}, success_cfg)
     built = {}
     use_vlm = checker == "vlm"
     if checker not in ("oracle", "vlm") or (use_vlm and vlm_caller is None):
         raise ValueError("checker is 'oracle' or 'vlm' (the latter needs vlm_caller)")
     tagged = postprocess(plan, stop_on_disagreement)
+    mode = stance_mode or BENCH_STANCE_CFG["mode"]
+    stance_report = None
+    if mode == "bench_region":
+        from src.stance_select import StanceSelectionError, apply_stance_selection
+        sel = apply_stance_selection(tagged, task_cfg)
+        stance_report = sel["report"]
+        if not sel["ok"]:
+            raise StanceSelectionError(sel["stop"])
+        task_cfg, tagged = sel["task_cfg"], sel["plan"]
+    elif mode != "task_cfg":
+        raise ValueError(f"BENCH_STANCE_CFG['mode'] is 'task_cfg' or 'bench_region', not {mode!r}")
+    task = make_task(None, task_cfg, staging_cfg, {**episode_cfg, "timeout_after_handoff": PICK_PLACE_CFG["episode_timeout_s"]}, success_cfg)
 
     def make_policy(model, data):
         """Builds the modules and the orchestrator for this model and state."""
@@ -86,4 +99,5 @@ def make_pipeline_task(plan=BEAKER_ON_HOTPLATE_PLAN, task_cfg=TASK_CFG, staging_
     task.update(make_policy=make_policy, check_success=check_success, pipeline=built)
     task["meta"] = {**task["meta"], "plan": plan}
     task["tagged_plan"] = tagged
+    task["stance_selection"] = stance_report
     return task

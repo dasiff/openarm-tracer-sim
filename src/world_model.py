@@ -32,6 +32,8 @@ from src.task_config import BEAKER_CFG, TASK_CFG
 
 BEAKER_PHRASES = ("beaker", "glass beaker")
 HOTPLATE_PHRASES = ("hotplate", "hot plate")
+HOTPLATE_SHAPE = {"kind": "box", "half": (0.09, 0.09)}          # m: the hotplate's footprint seen from above (models/objects/hotplate.xml: the base box), for the stance selection's obstacles and supports
+BEAKER_SHAPE = lambda: {"kind": "cylinder", "radius": BEAKER_CFG["outer_diameter"] / 2}   # the beaker's footprint
 HOTPLATE_HEIGHT = 0.068        # m: the hotplate's top above the bench top (models/objects/hotplate.xml: site "hotplate_top"); the configured (no model) source needs it, the simulator source reads it
 BENCH_PHRASES = ("bench", "lab bench")
 
@@ -319,10 +321,10 @@ class SimGroundTruthSource:
         world.upsert(Entry("beaker", "beaker", BEAKER_PHRASES, "object", bpos,
                            d.xmat[self.beaker_body].reshape(3, 3)[:, 2].copy(),
                            {"contents": "liquid" if self.beaker_cfg["liquid_mass"] > 0 else "empty", "height": self.beaker_cfg["height"], "held_by": self.held_by(), "location": "bench",
-                            "supported_by": "hotplate" if on_plate else "bench"},
+                            "supported_by": "hotplate" if on_plate else "bench", "shape": BEAKER_SHAPE()},
                            "sim_ground_truth", t))
         world.upsert(Entry("hotplate", "hotplate", HOTPLATE_PHRASES, "fixture", hp_top,
-                           d.xmat[self.hotplate_body].reshape(3, 3)[:, 2].copy(), {"location": "bench", "supported_by": "bench", "height": float(hp_top[2] - top_z)}, "map", t))
+                           d.xmat[self.hotplate_body].reshape(3, 3)[:, 2].copy(), {"location": "bench", "supported_by": "bench", "height": float(hp_top[2] - top_z), "shape": HOTPLATE_SHAPE}, "map", t))
         xy = cfg["staging_xy"]
         g = m.geom("bench_top")
         c, hs = d.geom_xpos[g.id], m.geom_size[g.id]                  # the open bench blocks its whole outline from the floor up (an overhang: A* never drives under it)
@@ -356,6 +358,6 @@ class StaticTaskSource:
         held = world._entries["beaker"].properties.get("held_by") if "beaker" in world._entries else None
         up = np.array([0.0, 0.0, 1.0])
         world.upsert(Entry("beaker", "beaker", BEAKER_PHRASES, "object", np.array([*c["beaker_xy"], 0.0]), up,
-                           {"contents": "liquid" if b["liquid_mass"] > 0 else "empty", "height": b["height"], "held_by": held, "location": "bench", "supported_by": "bench"}, "config", t))
-        world.upsert(Entry("hotplate", "hotplate", HOTPLATE_PHRASES, "fixture", np.array([*c["hotplate_xy"], 0.0]), up, {"location": "bench", "supported_by": "bench", "height": HOTPLATE_HEIGHT}, "config", t))
+                           {"contents": "liquid" if b["liquid_mass"] > 0 else "empty", "height": b["height"], "held_by": held, "location": "bench", "supported_by": "bench", "shape": BEAKER_SHAPE()}, "config", t))
+        world.upsert(Entry("hotplate", "hotplate", HOTPLATE_PHRASES, "fixture", np.array([*c["hotplate_xy"], 0.0]), up, {"location": "bench", "supported_by": "bench", "height": HOTPLATE_HEIGHT, "shape": HOTPLATE_SHAPE}, "config", t))
         world.upsert(Entry("bench", "bench", BENCH_PHRASES, "fixture", np.array([*c["staging_xy"], 0.0]), None, {"top_z": 0.0, "surface": True, "stance": _stance(c)}, "config", t))

@@ -526,9 +526,17 @@ INSTRUCTION_CFG = {
 # Bench rectangle stance selection (overnight queue stage 5, replaces the S1 to S6 ranking; David 2026-10-22)
 # ----------------------------------------------------------------------------------------------------------
 # ----------------------------------------------------------------------------------------------------------
-# Bench stance selection by an inverse-reach region (David 2026-10-23, step 3 part C; src/bench_stance.py; replaces the measured rectangle BENCH_RECT_CFG)
+# Bench stance selection by an inverse-reach region (David 2026-10-23, step 3 part C; src/bench_stance.py; replaced the measured rectangle, which is on record in the design plan as not built)
 # ----------------------------------------------------------------------------------------------------------
 BENCH_STANCE_CFG = {
+    # The stance-selection setting (David 2026-10-23, C3, M175). "task_cfg" (the default): today's fixed stance, TASK_CFG's, nothing else changes. "bench_region": this algorithm (src/stance_select.py): the planner's
+    # runs of consecutive steps on one bench surface are given a stance by the inverse-reach region and the full check, behind make_pipeline_task.
+    "mode": "task_cfg",                         # [row M175]
+    # Plain words: with navigation ON the robot may be driven to the stance the algorithm chooses (the first navigation step moves it, later ones are null when the next objects are served from the same stance);
+    # with navigation OFF it stays at TASK_CFG's stance and a plan that stance does not serve stops with "needs navigation on".
+    "navigation": True,                         # [row M175: David: the new setting value runs with navigation on]
+    "max_run_steps": 4,                         # count: the most manipulation steps in one run (the longest-run search starts at min(this, the steps left)) [row M175: David]
+    "full_check_fallbacks": 3,                  # count: when the full check fails the best stance of a run, this many of the next ranked stances are tried [row M175: David]
     # Plain words: every one of the 12 approach bins of the reach maps is a level side grasp (the hand's approach axis and finger axis within 5 degrees of horizontal), so none is "from above or below". What
     # the bench rules out is the hand coming from the far side of the object: the robot stands in front of the bench facing it, and the hand cannot get behind an object on the bench. The bin k points the hand
     # k * 30 degrees from the robot's forward axis (towards the left); the bins whose direction has a forward component are 9, 10, 11, 0, 1, 2, 3 (-90 to +90 degrees: 9 and 3 are the hand moving
@@ -570,20 +578,3 @@ BENCH_STANCE_CFG = {
     "chain_samples": 24,                        # count: points along each chain segment tested against a cylinder [row M170]
 }
 
-BENCH_RECT_CFG = {
-    "mode": "task_cfg",                    # "task_cfg": today's fixed stance (TASK_CFG), nothing else changes; "bench_rectangle": park where the next step's targets sit in the rectangle below [row M150]
-    # ASSUMPTION (David 2026-10-22): manipulation happens on the lab bench only, with the pedestal at one fixed height (TASK_CFG["pedestal_q"], the finder's output); nothing is beaker-specific.
-    "work_heights_m": (0.02, 0.06, 0.10),  # m above the bench top: the hand's pad centre heights the rectangle must cover (placeholder band for a hand working on the bench: a 10 cm beaker's grasp band is 0.045 to 0.06) [row M150 PENDING David]
-    "margin_m": 0.03,                      # m: the measured rectangle is shrunk by this on every side [row M150]
-    # The rectangle, measured offline by experiments/bench_rectangle_measure.py from the reach maps at the pedestal height and the work heights: in the base frame facing the bench (x forward, y left), metres.
-    # None until measured. Plain words: "forward_near" is the nearest distance from the base origin to the rectangle's near edge, "forward_far" the farthest; "right" and "left" are the rectangle's sides.
-    # Measured 2026-10-22 (experiments/bench_rectangle_measure.py; picture docs/reports/bench_rectangle.png): bench top 0.960 m, pedestal 0.155 m, pad centre 0.02, 0.06 and 0.10 m above the top, 24 reach maps, margin 3 cm.
-    # The LEFT arm's rectangle is stored because the pipeline's manipulating arm is the left one (raw: forward 0.12 to 0.37 m, 0.08 m right to 0.44 m left, 0.130 m^2). For comparison, shrunk: the right arm
-    # alone forward 0.07 to 0.34, left -0.42 to -0.07; both arms united (either arm reaches each point) forward 0.13 to 0.39, right -0.35 to left 0.36 (it is wide only because the right arm covers the right half).
-    "arm": "left",                         # the arm whose reach the rectangle is [row M150 PENDING David: left because the pipeline's arm is left]
-    "rectangle": {"forward_near": 0.15,    # m: the nearest the targets may be to the base origin along the base's forward direction (toward the bench)
-                  "forward_far": 0.34,     # m: the farthest
-                  "right": -0.05,          # m: the rectangle's right side (negative: to the base's right)
-                  "left": 0.41},           # m: the rectangle's left side [row M150]
-    "shift_along_m": 0.05, "shift_across_m": 0.03, "max_shifts": 4,   # the shifted parking spots tried when the full check fails: +-5 cm along the bench, +-3 cm toward/away, at most 4, then stop and report [row M150]
-}

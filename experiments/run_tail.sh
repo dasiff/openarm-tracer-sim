@@ -12,7 +12,6 @@ for t in "$@"; do
   case "$t" in
     nav_core_test) args="--sim";;
     nav_follow_sim_test) args="--only on";;
-    stance_select_pipeline_test) args="--plumbing-same";;
     reach_map_restamp) args="--check";;
     *) args="";;
   esac

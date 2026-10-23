@@ -9,6 +9,7 @@ Steps: (1) the selection, inside make_pipeline_task: the context, the region, th
 Reports the chosen stance next to TASK_CFG's, the full check's verdicts, the selection time and the staging's arrival errors.
 """
 
+import argparse
 import gc
 import json
 import os
@@ -41,24 +42,25 @@ def check(name, ok, detail=""):
     print(f"  {'PASS' if ok else 'FAIL'}  {name}  {detail}", flush=True)
 
 
-def main():
-    print("1. the selection (inside make_pipeline_task)", flush=True)
+def main(mode="bench_region"):
+    print(f"1. the selection (inside make_pipeline_task), stance mode {mode}", flush=True)
     t0 = time.perf_counter()
-    task = make_pipeline_task(PLAN4, stance_mode="bench_region")
+    task = make_pipeline_task(PLAN4, stance_mode=mode)
     t_sel = time.perf_counter() - t0
     gc.collect()
     rep = task["stance_selection"]
-    run = rep["runs"][0]
-    st = run["stance"]
-    print(f"  chosen stance {np.round(st['xy'], 3).tolist()} pedestal {st['q']} (TASK_CFG's: {TASK_CFG['staging_xy']} pedestal {TASK_CFG['pedestal_q']})\n  runs {[(r['steps'], r['nav']) for r in rep['runs']]}; null navigation steps {rep['null_nav']}\n"
-          f"  full check {[(np.round(t['xy'], 3).tolist(), t['q'], t.get('full_check_ok'), t.get('failed')) for t in run['full_check']]}\n  selection time (the full check's simulation load included): {t_sel:.1f} s", flush=True)
-    check("the default mode is 'task_cfg'", BENCH_STANCE_CFG["mode"] == "task_cfg")
-    check("a stance was chosen and passed the full check", run["full_check"][-1].get("full_check_ok") is True)
-    check("one run, the second navigation step is null", len(rep["runs"]) == 1 and rep["null_nav"] == [2] and run["steps"] == [1, 3], f"{rep['null_nav']}")
-    d = float(np.hypot(*(np.array(st["xy"]) - np.array(TASK_CFG["staging_xy"]))))
-    print(f"  the chosen spot is {1000 * d:.0f} mm from TASK_CFG's", flush=True)
+    if mode == "bench_region":
+        run = rep["runs"][0]
+        st = run["stance"]
+        print(f"  chosen stance {np.round(st['xy'], 3).tolist()} pedestal {st['q']} (TASK_CFG's: {TASK_CFG['staging_xy']} pedestal {TASK_CFG['pedestal_q']})\n  runs {[(r['steps'], r['nav']) for r in rep['runs']]}; null navigation steps {rep['null_nav']}\n"
+              f"  full check {[(np.round(t['xy'], 3).tolist(), t['q'], t.get('full_check_ok'), t.get('failed')) for t in run['full_check']]}\n  selection time (the full check's simulation load included): {t_sel:.1f} s", flush=True)
+        check("the default mode is 'task_cfg'", BENCH_STANCE_CFG["mode"] == "task_cfg")
+        check("a stance was chosen and passed the full check", run["full_check"][-1].get("full_check_ok") is True)
+        check("one run, the second navigation step is null", len(rep["runs"]) == 1 and rep["null_nav"] == [2] and run["steps"] == [1, 3], f"{rep['null_nav']}")
+        d = float(np.hypot(*(np.array(st["xy"]) - np.array(TASK_CFG["staging_xy"]))))
+        print(f"  the chosen spot is {1000 * d:.0f} mm from TASK_CFG's", flush=True)
 
-    print("\n2. the pipeline on the chosen stance", flush=True)
+    print("\n2. the pipeline on " + ("the chosen stance" if rep else "TASK_CFG's stance"), flush=True)
     sim = load_task(cameras=True)
     out = Path(tempfile.mkdtemp(prefix="stance_select_"))
     s = run_episode(task, sim.model, sim.data, out_dir=out / "episode", record_dir=out / "recording")
@@ -70,7 +72,7 @@ def main():
     a = srep.get("arrival_at_end_of_drive") or {}
     h = srep.get("base_pose_error_at_handoff") or {}
     print(f"  arrival at the approach spot {a}; handoff pose error {h}")
-    check("the staging arrived within 1 cm and 1 degree at the chosen stance", bool(a) and bool(h) and a["pos_err_mm"] <= 10.0 and abs(a["yaw_err_deg"]) <= 1.0 and h["pos_err_mm"] <= 10.0 and abs(h["yaw_err_deg"]) <= 1.0)
+    check("the staging arrived within 1 cm and 1 degree at the stance", bool(a) and bool(h) and a["pos_err_mm"] <= 10.0 and abs(a["yaw_err_deg"]) <= 1.0 and h["pos_err_mm"] <= 10.0 and abs(h["yaw_err_deg"]) <= 1.0)
     ok, diag = task["check_success"](sim.model, sim.data)
     check("the beaker stands on the hotplate", ok, str({k: diag[k]["ok"] for k in diag if isinstance(diag[k], dict) and "ok" in diag[k]}))
     print("\n3. the replay", flush=True)
@@ -78,7 +80,7 @@ def main():
     gc.collect()
     r = replay_run(out / "recording", video="none", quiet=True)
     check("the replay is bit-identical", r["ok"], f"{r['ticks']} ticks, mismatch {r['mismatch']}")
-    keep = PROJECT_ROOT / "data" / "stance_select_report.json"
+    keep = PROJECT_ROOT / "data" / ("stance_select_report.json" if rep else "stance_select_report_task_cfg.json")
     tmp = keep.with_suffix(".tmp")
     tmp.write_text(json.dumps({"selection": rep, "select_seconds": t_sel, "arrival": a, "handoff": h, "taskcfg_stance": {"xy": TASK_CFG["staging_xy"], "yaw": TASK_CFG["staging_yaw"], "pedestal_q": TASK_CFG["pedestal_q"]}}, indent=1, default=str))
     tmp.replace(keep)
@@ -88,4 +90,6 @@ def main():
 
 
 if __name__ == "__main__":
-    sys.exit(0 if main() else 1)
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--stance-mode", choices=["task_cfg", "bench_region"], default="bench_region", help="BENCH_STANCE_CFG['mode'] for the run (default bench_region); under task_cfg the selection checks are left out")
+    sys.exit(0 if main(ap.parse_args().stance_mode) else 1)

@@ -46,7 +46,7 @@ def check(name, ok, detail=""):
 
 def main(args):
     sim = load_task(cameras=True)
-    task = make_pipeline_task()
+    task = make_pipeline_task(stance_mode=args.stance_mode)
     out = Path(args.keep) if args.keep else Path(tempfile.mkdtemp(prefix="mpvi_pipeline_"))
     for sub in ("episode", "recording"):                 # the recorder does not clear old chunk files: a longer earlier run would leave extra ticks in the replay
         shutil.rmtree(out / sub, ignore_errors=True)
@@ -110,6 +110,7 @@ def main(args):
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
+    ap.add_argument("--stance-mode", choices=["task_cfg", "bench_region"], default=None, help="BENCH_STANCE_CFG['mode'] for the run (default: the setting, task_cfg)")
     ap.add_argument("--keep", help="keep the episode log and the recording in this directory")
     main(ap.parse_args())
     print(f"\n{sum(results)}/{len(results)} checks passed")

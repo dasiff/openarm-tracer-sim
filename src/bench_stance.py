@@ -25,7 +25,7 @@ smallest count over the reachable ones, (3) the distance from the cell to the ed
 the distance (3) rounded to 1 cm.
 
 Contents:
-    BenchStanceError, load_maps, maps_stamp, bench_frame, camera_poses, pedestal_commands, build_region, get_region, counts, filter_obstacles, count_at, make_extra_blocked, overlay.
+    BenchStanceError, load_maps, maps_stamp, bench_frame, camera_poses, pedestal_commands, build_region, get_region, counts, filter_obstacles, count_at, make_extra_blocked, robot_silhouettes, gripper_view_ok, hidden_fraction, spec_in_base_frame, box_surface_samples, cylinder_surface_samples, widest_run, overlay.
 """
 
 import hashlib
@@ -38,7 +38,7 @@ import numpy as np
 from scipy import ndimage
 
 from src.reach_map import load_map
-from src.task_config import BENCH_STANCE_CFG, STANCE_CFG, STANCE_REQUIREMENTS
+from src.task_config import BENCH_STANCE_CFG, PICK_PLACE_CFG, STANCE_CFG, STANCE_REQUIREMENTS
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
@@ -72,16 +72,19 @@ def bench_frame(yaw):
     return np.array([math.cos(yaw), math.sin(yaw)]), np.array([-math.sin(yaw), math.cos(yaw)])
 
 
-def camera_poses(model, qs, camera="eagle_cam"):
+def camera_poses(model, qs, camera="eagle_cam", chk=None, ref_stance=None, cache_dir=None):
     """The eagle camera's pose in the base frame for each pedestal command (the camera is fixed to the torso, so only the pedestal moves it).
 
     Args:
         model (mujoco.MjModel): The compiled model.
         qs (iterable of float): The pedestal commands.
         camera (str): The camera name. Defaults to "eagle_cam".
+        chk (src.stance_checks.StanceChecks or None): With it (and ref_stance), the robot's silhouettes ("sil", see robot_silhouettes) and the grippers-in-view flags ("grip", gripper_view_ok) are added.
+        ref_stance (tuple or None): (x, y, yaw) where the silhouettes are rendered. Defaults to None.
+        cache_dir (str or Path or None): Where the silhouettes are kept.
 
     Returns:
-        dict: {"qs", "pos" (nq, 3), "R" (nq, 3, 3) (camera axes in the base frame), "W", "H" (pixels), "fovy" (degrees)}.
+        dict: {"qs", "pos" (nq, 3), "R" (nq, 3, 3) (camera axes in the base frame), "W", "H" (pixels), "fovy" (degrees)}, plus "sil" (bool (nq, H, W)) and "grip" (bool (nq,)) when chk is given.
     """
     import mujoco
     from src import robot_specs
@@ -97,7 +100,12 @@ def camera_poses(model, qs, camera="eagle_cam"):
         pos.append(Rb.T @ (d.cam_xpos[c] - pb))
         R.append(Rb.T @ d.cam_xmat[c].reshape(3, 3))
     W, H = [float(v) for v in model.cam_resolution[c]]
-    return {"qs": [float(q) for q in qs], "pos": np.array(pos), "R": np.array(R), "W": W, "H": H, "fovy": float(model.cam_fovy[c])}
+    out = {"qs": [float(q) for q in qs], "pos": np.array(pos), "R": np.array(R), "W": W, "H": H, "fovy": float(model.cam_fovy[c])}
+    if chk is not None:
+        out["sil"] = robot_silhouettes(model, chk, qs, ref_stance, camera, cache_dir)
+        out["grip"] = gripper_view_ok(chk, qs, ref_stance)
+        out["arm_pts"] = arm_points(model, chk)
+    return out
 
 
 def pedestal_commands(cfg=BENCH_STANCE_CFG):
@@ -113,13 +121,13 @@ def _axes(cfg):
     return b, o
 
 
-def _view_ok(cams, qi, bb, oo, zs, margin):
-    """Whether the points (b, o, z) (z above the base origin) are inside the camera's image with the margin, for every height in zs: bool like bb."""
+def _view_ok(cams, qi, bb, oo, pts, margin):
+    """Whether the points (dx, dy, z) around the object at (b, o) (z above the base origin) are all inside the camera's image with the margin: bool like bb."""
     th = math.tan(math.radians(cams["fovy"]) / 2)
     W, H = cams["W"], cams["H"]
     ok = np.ones(bb.shape, bool)
-    for z in zs:
-        P = np.stack([bb, oo, np.full(bb.shape, z)], axis=-1)
+    for dx, dy, z in pts:
+        P = np.stack([bb + dx, oo + dy, np.full(bb.shape, z)], axis=-1)
         pc = (P - cams["pos"][qi]) @ cams["R"][qi]
         depth = -pc[..., 2]
         safe = np.maximum(depth, 1e-6)
@@ -129,21 +137,47 @@ def _view_ok(cams, qi, bb, oo, zs, margin):
     return ok
 
 
-def build_region(maps, robot, cams, arm, z_points, cfg=BENCH_STANCE_CFG, margin=STANCE_REQUIREMENTS["view_min_margin"]):
+def spec_in_base_frame(obj, yaw, base_z):
+    """An object's inputs to the region, in the base frame (x towards the bench, y to the left; z above the base origin): the world offsets of its corners and surface samples turned by the heading.
+
+    Args:
+        obj (dict): "xy", "z_points", "surface_z", "corners" ((8, 3) world points of its bounding box), "samples" ((K, 3) world points on its surface), "hidden_max" (largest hidden share), optionally "radius_shape" (a cylinder's radius; with "z0", "z1") when the object is a cylinder rather than a box.
+        yaw (float): The heading that faces the bench.
+        base_z (float): The base origin's height above the floor.
+
+    Returns:
+        dict: "z_points" (above the base origin), "surface_z", "corners" (8, 3), "samples" (K, 3), "hidden_max".
+    """
+    n, t = bench_frame(yaw)
+    xy = np.asarray(obj["xy"], float)
+
+    def conv(P):
+        P = np.asarray(P, float)
+        d = P[:, :2] - xy
+        return np.stack([d @ n, d @ t, P[:, 2] - base_z], axis=-1)
+    corners = conv(obj["corners"])
+    shape = ("cyl", float(obj["radius_shape"]), float(obj["z0"]) - base_z, float(obj["z1"]) - base_z) if obj.get("radius_shape") else ("box", corners.min(axis=0), corners.max(axis=0))
+    return {"z_points": [float(z) - base_z for z in obj["z_points"]], "surface_z": float(obj["surface_z"]) - base_z, "corners": corners, "samples": conv(obj["samples"]),
+            "hidden_max": float(obj["hidden_max"]), "shape": shape}
+
+
+def build_region(maps, robot, cams, arm, spec, cfg=BENCH_STANCE_CFG, margin=STANCE_REQUIREMENTS["view_min_margin"]):
     """Builds one object's region (see the module docstring).
 
     Args:
         maps (dict): {(side, bin): ReachMap}.
         robot (dict): From stance_finder.robot_geometry.
-        cams (dict): From camera_poses, for the pedestal commands of `cfg`.
+        cams (dict): From camera_poses with chk (so with "sil" and "grip"), for the pedestal commands of `cfg`.
         arm (str): "left" or "right".
-        z_points (list of float): World heights of the grasp-band points, metres.
+        spec (dict): From spec_in_base_frame.
         cfg (dict): BENCH_STANCE_CFG.
         margin (float): The framing margin, fraction of the image.
 
     Returns:
-        dict: "bins" (the approach bins), "qs", "b", "o" (the axes), "reach" (bool (nq, nbins, nb, no): this bin has a reachable band height there), "view" (bool (nq, nb, no)).
+        dict: "bins", "qs", "b", "o" (the axes), "reach" (bool (nq, nbins, nb, no): every path point of the bin is reachable: the band heights, the standoff, over and lift points of src/task_points),
+        "view" (bool (nq, nb, no): the bounding box's corners inside the view, both grippers at home inside the view, the object not hidden by more than the limit).
     """
+    from src.task_points import path_offsets
     qs = cams["qs"]
     b, o = _axes(cfg)
     bb, oo = np.meshgrid(b, o, indexing="ij")
@@ -151,44 +185,67 @@ def build_region(maps, robot, cams, arm, z_points, cfg=BENCH_STANCE_CFG, margin=
     bins = list(cfg["approach_bins"])
     reach = np.zeros((len(qs), len(bins), len(b), len(o)), bool)
     view = np.zeros((len(qs), len(b), len(o)), bool)
-    zs = np.asarray(z_points, float)
+    zs = [z + robot["base_z"] for z in spec["z_points"]]                    # world heights (the maps are looked up in the shoulder frame from the world height)
+    surf = spec["surface_z"] + robot["base_z"]
     for qi, q in enumerate(qs):
         zt = robot["base_z"] + robot["torso_z0"] + robot["lift_factor"] * q + sz
-        view[qi] = _view_ok(cams, qi, bb, oo, [min(zs) - robot["base_z"], max(zs) - robot["base_z"]], margin)
+        ok_view = _view_ok(cams, qi, bb, oo, spec["corners"], margin) if cams["grip"][qi] else np.zeros(bb.shape, bool)
+        hid = np.zeros(bb.shape)
+        if ok_view.any():
+            hid = hidden_fraction(cams, cams["sil"], qi, bb, oo, spec["samples"])
+        view[qi] = ok_view & (hid <= spec["hidden_max"] + cfg["hidden_tolerance"] * (spec["hidden_max"] == 0))
+        if ok_view.any() and view[qi].any():                                # the arms at home keep the home clearance from this object (the finder's requirement; the furniture is the overlay's)
+            ap = cams["arm_pts"].copy()
+            ap[:, 2] += robot["lift_factor"] * q - robot["base_z"]
+            idx = np.argwhere(view[qi])
+            C = np.stack([b[idx[:, 0]], o[idx[:, 1]], np.zeros(len(idx))], axis=-1)
+            keep = np.ones(len(idx), bool)
+            for a0 in range(0, len(idx), 2000):
+                sl = slice(a0, a0 + 2000)
+                dm = (box_distance(ap, C[sl], spec["shape"][1], spec["shape"][2]) if spec["shape"][0] == "box" else cylinder_distance(ap, C[sl], *spec["shape"][1:])).min(axis=-1)
+                keep[sl] = dm - 0.003 >= cfg["home_clearance_m"]
+            view[qi][idx[~keep, 0], idx[~keep, 1]] = False
         for bi, k in enumerate(bins):
             rm = maps.get((arm, k))
             if rm is None:
                 continue
-            ix = np.floor((bb - sx - rm.origin[0]) / rm.cube).astype(int)
-            iy = np.floor((oo - sy - rm.origin[1]) / rm.cube).astype(int)
-            inb = (ix >= 0) & (ix < rm.cubes.shape[0]) & (iy >= 0) & (iy < rm.cubes.shape[1])
-            for z in zs:
+            pts = [(0.0, 0.0, z) for z in zs] + [(dx, dy, z) for _, dx, dy, z in path_offsets(k, zs, surf)]
+            ok = np.ones(bb.shape, bool)
+            for dx, dy, z in pts:
+                ix = np.floor((bb + dx - sx - rm.origin[0]) / rm.cube).astype(int)
+                iy = np.floor((oo + dy - sy - rm.origin[1]) / rm.cube).astype(int)
                 iz = int(np.floor((z - zt - rm.origin[2]) / rm.cube))
-                if 0 <= iz < rm.cubes.shape[2]:
-                    hit = np.zeros(bb.shape, bool)
-                    hit[inb] = rm.cubes[ix[inb], iy[inb], iz]
-                    reach[qi, bi] |= hit
+                if not 0 <= iz < rm.cubes.shape[2]:
+                    ok[:] = False
+                    break
+                inb = (ix >= 0) & (ix < rm.cubes.shape[0]) & (iy >= 0) & (iy < rm.cubes.shape[1])
+                hit = np.zeros(bb.shape, bool)
+                hit[inb] = rm.cubes[ix[inb], iy[inb], iz]
+                ok &= hit
+            reach[qi, bi] = ok
     return {"bins": bins, "qs": list(qs), "b": b, "o": o, "reach": reach, "view": view}
 
 
-def _key(maps, robot, cams, arm, depth, z_points, bench_open, cfg):
-    blob = json.dumps({"arm": arm, "depth": round(float(depth), 4), "z": [round(float(z), 4) for z in z_points], "bench_open": bool(bench_open), "stamp": maps_stamp(maps, arm),
-                       "bins": list(cfg["approach_bins"]), "grid": cfg["grid_m"], "fwd": cfg["forward_range"], "lat": cfg["lateral_range"], "qs": [round(q, 5) for q in cams["qs"]],
-                       "cam": np.round(np.concatenate([cams["pos"].ravel(), cams["R"].ravel()]), 4).tolist(), "fov": cams["fovy"],
+def _key(maps, robot, cams, arm, depth, spec, bench_open, cfg):
+    blob = json.dumps({"arm": arm, "depth": round(float(depth), 4), "z": [round(float(z), 4) for z in spec["z_points"]], "surface": round(spec["surface_z"], 4), "bench_open": bool(bench_open),
+                       "corners": np.round(spec["corners"], 4).tolist(), "samples": hashlib.sha256(np.round(spec["samples"], 4).tobytes()).hexdigest()[:12], "hidden": [spec["hidden_max"], cfg["hidden_tolerance"]],
+                       "stamp": maps_stamp(maps, arm), "bins": list(cfg["approach_bins"]), "grid": cfg["grid_m"], "fwd": cfg["forward_range"], "lat": cfg["lateral_range"],
+                       "qs": [round(q, 5) for q in cams["qs"]], "cam": np.round(np.concatenate([cams["pos"].ravel(), cams["R"].ravel()]), 4).tolist(), "fov": cams["fovy"],
+                       "sil": hashlib.sha256(np.packbits(cams["sil"]).tobytes()).hexdigest()[:12], "grip": cams["grip"].tolist(),
                        "robot": [round(float(robot["base_z"]), 4), round(float(robot["torso_z0"]), 4), round(float(robot["lift_factor"]), 4), np.round(robot["shoulder"][arm], 4).tolist()],
-                       "margin": STANCE_REQUIREMENTS["view_min_margin"]}, sort_keys=True)
+                       "margin": STANCE_REQUIREMENTS["view_min_margin"], "pick_place": [PICK_PLACE_CFG["standoff_m"], PICK_PLACE_CFG["clearance_m"]], "home": [cfg["home_clearance_m"], hashlib.sha256(np.round(cams["arm_pts"], 3).tobytes()).hexdigest()[:12], spec["shape"][0]], "version": 3}, sort_keys=True)
     return hashlib.sha256(blob.encode()).hexdigest()[:24]
 
 
-def get_region(maps, robot, cams, depth, z_points, arm=None, bench_open=True, cfg=BENCH_STANCE_CFG, use_cache=True, say=print):
+def get_region(maps, robot, cams, depth, spec, arm=None, bench_open=True, cfg=BENCH_STANCE_CFG, use_cache=True, say=print):
     """The cached region (builds and caches it when absent).
 
     Args:
         maps (dict): {(side, bin): ReachMap} from load_maps.
         robot (dict): From stance_finder.robot_geometry.
-        cams (dict): From camera_poses.
-        depth (float): The object's distance from the bench edge to its centre, metres (in the key: the region itself does not use it, the overlay's filters follow the bench).
-        z_points (list of float): World heights of the grasp-band points.
+        cams (dict): From camera_poses (with the silhouettes).
+        depth (float): The object's distance from the bench edge to its centre, metres (in the key).
+        spec (dict): From spec_in_base_frame.
         arm (str or None): Defaults to cfg["arm"].
         bench_open (bool): TASK_CFG["bench_open"] (in the key).
         cfg (dict): BENCH_STANCE_CFG.
@@ -199,7 +256,7 @@ def get_region(maps, robot, cams, depth, z_points, arm=None, bench_open=True, cf
         dict: As build_region, plus "seconds" (build time, 0 when read from the cache) and "cached" (bool).
     """
     arm = arm or cfg["arm"]
-    key = _key(maps, robot, cams, arm, depth, z_points, bench_open, cfg)
+    key = _key(maps, robot, cams, arm, depth, spec, bench_open, cfg)
     path = Path(PROJECT_ROOT) / cfg["cache_dir"] / f"{arm}_{key}.npz"
     if use_cache and path.exists():
         try:
@@ -209,7 +266,7 @@ def get_region(maps, robot, cams, depth, z_points, arm=None, bench_open=True, cf
         except Exception as e:                                         # a half-written or damaged file: rebuild
             say(f"[bench_stance] cache file {path.name} unreadable ({e}); rebuilding")
     t0 = time.time()
-    reg = build_region(maps, robot, cams, arm, z_points, cfg)
+    reg = build_region(maps, robot, cams, arm, spec, cfg)
     reg["seconds"], reg["cached"] = time.time() - t0, False
     if use_cache:
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -375,6 +432,33 @@ def robot_silhouettes(model, chk, qs, stance_xy_yaw, camera="eagle_cam", cache_d
     return out
 
 
+def arm_points(model, chk, max_points=500, sample_margin=0.003):
+    """Points on the surface of both arms at the zombie pose, in the base frame (base at the origin, yaw 0, pedestal command 0; z the world height with the base resting), thinned to at most max_points
+    (the stance finder's HomeClearanceMap takes the same points)."""
+    from src.home_clearance_map import _decimate, surface_samples
+    chk.place((0.0, 0.0, 0.0, 0.0))
+    pts = np.concatenate([surface_samples(model, chk.d, g) for g in chk.arm_geoms])
+    cell = 0.01
+    P = _decimate(pts, cell)
+    while len(P) > max_points:
+        cell *= 1.25
+        P = _decimate(pts, cell)
+    return P
+
+
+def box_distance(P, c, lo, hi):
+    """Distance from points P (M, 3) to the axis-aligned box [c + lo, c + hi] for centres c (..., 3): (..., M)."""
+    d = np.maximum(np.maximum(lo - (P - c[..., None, :]), (P - c[..., None, :]) - hi), 0.0)
+    return np.sqrt((d ** 2).sum(axis=-1))
+
+
+def cylinder_distance(P, c, r, z0, z1):
+    """Distance from points P (M, 3) to the vertical cylinder of radius r from z0 to z1 whose axis passes through c[..., :2]: (..., M)."""
+    dxy = np.hypot(P[:, 0] - c[..., None, 0], P[:, 1] - c[..., None, 1])
+    dz = np.maximum(np.maximum(z0 - P[:, 2], P[:, 2] - z1), 0.0)
+    return np.hypot(np.maximum(dxy - r, 0.0), dz)
+
+
 def gripper_view_ok(chk, qs, stance_xy_yaw, margin=STANCE_REQUIREMENTS["view_min_margin"]):
     """Per pedestal command: both grippers (tool point, hand, finger tips) at home are inside the fixed view with the margin (bool (nq,)). They ride with the torso, so the stance does not matter."""
     out = []
@@ -447,14 +531,52 @@ def self_blockers(info, robot, arm, cfg):
     return f"; blocked by {names}" if names else ""
 
 
+def box_surface_samples(corners, n=7):
+    """Points spread over the surface of the axis-aligned box that holds `corners` ((8, 3) world points): n x n on each of the 6 faces."""
+    lo, hi = np.min(corners, axis=0), np.max(corners, axis=0)
+    g = np.linspace(0.0, 1.0, n)
+    A, B = np.meshgrid(g, g)
+    A, B = A.ravel(), B.ravel()
+    pts = []
+    for ax in range(3):
+        o1, o2 = [i for i in range(3) if i != ax]
+        for side in (lo[ax], hi[ax]):
+            P = np.zeros((len(A), 3))
+            P[:, ax], P[:, o1], P[:, o2] = side, lo[o1] + A * (hi[o1] - lo[o1]), lo[o2] + B * (hi[o2] - lo[o2])
+            pts.append(P)
+    return np.concatenate(pts)
+
+
+def cylinder_surface_samples(xy, radius, z0, z1, n_ang=24, n_z=7):
+    """Points over a vertical cylinder's side and its top disc (world), centre xy, from z0 to z1."""
+    a = np.linspace(0, 2 * math.pi, n_ang, endpoint=False)
+    side = np.array([[xy[0] + radius * math.cos(t), xy[1] + radius * math.sin(t), z] for z in np.linspace(z0, z1, n_z) for t in a])
+    top = np.array([[xy[0] + r * math.cos(t), xy[1] + r * math.sin(t), z1] for r in (0.0, 0.5 * radius) for t in a])
+    return np.concatenate([side, top])
+
+
+def widest_run(valid):
+    """For each cell of (nq, ny, nx) bool `valid`, the widest run of consecutive True along axis 0 (the first one if several): (width in steps, lowest index, highest index); width 0 where none."""
+    run = np.zeros(valid.shape[1:], int)
+    best = np.zeros_like(run)
+    hi = np.zeros_like(run)
+    for i in range(valid.shape[0]):
+        run = np.where(valid[i], run + 1, 0)
+        upd = run > best
+        best = np.where(upd, run, best)
+        hi = np.where(upd, i, hi)
+    return best, hi - best + 1, hi
+
+
 def overlay(objects, maps, robot, cams, bench, extra_blocked=None, arm=None, cfg=BENCH_STANCE_CFG, use_cache=True, say=print):
-    """Finds the best (x, y, pedestal) for a list of objects (C2d).
+    """Finds the best (x, y, pedestal) for a list of objects (C2d, ranking of F2).
 
     Args:
-        objects (list of dict): Each {"name", "xy" (world), "depth" (from the bench edge), "z_points" (grasp-band heights), "radius", "z0", "z1" (the cylinder it is as an obstacle for the others)}.
+        objects (list of dict): Each {"name", "xy" (world), "depth" (from the bench edge), "z_points" (grasp-band heights, world), "surface_z", "corners" ((8, 3) world), "samples" ((K, 3) world),
+            "hidden_max", and, as an obstacle for the others, "radius", "z0", "z1"}.
         maps (dict): {(side, bin): ReachMap}.
         robot (dict): From robot_geometry.
-        cams (dict): From camera_poses.
+        cams (dict): From camera_poses (with the silhouettes).
         bench (dict): {"yaw": the heading that faces the bench, "open": bench_open}.
         extra_blocked (callable or None): f(X, Y, qs) -> bool (nq, ny, nx), True where the base origin may not be (furniture footprint, zombie clearance); built by the pipeline.
         arm (str or None): Defaults to cfg["arm"].
@@ -463,8 +585,9 @@ def overlay(objects, maps, robot, cams, bench, extra_blocked=None, arm=None, cfg
         say (callable): Progress lines.
 
     Returns:
-        dict: "ok" (bool: at least one object covered), "xy", "q", "covered" (names), "uncovered" (names), "counts" ({name: count at the best spot}), "score" (tuple), "grid" ((X, Y)), "map_best_q"
-        ((ny, nx) approach count of the best pedestal for the objects covered... per object in "maps"), "seconds" ({"region", "filter", "overlay"}).
+        dict: "ok", "xy", "q", "qi", "covered", "uncovered", "counts" ({name: count at the best spot}), "score" (objects covered, pedestal run width in m, smallest count, distance to the region's edge in m,
+        obstacle clearance in m), "run" ((q_lo, q_hi) of the chosen spot), "grid" (X, Y), "stack" ((nobj, nq, ny, nx) counts), "allowed", "width" ((ny, nx) run width in steps), "qmid" ((ny, nx) index of the chosen
+        height per cell), "valid" ((nq, ny, nx): the best number of objects covered), "seconds", "regions".
 
     Raises:
         BenchStanceError: If no object is covered anywhere (the message names the blockers).
@@ -479,11 +602,10 @@ def overlay(objects, maps, robot, cams, bench, extra_blocked=None, arm=None, cfg
     lo, hi = P.min(axis=0) - reach_m, P.max(axis=0) + reach_m
     xs, ys = np.arange(lo[0], hi[0], res) + 0.5 * res, np.arange(lo[1], hi[1], res) + 0.5 * res
     X, Y = np.meshgrid(xs, ys)
-    cnts, filt_alone = {}, {}
+    cnts, filt_alone, regs = {}, {}, {}
     t0 = time.time()
-    regs = {}
     for ob in objects:
-        regs[ob["name"]] = get_region(maps, robot, cams, ob["depth"], ob["z_points"], arm, bench["open"], cfg, use_cache, say)
+        regs[ob["name"]] = get_region(maps, robot, cams, ob["depth"], spec_in_base_frame(ob, bench["yaw"], robot["base_z"]), arm, bench["open"], cfg, use_cache, say)
     sec["region"] = time.time() - t0
     t0 = time.time()
     for ob in objects:
@@ -506,29 +628,32 @@ def overlay(objects, maps, robot, cams, bench, extra_blocked=None, arm=None, cfg
         blockers = []
         for ob in objects:
             raw = counts(regs[ob["name"]]).max()
-            blockers.append(f"{ob['name']}: best count {int(raw)} without obstacles, 0 with them"
-                            + self_blockers(filt_alone[ob["name"]], robot, arm, cfg))
+            blockers.append(f"{ob['name']}: best count {int(raw)} without obstacles, 0 with them" + self_blockers(filt_alone[ob["name"]], robot, arm, cfg))
         raise BenchStanceError("no stance covers any of the objects: " + "; ".join(blockers))
-    minc = np.where(stack > 0, stack, 99).min(axis=0)
-    minc = np.where(nobj == best_n, minc, 0)
-    edge = np.zeros(nobj.shape)
-    for qi in range(nq):
-        m = nobj[qi] == best_n
-        if m.any():
-            edge[qi] = ndimage.distance_transform_edt(np.pad(m, 1, constant_values=False))[1:-1, 1:-1] * res
-    dist_obs = np.full(nobj.shape, 9.0)
-    for p in objects:
-        dist_obs = np.minimum(dist_obs, np.maximum(np.hypot(X - p["xy"][0], Y - p["xy"][1]) - p["radius"], 0.0)[None])
     valid = nobj == best_n
-    cand = valid & (minc == minc[valid].max())
-    edge_r = np.round(edge, 2)
-    cand &= edge_r == edge_r[cand].max()
-    if len(objects) > 1:
-        cand &= dist_obs == dist_obs[cand].max()
-    qi, iy, ix = [int(v[0]) for v in np.nonzero(cand)]
+    width, q_lo, q_hi = widest_run(valid)                                              # F2: the widest run of consecutive heights per spot, its middle is the spot's height
+    qmid = (q_lo + q_hi) // 2
+    ys_i, xs_i = np.indices(width.shape)
+    minc_all = np.where(stack > 0, stack, 99).min(axis=0)
+    minc = np.where(width > 0, minc_all[qmid, ys_i, xs_i], 0)
+    edge_q = np.zeros(valid.shape)
+    for qi in range(nq):
+        if valid[qi].any():
+            edge_q[qi] = ndimage.distance_transform_edt(np.pad(valid[qi], 1, constant_values=False))[1:-1, 1:-1] * res
+    edge = edge_q[qmid, ys_i, xs_i]
+    dist_obs = np.full(width.shape, 9.0)
+    for p in objects:
+        dist_obs = np.minimum(dist_obs, np.maximum(np.hypot(X - p["xy"][0], Y - p["xy"][1]) - p["radius"], 0.0))
+    cand = width > 0
+    for key in (width, minc, np.round(edge, 2), np.round(dist_obs, 2) if len(objects) > 1 else None):
+        if key is None:
+            continue
+        cand &= key == key[cand].max()
+    iy, ix = [int(v[0]) for v in np.nonzero(cand)]
+    qi = int(qmid[iy, ix])
     sec["overlay"] = time.time() - t0
     covered = [nm for nm in names if cnts[nm][qi, iy, ix] > 0 and allowed[qi, iy, ix]]
     return {"ok": True, "xy": (float(X[iy, ix]), float(Y[iy, ix])), "q": float(qs[qi]), "qi": qi, "covered": covered, "uncovered": [nm for nm in names if nm not in covered],
             "counts": {nm: int(cnts[nm][qi, iy, ix]) for nm in names},
-            "score": (best_n, int(minc[qi, iy, ix]), float(round(edge[qi, iy, ix], 2)), float(dist_obs[qi, iy, ix])), "grid": (X, Y), "stack": stack, "allowed": allowed, "seconds": sec,
-            "regions": regs}
+            "score": (best_n, float(width[iy, ix] * cfg["pedestal_step"]), int(minc[iy, ix]), float(round(edge[iy, ix], 2)), float(dist_obs[iy, ix])), "run": (float(qs[q_lo[iy, ix]]), float(qs[q_hi[iy, ix]])),
+            "grid": (X, Y), "stack": stack, "allowed": allowed, "width": width, "qmid": qmid, "valid": valid, "edge": edge, "minc": minc, "dist_obs": dist_obs, "seconds": sec, "regions": regs}

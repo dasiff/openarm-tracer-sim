@@ -20,11 +20,12 @@ from src.home_clearance_map import HomeClearanceMap
 from src.stance_checks import StanceChecks
 from src.stance_finder import robot_geometry
 from src.task_beaker_hotplate import bench_top_z, load_task
-from src.task_config import BEAKER_CFG, BENCH_STANCE_CFG, STANCE_CFG, TASK_CFG
+from src.task_config import BEAKER_CFG, BENCH_STANCE_CFG, STANCE_CFG, STANCE_REQUIREMENTS, TASK_CFG
 
 
 def scene_objects(model, data):
-    """The test scene's objects as overlay inputs: the beaker (grasp band) and the hotplate (the beaker's band at its set-down height), cylinder sizes from the geoms."""
+    """The test scene's objects as overlay inputs: the beaker (grasp band) and the hotplate (the beaker's band at its set-down height). Corners come from the finder's own view points."""
+    from src.task_beaker_hotplate import view_points
     top = bench_top_z(model)
     edge = float(model.geom_pos[model.geom("bench_top").id][1] + model.geom_size[model.geom("bench_top").id][1])
     plate = model.geom("task_hotplate_top_plate")
@@ -36,8 +37,14 @@ def scene_objects(model, data):
     n, _ = bs.bench_frame(TASK_CFG["staging_yaw"])
     near = -edge                                                     # the bench's near edge along n (n = (0, -1): the largest y is the nearest)
     depth = lambda p: float(p @ n - near)
-    return [{"name": "beaker", "xy": bxy, "depth": depth(bxy), "z_points": [top + f * H for f in fr], "radius": BEAKER_CFG["outer_diameter"] / 2, "z0": top, "z1": top + H},
-            {"name": "hotplate", "xy": hxy, "depth": depth(hxy), "z_points": [plate_top + 0.002 + f * H for f in fr], "radius": 0.09, "z0": top, "z1": plate_top}]
+    vp = view_points(model, data)
+    bc = np.array([vp[f"beaker_corner{i}"] for i in range(8)])
+    hc = np.array([vp[f"hotplate_corner{i}"] for i in range(8)])
+    occ = STANCE_REQUIREMENTS["occlusion_max_hidden"]
+    return [{"name": "beaker", "xy": bxy, "depth": depth(bxy), "z_points": [top + f * H for f in fr], "surface_z": top, "corners": bc,
+             "samples": bs.cylinder_surface_samples(bxy, BEAKER_CFG["outer_diameter"] / 2, top, top + H), "hidden_max": occ["beaker"], "radius_shape": BEAKER_CFG["outer_diameter"] / 2, "radius": BEAKER_CFG["outer_diameter"] / 2, "z0": top, "z1": top + H},
+            {"name": "hotplate", "xy": hxy, "depth": depth(hxy), "z_points": [plate_top + 0.002 + f * H for f in fr], "surface_z": plate_top + 0.002, "corners": hc,
+             "samples": bs.box_surface_samples(hc), "hidden_max": occ["hotplate"], "radius": 0.09, "z0": top, "z1": plate_top}]
 
 
 if __name__ == "__main__":
@@ -50,7 +57,10 @@ if __name__ == "__main__":
     m, d = sim.model, sim.data
     robot = robot_geometry(m)
     qs = bs.pedestal_commands()
-    cams = bs.camera_poses(m, qs)
+    chk = StanceChecks(m, d, robot["base_z"])
+    t0 = time.time()
+    cams = bs.camera_poses(m, qs, chk=chk, ref_stance=(*TASK_CFG["staging_xy"], TASK_CFG["staging_yaw"]), cache_dir=BENCH_STANCE_CFG["cache_dir"])
+    print(f"camera poses, silhouettes (render, {len(qs)} heights) and gripper flags: {time.time() - t0:.1f} s; grippers in view at {int(cams['grip'].sum())} of {len(qs)} heights")
     maps = bs.load_maps(a.maps)
     objs = scene_objects(m, d)
     print({o["name"]: (np.round(o["xy"], 3).tolist(), round(o["depth"], 4)) for o in objs})
@@ -58,30 +68,39 @@ if __name__ == "__main__":
     extra = None
     if not a.no_extra:
         furn = FurnitureMap.from_model(m, mujoco.MjData(m), exclude_bodies=("task_beaker",))
-        chk = StanceChecks(m, d, robot["base_z"])
         P = np.mean([o["xy"] for o in objs], axis=0)
-        hcm = HomeClearanceMap(m, d, chk, P, robot_geometry=robot)
+        hcm = HomeClearanceMap(m, d, chk, P, robot_geometry=robot, slack=0.0)
         extra = bs.make_extra_blocked(furn, robot, yaw, hcm.clear_mask)
     t0 = time.time()
+    maps_t = time.time()
     res = bs.overlay(objs, maps, robot, cams, {"yaw": yaw, "open": TASK_CFG["bench_open"]}, extra, use_cache=False)
     print("regions built (no cache):", {k: round(v["seconds"], 3) for k, v in res["regions"].items()}, "overlay total", round(time.time() - t0, 2), "s", {k: round(v, 2) for k, v in res["seconds"].items()})
     t0 = time.time()
     res = bs.overlay(objs, maps, robot, cams, {"yaw": yaw, "open": TASK_CFG["bench_open"]}, extra)
     print("second call (regions cached on first):", {k: round(v, 2) for k, v in res["seconds"].items()}, "total", round(time.time() - t0, 2), "s")
+    t0 = time.time()
+    res = bs.overlay(objs, maps, robot, cams, {"yaw": yaw, "open": TASK_CFG["bench_open"]}, extra)
+    print("third call (all regions from the cache):", {k: round(v, 2) for k, v in res["seconds"].items()}, "total", round(time.time() - t0, 2), "s")
     X, Y = res["grid"]
     x0, y0 = TASK_CFG["staging_xy"]
     iy, ix = int(np.argmin(abs(Y[:, 0] - y0))), int(np.argmin(abs(X[0] - x0)))
     qi0 = int(np.argmin(abs(np.array(cams["qs"]) - TASK_CFG["pedestal_q"])))
     print("TASK_CFG stance", (x0, y0), "q", cams["qs"][qi0], "counts", {nm: int(res["stack"][k][qi0, iy, ix]) for k, nm in enumerate([o["name"] for o in objs])}, "allowed", bool(res["allowed"][qi0, iy, ix]))
     print("best", np.round(res["xy"], 3).tolist(), "q", res["q"], "score", res["score"], "covered", res["covered"], "counts", res["counts"])
-    nobj = (res["stack"] > 0).sum(axis=0)
-    names = [o["name"] for o in objs]
-    best_n = int(nobj.max())
-    from scipy import ndimage
-    m_edge = ndimage.distance_transform_edt(np.pad(nobj[qi0] == best_n, 1, constant_values=False))[1:-1, 1:-1] * BENCH_STANCE_CFG["grid_m"]
-    minc0 = int(np.where(res["stack"][:, qi0, iy, ix] > 0, res["stack"][:, qi0, iy, ix], 99).min())
-    obs0 = min(max(math.hypot(x0 - o["xy"][0], y0 - o["xy"][1]) - o["radius"], 0.0) for o in objs)
-    print("score at TASK_CFG (n objects, min count, edge distance at its pedestal, obstacle clearance):", (int(nobj[qi0, iy, ix]), minc0, round(float(m_edge[iy, ix]), 2), round(obs0, 3)), "| best:", res["score"])
+    from src.stance_checks import contiguous_runs
+    cell = (iy, ix)
+    ok_q = res["valid"][:, iy, ix]
+    runs = contiguous_runs(list(ok_q))
+    wide = max(runs, key=lambda r: r[1] - r[0]) if runs else None
+    qq = np.array(cams["qs"])
+    print("TASK_CFG stance: objects covered at its pedestal", int((res["stack"][:, qi0, iy, ix] > 0).sum()),
+          "| passing heights", [round(float(q), 2) for q in qq[ok_q]], "| widest run", None if wide is None else (round(float(qq[wide[0]]), 2), round(float(qq[wide[1]]), 2), f"{100 * (qq[wide[1]] - qq[wide[0]]) + 1:.0f} cm"),
+          "| run width cells", int(res["width"][iy, ix]), "| middle", round(float(qq[res["qmid"][iy, ix]]), 2), "| min count", int(res["minc"][iy, ix]), "| edge", round(float(res["edge"][iy, ix]), 2), "| clearance", round(float(res["dist_obs"][iy, ix]), 3))
+    print("best: score (objects, run width m, min count, edge m, clearance m)", res["score"], "run", res["run"])
+    json.dump({"best": {"xy": list(res["xy"]), "q": res["q"], "run": list(res["run"]), "score": list(res["score"])}, "task_cfg": {"xy": list(TASK_CFG["staging_xy"]), "q": TASK_CFG["pedestal_q"]}},
+              open("data/bench_stance_last.json.tmp", "w"))
+    import os
+    os.replace("data/bench_stance_last.json.tmp", "data/bench_stance_last.json")
     if a.png:
         import matplotlib
         matplotlib.use("Agg")

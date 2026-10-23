@@ -142,7 +142,10 @@ def main():
     pt = lambda p: [{"p": [float(v) for v in p], "arm": "left", "bin": None, "path": "grasp"}]
     on = {k: fc.check(A, pt(p), use_cache=False) for k, p in near.items()}
     check("the camera box is a static obstacle of the arm's collision filter", box_on)
-    check("task points next to the box fail the full check on the IK path check, by name (the hand would have to be inside the box)", all(r["failed"] == ["ik"] and not r["ok"] for r in on.values()),
+    # "6 cm in front of it" is NOT asserted: a hand coming from the front reaches that point without touching the box, so the IK finds a collision-free solution when its random start finds that approach
+    # (seen with the old and the new maps: seed 11 passes, seed 12 fails). The other two points need the hand inside the box and fail on every seed (2026-10-23, F follow-up).
+    check("task points behind and beside the box fail the full check on the IK path check, by name (the hand would have to be inside the box)",
+          all(on[k]["failed"] == ["ik"] and not on[k]["ok"] for k in ("3 cm behind the box centre", "6 cm to its right")),
           f"{ {k: (r['failed'], r['reason'][:60]) for k, r in on.items()} }")
     saved = (int(fc.model.geom_contype[box_g]), int(fc.model.geom_conaffinity[box_g]))
     fc.model.geom_contype[box_g] = fc.model.geom_conaffinity[box_g] = 0

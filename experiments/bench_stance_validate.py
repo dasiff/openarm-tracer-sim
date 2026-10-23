@@ -23,7 +23,7 @@ from src.task_beaker_hotplate import bench_top_z, load_task
 from src.task_config import BEAKER_CFG, BENCH_STANCE_CFG, STANCE_CFG, STANCE_REQUIREMENTS, TASK_CFG
 
 
-def scene_objects(model, data):
+def scene_objects(model, data, raise_m=0.0):
     """The test scene's objects as overlay inputs: the beaker (grasp band) and the hotplate (the beaker's band at its set-down height). Corners come from the finder's own view points."""
     from src.task_beaker_hotplate import view_points
     top = bench_top_z(model)
@@ -41,8 +41,10 @@ def scene_objects(model, data):
     bc = np.array([vp[f"beaker_corner{i}"] for i in range(8)])
     hc = np.array([vp[f"hotplate_corner{i}"] for i in range(8)])
     occ = STANCE_REQUIREMENTS["occlusion_max_hidden"]
-    return [{"name": "beaker", "xy": bxy, "depth": depth(bxy), "z_points": [top + f * H for f in fr], "surface_z": top, "corners": bc,
-             "samples": bs.cylinder_surface_samples(bxy, BEAKER_CFG["outer_diameter"] / 2, top, top + H), "hidden_max": occ["beaker"], "radius_shape": BEAKER_CFG["outer_diameter"] / 2, "radius": BEAKER_CFG["outer_diameter"] / 2, "z0": top, "z1": top + H},
+    r = raise_m                                                      # the beaker raised by this much on a made-up support (G0 g)
+    bc = bc + np.array([0.0, 0.0, r])
+    return [{"name": "beaker", "xy": bxy, "depth": depth(bxy), "z_points": [top + r + f * H for f in fr], "surface_z": top + r, "corners": bc,
+             "samples": bs.cylinder_surface_samples(bxy, BEAKER_CFG["outer_diameter"] / 2, top + r, top + r + H), "hidden_max": occ["beaker"], "radius_shape": BEAKER_CFG["outer_diameter"] / 2, "radius": BEAKER_CFG["outer_diameter"] / 2, "z0": top + r, "z1": top + r + H},
             {"name": "hotplate", "xy": hxy, "depth": depth(hxy), "z_points": [plate_top + 0.002 + f * H for f in fr], "surface_z": plate_top + 0.002, "corners": hc,
              "samples": bs.box_surface_samples(hc), "hidden_max": occ["hotplate"], "radius": 0.09, "z0": top, "z1": plate_top}]
 

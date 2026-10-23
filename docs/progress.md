@@ -136,3 +136,5 @@ Resumed after the crash (swap 4 GB added). Tag before-neck-removal on 2b92ffe. f
 Step 2 DONE except the VLM refresh (blocked: 503 x2 then daily quota 429, rule A1). Report docs/reports/*_fixed_camera_step2.md. Nothing running. WAITING for David.
 
 2026-10-23: Step 3 A and B built: one planner call (M168), the VLA instruction from resolved fields (M169). NO live Gemini calls (quota). C0 report next, then STOP (C waits).
+
+C1 reach map rebuild with the bench: tmux rmbuild, log docs/reports/logs/reach_map_bench_build_20261023_025339.log, started 02:53:39: experiments/reach_map_build.py --out data/reach_map_bench_new (24 maps, resumable). Old maps stay in data/reach_map until the new set is complete, then renamed (data/reach_map_before_bench). DO NOT EDIT src/ or experiments/ WHILE IT RUNS.

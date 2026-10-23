@@ -39,6 +39,7 @@ done (the task's success check reads it).
 
 import math
 
+from src.support import SupportError, check_band, step_support
 from src.task_config import ORCH_CFG
 from src.vla_instruction import InstructionError, build_instruction
 
@@ -318,7 +319,22 @@ def make_orchestrator(plan, modules, cfg=None):
             return None
         S["instructions"].append({"segment": S["index"], "instruction": text})
         say(f"instruction: {text!r} (the LLM's description, logged and sent to the checker: {seg['description']!r})")
-        return {**seg, "grounded": ids, "instruction": text}
+        extra = {}
+        world = modules.get("world")
+        if world is not None:                                  # G1 (M174): the surface the step works on, its support chain and the grasp point's height, from the world model
+            want = "destination" if seg["primitive"] == "place" else "manipulated"
+            phrase = next((o["phrase"] for o in seg.get("objects") or [] if o["role"] == want), None)
+            try:
+                sup = step_support(world, seg["primitive"], r["resolved"], phrase)
+                check_band(sup, phrase)
+            except SupportError as e:
+                fail(str(e), "grounding")
+                return None
+            if sup is not None:
+                extra = {"surface": sup["surface"], "support_chain": sup["support_chain"], "target_height": sup["target_height"]}
+                S.setdefault("supports", []).append({"segment": S["index"], **extra})
+                say(f"support: surface {sup['surface']}, chain {sup['support_chain']}, target height {sup['target_height']}")
+        return {**seg, "grounded": ids, "instruction": text, **extra}
 
     def mod_step(mod, i, obs):
         """Steps the running segment's module (the segment with its grounded ids in S["cur"]), handles its gripper events, errors and completion."""

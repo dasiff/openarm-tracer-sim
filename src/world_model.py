@@ -32,6 +32,7 @@ from src.task_config import BEAKER_CFG, TASK_CFG
 
 BEAKER_PHRASES = ("beaker", "glass beaker")
 HOTPLATE_PHRASES = ("hotplate", "hot plate")
+HOTPLATE_HEIGHT = 0.068        # m: the hotplate's top above the bench top (models/objects/hotplate.xml: site "hotplate_top"); the configured (no model) source needs it, the simulator source reads it
 BENCH_PHRASES = ("bench", "lab bench")
 
 
@@ -51,7 +52,8 @@ class Entry:
         kind (str): "object" (small, movable) or "fixture" (from the lab map).
         position (numpy.ndarray): (3,) world position: an object's bottom centre, a fixture's top centre (the bench: the stance point on its top).
         axis (numpy.ndarray or None): (3,) the up axis, None if unknown.
-        properties (dict): contents ("empty" or "liquid"), held_by (None, "left" or "right"), height, and so on.
+        properties (dict): contents ("empty" or "liquid"), held_by (None, "left" or "right"), height (the entry's own height above what it stands on), supported_by (the id of the entry it stands on, G1;
+            None or missing for a surface root), surface (True for a surface root: the bench; it also has top_z), and so on.
         found (str): How it got here: "map", "sim_ground_truth", "detector" or "operator".
         last_seen (float): Sim time of the last update, seconds.
         outline (numpy.ndarray or None): (N, 2) world xy corners of the footprint seen from above, for navigation (an entry with an outline and a height_range is an obstacle for the base).
@@ -311,17 +313,21 @@ class SimGroundTruthSource:
         t = float(d.time)
         world.time = t
         top_z = bench_top_z(m)
-        world.upsert(Entry("beaker", "beaker", BEAKER_PHRASES, "object", d.site("beaker_base").xpos.copy(),
+        hp_top = d.site("hotplate_top").xpos.copy()
+        bpos = d.site("beaker_base").xpos.copy()
+        on_plate = abs(bpos[2] - hp_top[2]) < 0.02 and abs(bpos[0] - hp_top[0]) < 0.075 and abs(bpos[1] - hp_top[1]) < 0.075      # the beaker's bottom is on the plate: supported by the hotplate
+        world.upsert(Entry("beaker", "beaker", BEAKER_PHRASES, "object", bpos,
                            d.xmat[self.beaker_body].reshape(3, 3)[:, 2].copy(),
-                           {"contents": "liquid" if self.beaker_cfg["liquid_mass"] > 0 else "empty", "height": self.beaker_cfg["height"], "held_by": self.held_by(), "location": "bench"},
+                           {"contents": "liquid" if self.beaker_cfg["liquid_mass"] > 0 else "empty", "height": self.beaker_cfg["height"], "held_by": self.held_by(), "location": "bench",
+                            "supported_by": "hotplate" if on_plate else "bench"},
                            "sim_ground_truth", t))
-        world.upsert(Entry("hotplate", "hotplate", HOTPLATE_PHRASES, "fixture", d.site("hotplate_top").xpos.copy(),
-                           d.xmat[self.hotplate_body].reshape(3, 3)[:, 2].copy(), {"location": "bench"}, "map", t))
+        world.upsert(Entry("hotplate", "hotplate", HOTPLATE_PHRASES, "fixture", hp_top,
+                           d.xmat[self.hotplate_body].reshape(3, 3)[:, 2].copy(), {"location": "bench", "supported_by": "bench", "height": float(hp_top[2] - top_z)}, "map", t))
         xy = cfg["staging_xy"]
         g = m.geom("bench_top")
         c, hs = d.geom_xpos[g.id], m.geom_size[g.id]                  # the open bench blocks its whole outline from the floor up (an overhang: A* never drives under it)
         outline = np.array([[c[0] - hs[0], c[1] - hs[1]], [c[0] + hs[0], c[1] - hs[1]], [c[0] + hs[0], c[1] + hs[1]], [c[0] - hs[0], c[1] + hs[1]]])
-        world.upsert(Entry("bench", "bench", BENCH_PHRASES, "fixture", np.array([xy[0], xy[1], top_z]), None, {"top_z": top_z, "stance": _stance(cfg)}, "map", t, outline, (0.0, top_z)))
+        world.upsert(Entry("bench", "bench", BENCH_PHRASES, "fixture", np.array([xy[0], xy[1], top_z]), None, {"top_z": top_z, "top_z_known": True, "surface": True, "stance": _stance(cfg)}, "map", t, outline, (0.0, top_z)))
 
 
 class StaticTaskSource:
@@ -350,6 +356,6 @@ class StaticTaskSource:
         held = world._entries["beaker"].properties.get("held_by") if "beaker" in world._entries else None
         up = np.array([0.0, 0.0, 1.0])
         world.upsert(Entry("beaker", "beaker", BEAKER_PHRASES, "object", np.array([*c["beaker_xy"], 0.0]), up,
-                           {"contents": "liquid" if b["liquid_mass"] > 0 else "empty", "height": b["height"], "held_by": held, "location": "bench"}, "config", t))
-        world.upsert(Entry("hotplate", "hotplate", HOTPLATE_PHRASES, "fixture", np.array([*c["hotplate_xy"], 0.0]), up, {"location": "bench"}, "config", t))
-        world.upsert(Entry("bench", "bench", BENCH_PHRASES, "fixture", np.array([*c["staging_xy"], 0.0]), None, {"top_z": 0.0, "stance": _stance(c)}, "config", t))
+                           {"contents": "liquid" if b["liquid_mass"] > 0 else "empty", "height": b["height"], "held_by": held, "location": "bench", "supported_by": "bench"}, "config", t))
+        world.upsert(Entry("hotplate", "hotplate", HOTPLATE_PHRASES, "fixture", np.array([*c["hotplate_xy"], 0.0]), up, {"location": "bench", "supported_by": "bench", "height": HOTPLATE_HEIGHT}, "config", t))
+        world.upsert(Entry("bench", "bench", BENCH_PHRASES, "fixture", np.array([*c["staging_xy"], 0.0]), None, {"top_z": 0.0, "surface": True, "stance": _stance(c)}, "config", t))

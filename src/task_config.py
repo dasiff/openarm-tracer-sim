@@ -550,6 +550,18 @@ BENCH_STANCE_CFG = {
     # (STANCE_REQUIREMENTS["occlusion_max_hidden"]); a sampled share of exactly 0 is too brittle on a 1 cm grid (one sample on a pixel edge flips it), so this much is allowed on top of the limit.
     "hidden_tolerance": 0.02,                   # share of the sample points [row M173 PENDING David: placeholder]
     "home_clearance_m": STANCE_REQUIREMENTS["home_min_clearance"],   # m: the arms at the zombie pose keep this far from the target object (the finder's requirement; the furniture part is the overlay's) [row M173]
+    # Which stance method serves which root surface (G2, M174): one block per surface root of the world model, keyed by its name. The bench's values are the ones the region builder used to hard-code; a root with no
+    # block stops with "no stance method for surface: <name>" (a cabinet or shelf is LATER, design plan 10).
+    "surfaces": {"bench": {"entry": "bench",                       # the world-model entry that is the surface (its top_z is the surface height)
+                           "depth_rule": "edge_to_object_centre",  # the region's key is the object's distance from the surface's near edge to the object's centre
+                           "approach_bins": (9, 10, 11, 0, 1, 2, 3),   # the bench-approach bins (the same list as the key above: this block is the one the code reads when present)
+                           "heading_rule": "perpendicular_to_edge"}},   # the robot faces the surface's edge head on
+    # The bench method is used only when the root surface is the bench AND the target (the grasp point) is at most this far above the bench top: plain words, "how high above the bench top a hand can still
+    # be served from a stance chosen for the bench". Derived, not typed: the smaller of the highest height above the bench top where the bench still removes voxels from the maps (G0 f) and the highest
+    # raise the full check passes at (G0 g), minus 2 cm. None until measured by experiments/g0_reach_band.py and experiments/g0_raised_check.py.
+    "bench_max_raise_m": None,                  # [row M174]
+    # The measured reach band (G0 b): the lowest and highest grasp-point height above the floor some stance serves at some pedestal height, written by experiments/g0_reach_band.py.
+    "reach_band_file": "docs/measured/bench_reach_band.json",   # [row M174]
     "chain_samples": 24,                        # count: points along each chain segment tested against a cylinder [row M170]
 }
 

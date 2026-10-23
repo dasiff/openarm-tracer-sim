@@ -69,6 +69,14 @@ def stamp_of(model, C):
     return h.hexdigest()[:16]
 
 
+def stamp_config(m, side, no_bench=False):
+    """The settings the staleness stamp hashes for one arm: the grasp settings (without the quick sample count) and, unless no_bench, the bench the maps were built with (C1, M171)."""
+    stamp_cfg = {k: v for k, v in grasp_cfg(m, side).items() if k != "quick_samples"}
+    if not no_bench:
+        stamp_cfg["bench"] = {"geoms": sorted(m.geom(g).name for g in bench_geoms(m)), "base_pose": [float(v) for v in (*TASK_CFG["staging_xy"], TASK_CFG["staging_yaw"])], "pedestal_q": TASK_CFG["pedestal_q"]}
+    return stamp_cfg
+
+
 def main(args):
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)

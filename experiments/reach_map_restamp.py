@@ -26,7 +26,7 @@ if not os.environ.get("DISPLAY"):
 
 import numpy as np  # noqa: E402
 
-from reach_map_build import stamp_of  # noqa: E402
+from reach_map_build import stamp_config, stamp_of  # noqa: E402
 from src.gripper_geometry import grasp_cfg  # noqa: E402
 from src.task_beaker_hotplate import load_task  # noqa: E402
 
@@ -38,7 +38,7 @@ def main(args):
     sim = load_task(cameras=False)
     m = sim.model
     folder = Path(args.dir)
-    stamps = {side: stamp_of(m, {k: v for k, v in grasp_cfg(m, side).items() if k != "quick_samples"}) for side in ("left", "right")}
+    stamps = {side: stamp_of(m, stamp_config(m, side)) for side in ("left", "right")}
     changed, same = [], []
     for f in sorted(folder.glob("*_bin*.npz")):
         z = np.load(f)

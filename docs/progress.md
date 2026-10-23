@@ -137,4 +137,4 @@ Step 2 DONE except the VLM refresh (blocked: 503 x2 then daily quota 429, rule A
 
 2026-10-23: Step 3 A and B built: one planner call (M168), the VLA instruction from resolved fields (M169). NO live Gemini calls (quota). C0 report next, then STOP (C waits).
 
-C1: build DONE (24 maps, 92 min, log docs/reports/logs/reach_map_bench_build_20261023_025339.log). Promoted: data/reach_map = new (bench, no neck), data/reach_map_before_bench = old. Validation experiments/c1_validate_stance.py: TASK_CFG stance 12/12 task points reachable on new maps. Run in progress: no-bench pilot (tmux rmpilot, started 04:31, left bins 0 and 9, out data/reach_map_nobench_pilot, log docs/reports/logs/reach_map_nobench_pilot_20261023_043150.log) to separate the bench's effect from the neck removal. Next: yield report, log rows M170/M171, commit, then C2a. DO NOT START OTHER SIM JOBS while the pilot runs.
+C1 DONE (report docs/reports/*_c1_bench_reach_maps.md, rows M170/M171, TASK_CFG stance 12/12). Next: C2a (bench-approach bins), C2b region builder (src/bench_stance.py). No run in progress.

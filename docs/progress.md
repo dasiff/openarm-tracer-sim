@@ -148,3 +148,5 @@ TASK (David 2026-10-23): Addendum G (support chain, surface, target height, benc
 G0 (b)(f)(a) running: setsid nohup python experiments/g0_reach_band.py, log docs/reports/logs/g0_reach_band_20261023_122200.log, started 12:22:00; output docs/reports/g0_reach_band.json (then copy min/max to docs/measured/bench_reach_band.json). Then g0_raised_check.py (g). F suite subset done: stance_finder 28, postprocess 54, restamp ok, full_check 29/29 (6-cm-in-front point no longer asserted), stance_select 23, stance_select_pipeline 7, mpvi_pipeline 14. F report and G report still to write.
 
 G DONE: report docs/reports/*_g_support_chain.md; F report docs/reports/*_f_followup_region_criteria.md; limit bench_max_raise_m 0.1325 (deviation pending David). No run in progress. Nothing pushed. WAITING for David (C3 not started).
+
+G DONE: report docs/reports/*_g_support_chain.md; F report docs/reports/*_f_followup_region_criteria.md; limit bench_max_raise_m 0.1325 (deviation pending David). No run in progress. Nothing pushed. WAITING for David (C3 not started).

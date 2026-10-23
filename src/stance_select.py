@@ -94,7 +94,7 @@ def _footprint(shape):
         r = float(shape["radius"])
         return (r, r), r
     hx, hy = shape["half"]
-    return (float(hx), float(hy)), float(math.hypot(hx, hy))
+    return (float(hx), float(hy)), float(max(hx, hy))            # a box is a cylinder of its larger half size (the validated placeholder; the circumscribed circle blocks every approach to a neighbour)
 
 
 def _body(entry, base_z, shift):

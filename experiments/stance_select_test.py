@@ -23,8 +23,8 @@ sys.path.insert(0, str(PROJECT_ROOT))
 import numpy as np  # noqa: E402
 
 from src.bench_rectangle import fits, largest_rectangle, parking_pose  # noqa: E402
-from src.mpvi_plan import BEAKER_ON_HOTPLATE_LABELS  # noqa: E402
-from src.mpvi_postprocess import make_stored_labeler, postprocess  # noqa: E402
+from src.mpvi_plan import attach_labels  # noqa: E402
+from src.mpvi_postprocess import postprocess  # noqa: E402
 from src.stance_select import plan_runs, select_bench_stance  # noqa: E402
 from src.task_config import BENCH_RECT_CFG, TASK_CFG  # noqa: E402
 from src.world_model import StaticTaskSource, WorldModel  # noqa: E402
@@ -85,7 +85,7 @@ def main():
     print("\n3. runs and the null navigation step")
     world = WorldModel([StaticTaskSource()])
     world.refresh(0.0)
-    tagged = postprocess(PLAN4, make_stored_labeler(LABELS4), False)
+    tagged = postprocess(attach_labels(PLAN4, LABELS4), False)
     runs = plan_runs(tagged, world, yaw, WIDE)
     check("wide rectangle: one run, the second navigation step is null", len(runs) == 1 and runs[0]["nav"] == [0, 2] and runs[0]["steps"] == [1, 3] and runs[0]["fits"], f"{[(r['nav'], r['steps']) for r in runs]}")
     runs = plan_runs(tagged, world, yaw, NARROW)
@@ -95,10 +95,10 @@ def main():
         big["segments"] += [PLAN4["segments"][2], PLAN4["segments"][3]]
     place = lambda i: {"index": i, "primitive": "place", "objects": [{"phrase": "the beaker", "role": "manipulated"}, {"phrase": "the hotplate", "role": "destination"}]}
     labels = {"labels": LABELS4["labels"] + [place(5), place(7)]}
-    runs = plan_runs(postprocess(big, make_stored_labeler(labels), False), world, yaw, WIDE)
+    runs = plan_runs(postprocess(attach_labels(big, labels), False), world, yaw, WIDE)
     check("the cap: 4 manipulation steps in one run are allowed (R7)", [len(r["steps"]) for r in runs] == [4] and runs[0]["nav"] == [0, 2, 4, 6], f"{[(r['nav'], r['steps']) for r in runs]}")
     big["segments"] += [PLAN4["segments"][2], PLAN4["segments"][3]]
-    runs = plan_runs(postprocess(big, make_stored_labeler({"labels": labels["labels"] + [place(9)]}), False), world, yaw, WIDE)
+    runs = plan_runs(postprocess(attach_labels(big, {"labels": labels["labels"] + [place(9)]}), False), world, yaw, WIDE)
     check("the 5th manipulation step starts a new run (and its navigation step moves)", [len(r["steps"]) for r in runs] == [4, 1] and runs[1]["nav"] == [8], f"{[(r['nav'], r['steps']) for r in runs]}")
 
     print("\n4. the full check as the safety net")

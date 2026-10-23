@@ -156,7 +156,7 @@ def make_grounder(world, search=None, operator=None, side="left"):
 
     def fail(reason, **kw):
         note("failed", reason=reason, **kw)
-        return {"state": "failed", "reason": reason}
+        return {"state": "failed", "reason": reason, "phrase": kw.get("phrase"), "not_found": bool(kw.get("not_found"))}
 
     def run(step):
         """Generator: yields ("ask", phrase, candidates) and receives the operator's number; returns the final result dict."""
@@ -168,12 +168,12 @@ def make_grounder(world, search=None, operator=None, side="left"):
                 sr = search["search"](phrase, world)
                 note("search", phrase=phrase, status=sr["status"])
                 if sr["status"] == "not_implemented":
-                    return fail(f"object not found, search not implemented: {phrase}", phrase=phrase)
+                    return fail(f"object not found, search not implemented: {phrase}", phrase=phrase, not_found=True)
                 for e in sr["entries"]:
                     world.upsert(e)
                 found = resolve(world, phrase)
                 if not found:
-                    return fail(f"object not found: {phrase}", phrase=phrase)
+                    return fail(f"object not found: {phrase}", phrase=phrase, not_found=True)
             if len(found) > 1 and prim == "place" and role == "manipulated":
                 held = [e for e in found if e.properties.get("held_by") == side]
                 if held:

@@ -5,7 +5,6 @@
     caller = GeminiCaller(mode="live")                           # a live run: always calls the API and stores the reply
     reply = caller("Prompt text", Plan, kind="plan", version="planner-v1")       # a dict that fits the Pydantic model's schema
     text = caller.text_call("Prompt text", image_rgb, kind="vlm", version="vlm-v1")   # a free-text reply about an image (the VLM completion checker)
-    label_call = caller.bind("label", LLM_CFG["label_prompt_version"])           # (prompt, model) -> dict: what make_llm_labeler() wants
     caller.log                                                    # one dict per call: kind, model, versions, prompt, reply text, from_cache, attempts, seconds
 
 Structured output: the Pydantic model's JSON schema is given to the SDK as `response_json_schema` (Gemini enforces it; the older `response_schema` field refuses the "additionalProperties": false that our extra="forbid" models produce); the reply text is parsed as JSON and returned as a dict, and the caller validates it
@@ -99,7 +98,7 @@ def png_bytes(image_rgb):
     return buf.tobytes()
 
 
-def cache_key(model, version, schema_name, prompt, image_sha=None):
+def cache_key(model, version, schema_name, prompt, image_sha=None, schema_sha=None):
     """Gives the cache key of a call.
 
     Args:
@@ -108,11 +107,13 @@ def cache_key(model, version, schema_name, prompt, image_sha=None):
         schema_name (str): The response model's class name.
         prompt (str): The whole prompt text (it contains the instruction).
         image_sha (str or None): The SHA-256 of the image's PNG bytes for an image call. Defaults to None (no image; the key is then the same as before images existed).
+        schema_sha (str or None): The SHA-256 of the response model's JSON schema (sorted keys), so that a changed schema is a different key even under the same class name (David, 2026-10-23: the
+            planner's schema gained two fields). Defaults to None (a call without a schema: the key is the same as before).
 
     Returns:
         str: A hex SHA-256 digest.
     """
-    parts = [model, version, schema_name, prompt] + ([image_sha] if image_sha else [])
+    parts = [model, version, schema_name, prompt] + ([image_sha] if image_sha else []) + (["schema:" + schema_sha] if schema_sha else [])
     return hashlib.sha256(json.dumps(parts, ensure_ascii=False).encode()).hexdigest()
 
 
@@ -254,7 +255,8 @@ class GeminiCaller:
         """The shared call: cache or live by the mode, a log entry. Returns the reply text."""
         sha = hashlib.sha256(image_png).hexdigest() if image_png is not None else None
         schema_name = response_model.__name__ if response_model is not None else "text"
-        key = cache_key(self.cfg["model"], version, schema_name, prompt, sha)
+        schema_sha = hashlib.sha256(json.dumps(response_model.model_json_schema(), sort_keys=True).encode()).hexdigest() if response_model is not None else None
+        key = cache_key(self.cfg["model"], version, schema_name, prompt, sha, schema_sha)
         t0 = time.time()
         rec = None if self.mode == "live" else self.cache.get(key)
         from_cache, attempts = rec is not None, 0
@@ -267,6 +269,8 @@ class GeminiCaller:
                    "created": time.strftime("%Y-%m-%dT%H:%M:%S")}
             if sha:
                 rec["image_sha256"] = sha
+            if schema_sha:
+                rec["schema_sha256"] = schema_sha
             self.cache.put(key, rec, image_png)
         entry = {"kind": kind, "model": rec["model"], "version": version, "schema": schema_name, "key": key, "from_cache": from_cache, "attempts": attempts,
                  "seconds": round(time.time() - t0, 3), "prompt": prompt, "reply_text": rec["reply_text"]}
@@ -284,7 +288,7 @@ class GeminiCaller:
         Args:
             prompt (str): The whole prompt text.
             response_model (type): The Pydantic model of the reply (the schema Gemini must follow).
-            kind (str): A label for the log ("plan", "label").
+            kind (str): A label for the log ("plan", "vlm").
             version (str): The prompt version (part of the cache key).
             system (str or None): An optional system instruction (not part of the key; keep it fixed per version).
 
@@ -323,7 +327,7 @@ class GeminiCaller:
         return self._run(prompt, None, kind, version, system, png_bytes(image_rgb), choices)
 
     def bind(self, kind, version, system=None):
-        """Gives a two-argument function (prompt, response_model) -> dict for make_llm_labeler() and make_llm_planner().
+        """Gives a two-argument function (prompt, response_model) -> dict for a planner call (the planner's schema, with primitive and objects, is the only structured call).
 
         Args:
             kind (str): The log label.

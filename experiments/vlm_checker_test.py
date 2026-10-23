@@ -28,7 +28,8 @@ from google.genai import errors  # noqa: E402
 
 from src.grounding import make_grounder  # noqa: E402
 from src.llm_gemini import GeminiCaller, LLMCache, LLMError, cache_key, png_bytes  # noqa: E402
-from src.mpvi_postprocess import make_stored_labeler, postprocess  # noqa: E402
+from src.mpvi_plan import attach_labels  # noqa: E402
+from src.mpvi_postprocess import postprocess  # noqa: E402
 from src.mpvi_prompts import VLM_ANSWERS, VLM_CHECK_PROMPT  # noqa: E402
 from src.mpvi_vlm import make_vlm_checker, read_answer  # noqa: E402
 from src.orchestrator import make_orchestrator  # noqa: E402
@@ -215,8 +216,8 @@ def main():
     def run_plan(reply, orc):
         world = WorldModel()
         world.upsert(Entry("beaker", "beaker", ("beaker",), "object", np.zeros(3), None, {"contents": "empty", "held_by": None, "height": 0.1}))
-        plan = postprocess({"task_name": "t", "segments": [{"type": "manipulation", "description": "Grasp the beaker", "completion_criteria": "The beaker is held securely in the gripper", "target": None}]},
-                           make_stored_labeler({"labels": [{"index": 0, "primitive": "pick", "objects": [{"phrase": "the beaker", "role": "manipulated"}]}]}), say=lambda *_: None)
+        plan = postprocess(attach_labels({"task_name": "t", "segments": [{"type": "manipulation", "description": "Grasp the beaker", "completion_criteria": "The beaker is held securely in the gripper", "target": None}]},
+                        {"labels": [{"index": 0, "primitive": "pick", "objects": [{"phrase": "the beaker", "role": "manipulated"}]}]}), say=lambda *_: None)
         c, _ = caller([reply])
         ck = make_vlm_checker(orc, c, "left", say=lambda *_: None)
         nav = Mod([])
@@ -238,8 +239,8 @@ def main():
     boom = {"name": "boom", "tick": lambda o, ev, seg: (_ for _ in ()).throw(RuntimeError("monitor bug"))}
     world = WorldModel()
     world.upsert(Entry("beaker", "beaker", ("beaker",), "object", np.zeros(3), None, {"contents": "empty", "held_by": None, "height": 0.1}))
-    plan1 = postprocess({"task_name": "t", "segments": [{"type": "manipulation", "description": "Grasp the beaker", "completion_criteria": "The beaker is held securely in the gripper", "target": None}]},
-                        make_stored_labeler({"labels": [{"index": 0, "primitive": "pick", "objects": [{"phrase": "the beaker", "role": "manipulated"}]}]}), say=lambda *_: None)
+    plan1 = postprocess(attach_labels({"task_name": "t", "segments": [{"type": "manipulation", "description": "Grasp the beaker", "completion_criteria": "The beaker is held securely in the gripper", "target": None}]},
+                        {"labels": [{"index": 0, "primitive": "pick", "objects": [{"phrase": "the beaker", "role": "manipulated"}]}]}), say=lambda *_: None)
     c, _ = caller(["YES, the task is complete"])
     orch = make_orchestrator(plan1, {"navigation": Mod([]).module(), "manipulation": Mod(["gripper_closed"]).module(), "checker": make_vlm_checker(oracle(True), c, "left", say=lambda *_: None),
                                      "world": world, "grounder": make_grounder(world), "monitors": [boom]})
@@ -278,10 +279,10 @@ def main():
         world = WorldModel()
         world.upsert(Entry("beaker", "beaker", ("beaker",), "object", np.zeros(3), None, {"contents": "empty", "held_by": None, "height": 0.1}))
         world.upsert(Entry("hotplate", "hotplate", ("hotplate",), "fixture", np.array([0.3, 0, 0.0]), None, {}))
-        plan = postprocess({"task_name": "t", "segments": [
+        plan = postprocess(attach_labels({"task_name": "t", "segments": [
             {"type": "manipulation", "description": "Pick up the beaker", "completion_criteria": "The beaker is held", "target": None},
             {"type": "manipulation", "description": "Place the beaker on the hotplate", "completion_criteria": criterion, "target": None}]},
-            make_stored_labeler({"labels": [{"index": 0, "primitive": "pick", "objects": [{"phrase": "the beaker", "role": "manipulated"}]},
+            {"labels": [{"index": 0, "primitive": "pick", "objects": [{"phrase": "the beaker", "role": "manipulated"}]},
                                             {"index": 1, "primitive": "place", "objects": [{"phrase": "the beaker", "role": "manipulated"}, {"phrase": "the hotplate", "role": "destination"}]}]}),
             say=lambda *_: None)
         c, _ = caller([reply])
@@ -316,8 +317,8 @@ def main():
           and v["details"]["pipeline_problem"] == "checker unavailable: daily quota" and len(c._client.calls) == 1 and slept == [], f"{len(c._client.calls)} calls, slept {slept}")
     world = WorldModel()
     world.upsert(Entry("beaker", "beaker", ("beaker",), "object", np.zeros(3), None, {"contents": "empty", "held_by": None, "height": 0.1}))
-    plan1 = postprocess({"task_name": "t", "segments": [{"type": "manipulation", "description": "Grasp the beaker", "completion_criteria": "The beaker is held securely in the gripper", "target": None}]},
-                        make_stored_labeler({"labels": [{"index": 0, "primitive": "pick", "objects": [{"phrase": "the beaker", "role": "manipulated"}]}]}), say=lambda *_: None)
+    plan1 = postprocess(attach_labels({"task_name": "t", "segments": [{"type": "manipulation", "description": "Grasp the beaker", "completion_criteria": "The beaker is held securely in the gripper", "target": None}]},
+                        {"labels": [{"index": 0, "primitive": "pick", "objects": [{"phrase": "the beaker", "role": "manipulated"}]}]}), say=lambda *_: None)
     c, _ = caller([quota])
     manip_q = Mod(["gripper_closed"]).module()
     manip_q["recover"] = lambda: (_ for _ in ()).throw(AssertionError("a pipeline problem must not start a retry"))

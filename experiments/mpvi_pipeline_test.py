@@ -80,6 +80,8 @@ def main(args):
     check("the status text showed every segment", all(any(f"{i}/3" in p for p in phases) for i in (1, 2, 3)), f"{len(phases)} distinct phase texts")
     check("grounding at dispatch: the pick acted on the beaker, the place on the beaker (the one in the hand) and the hotplate",
           state["grounded"] == [{"segment": 1, "manipulated": "beaker"}, {"segment": 2, "manipulated": "beaker", "destination": "hotplate"}], f"{state['grounded']}")
+    check("the VLA's instruction was built from the primitive and the grounded names, after the grounding (the LLM's description is logged and goes to the checker)",
+          [x["instruction"] for x in state["instructions"]] == ["pick up the beaker", "place the beaker on the hotplate"], f"{state['instructions']}")
     glog = pipe["grounder"]["log"]
     check("the grounding log has one resolved entry per object phrase and no failure", [e["kind"] for e in glog] == ["resolved"] * 3, f"{[e['kind'] for e in glog]}")
     check("the tagged plan reaching the orchestrator carries the labels and an empty postprocess log (the keywords agreed)",

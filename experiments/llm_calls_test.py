@@ -29,10 +29,11 @@ from google.genai import errors  # noqa: E402
 from src.llm_gemini import GeminiCaller, LLMCache, LLMCacheMiss, LLMError, cache_key, load_api_key  # noqa: E402
 from src.mpvi_planner import PlannerError, make_llm_planner  # noqa: E402
 from src.mpvi_prompts import PLANNER_PROMPT, VLM_CHECK_PROMPT, fill_prompt  # noqa: E402
-from src.mpvi_schemas import Labels, Plan  # noqa: E402
+from src.mpvi_schemas import Plan  # noqa: E402
 from src.task_config import LLM_CFG  # noqa: E402
 
 results = []
+BLOCKED = []
 SECRET = "SECRET-KEY-for-the-test-0123456789"
 
 
@@ -41,7 +42,8 @@ def check(name, ok, detail=""):
     print(f"  {'PASS' if ok else 'FAIL'}  {name}  {detail}")
 
 
-PLAN = {"task_name": "t", "segments": [{"type": "navigation", "description": "Go to the bench", "completion_criteria": "There", "target": "bench"}]}
+PLAN = {"task_name": "t", "segments": [{"type": "navigation", "description": "Go to the bench", "completion_criteria": "There", "target": "bench", "primitive": None, "objects": None},
+                                       {"type": "manipulation", "description": "Pick up the beaker", "completion_criteria": "The beaker is held", "target": None, "primitive": "pick", "objects": [{"phrase": "the beaker", "role": "manipulated"}]}]}
 
 
 class Resp:
@@ -86,7 +88,15 @@ def main():
     print("1. cache key and modes")
     k = cache_key("m", "v1", "Plan", "prompt")
     check("the key is a SHA-256 and follows the model, the version, the schema and the prompt", len(k) == 64 and k == cache_key("m", "v1", "Plan", "prompt")
-          and len({k, cache_key("m2", "v1", "Plan", "prompt"), cache_key("m", "v2", "Plan", "prompt"), cache_key("m", "v1", "Labels", "prompt"), cache_key("m", "v1", "Plan", "prompt!")}) == 5)
+          and len({k, cache_key("m2", "v1", "Plan", "prompt"), cache_key("m", "v2", "Plan", "prompt"), cache_key("m", "v1", "Plan", "prompt", None, "abc"), cache_key("m", "v1", "Plan", "prompt!")}) == 5)
+    import hashlib
+    from pydantic import BaseModel
+    class Plan2(BaseModel):                                  # another schema under the same class name
+        x: int
+    Plan2.__name__ = "Plan"
+    sh = lambda m: hashlib.sha256(json.dumps(m.model_json_schema(), sort_keys=True).encode()).hexdigest()
+    check("the schema's CONTENT is in the key: a changed schema under the same class name is another key; without a schema hash the key is as before (the image keys of the VLM calls stay valid)",
+          cache_key("m", "v1", "Plan", "p", None, sh(Plan)) != cache_key("m", "v1", "Plan", "p", None, sh(Plan2)) and cache_key("m", "v1", "Plan", "p") == cache_key("m", "v1", "Plan", "p", None, None))
     c, d = caller([])
     check("cache_only: a miss raises LLMCacheMiss and the client is never called", raises(lambda: GeminiCaller(LLM_CFG, "cache_only", c._client, LLMCache(d), say=lambda *_: None)("p", Plan, "plan", "v"), LLMCacheMiss, "nothing was sent")
           and c._client.calls == [])
@@ -163,9 +173,6 @@ def main():
     check("the pinned model name, the prompt text and the settings of LLM_CFG", call["model"] == LLM_CFG["model"] and call["contents"] == "the prompt" and cfgobj.temperature == LLM_CFG["temperature"]
           and cfgobj.thinking_config.thinking_budget == LLM_CFG["thinking_budget"])
     check("the response is JSON with the Pydantic model's JSON schema as response_json_schema", cfgobj.response_mime_type == "application/json" and cfgobj.response_json_schema == Plan.model_json_schema())
-    c, _ = caller([json.dumps({"labels": []})])
-    c("p", Labels, "label", "v")
-    check("the labeling call sends the Labels schema", c._client.calls[0]["config"].response_json_schema == Labels.model_json_schema())
 
     print("\n5. the log")
     c, _ = caller([json.dumps(PLAN)])
@@ -198,9 +205,13 @@ def main():
 
     print("\n7. the stored live replies replay")
     co = GeminiCaller(LLM_CFG, "cache_only", FakeClient([]), say=lambda *_: None)
-    plan = make_llm_planner(co.bind("plan", LLM_CFG["planner_prompt_version"]))("put the beaker on the hotplate")
-    check("the stored reply for 'put the beaker on the hotplate' gives a valid plan with no API call", Plan.model_validate(plan) and co._client.calls == [] and co.log[0]["from_cache"], f"{[s['description'] for s in plan['segments']]}")
-    print(f"\n{sum(results)}/{len(results)} checks passed")
+    try:
+        plan = make_llm_planner(co.bind("plan", LLM_CFG["planner_prompt_version"]))("put the beaker on the hotplate")
+        check("the stored reply for 'put the beaker on the hotplate' gives a valid plan with no API call", Plan.model_validate(plan) and co._client.calls == [] and co.log[0]["from_cache"], f"{[s['description'] for s in plan['segments']]}")
+    except LLMCacheMiss:
+        BLOCKED.append("the stored plan reply for 'put the beaker on the hotplate' (the schema gained primitive and objects, so the key changed): needs ONE live planner call after the quota resets: python experiments/mpvi_text_test.py --mode cache_or_live --checker oracle --out data/mpvi_text_run/planner_refresh")
+        print("  BLOCKED  the stored plan reply of 'put the beaker on the hotplate' is missing under the new schema key; it needs one live planner call (see the report); not counted as a pass")
+    print(f"\n{sum(results)}/{len(results)} checks passed" + (f" ({len(BLOCKED)} blocked, not counted)" if BLOCKED else ""))
     return all(results)
 
 

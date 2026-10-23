@@ -4,16 +4,18 @@ Tests of the post-processing of the MPVI plan (src/mpvi_postprocess.py, src/mpvi
 
     python experiments/mpvi_postprocess_test.py
 
-1. Schemas: the planning schema has exactly the paper's segment fields; the labeling schema has the primitive enum and the object phrases with roles; malformed plans are refused.
+1. Schema: the planning schema has the paper's four segment fields plus primitive and objects (with descriptions the provider sees); the primitive enum and the roles; malformed plans are
+   refused, among them a manipulation segment without its primitive or objects and a navigation segment with them.
 2. Keyword cross-check: wordings for pick and place (capitals, punctuation, an adverb first, "pick-up", "set down" against "set the ... on", "grab"); words inside other words do not
    match; no match gives None; both words: the last wins and ambiguous is set.
 3. Tags: check and group on the test plan, on a plan with navigation between units, a plan ending in navigation, a manipulation step first.
-4. The labeling: the LLM's answer is the one used; disagreements, unmatched descriptions and ambiguous ones are logged; stop_on_disagreement raises; bad replies (schema, missing,
-   duplicate, label on a navigation segment, unknown primitive) raise PostprocessError; the input is not changed and the output is JSON.
-5. make_llm_labeler: the prompt carries every segment, the structured call gets the Labels model, a model object or a dict reply both work.
+4. The planner's own labels: its answer is the one used; disagreements, unmatched descriptions and ambiguous ones are logged; stop_on_disagreement raises; bad replies (an unknown
+   primitive or role, an unlabeled manipulation segment, a label on a navigation segment, an extra key) raise PostprocessError; the input is not changed and the output is JSON.
+5. The planner's prompt is word for word and its version is unchanged; there is no labeling call, prompt or setting left.
 """
 
 import copy
+import hashlib
 import json
 import sys
 from pathlib import Path
@@ -21,9 +23,12 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from src.mpvi_plan import BEAKER_ON_HOTPLATE_LABELS, BEAKER_ON_HOTPLATE_PLAN  # noqa: E402
-from src.mpvi_postprocess import PostprocessError, keyword_primitive, make_llm_labeler, make_stored_labeler, postprocess  # noqa: E402
-from src.mpvi_schemas import Labels, Plan  # noqa: E402
+from src.mpvi_plan import BEAKER_ON_HOTPLATE_PLAN, attach_labels  # noqa: E402
+from src import mpvi_postprocess  # noqa: E402
+from src.mpvi_postprocess import PostprocessError, keyword_primitive, postprocess  # noqa: E402
+from src.mpvi_prompts import PLANNER_PROMPT  # noqa: E402
+from src.mpvi_schemas import Plan  # noqa: E402
+from src.task_config import LLM_CFG  # noqa: E402
 
 results = []
 
@@ -64,16 +69,27 @@ def quiet(*_):
 
 
 def main():
-    print("1. schemas")
-    props = Plan.model_json_schema()["$defs"]["Segment"]["properties"]
-    check("the planning schema has exactly the paper's four segment fields", set(props) == {"type", "description", "completion_criteria", "target"}, f"{sorted(props)}")
+    print("1. schema")
+    sch = Plan.model_json_schema()["$defs"]
+    props = sch["Segment"]["properties"]
+    check("the planning schema has the paper's four segment fields plus primitive and objects", set(props) == {"type", "description", "completion_criteria", "target", "primitive", "objects"}, f"{sorted(props)}")
     check("the segment type is an enum of navigation and manipulation", props["type"]["enum"] == ["navigation", "manipulation"])
-    ls = Labels.model_json_schema()["$defs"]
-    check("the labeling schema: primitive enum pick/place/other, roles manipulated/destination", ls["Primitive"]["enum"] == ["pick", "place", "other"] and ls["Role"]["enum"] == ["manipulated", "destination"])
-    for name, bad in (("an unknown segment type", {"task_name": "x", "segments": [{**man("Pick up"), "type": "walk"}]}), ("an empty plan", {"task_name": "x", "segments": []}),
-                      ("a navigation segment without a target", {"task_name": "x", "segments": [{**nav(), "target": None}]}), ("a manipulation segment with a target", {"task_name": "x", "segments": [{**man("Pick up"), "target": "bench"}]}),
-                      ("a missing key", {"task_name": "x", "segments": [{"type": "navigation", "description": "d", "target": "bench"}]}), ("an extra key", {"task_name": "x", "segments": [{**nav(), "primitive": "pick"}]})):
-        check(f"a plan with {name} is refused", raises(lambda b=bad: postprocess(b, make_stored_labeler({"labels": []}), say=quiet), "schema"))
+    check("primitive enum pick/place/other, roles manipulated/destination", sch["Primitive"]["enum"] == ["pick", "place", "other"] and sch["Role"]["enum"] == ["manipulated", "destination"])
+    check("the two new fields are explained in the schema's field descriptions (what the provider sees), not left to the prompt", "pick" in props["primitive"]["description"] and "manipulated" in props["objects"]["description"] and "null" in props["objects"]["description"])
+    check("both new fields may be null (navigation segments)", any(a.get("type") == "null" for a in props["primitive"]["anyOf"]) and any(a.get("type") == "null" for a in props["objects"]["anyOf"]))
+    mk = lambda prim, *objs: {"primitive": prim, "objects": [{"phrase": p, "role": r} for p, r in objs]}
+    pick = {**man("Pick up the beaker"), **mk("pick", ("the beaker", "manipulated"))}
+    for name, bad in (("an unknown segment type", {"task_name": "x", "segments": [{**pick, "type": "walk"}]}), ("an empty plan", {"task_name": "x", "segments": []}),
+                      ("a navigation segment without a target", {"task_name": "x", "segments": [{**nav(), "target": None}]}), ("a manipulation segment with a target", {"task_name": "x", "segments": [{**pick, "target": "bench"}]}),
+                      ("a missing key", {"task_name": "x", "segments": [{"type": "navigation", "description": "d", "target": "bench"}]}), ("an extra key", {"task_name": "x", "segments": [{**nav(), "confidence": 0.9}]}),
+                      ("an unlabeled manipulation segment (no primitive, no objects)", {"task_name": "x", "segments": [nav(), man("Pick up the beaker")]}),
+                      ("a manipulation segment with a primitive but no objects", {"task_name": "x", "segments": [{**man("Pick up the beaker"), "primitive": "pick"}]}),
+                      ("a labeled navigation segment (primitive)", {"task_name": "x", "segments": [{**nav(), "primitive": "pick"}]}),
+                      ("a labeled navigation segment (objects)", {"task_name": "x", "segments": [{**nav(), "objects": []}]}),
+                      ("an unknown primitive", {"task_name": "x", "segments": [{**pick, "primitive": "juggle"}]}),
+                      ("an unknown role", {"task_name": "x", "segments": [{**pick, "objects": [{"phrase": "x", "role": "boss"}]}]})):
+        check(f"a plan with {name} is refused", raises(lambda b=bad: postprocess(b, say=quiet), "schema"))
+    check("a manipulation segment with an empty list of objects is allowed (a step that names no object)", postprocess({"task_name": "x", "segments": [{**man("Pick up it"), "primitive": "pick", "objects": []}]}, say=quiet) is not None)
 
     print("\n2. keyword cross-check")
     for text, want in [("Pick up the beaker", "pick"), ("pick-up the beaker", "pick"), ("PICK UP THE BEAKER.", "pick"), ("Carefully pick up the beaker", "pick"), ("Grasp the beaker", "pick"),
@@ -87,55 +103,46 @@ def main():
     check("the same primitive twice is not ambiguous", k["primitive"] == "pick" and not k["ambiguous"])
 
     print("\n3. check and group tags")
-    t = postprocess(BEAKER_ON_HOTPLATE_PLAN, make_stored_labeler(BEAKER_ON_HOTPLATE_LABELS), say=quiet)["segments"]
+    t = postprocess(BEAKER_ON_HOTPLATE_PLAN, say=quiet)["segments"]
     check("the test plan: both manipulation steps are one unit, the check is on the place only", [s["check"] for s in t] == [False, False, True] and t[1]["group"] == t[2]["group"] == 0)
     check("indices and tags", [s["index"] for s in t] == [0, 1, 2] and [s.get("primitive") for s in t] == [None, "pick", "place"])
     plan2 = {"task_name": "t", "segments": [nav(), man("Pick up the beaker"), nav("Go to B"), man("Place the beaker on the hotplate"), man("Pick up the lid")]}
-    t = postprocess(plan2, make_stored_labeler({"labels": [lab(1, "pick", ("the beaker", "manipulated")), lab(3, "place", ("the beaker", "manipulated"), ("the hotplate", "destination")), lab(4, "pick", ("the lid", "manipulated"))]}), say=quiet)["segments"]
+    t = postprocess(attach_labels(plan2, {"labels": [lab(1, "pick", ("the beaker", "manipulated")), lab(3, "place", ("the beaker", "manipulated"), ("the hotplate", "destination")), lab(4, "pick", ("the lid", "manipulated"))]}), say=quiet)["segments"]
     check("navigation between units: two groups, a check on each unit's last step, and on the plan's last step", [s.get("group") for s in t] == [None, 0, None, 1, 1] and [s["check"] for s in t] == [False, True, False, False, True])
-    plan3 = {"task_name": "t", "segments": [man("Pick up the beaker"), nav()]}
-    t = postprocess(plan3, make_stored_labeler({"labels": [lab(0, "pick", ("the beaker", "manipulated"))]}), say=quiet)["segments"]
+    plan3 = attach_labels({"task_name": "t", "segments": [man("Pick up the beaker"), nav()]}, {"labels": [lab(0, "pick", ("the beaker", "manipulated"))]})
+    t = postprocess(plan3, say=quiet)["segments"]
     check("a manipulation step first and navigation last: the check is on the step before the navigation", t[0]["check"] and t[0]["group"] == 0 and not t[1]["check"])
 
-    print("\n4. the labeling")
+    print("\n4. the planner's own labels")
     plan = BEAKER_ON_HOTPLATE_PLAN
     before = copy.deepcopy(plan)
-    out = postprocess(plan, make_stored_labeler(BEAKER_ON_HOTPLATE_LABELS), say=quiet)
+    out = postprocess(plan, say=quiet)
     check("the input plan is not changed", plan == before)
     check("the output is JSON-serialisable", json.loads(json.dumps(out)) == out)
     check("the output carries the objects with roles", out["segments"][2]["objects"] == [{"phrase": "the beaker", "role": "manipulated"}, {"phrase": "the hotplate", "role": "destination"}])
+    check("navigation segments have no primitive and no objects in the tagged plan", out["segments"][0]["primitive"] is None and out["segments"][0]["objects"] is None)
     lines = []
-    plan4 = {"task_name": "t", "segments": [nav(), man("Lift the beaker"), man("Pick up the beaker and put it on the hotplate")]}
-    labels4 = {"labels": [lab(1, "pick", ("the beaker", "manipulated")), lab(2, "pick", ("the beaker", "manipulated"))]}
-    out = postprocess(plan4, make_stored_labeler(labels4), say=lines.append)
+    plan4 = attach_labels({"task_name": "t", "segments": [nav(), man("Lift the beaker"), man("Pick up the beaker and put it on the hotplate")]},
+                          {"labels": [lab(1, "pick", ("the beaker", "manipulated")), lab(2, "pick", ("the beaker", "manipulated"))]})
+    out = postprocess(plan4, say=lines.append)
     kinds = [(e["kind"], e["segment"]) for e in out["postprocess"]["log"]]
-    check("the LLM's answer is used, whatever the keywords say", [s.get("primitive") for s in out["segments"]] == [None, "pick", "pick"])
+    check("the planner's answer is used, whatever the keywords say", [s.get("primitive") for s in out["segments"]] == [None, "pick", "pick"])
     check("an unmatched description, an ambiguous one and a disagreement are logged", ("no_keyword_match", 1) in kinds and ("ambiguous", 2) in kinds and ("disagreement", 2) in kinds, f"{kinds}")
     check("each logged case is also printed", len(lines) == len(kinds) and all("[postprocess]" in l for l in lines))
     check("the ambiguous tag and the keyword answer are on the segment", out["segments"][2]["ambiguous"] and out["segments"][2]["keyword_primitive"] == "place" and out["segments"][1]["keyword_primitive"] is None)
-    check("stop_on_disagreement raises with the descriptions and both answers", raises(lambda: postprocess(plan4, make_stored_labeler(labels4), stop_on_disagreement=True, say=quiet), "the labeling says pick, the keywords say place"))
-    out = postprocess(plan4, make_stored_labeler({"labels": [lab(1, "other"), lab(2, "place", ("the beaker", "manipulated"))]}), stop_on_disagreement=True, say=quiet)
+    check("stop_on_disagreement raises with the descriptions and both answers", raises(lambda: postprocess(plan4, stop_on_disagreement=True, say=quiet), "the planner says pick, the keywords say place"))
+    plan5 = attach_labels({"task_name": "t", "segments": [nav(), man("Lift the beaker"), man("Place the beaker on the hotplate")]}, {"labels": [lab(1, "other"), lab(2, "place", ("the beaker", "manipulated"))]})
+    out = postprocess(plan5, stop_on_disagreement=True, say=quiet)
     check("no keyword match is not a disagreement (the setting does not stop on it); 'other' is a primitive tag", out["segments"][1]["primitive"] == "other")
-    check("'other' where the keywords found a primitive IS a disagreement", raises(lambda: postprocess(BEAKER_ON_HOTPLATE_PLAN, make_stored_labeler({"labels": [lab(1, "other"), lab(2, "place")]}), stop_on_disagreement=True, say=quiet), "the labeling says other"))
-    P = BEAKER_ON_HOTPLATE_PLAN
-    ok_labels = BEAKER_ON_HOTPLATE_LABELS["labels"]
-    cases = {"an unknown primitive": {"labels": [lab(1, "juggle"), ok_labels[1]]}, "an unknown role": {"labels": [{"index": 1, "primitive": "pick", "objects": [{"phrase": "x", "role": "boss"}]}, ok_labels[1]]},
-             "a missing manipulation segment": {"labels": [ok_labels[0]]}, "a label twice": {"labels": [ok_labels[0], ok_labels[0], ok_labels[1]]}, "a label on a navigation segment": {"labels": [lab(0, "pick"), *ok_labels]},
-             "a label beyond the plan": {"labels": [*ok_labels, lab(9, "pick")]}, "an extra key": {"labels": [{**ok_labels[0], "confidence": 0.9}, ok_labels[1]]}, "not the schema at all": {"answer": "pick"}}
-    for name, bad in cases.items():
-        check(f"a labeling reply with {name} raises PostprocessError (the plan does not start)", raises(lambda b=bad: postprocess(P, make_stored_labeler(b), say=quiet)))
+    check("'other' where the keywords found a primitive IS a disagreement", raises(lambda: postprocess(attach_labels(BEAKER_ON_HOTPLATE_PLAN, {"labels": [lab(1, "other"), lab(2, "place")]}), stop_on_disagreement=True, say=quiet), "the planner says other"))
+    plan6 = copy.deepcopy(BEAKER_ON_HOTPLATE_PLAN)
+    plan6["segments"][1]["objects"] = [{"phrase": "the beaker", "role": "manipulated"}, {"phrase": "the beaker", "role": "manipulated"}]
+    check("the same phrase twice in a step is the planner's business, not an error (grounding resolves each phrase)", postprocess(plan6, say=quiet) is not None)
 
-    print("\n5. the LLM labeler")
-    seen = {}
-
-    def structured(prompt, model):
-        seen.update(prompt=prompt, model=model)
-        return Labels.model_validate(BEAKER_ON_HOTPLATE_LABELS)
-    out = postprocess(P, make_llm_labeler(structured), say=quiet)
-    check("the structured call gets the Labels model and a prompt with every segment", seen["model"] is Labels and all(s["description"] in seen["prompt"] for s in P["segments"]) and "[navigation]" in seen["prompt"])
-    check("a model object as the reply works", out["segments"][1]["primitive"] == "pick")
-    out = postprocess(P, make_llm_labeler(lambda prompt, model: BEAKER_ON_HOTPLATE_LABELS), say=quiet)
-    check("a plain dict as the reply works", out["segments"][2]["primitive"] == "place")
+    print("\n5. one planner call: no labeling call, prompt, setting or code path is left; the planner's prompt is word for word")
+    check("no labeling function in the post-processing module", not any(hasattr(mpvi_postprocess, n) for n in ("make_llm_labeler", "make_stored_labeler", "LABEL_PROMPT")))
+    check("no label prompt version in LLM_CFG; the planner's version is the same as before (the prompt text did not change: the schema is part of the cache key)", "label_prompt_version" not in LLM_CFG and LLM_CFG["planner_prompt_version"] == "planner-appendix-d-v1")
+    check("the planner prompt is word for word (its SHA-256 is the one of the committed text of 2026-10-20; src/mpvi_prompts.py is not edited)", hashlib.sha256(PLANNER_PROMPT.encode()).hexdigest() == "5aaf949b4de535776944fee5dda4eb2e2e69ff9cabdc7c4780e657a24a6d59c2")
     print(f"\n{sum(results)}/{len(results)} checks passed")
     return all(results)
 

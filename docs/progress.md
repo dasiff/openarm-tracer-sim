@@ -134,3 +134,5 @@ FULL SUITE (step 2, E5): tmux suite_s2, TAG 20261022_183500, data/logs/suite_202
 Resumed after the crash (swap 4 GB added). Tag before-neck-removal on 2b92ffe. full_check_test fixed (29/29). Remaining tests one at a time: tmux tail, docs/reports/logs/tail_20261022_211004_summary.txt, started 21:10:04: nav_pipeline_follow_test stance_select_test stance_select_pipeline_test mpvi_pipeline_test safety_filter_model_check, then face_test alone. mpvi_text_test blocked on the VLM refresh (Gemini 503). DO NOT EDIT src/ or experiments/ WHILE IT RUNS.
 
 Step 2 DONE except the VLM refresh (blocked: 503 x2 then daily quota 429, rule A1). Report docs/reports/*_fixed_camera_step2.md. Nothing running. WAITING for David.
+
+2026-10-23: Step 3 A and B built: one planner call (M168), the VLA instruction from resolved fields (M169). NO live Gemini calls (quota). C0 report next, then STOP (C waits).

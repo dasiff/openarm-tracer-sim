@@ -10,7 +10,8 @@ modules["navigation"], manipulation segments on modules["manipulation"]. The mod
 
 Flow of a manipulation segment: when it starts, its primitive must be pick or place (otherwise the plan stops with "no primitive for this step: <description>"); the grounder resolves the
 segment's object phrases against the world model (status "grounding" while the operator is asked; a failure stops the plan with the grounder's reason); the manipulation module's start() gets
-the segment plus "grounded": {role: entry id}.
+the segment plus "grounded": {role: entry id} and "instruction" (src/vla_instruction.py: a template filled with the primitive and the grounded entries' names; a phrase that
+grounds to nothing stops the step with "instruction cannot be grounded: <phrase>"). The LLM's description stays in the segment and still goes to the checker.
 
 Flow of a manipulation segment: start(segment); every tick step(obs); whenever the module reports a gripper event ("gripper_closed", "gripper_opened") the checker is called: for
 a segment tagged "check" (the last of its unit of consecutive manipulation segments) at the event that ends its primitive (close for a pick, open for a place) the verdict decides
@@ -39,6 +40,7 @@ done (the task's success check reads it).
 import math
 
 from src.task_config import ORCH_CFG
+from src.vla_instruction import InstructionError, build_instruction
 
 CHECK_EVENT = {"pick": "gripper_closed", "place": "gripper_opened"}
 
@@ -68,7 +70,7 @@ def make_orchestrator(plan, modules, cfg=None):
 
     Returns:
         dict: The policy source (see the module docstring), plus "state": {"steps" (the tagged segments), "status" (list of the segment states), "index", "finished",
-        "failure" (str or None), "log" (list of (sim time, text)), "verdicts" (list of the checker's verdicts), "grounded" (list of {segment, role: entry id})}.
+        "failure" (str or None), "log" (list of (sim time, text)), "verdicts" (list of the checker's verdicts), "grounded" (list of {segment, role: entry id}), "instructions" (list of {segment, instruction}: the VLA's instruction built from the primitive and the grounded names)}.
 
     Raises:
         ValueError: If a manipulation segment lacks its tags (primitive, objects, check), or there is no grounder.
@@ -81,7 +83,7 @@ def make_orchestrator(plan, modules, cfg=None):
     if any(s["type"] == "manipulation" for s in steps) and "grounder" not in modules:
         raise ValueError("a plan with manipulation segments needs modules['grounder']")
     n = len(steps)
-    S = {"steps": steps, "status": ["pending"] * n, "index": 0, "finished": False, "failure": None, "log": [], "verdicts": [], "grounded": [], "monitors": [], "skill_end": [], "tick_events": [], "attempt": [1] * len(steps), "attempts": [], "pipeline_problems": [], "last_check": None, "operator": [], "skipped": [], "asking": None, "cur": None, "started": False, "t": 0.0,
+    S = {"steps": steps, "status": ["pending"] * n, "index": 0, "finished": False, "failure": None, "log": [], "verdicts": [], "grounded": [], "instructions": [], "monitors": [], "skill_end": [], "tick_events": [], "attempt": [1] * len(steps), "attempts": [], "pipeline_problems": [], "last_check": None, "operator": [], "skipped": [], "asking": None, "cur": None, "started": False, "t": 0.0,
          "handoff": not any(s["type"] == "navigation" for s in steps)}
 
     def say(text):
@@ -304,12 +306,19 @@ def make_orchestrator(plan, modules, cfg=None):
     def grounded(seg, r):
         """The segment with its grounded entry ids, or None after stopping the plan on a failed grounding."""
         if r["state"] == "failed":
-            fail(r["reason"], "grounding")
+            fail(f"instruction cannot be grounded: {r['phrase']}" if r.get("not_found") else r["reason"], "grounding")      # a phrase that names nothing the world model knows (David, 2026-10-23, M169)
             return None
         ids = {role: e.id for role, e in r["resolved"].items()}
         S["grounded"].append({"segment": S["index"], **ids})
         say(f"grounded: {ids}")
-        return {**seg, "grounded": ids}
+        try:
+            text = build_instruction(seg["primitive"], {role: e.name for role, e in r["resolved"].items()})      # the VLA's instruction: a template, the primitive and the grounded names
+        except InstructionError as e:
+            fail(str(e), "grounding")
+            return None
+        S["instructions"].append({"segment": S["index"], "instruction": text})
+        say(f"instruction: {text!r} (the LLM's description, logged and sent to the checker: {seg['description']!r})")
+        return {**seg, "grounded": ids, "instruction": text}
 
     def mod_step(mod, i, obs):
         """Steps the running segment's module (the segment with its grounded ids in S["cur"]), handles its gripper events, errors and completion."""

@@ -23,7 +23,8 @@ sys.path.insert(0, str(PROJECT_ROOT))
 import numpy as np  # noqa: E402
 
 from src.grounding import make_grounder, make_operator, make_scripted_operator, make_search_stub, resolve  # noqa: E402
-from src.mpvi_postprocess import make_stored_labeler, postprocess  # noqa: E402
+from src.mpvi_plan import attach_labels  # noqa: E402
+from src.mpvi_postprocess import postprocess  # noqa: E402
 from src.orchestrator import make_orchestrator  # noqa: E402
 from src.world_model import Entry, WorldModel  # noqa: E402
 
@@ -207,7 +208,7 @@ def main():
     def plan_of(*manips, nav_first=True, labels):
         segs = ([{"type": "navigation", "description": "Go to the bench", "completion_criteria": "there", "target": "bench"}] if nav_first else []) + [
             {"type": "manipulation", "description": d, "completion_criteria": "done", "target": None} for d in manips]
-        return postprocess({"task_name": "t", "segments": segs}, make_stored_labeler({"labels": labels}), say=lambda *_: None)
+        return postprocess(attach_labels({"task_name": "t", "segments": segs}, {"labels": labels}), say=lambda *_: None)
 
     lab = lambda i, prim, *objs: {"index": i, "primitive": prim, "objects": [{"phrase": p, "role": r} for p, r in objs]}  # noqa: E731
     bm = ("the beaker", "manipulated")
@@ -222,6 +223,25 @@ def main():
     check("the grounded ids reach the manipulation module with the segment", [x["grounded"] for x in mp.started] == [{"manipulated": "beaker"}, {"manipulated": "beaker", "destination": "hotplate"}], f"{[x.get('grounded') for x in mp.started]}")
     check("the navigation segment is started without grounding", "grounded" not in nav.started[0])
     check("the report carries the grounding log and the grounded ids", len(orch["report"]()["grounded"]) == 2 and any(e["kind"] == "resolved" for e in orch["report"]()["grounding_log"]))
+    check("the VLA's instruction is built from the primitive and the grounded names and reaches the module with the segment; the LLM's description is still in the segment",
+          [x.get("instruction") for x in mp.started] == ["pick up the beaker", "place the beaker on the hotplate"] and [x["description"] for x in mp.started] == ["Pick up the beaker", "Place the beaker on the hotplate"]
+          and [x["instruction"] for x in s["instructions"]] == ["pick up the beaker", "place the beaker on the hotplate"], f"{[x.get('instruction') for x in mp.started]}")
+    check("the navigation segment gets no instruction", "instruction" not in nav.started[0])
+    tagged = plan_of("Pick up the beaker", "Put the beaker back in its original location", labels=[lab(1, "pick", bm), lab(2, "place", bm, ("its original location", "destination"))])
+    w = make_world(obj("beaker", ["beaker"], 0.1, held_by=None), fixture("hotplate", ["hotplate"], 1.0))
+    orch, nav, mp = build(w, tagged["segments"], on_start=lambda seg: w.get("beaker").properties.update(held_by="left") if seg["primitive"] == "pick" else None)
+    run(orch)
+    check("a destination that names nothing the world model knows ('its original location') stops the step with 'instruction cannot be grounded: <phrase>'; the pick before it ran",
+          orch["state"]["failure"].split("): ", 1)[-1].startswith("instruction cannot be grounded: its original location") and [x.get("instruction") for x in mp.started] == ["pick up the beaker"], f"{orch['state']['failure']}")
+    from src.vla_instruction import InstructionError, build_instruction
+    check("build_instruction: pick and place templates", build_instruction("pick", {"manipulated": "beaker"}) == "pick up the beaker" and build_instruction("place", {"manipulated": "beaker", "destination": "hotplate"}) == "place the beaker on the hotplate")
+    for name, args in (("a place without a destination name", ("place", {"manipulated": "beaker"})), ("a pick without an object", ("pick", {})), ("an empty name", ("pick", {"manipulated": "  "})), ("a primitive without a template", ("other", {"manipulated": "beaker"}))):
+        try:
+            build_instruction(*args)
+            check(f"build_instruction: {name} raises", False)
+        except InstructionError as e:
+            check(f"build_instruction: {name} raises 'instruction cannot be grounded'", "instruction cannot be grounded" in str(e), str(e))
+    check("the templates are one config block", set(__import__("src.task_config", fromlist=["INSTRUCTION_CFG"]).INSTRUCTION_CFG["templates"]) == {"pick", "place"})
     tagged = plan_of("Pick up the beaker", "Juggle the beaker", labels=[lab(1, "pick", bm), lab(2, "other", bm)])
     w = make_world(obj("beaker", ["beaker"], 0.1), fixture("hotplate", ["hotplate"], 1.0))
     orch, nav, mp = build(w, tagged["segments"])
@@ -232,7 +252,7 @@ def main():
     tagged = plan_of("Pick up the beaker", labels=[lab(1, "pick", bm)])
     orch, nav, mp = build(make_world(fixture("hotplate", ["hotplate"], 1.0)), tagged["segments"])
     run(orch)
-    check("an unknown object stops the plan with the search stub's reason, and the manipulation module is never started", "search not implemented: the beaker" in orch["state"]["failure"] and mp.started == [])
+    check("an unknown object stops the plan with 'instruction cannot be grounded: <phrase>', and the manipulation module is never started", orch["state"]["failure"].split("): ", 1)[-1].startswith("instruction cannot be grounded: the beaker") and mp.started == [])
     w = make_world(obj("b1", ["beaker"], 0.1, contents="liquid"), obj("b2", ["beaker"], 0.2), fixture("hotplate", ["hotplate"], 1.0))
     orch, nav, mp = build(w, tagged["segments"])
     run(orch)

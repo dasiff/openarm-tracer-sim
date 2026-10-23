@@ -24,7 +24,8 @@ sys.path.insert(0, str(PROJECT_ROOT))
 import numpy as np  # noqa: E402
 
 from src.grounding import make_grounder, make_operator, make_scripted_operator  # noqa: E402
-from src.mpvi_postprocess import make_stored_labeler, postprocess  # noqa: E402
+from src.mpvi_plan import attach_labels  # noqa: E402
+from src.mpvi_postprocess import postprocess  # noqa: E402
 from src.orchestrator import make_orchestrator  # noqa: E402
 from src.task_config import ORCH_CFG  # noqa: E402
 from src.world_model import Entry, WorldModel  # noqa: E402
@@ -50,7 +51,7 @@ def make_plan(segments):
             prim = "pick" if "Pick" in s["description"] else "place"
             objs = [{"phrase": "the beaker", "role": "manipulated"}] + ([{"phrase": "the hotplate", "role": "destination"}] if prim == "place" else [])
             labels.append({"index": i, "primitive": prim, "objects": objs})
-    return postprocess({"task_name": "t", "segments": segments}, make_stored_labeler({"labels": labels}), say=lambda *_: None)
+    return postprocess(attach_labels({"task_name": "t", "segments": segments}, {"labels": labels}), say=lambda *_: None)
 
 
 class World:

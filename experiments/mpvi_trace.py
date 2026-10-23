@@ -5,8 +5,8 @@ The inspection tool of the MPVI pipeline: everything between an instruction and 
     python experiments/mpvi_trace.py "put the beaker on the hotplate" [--mode cache_only|cache_or_live|live] [--out FILE] [--side left]
 
 From the stored replies by default (mode cache_only: no API call; a missing reply is reported in the trace). The report lists, in order: the planning request as sent (model, settings, prompt, JSON
-schema), the raw reply, the parsed plan; the labeling request (prompt, schema), its raw reply, the parsed labels (primitive, object phrases with roles); the keyword cross-check per step (the words
-found, the keyword primitive, the labeling's primitive, agreement, ambiguity, and whether stop_on_disagreement would stop); the computed tags (index, check, group) and the execution units with the
+schema), the raw reply, the parsed plan; the planner's labels (primitive, object phrases with roles, in the same reply); the keyword cross-check per step (the words
+found, the keyword primitive, the planner's primitive, agreement, ambiguity, and whether stop_on_disagreement would stop); the computed tags (index, check, group) and the execution units with the
 completion check that closes each; and a dry run of the grounding at dispatch time against the task's configuration (no simulator: the world model is src/world_model.StaticTaskSource, the hand
 is simulated: a resolved pick puts the object in the hand, a resolved place empties it): each navigation target's stance, each manipulation step's resolved entries or its failure reason.
 With --run DIR (a folder written by experiments/mpvi_text_test.py --out) the report ends with every completion check of that run: the triggering wrist camera's image (copied next to the report),
@@ -29,8 +29,8 @@ sys.path.insert(0, str(PROJECT_ROOT))
 from src.grounding import make_grounder, make_operator, make_search_stub  # noqa: E402
 from src.llm_gemini import GeminiCaller, LLMError  # noqa: E402
 from src.mpvi_planner import PlannerError, make_llm_planner  # noqa: E402
-from src.mpvi_postprocess import PostprocessError, keyword_primitive, make_llm_labeler, postprocess  # noqa: E402
-from src.mpvi_schemas import Labels, Plan
+from src.mpvi_postprocess import PostprocessError, keyword_primitive, postprocess  # noqa: E402
+from src.mpvi_schemas import Plan
 from src.mpvi_vlm import parse_verdict  # noqa: E402
 from src.orchestrator import CHECK_EVENT  # noqa: E402
 from src.task_config import LLM_CFG  # noqa: E402
@@ -149,26 +149,24 @@ def build_trace(instruction, mode, side, run_dir=None, images_dir=None):
     out += [f"| {i} | {s['type']} | {cell(s['description'])} | {cell(s['completion_criteria'])} | {cell(s['target'])} |" for i, s in enumerate(plan["segments"])]
     out.append("")
 
-    # --- labeling and post-processing (never stops on a disagreement here: the trace shows it) ---
+    # --- post-processing (never stops on a disagreement here: the trace shows it); the primitive and the objects are the planner's own fields ---
     lines = []
     try:
-        tagged = postprocess(plan, make_llm_labeler(caller.bind("label", LLM_CFG["label_prompt_version"])), stop_on_disagreement=False, say=lines.append)
+        tagged = postprocess(plan, stop_on_disagreement=False, say=lines.append)
     except (LLMError, PostprocessError) as e:
-        calls_section("label", "Labeling", Labels)
-        out.append(f"## STOPPED at the labeling call\n\n{type(e).__name__}: {e}\n")
+        out.append(f"## STOPPED at the post-processing of the plan\n\n{type(e).__name__}: {e}\n")
         return "\n".join(out)
-    calls_section("label", "Labeling", Labels)
     S["tagged"] = tagged
     segs = tagged["segments"]
-    head("Parsed labels")
+    head("The planner's labels (primitive and object phrases)")
     out.append("| segment | description | primitive | object phrases (role) |\n|---|---|---|---|")
     out += [f"| {s['index']} | {cell(s['description'])} | {s['primitive']} | {cell('; '.join(f'{o['phrase']} ({o['role']})' for o in s['objects']))} |" for s in segs if s["type"] == "manipulation"]
     out.append("")
 
     # --- keyword cross-check ---
     head("Keyword cross-check, per manipulation step")
-    out.append("Whole words anywhere in the description; pick up / pick-up / pick / grasp / grab = pick, place / put / set down = place; the LAST match wins. The labeling's answer is the one used; the keywords only log.\n")
-    out.append("| segment | words found | keyword primitive | labeling primitive | agree | ambiguous |\n|---|---|---|---|---|---|")
+    out.append("Whole words anywhere in the description; pick up / pick-up / pick / grasp / grab = pick, place / put / set down = place; the LAST match wins. The planner's answer is the one used; the keywords only log.\n")
+    out.append("| segment | words found | keyword primitive | planner primitive | agree | ambiguous |\n|---|---|---|---|---|---|")
     disagreements = 0
     for s in segs:
         if s["type"] != "manipulation":

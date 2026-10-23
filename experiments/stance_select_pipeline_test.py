@@ -35,7 +35,8 @@ from src.bench_rectangle import load_maps  # noqa: E402
 from src.episode_runner import run_episode  # noqa: E402
 from src.full_check import FullCheck, task_points  # noqa: E402
 from src.mpvi_pipeline import make_pipeline_task  # noqa: E402
-from src.mpvi_postprocess import make_stored_labeler, postprocess  # noqa: E402
+from src.mpvi_plan import attach_labels  # noqa: E402
+from src.mpvi_postprocess import postprocess  # noqa: E402
 from src.replay import replay_run  # noqa: E402
 from src.stance_select import select_bench_stance  # noqa: E402
 from src.task_beaker_hotplate import load_task  # noqa: E402
@@ -60,8 +61,8 @@ def main(plumbing=None):
     if cfg["rectangle"] is None:
         print("the rectangle is not measured yet")
         return False
-    labeler = make_stored_labeler(LABELS4)
-    tagged = postprocess(PLAN4, labeler, False)
+    plan4 = attach_labels(PLAN4, LABELS4)
+    tagged = postprocess(plan4, False)
     world = WorldModel([StaticTaskSource()])
     world.refresh(0.0)
     print("1. the selection", flush=True)
@@ -84,7 +85,7 @@ def main(plumbing=None):
 
     print("\n2. the pipeline on the chosen stance", flush=True)
     sim = load_task(cameras=True)
-    task = make_pipeline_task(PLAN4, task_cfg=sel["task_cfg"], labeler=labeler)
+    task = make_pipeline_task(plan4, task_cfg=sel["task_cfg"])
     out = Path(tempfile.mkdtemp(prefix="stance_select_"))
     s = run_episode(task, sim.model, sim.data, out_dir=out / "episode", record_dir=out / "recording")
     state = task["pipeline"]["orchestrator"]["state"]

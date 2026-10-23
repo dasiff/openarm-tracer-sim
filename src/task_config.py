@@ -449,7 +449,6 @@ LLM_CFG = {
     "planner_prompt_version": "planner-appendix-d-v1",    # the paper's Task Planning Prompt (src/mpvi_prompts.py); bump when the text changes: the cache key includes it [row M002]
     "vlm_prompt_version": "vlm-check-appendix-d-v1",      # the paper's VLM Completion Checking Prompt (the completion checker, next step) [row M002]
     "vlm_cameras": {"gripper_closed": "eagle_cam", "gripper_opened": "eagle_cam"},   # which camera the VLM sees at each gripper event ("wrist_cam" would be the gripper's own); the eagle camera for both, because the wrist view at the grip is filled by the beaker and gave a false NO, and Appendix C.4 says the checker gets the head camera; provisional (row M016) [row M016]
-    "label_prompt_version": "label-v0",                   # LABEL_PROMPT in src/mpvi_postprocess.py [row M013]
     "mode": "cache_only",                  # "cache_only": a cache miss is an error, the API is never called (tests, replays); "cache_or_live": read the cache, call on a miss and store; [row M090]
                                            # "live": always call and store the reply (the cache is bypassed for reading)
     "cache_dir": "experiments/llm_cache",  # committed: the stored replies the tests replay [row M090]
@@ -512,6 +511,16 @@ NAV_CFG = {
     "max_replans": 3,                      # count: replans per approach after a drift or a new obstacle, then the operator (row M057)
 }
 
+
+# ----------------------------------------------------------------------------------------------------------
+# The VLA's instruction (src/vla_instruction.py; David 2026-10-23, row M169)
+# ----------------------------------------------------------------------------------------------------------
+INSTRUCTION_CFG = {
+    # In plain words: after grounding, the arm skill is told what to do in a fixed sentence per primitive, filled with the NAMES of the objects the world model found for the step
+    # ("pick up the beaker", "place the beaker on the hotplate"), not with the LLM's description (which may say "its original location"). The demo generator (B4) must use the same
+    # function and templates so that the training prompts and the runtime prompts are the same text. Open for B4: whether the demo prompts get wording variation.
+    "templates": {"pick": "pick up the {object}", "place": "place the {object} on the {destination}"},   # [row M169]
+}
 
 # ----------------------------------------------------------------------------------------------------------
 # Bench rectangle stance selection (overnight queue stage 5, replaces the S1 to S6 ranking; David 2026-10-22)

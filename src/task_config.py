@@ -525,6 +525,30 @@ INSTRUCTION_CFG = {
 # ----------------------------------------------------------------------------------------------------------
 # Bench rectangle stance selection (overnight queue stage 5, replaces the S1 to S6 ranking; David 2026-10-22)
 # ----------------------------------------------------------------------------------------------------------
+# ----------------------------------------------------------------------------------------------------------
+# Bench stance selection by an inverse-reach region (David 2026-10-23, step 3 part C; src/bench_stance.py; replaces the measured rectangle BENCH_RECT_CFG)
+# ----------------------------------------------------------------------------------------------------------
+BENCH_STANCE_CFG = {
+    # Plain words: every one of the 12 approach bins of the reach maps is a level side grasp (the hand's approach axis and finger axis within 5 degrees of horizontal), so none is "from above or below". What
+    # the bench rules out is the hand coming from the far side of the object: the robot stands in front of the bench facing it, and the hand cannot get behind an object on the bench. The bin k points the hand
+    # k * 30 degrees from the robot's forward axis (towards the left); the bins whose direction has a forward component are 9, 10, 11, 0, 1, 2, 3 (-90 to +90 degrees: 9 and 3 are the hand moving
+    # along the bench edge, to the right and to the left). The bins 4 to 8 point back at the robot and are never used at the bench.
+    "approach_bins": (9, 10, 11, 0, 1, 2, 3),   # [row M172 PENDING David: the list is geometric, not from data]
+    "arm": "left",                              # the arm whose reach maps are used (the pipeline's manipulating arm) [row M170]
+    "grid_m": 0.01,                             # m, the floor grid of the region and of the overlay [row M170]
+    "pedestal_range": (0.05, 0.25),             # m, the pedestal commands searched (lowest, highest), every `pedestal_step` [row M170: David: roughly 0.05 to 0.25]
+    "pedestal_step": 0.01,                      # m [row M170]
+    "forward_range": (0.10, 0.90),              # m, how far ahead of the base origin (base frame x) the object may be in the region [row M170]
+    "lateral_range": (-0.60, 0.60),             # m, how far left (+) of the base origin (base frame y) the object may be in the region [row M170]
+    "cache_dir": "data/bench_region_cache",     # folder of the cached regions [row M170]
+    # Obstacle filter (plan time): every other object on the bench is a vertical cylinder grown by `obstacle_margin_m`; the arm's swept volume for an approach bin is the chain shoulder -> pre-grasp point ->
+    # grasp point (the pre-grasp point is `hand_standoff_m` back from the grasp point along the approach direction) thickened by `arm_radius_m`. A bin whose chain meets any cylinder is removed.
+    "obstacle_margin_m": 0.03,                  # m [row M170: David: start with 3 cm]
+    "arm_radius_m": 0.06,                       # m, half the arm's cross-section (conservative: the forearm and hand are about 8 cm wide) [row M170 PENDING David: placeholder]
+    "hand_standoff_m": 0.15,                    # m, how far behind the grasp point the hand's body reaches along the approach direction (conservative) [row M170 PENDING David: placeholder]
+    "chain_samples": 24,                        # count: points along each chain segment tested against a cylinder [row M170]
+}
+
 BENCH_RECT_CFG = {
     "mode": "task_cfg",                    # "task_cfg": today's fixed stance (TASK_CFG), nothing else changes; "bench_rectangle": park where the next step's targets sit in the rectangle below [row M150]
     # ASSUMPTION (David 2026-10-22): manipulation happens on the lab bench only, with the pedestal at one fixed height (TASK_CFG["pedestal_q"], the finder's output); nothing is beaker-specific.

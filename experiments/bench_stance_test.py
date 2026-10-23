@@ -19,6 +19,8 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
+import math  # noqa: E402
+
 import mujoco  # noqa: E402
 import numpy as np  # noqa: E402
 
@@ -131,6 +133,33 @@ def main():
             print(f"    {name}: {key} hidden: finder (pixels) {100 * fin:.1f} %, region (samples) {100 * h:.1f} %")
             ok &= h >= fin - 0.02
         check(f"{name}: the sampled share is not below the pixel share by more than 2 points", ok)
+
+    print("\n6. H: the support objects in the home-clearance check")
+    from src.stance_select import make_context
+    ctx = make_context(m, d, maps)
+    bench = {"yaw": yaw, "open": TASK_CFG["bench_open"]}
+    qa = np.array(qs)
+    res0 = bs.overlay(scene_objects(m, d), maps, rg, cams, bench, ctx.extra, use_cache=False, say=lambda *_: None)
+    X, Y = res0["grid"]
+    iy, ix = int(np.argmin(abs(Y[:, 0] - y0))), int(np.argmin(abs(X[0] - x0)))
+    check("(2) TASK_CFG's stance is not rejected by the hotplate clearance in the test scene (the hotplate is the support of the place)", res0["stack"][1, qi0, iy, ix] > 0 and res0["stack"][0, qi0, iy, ix] > 0, f"counts {res0['stack'][:, qi0, iy, ix].tolist()}")
+    res20 = bs.overlay(scene_objects(m, d, raise_m=0.20), maps, rg, cams, bench, ctx.extra, use_cache=False, say=lambda *_: None)
+    X, Y = res20["grid"]
+    iy2, ix2 = int(np.argmin(abs(Y[:, 0] - 1.035))), int(np.argmin(abs(X[0] - 0.775)))
+    q17 = int(np.argmin(abs(qa - 0.17)))
+    objs20 = scene_objects(m, d, raise_m=0.20)
+    no_sup = [dict(o, supports=[]) for o in objs20]
+    resn = bs.overlay(no_sup, maps, rg, cams, bench, ctx.extra, use_cache=False, say=lambda *_: None)
+    check("(1) the 20 cm raised box: the stance the full check rejected (0.775, 1.035, pedestal 0.17) has a count without the support filter and none with it",
+          resn["stack"][0, q17, iy2, ix2] > 0 and res20["stack"][0, q17, iy2, ix2] == 0, f"without {int(resn['stack'][0, q17, iy2, ix2])}, with {int(res20['stack'][0, q17, iy2, ix2])}")
+
+    print("\n7. H2: the creep-in sweep")
+    cb = bs.creep_blocked(ctx.furniture, rg["footprint"], yaw, TASK_CFG["staging_approach_back_m"])
+    cell = lambda x, y: (int(round((y - ctx.furniture.origin[1]) / ctx.furniture.res)), int(round((x - ctx.furniture.origin[0]) / ctx.furniture.res)))
+    check("TASK_CFG's stance has a clear creep-in path in the test scene", not cb[cell(x0, y0)])
+    c_, s_ = math.cos(yaw), math.sin(yaw)
+    plain = ctx.furniture._grow("base", rg["footprint"] @ np.array([[c_, s_], [-s_, c_]]))
+    check("the swept corridor contains every cell where the footprint itself is blocked (the sweep only adds)", bool(cb[plain].all()) and cb.sum() >= plain.sum(), f"{int(cb.sum())} cells against {int(plain.sum())}")
 
     print(f"\n{sum(results)}/{len(results)} checks passed")
     return all(results)

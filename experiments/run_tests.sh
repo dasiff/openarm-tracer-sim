@@ -17,7 +17,7 @@ run() {
 }
 for t in arm_kinematics_test grasp_rules_test arm_collision_test gripper_geometry_test furniture_map_test stance_finder_test pour_scene_test home_pose_test face_test \
          gripper_force_test grasp_lift_test beaker_hollow_test target_mode_test sequential_policy_test beaker_hotplate_correction_test beaker_hotplate_success_test \
-         pedestal_lift_test rest_contacts_test robot_vs_urdf_test reach_map_holes_test reach_map_restamp cc_loop_tests cc_mode_tests mpvi_postprocess_test grounding_test llm_calls_test vlm_checker_test orchestrator_retry_test mpvi_monitor_test full_check_test nav_core_test nav_follow_test nav_follow_sim_test nav_pipeline_follow_test stance_select_test stance_select_pipeline_test mpvi_pipeline_test mpvi_text_test; do
+         pedestal_lift_test rest_contacts_test robot_vs_urdf_test reach_map_holes_test reach_map_restamp cc_loop_tests cc_mode_tests mpvi_postprocess_test grounding_test llm_calls_test vlm_checker_test orchestrator_retry_test mpvi_monitor_test full_check_test nav_core_test nav_follow_test nav_follow_sim_test nav_pipeline_follow_test stance_select_test stance_select_pipeline_test bench_stance_test support_test mpvi_pipeline_test mpvi_text_test; do
   case " $SKIP " in *" $t "*) echo "=== $t SKIPPED (env SKIP)" >> "$SUM"; continue;; esac
   case "$t" in nav_core_test) run "$t" python experiments/$t.py --sim;; reach_map_restamp) run "$t" python experiments/$t.py --check;; nav_follow_sim_test) run "$t" python experiments/$t.py --only on;; *) run "$t" python experiments/$t.py;; esac
 done

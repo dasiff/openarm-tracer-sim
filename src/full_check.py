@@ -41,6 +41,7 @@ from src.stance_checks import StanceChecks
 from src.stance_finder import robot_geometry
 from src.task_beaker_hotplate import bench_top_z, load_task
 from src.robot_specs import EAGLE_MOUNT
+from src.task_points import task_points  # noqa: F401  (moved to src/task_points.py; kept importable from here)
 from src.task_config import BEAKER_CFG, FULLCHECK_CFG, STAGING_CFG, STANCE_REQUIREMENTS, TASK_CFG
 
 SIDE = "left"
@@ -57,33 +58,6 @@ def add_object_slots(spec, n):
     """
     for i in range(n):
         spec.worldbody.add_geom(name=f"fc_slot_{i}", type=mujoco.mjtGeom.mjGEOM_BOX, size=[0.01, 0.01, 0.01], pos=list(SLOT_PARK), rgba=[0.8, 0.3, 0.1, 0.0], contype=1, conaffinity=1)
-
-
-def task_points(model, data, fracs=None):
-    """The task points of the current scene's skill paths (the 12 points of the stance search): the grasp band heights at the beaker, the same heights at the set-down above the hotplate, and
-    10 cm above those, each {"p", "arm": "either", "bin": None, "path": "grasp" | "setdown" | "above"}.
-
-    Args:
-        model (mujoco.MjModel): The model.
-        data (mujoco.MjData): Its data (the objects placed).
-        fracs (tuple of float or None): The grasp band fractions of the beaker's height. Defaults to BEAKER_CFG["grasp_band"] in 0.05 steps.
-
-    Returns:
-        list of dict: The points, grasp path first, then set-down, then above.
-    """
-    if fracs is None:
-        lo, hi = BEAKER_CFG["grasp_band"]
-        fracs = tuple(round(float(f), 2) for f in np.arange(lo, hi + 1e-9, 0.05))
-    d = mujoco.MjData(model)
-    mujoco.mj_forward(model, d)
-    plate = model.geom("task_hotplate_top_plate")
-    plate_top = float(d.geom_xpos[plate.id][2] + model.geom_size[plate.id][2])
-    top, H = bench_top_z(model), BEAKER_CFG["height"]
-    bxy, hxy = np.array(TASK_CFG["beaker_xy"], float), np.array(TASK_CFG["hotplate_xy"], float)
-    pts = [("grasp", np.array([*bxy, top + f * H])) for f in fracs]
-    pts += [("setdown", np.array([*hxy, plate_top + 0.002 + f * H])) for f in fracs]
-    pts += [("above", np.array([*hxy, plate_top + 0.002 + f * H + 0.10])) for f in fracs]
-    return [{"p": p.tolist(), "arm": "either", "bin": None, "path": kind} for kind, p in pts]
 
 
 class PathClearance:

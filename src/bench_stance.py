@@ -47,10 +47,15 @@ class BenchStanceError(RuntimeError):
     """No stance covers the objects; the message names the blockers."""
 
 
-def load_maps(path):
-    """The finished reach maps of a folder: {(side, bin): ReachMap}; `maps_stamp(maps)` of the result tells which build they are."""
+def load_maps(path, sides=("left", "right")):
+    """The finished reach maps of a folder: {(side, bin): ReachMap}, one per file, not merged; `maps_stamp(maps, arm)` of the result tells which build they are.
+
+    Args:
+        path (str or Path): The folder.
+        sides (tuple of str): Which arms to load. Defaults to both.
+    """
     maps = {}
-    for f in sorted(Path(path).glob("*_bin*.npz")):
+    for f in sorted(p for s in sides for p in Path(path).glob(f"{s}_bin*.npz")):
         rm = load_map(f)
         rm.stamp = str(np.load(f)["stamp"])
         maps[(rm.side, rm.bin)] = rm
@@ -300,6 +305,117 @@ def make_extra_blocked(furniture, robot, yaw, home_clear=None, heading_robust_de
             out |= ~np.asarray(home_clear(yaw, qs, X, Y), bool)
         return out
     return f
+
+
+def robot_silhouettes(model, chk, qs, stance_xy_yaw, camera="eagle_cam", cache_dir=None, say=print):
+    """The robot's silhouette in the eagle image at the zombie pose for each pedestal command (F3): bool (nq, H, W), True where a robot geom is the nearest surface.
+
+    The camera is fixed to the torso, so for a given pedestal command the robot looks the same from the camera wherever the base stands (F0c, checked by experiments/f0_silhouette_check.py);
+    the mask is the union of two renders at one stance: the robot alone (every geom that is not under base_link made fully transparent) and the robot in the scene (the picture the occlusion measure of src/stance_checks.py sees; the two differ by about 2.5 % of the arm pixels where the arm and the bench are nearly at the same depth, F0).
+
+    Args:
+        model (mujoco.MjModel): The compiled model (with the eagle camera).
+        chk (src.stance_checks.StanceChecks): Places the robot at a stance with both arms at home.
+        qs (iterable of float): The pedestal commands.
+        stance_xy_yaw (tuple): (x, y, yaw) where the robot is placed for the renders (any stance gives the same silhouette).
+        camera (str): The camera. Defaults to "eagle_cam".
+        cache_dir (str or Path or None): A folder to keep the masks in (an npz named by a hash of the camera pose and the home pose); None: not cached.
+        say (callable): Progress lines.
+
+    Returns:
+        numpy.ndarray: Bool (nq, H, W).
+    """
+    import copy
+    import mujoco
+    qs = [float(q) for q in qs]
+    c = model.camera(camera).id
+    chk.place((*stance_xy_yaw, qs[0]))
+    key = hashlib.sha256(json.dumps({"qs": [round(q, 5) for q in qs], "home": np.round(np.concatenate([np.asarray(chk.home[k], float) for k in ("left", "right")]), 5).tolist(), "fov": float(model.cam_fovy[c]),
+                                      "res": [int(v) for v in model.cam_resolution[c]], "pos": np.round(model.cam_pos[c], 5).tolist(), "quat": np.round(model.cam_quat[c], 5).tolist(),
+                                      "ngeom": int(model.ngeom)}).encode()).hexdigest()[:20]
+    path = None if cache_dir is None else Path(cache_dir) / f"silhouette_{key}.npz"
+    if path is not None and path.exists():
+        try:
+            z = np.load(path)
+            return np.unpackbits(z["mask"], axis=-1)[..., :int(z["w"])].astype(bool)
+        except Exception as e:
+            say(f"[bench_stance] silhouette cache unreadable ({e}); rendering again")
+    root = model.body("base_link").id
+
+    def under_root(b):
+        while b > 0:
+            if b == root:
+                return True
+            b = int(model.body_parentid[b])
+        return False
+
+    m2 = copy.copy(model)
+    keep = np.array([under_root(int(model.geom_bodyid[g])) for g in range(model.ngeom)])
+    m2.geom_rgba = model.geom_rgba.copy()
+    m2.geom_rgba[~keep, 3] = 0.0
+    W, H = [int(v) for v in model.cam_resolution[c]]
+    out = np.zeros((len(qs), H, W), bool)
+    for mod in (m2, model):                                  # the robot alone, and the robot in the scene (the finder's own picture): the union, so a pixel either shows counts
+        r = mujoco.Renderer(mod, H, W)
+        r.enable_segmentation_rendering()
+        try:
+            for i, q in enumerate(qs):
+                chk.place((*stance_xy_yaw, q))
+                r.update_scene(chk.d, camera=camera)
+                seg = r.render()
+                gid = np.where(seg[:, :, 1] == int(mujoco.mjtObj.mjOBJ_GEOM), seg[:, :, 0], -1)
+                out[i] |= (gid >= 0) & keep[np.clip(gid, 0, model.ngeom - 1)]
+        finally:
+            r.close()
+    if path is not None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_suffix(".tmp.npz")
+        np.savez_compressed(tmp, mask=np.packbits(out, axis=-1), w=W)
+        tmp.replace(path)
+    return out
+
+
+def gripper_view_ok(chk, qs, stance_xy_yaw, margin=STANCE_REQUIREMENTS["view_min_margin"]):
+    """Per pedestal command: both grippers (tool point, hand, finger tips) at home are inside the fixed view with the margin (bool (nq,)). They ride with the torso, so the stance does not matter."""
+    out = []
+    for q in qs:
+        mg = chk.view_margin((*stance_xy_yaw, float(q)))["margins"]
+        out.append(min(v for k, v in mg.items() if "gripper" in k) >= margin - 1e-9)
+    return np.array(out)
+
+
+def _pixels(cams, qi, P):
+    """Image pixel coordinates (x right, y down) and depth of points P (..., 3) in the base frame, for pedestal index qi."""
+    th = math.tan(math.radians(cams["fovy"]) / 2)
+    W, H = cams["W"], cams["H"]
+    pc = (P - cams["pos"][qi]) @ cams["R"][qi]
+    depth = -pc[..., 2]
+    safe = np.maximum(depth, 1e-6)
+    u, v = pc[..., 0] / safe / (th * W / H), pc[..., 1] / safe / th
+    return (u + 1) * 0.5 * W, (1 - v) * 0.5 * H, depth
+
+
+def hidden_fraction(cams, sil, qi, bb, oo, samples):
+    """The share of an object's surface sample points that fall on the robot's silhouette, for the object at (b, o) ahead and to the left of the base, for pedestal index qi.
+
+    Args:
+        cams (dict): From camera_poses.
+        sil (numpy.ndarray): The silhouettes, bool (nq, H, W).
+        qi (int): The pedestal index.
+        bb, oo (numpy.ndarray): Object positions in the base frame (any shape).
+        samples (numpy.ndarray): (K, 3) points on the object's surface: x, y offsets from its centre in the base frame, z the world height minus the base origin's height.
+
+    Returns:
+        numpy.ndarray: Shape of bb: the hidden share, 0 to 1 (a point outside the image counts as not hidden: the framing check judges it).
+    """
+    P = np.stack([bb[..., None] + samples[:, 0], oo[..., None] + samples[:, 1], np.broadcast_to(samples[:, 2], bb.shape + (len(samples),))], axis=-1)
+    px, py, depth = _pixels(cams, qi, P)
+    H, W = sil.shape[1:]
+    ix, iy = np.floor(px).astype(int), np.floor(py).astype(int)
+    inside = (ix >= 0) & (ix < W) & (iy >= 0) & (iy < H) & (depth > 0.05)
+    hit = np.zeros(P.shape[:-1], bool)
+    hit[inside] = sil[qi][iy[inside], ix[inside]]
+    return hit.mean(axis=-1)
 
 
 def count_at(reg, xy_rel, qi, bins=None):

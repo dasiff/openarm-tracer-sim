@@ -137,4 +137,4 @@ Step 2 DONE except the VLM refresh (blocked: 503 x2 then daily quota 429, rule A
 
 2026-10-23: Step 3 A and B built: one planner call (M168), the VLA instruction from resolved fields (M169). NO live Gemini calls (quota). C0 report next, then STOP (C waits).
 
-C1 DONE (report docs/reports/*_c1_bench_reach_maps.md, rows M170/M171, TASK_CFG stance 12/12). Next: C2a (bench-approach bins), C2b region builder (src/bench_stance.py). No run in progress.
+C1 DONE (report *_c1_bench_reach_maps.md). C2a-d BUILT (src/bench_stance.py, BENCH_STANCE_CFG, rows M170-M172). C2e STOP: best stance 6.3 cm from TASK_CFG's (limit 3 cm); report docs/reports/*_c2_bench_stance_stop.md. WAITING for David (C3 and the 4 new tests not started). No run in progress.

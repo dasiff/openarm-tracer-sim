@@ -44,9 +44,11 @@ def scene_objects(model, data, raise_m=0.0):
     r = raise_m                                                      # the beaker raised by this much on a made-up support (G0 g)
     bc = bc + np.array([0.0, 0.0, r])
     return [{"name": "beaker", "xy": bxy, "depth": depth(bxy), "z_points": [top + r + f * H for f in fr], "surface_z": top + r, "corners": bc,
-             "samples": bs.cylinder_surface_samples(bxy, BEAKER_CFG["outer_diameter"] / 2, top + r, top + r + H), "hidden_max": occ["beaker"], "radius_shape": BEAKER_CFG["outer_diameter"] / 2, "radius": BEAKER_CFG["outer_diameter"] / 2, "z0": top + r, "z1": top + r + H},
+             "samples": bs.cylinder_surface_samples(bxy, BEAKER_CFG["outer_diameter"] / 2, top + r, top + r + H), "hidden_max": occ["beaker"], "radius_shape": BEAKER_CFG["outer_diameter"] / 2, "radius": BEAKER_CFG["outer_diameter"] / 2, "z0": top + r, "z1": top + r + H,
+             "supports": ([{"kind": "box", "xy": bxy, "half": (0.06, 0.06), "z0": top, "z1": top + r}] if r > 0 else [])},
             {"name": "hotplate", "xy": hxy, "depth": depth(hxy), "z_points": [plate_top + 0.002 + f * H for f in fr], "surface_z": plate_top + 0.002, "corners": hc,
-             "samples": bs.box_surface_samples(hc), "hidden_max": occ["hotplate"], "radius": 0.09, "z0": top, "z1": plate_top}]
+             "samples": bs.box_surface_samples(hc), "hidden_max": occ["hotplate"], "radius": 0.09, "z0": top, "z1": plate_top,
+             "supports": [{"kind": "box", "xy": hxy, "half": (0.09, 0.09), "z0": top, "z1": plate_top}]}]            # H: the hotplate is the support of the place step
 
 
 if __name__ == "__main__":

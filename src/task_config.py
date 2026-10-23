@@ -565,6 +565,8 @@ BENCH_STANCE_CFG = {
     "bench_max_raise_m": 0.1325,                  # [row M174 PENDING David]
     # The measured reach band (G0 b): the lowest and highest grasp-point height above the floor some stance serves at some pedestal height, written by experiments/g0_reach_band.py.
     "reach_band_file": "docs/measured/bench_reach_band.json",   # [row M174]
+    "rank_keep": 4,                             # count: the ranked stances the overlay returns (the best and the next three the full check falls back to) [row M175]
+    "rank_min_distance_m": 0.10,                # m: a ranked stance is at least this far from a better one (the finder's nms_distance) [row M175]
     "chain_samples": 24,                        # count: points along each chain segment tested against a cylinder [row M170]
 }
 

@@ -276,10 +276,63 @@ def get_region(maps, robot, cams, depth, spec, arm=None, bench_open=True, cfg=BE
     return reg
 
 
-def counts(reg, bins=None):
-    """The count array (nq, nb, no): bins reachable, zero where the camera does not see the target. `bins`: bool (nq, nbins, nb, no) overrides the reach (the filtered one)."""
+def counts(reg, bins=None, ok=None):
+    """The count array (nq, nb, no): bins reachable, zero where the camera does not see the target. `bins`: bool (nq, nbins, nb, no) overrides the reach (the filtered one); `ok`: bool (nq, nb, no),
+    False where a plan-time filter (the support objects, H) zeroes the count."""
     r = reg["reach"] if bins is None else bins
-    return (r.sum(axis=1) * reg["view"]).astype(np.int16)
+    c = r.sum(axis=1) * reg["view"]
+    if ok is not None:
+        c = c * ok
+    return c.astype(np.int16)
+
+
+def support_ok(reg, robot, cams, supports, yaw, cfg=BENCH_STANCE_CFG):
+    """H: False where, at a pedestal height and floor spot, the zombie pose's arms come within the home clearance (40 mm, STANCE_REQUIREMENTS) of a support object under the target.
+
+    Args:
+        reg (dict): The target's region.
+        robot (dict): From robot_geometry.
+        cams (dict): From camera_poses (with "arm_pts").
+        supports (list of dict): Each {"kind": "box" with "xy" (world centre), "half" (hx, hy, world axes), "z0", "z1"} or {"kind": "cylinder", "xy", "radius", "z0", "z1"}; "target_xy" is the target's world xy.
+        yaw (float): The heading that faces the bench.
+        cfg (dict): BENCH_STANCE_CFG.
+
+    Returns:
+        numpy.ndarray: Bool (nq, nb, no), True where the arms keep the clearance from every support (all True with no supports). Geometry on known shapes, no IK; only the spots that already have a count are tested.
+    """
+    ok = np.ones(reg["view"].shape, bool)
+    if not supports:
+        return ok
+    n, t = bench_frame(yaw)
+    b, o = reg["b"], reg["o"]
+    base_z = robot["base_z"]
+    pts0 = cams["arm_pts"]
+    live = (reg["reach"].any(axis=1) & reg["view"])                          # (nq, nb, no): the cells that have a count
+    lim = cfg["home_clearance_m"] + 0.003
+    for qi, q in enumerate(reg["qs"]):
+        idx = np.argwhere(live[qi])
+        if not len(idx):
+            continue
+        ap = pts0.copy()
+        ap[:, 2] += robot["lift_factor"] * q - base_z
+        C = np.stack([b[idx[:, 0]], o[idx[:, 1]], np.zeros(len(idx))], axis=-1)       # the target's base-frame position per spot (b ahead, o left)
+        bad = np.zeros(len(idx), bool)
+        for sp in supports:
+            d_xy = np.asarray(sp["xy"], float) - np.asarray(sp["target_xy"], float)
+            rel = np.array([d_xy @ n, d_xy @ t])
+            cen = C.copy()
+            cen[:, 0] += rel[0]
+            cen[:, 1] += rel[1]
+            z0, z1 = sp["z0"] - base_z, sp["z1"] - base_z
+            if sp["kind"] == "cylinder":
+                dm = cylinder_distance(ap, cen, sp["radius"], z0, z1).min(axis=-1)
+            else:
+                hx, hy = sp["half"]
+                ex, ey = abs(n[0]) * hx + abs(n[1]) * hy, abs(t[0]) * hx + abs(t[1]) * hy        # the world box's half sizes along the bench frame (exact for a heading that is a multiple of 90 degrees)
+                dm = box_distance(ap, cen, np.array([-ex, -ey, z0]), np.array([ex, ey, z1])).min(axis=-1)
+            bad |= dm < lim
+        ok[qi][idx[bad, 0], idx[bad, 1]] = False
+    return ok
 
 
 def filter_obstacles(reg, robot, arm, z_grasp, obstacles, cfg=BENCH_STANCE_CFG):
@@ -585,7 +638,7 @@ def overlay(objects, maps, robot, cams, bench, extra_blocked=None, arm=None, cfg
         say (callable): Progress lines.
 
     Returns:
-        dict: "ok", "xy", "q", "qi", "covered", "uncovered", "counts" ({name: count at the best spot}), "score" (objects covered, pedestal run width in m, smallest count, distance to the region's edge in m,
+        dict: "ok", "xy", "q", "qi", "covered", "uncovered", "counts" ({name: count at the best spot}), "ranked" (the best stances in order, at least `nms_distance` apart: dicts with "xy", "q", "qi", "score", "counts"), "score" (objects covered, pedestal run width in m, smallest count, distance to the region's edge in m,
         obstacle clearance in m), "run" ((q_lo, q_hi) of the chosen spot), "grid" (X, Y), "stack" ((nobj, nq, ny, nx) counts), "allowed", "width" ((ny, nx) run width in steps), "qmid" ((ny, nx) index of the chosen
         height per cell), "valid" ((nq, ny, nx): the best number of objects covered), "seconds", "regions".
 
@@ -614,7 +667,8 @@ def overlay(objects, maps, robot, cams, bench, extra_blocked=None, arm=None, cfg
                   for p in objects if p is not ob]
         zg = 0.5 * (min(ob["z_points"]) + max(ob["z_points"]))
         reach = filter_obstacles(reg, robot, arm, zg, others, cfg)
-        cnts[ob["name"]] = _place(reg, counts(reg, reach), X, Y, ob["xy"], n, t)
+        sup_ok = support_ok(reg, robot, cams, [{**sp, "target_xy": ob["xy"]} for sp in ob.get("supports") or []], bench["yaw"], cfg)       # H: the supports under the target
+        cnts[ob["name"]] = _place(reg, counts(reg, reach, sup_ok), X, Y, ob["xy"], n, t)
         filt_alone[ob["name"]] = (reg, zg, others)
     sec["filter"] = time.time() - t0
     t0 = time.time()
@@ -651,9 +705,21 @@ def overlay(objects, maps, robot, cams, bench, extra_blocked=None, arm=None, cfg
         cand &= key == key[cand].max()
     iy, ix = [int(v[0]) for v in np.nonzero(cand)]
     qi = int(qmid[iy, ix])
+    ranked = []                                                                  # the best stances in order of the ranking, thinned by the finder's distance rule
+    cells = np.argwhere(width > 0)
+    keys = np.stack([width[cells[:, 0], cells[:, 1]], minc[cells[:, 0], cells[:, 1]], np.round(edge, 2)[cells[:, 0], cells[:, 1]], np.round(dist_obs, 2)[cells[:, 0], cells[:, 1]] if len(objects) > 1 else np.zeros(len(cells))])
+    order = np.lexsort(tuple(-keys[i] for i in range(keys.shape[0] - 1, -1, -1)))                  # the first key (the run width) is the most significant
+    for ci in order:
+        cy, cx = cells[ci]
+        if all(math.hypot(X[cy, cx] - r["xy"][0], Y[cy, cx] - r["xy"][1]) >= cfg["rank_min_distance_m"] for r in ranked):
+            q_i = int(qmid[cy, cx])
+            ranked.append({"xy": (float(X[cy, cx]), float(Y[cy, cx])), "q": float(qs[q_i]), "qi": q_i, "score": (best_n, float(width[cy, cx] * cfg["pedestal_step"]), int(minc[cy, cx]), float(round(edge[cy, cx], 2)), float(dist_obs[cy, cx])),
+                           "counts": {nm: int(cnts[nm][q_i, cy, cx]) for nm in names}})
+            if len(ranked) >= cfg["rank_keep"]:
+                break
     sec["overlay"] = time.time() - t0
     covered = [nm for nm in names if cnts[nm][qi, iy, ix] > 0 and allowed[qi, iy, ix]]
     return {"ok": True, "xy": (float(X[iy, ix]), float(Y[iy, ix])), "q": float(qs[qi]), "qi": qi, "covered": covered, "uncovered": [nm for nm in names if nm not in covered],
-            "counts": {nm: int(cnts[nm][qi, iy, ix]) for nm in names},
+            "counts": {nm: int(cnts[nm][qi, iy, ix]) for nm in names}, "ranked": ranked,
             "score": (best_n, float(width[iy, ix] * cfg["pedestal_step"]), int(minc[iy, ix]), float(round(edge[iy, ix], 2)), float(dist_obs[iy, ix])), "run": (float(qs[q_lo[iy, ix]]), float(qs[q_hi[iy, ix]])),
             "grid": (X, Y), "stack": stack, "allowed": allowed, "width": width, "qmid": qmid, "valid": valid, "edge": edge, "minc": minc, "dist_obs": dist_obs, "seconds": sec, "regions": regs}

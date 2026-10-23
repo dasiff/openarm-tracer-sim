@@ -13,12 +13,27 @@ Contents:
 """
 
 import copy
+import math
 
 import mujoco
 import numpy as np
 
 from src import robot_specs
 from src.robot_helpers import arm_ids
+
+
+def bench_geoms(model, prefix="bench_"):
+    """The collidable geoms of the bench in the loaded scene: the top, the legs and, when the bench is solid (TASK_CFG["bench_open"] False), the rails. They are found by name in the compiled model,
+    so the open bench (rails removed by the scene hook) gives the top and the legs only; the sink, the faucet and the gas fittings that share the bench's body are not part of it.
+
+    Args:
+        model (mujoco.MjModel): The compiled scene.
+        prefix (str): The geom names' start. Defaults to "bench_".
+
+    Returns:
+        list of int: Geom ids.
+    """
+    return [g for g in range(model.ngeom) if (model.geom(g).name or "").startswith(prefix) and (model.geom_contype[g] or model.geom_conaffinity[g])]
 
 
 class ArmCollisionChecker:
@@ -32,7 +47,7 @@ class ArmCollisionChecker:
         margin (float): Contacts closer than this count, metres.
     """
 
-    def __init__(self, model, side, other_q, finger_open=None, pedestal_q=None, margin=0.0):
+    def __init__(self, model, side, other_q, finger_open=None, pedestal_q=None, margin=0.0, bench=None):
         """Builds the filter.
 
         Args:
@@ -42,6 +57,9 @@ class ArmCollisionChecker:
             finger_open (float or None): Opening of all four fingers, metres. Defaults to None, fully open (the finger joints' upper limit in the model).
             pedestal_q (float or None): The pedestal stage command (both stages, metres). Defaults to None, the lowest command (robot_specs.PEDESTAL_SPECS).
             margin (float): Contacts closer than this count as collisions, metres. Defaults to 0.0 (penetration only).
+            bench (dict or None): Put the bench in the filter (David, 2026-10-23, C1; decisions-log M171): {"geoms": geom ids (bench_geoms(model)), "base_pose": (x, y, yaw) of the robot in the world,
+                "pedestal_q": the pedestal command of that stance}. The robot is put at that pose, the pedestal stays at `pedestal_q` of the filter (the lowest by default: the worst case of the
+                self-collisions) and the bench geoms are lowered by the stance's pedestal command, which gives the arm the same relative bench as at the stance. Defaults to None (no bench).
         """
         self.model = m = copy.copy(model)
         self.side = side
@@ -55,6 +73,10 @@ class ArmCollisionChecker:
             or n == "battery" or n == "base_link"
         self.moving = np.array([col[g] and is_moving(names[g]) for g in range(m.ngeom)])
         static = np.array([col[g] and is_static(names[g]) for g in range(m.ngeom)])
+        if bench is not None:
+            for g in bench["geoms"]:
+                static[g] = True
+                m.geom_pos[g, 2] -= float(bench["pedestal_q"])             # the bench's body is at the world origin: the geom position is the world position
         self.active = self.moving | static
         for g in range(m.ngeom):                         # switch everything else off (the beaker's explicit contact pairs are ignored by the filter below)
             if not self.active[g]:
@@ -62,7 +84,8 @@ class ArmCollisionChecker:
                 m.geom_conaffinity[g] = 0
         m.geom_margin[self.active] = max(self.margin, 0.0)
         self.data = d = mujoco.MjData(m)
-        d.qpos[0:7] = [0.0, 0.0, 0.1527, 1.0, 0.0, 0.0, 0.0]
+        bx, by, byaw = (0.0, 0.0, 0.0) if bench is None else bench["base_pose"]
+        d.qpos[0:7] = [bx, by, 0.1527, math.cos(byaw / 2), 0.0, 0.0, math.sin(byaw / 2)]
         pq = robot_specs.PEDESTAL_SPECS["lowest_command"] if pedestal_q is None else pedestal_q
         for jn in robot_specs.PEDESTAL_SPECS["joints"]:
             d.qpos[m.joint(jn).qposadr[0]] = pq

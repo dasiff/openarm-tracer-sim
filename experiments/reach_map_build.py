@@ -6,7 +6,8 @@ B2.5/B2.6/B2.7/B2.8 build of the grasp reachability maps: both arms, all 12 appr
     MUJOCO_GL=egl python experiments/reach_map_build.py [--out data/reach_map] [--sides left right] [--bins 0 1 ...] [--quick-samples N] [--validation-samples N]
 
 Per arm: one quick random sample of joint vectors (every level pose of any bin) gives the convex outer bound and the spread-out seeds of each bin; per bin the IK flood fill (collision
-filter on: the arm against itself, the other arm at home, the torso, the pedestal at its lowest, the base with the battery and the neck at its drive pose) fills 5 mm voxels; enclosed
+filter on: the arm against itself, the other arm at home, the torso, the pedestal at its lowest, the base with the battery, the eagle camera's box and, since 2026-10-23 (C1, M171),
+the BENCH (its top and legs, the rails too if the bench is solid, from the loaded scene; the robot at the TASK_CFG stance, the bench lowered by that stance's pedestal command; --no-bench builds the old filter)) fills 5 mm voxels; enclosed
 pockets at most hole_fill_max_m wide are then filled without any IK test (David 2026-10-19), larger ones stay as real holes; the 1 cm cubes need all 8 of their voxels. A file per
 (arm, bin) is written (temporary file, checked, renamed) as OUT/<side>_bin<k>.npz; a file whose staleness hash (robot model, settings, sampler version) matches is skipped, so an
 interrupted build resumes. Validation per map: random level poses of the bin that are collision-free (a different random sample than the build's) must land in reached voxels; the
@@ -33,7 +34,7 @@ import mujoco  # noqa: E402
 import numpy as np  # noqa: E402
 from scipy.spatial import ConvexHull  # noqa: E402
 
-from src.arm_collision import ArmCollisionChecker  # noqa: E402
+from src.arm_collision import ArmCollisionChecker, bench_geoms  # noqa: E402
 from src.arm_kinematics import arm_chain, batch_fk, shoulder_origin  # noqa: E402
 from src.grasp_rules import bin_center, joint_bounds  # noqa: E402
 from src.gripper_geometry import grasp_cfg  # noqa: E402
@@ -80,6 +81,9 @@ def main(args):
         if args.quick_samples:
             C = {**C, "quick_samples": args.quick_samples}
         stamp_cfg = {k: v for k, v in C.items() if k != "quick_samples"}
+        bench = None if args.no_bench else {"geoms": bench_geoms(m), "base_pose": (*TASK_CFG["staging_xy"], TASK_CFG["staging_yaw"]), "pedestal_q": TASK_CFG["pedestal_q"]}
+        if bench is not None:                                  # the bench is part of what the map means: in the stamp
+            stamp_cfg["bench"] = {"geoms": sorted(m.geom(g).name for g in bench["geoms"]), "base_pose": [float(v) for v in bench["base_pose"]], "pedestal_q": bench["pedestal_q"]}
         stamp = stamp_of(m, stamp_cfg)
         todo = []
         for k in args.bins:
@@ -99,7 +103,7 @@ def main(args):
         lo, hi = joint_bounds(m, side, C)
         pad = np.array(C["pad_center_in_tcp"])
         other = "right" if side == "left" else "left"
-        checker = ArmCollisionChecker(m, side, home_targets(m, TASK_CFG)[other], finger_open=STAGING_CFG["finger_open"])
+        checker = ArmCollisionChecker(m, side, home_targets(m, TASK_CFG)[other], finger_open=STAGING_CFG["finger_open"], bench=bench)
         log(f"=== {side} arm: stamp {stamp}, {len(todo)} bins to build {todo}; collision filter: {int(checker.moving.sum())} moving geoms against {int((checker.active & ~checker.moving).sum())} static, margin {checker.margin} m")
         t = time.time()
         P, Q, K, drawn = quick_sample(chain, lo, hi, C["quick_samples"], None, C, C["seed"])
@@ -165,6 +169,7 @@ def main(args):
 if __name__ == "__main__":
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[1])
     ap.add_argument("--out", default=str(PROJECT_ROOT / "data" / "reach_map"))
+    ap.add_argument("--no-bench", action="store_true", help="the old filter without the bench (for comparisons)")
     ap.add_argument("--sides", nargs="*", default=["left", "right"])
     ap.add_argument("--bins", nargs="*", type=int, default=list(range(12)))
     ap.add_argument("--quick-samples", type=int, default=None, help="override GRASP_MAP_CFG quick_samples (smoke tests)")

@@ -177,3 +177,4 @@ OVERNIGHT TASK (David 2026-10-25): STEP1 let suitej2 finish (tmux suitej2; if oo
 STEP1 DONE 06:30: suitej2 all exit 0 except nav_pipeline_follow_test (NEW: AttributeError stance_mode, test builds own args; not fixed) and stance_select_moved_test (expected: fails at OVER 12.2 mm). Summary data/logs/suite_j2_20261025_060041_summary.txt. Current step: 2 (diagnosis, measure only).
 STEP2 script experiments/moved_place_split_diag.py written (measure only). RUN: tmux diag2, log data/logs/moved_place_split_diag_20261025_063150.log, started 06:31:50. NEXT: read log + docs/reports/logs/moved_place_split_diag.json, commit, step 3.
 STEP2 first run had a script bug (phase label is '4/4 PLACE: OVER [running]'), fixed in the script only. RERUN: tmux diag3, log data/logs/moved_place_split_diag_20261025_063446.log, started 06:34:46.
+STEP2 DONE (see docs/reports/*_overnight.md). Current step: 3 (Gemini planner call oracle, then 2 VLM, then cache-only).

@@ -1,0 +1,666 @@
+{
+ "joint_margins": {
+  "seg0|1/4 NAV: starting": {
+   "min_margin_rad": -2.89177219847643e-05,
+   "joint": 4,
+   "q": -2.89177219847643e-05,
+   "lo": 0.0,
+   "hi": 2.443461,
+   "t_s": 1.4000000000000121
+  },
+  "seg0|1/4 NAV: ARMS [running]": {
+   "min_margin_rad": -2.888695216839607e-05,
+   "joint": 4,
+   "q": -2.888695216839607e-05,
+   "lo": 0.0,
+   "hi": 2.443461,
+   "t_s": 1.4066666666666792
+  },
+  "seg0|1/4 NAV: PEDESTAL [running]": {
+   "min_margin_rad": 0.2378441247113927,
+   "joint": 4,
+   "q": 2.2056168752886074,
+   "lo": 0.0,
+   "hi": 2.443461,
+   "t_s": 11.839999999998962
+  },
+  "seg0|1/4 NAV: DRIVE [running]": {
+   "min_margin_rad": 0.23966909050744256,
+   "joint": 4,
+   "q": 2.2037919094925575,
+   "lo": 0.0,
+   "hi": 2.443461,
+   "t_s": 18.300000000001315
+  },
+  "seg0|1/4 NAV: CREEP_IN [running]": {
+   "min_margin_rad": 0.24195115579868443,
+   "joint": 4,
+   "q": 2.2015098442013157,
+   "lo": 0.0,
+   "hi": 2.443461,
+   "t_s": 41.71333333336326
+  },
+  "seg1|1/4 NAV: CREEP_IN [running]": {
+   "min_margin_rad": 0.24240658754402844,
+   "joint": 4,
+   "q": 2.2010544124559717,
+   "lo": 0.0,
+   "hi": 2.443461,
+   "t_s": 46.79333333336947
+  },
+  "seg1|2/4 PICK: starting": {
+   "min_margin_rad": 0.24240681611429116,
+   "joint": 4,
+   "q": 2.201054183885709,
+   "lo": 0.0,
+   "hi": 2.443461,
+   "t_s": 46.80000000003614
+  },
+  "seg1|2/4 PICK: OVER [running]": {
+   "min_margin_rad": 0.21243976507527362,
+   "joint": 4,
+   "q": 2.2310212349247265,
+   "lo": 0.0,
+   "hi": 2.443461,
+   "t_s": 47.30000000003675
+  },
+  "seg1|2/4 PICK: DOWN [running]": {
+   "min_margin_rad": 0.2795609242308048,
+   "joint": 4,
+   "q": 2.1639000757691953,
+   "lo": 0.0,
+   "hi": 2.443461,
+   "t_s": 49.45333333337272
+  },
+  "seg1|2/4 PICK: IN [running]": {
+   "min_margin_rad": 0.4460309189439479,
+   "joint": 2,
+   "q": -0.27149824574394793,
+   "lo": -3.316125327,
+   "hi": 0.1745326732,
+   "t_s": 56.40666666671455
+  },
+  "seg1|2/4 PICK: CLOSE [running]": {
+   "min_margin_rad": 0.44602313462096466,
+   "joint": 2,
+   "q": -0.27149046142096467,
+   "lo": -3.316125327,
+   "hi": 0.1745326732,
+   "t_s": 56.413333333381225
+  },
+  "seg1|2/4 PICK: UP [running]": {
+   "min_margin_rad": 0.44614579024602974,
+   "joint": 2,
+   "q": -0.27161311704602975,
+   "lo": -3.316125327,
+   "hi": 0.1745326732,
+   "t_s": 57.65333333338274
+  },
+  "seg2|2/4 PICK: UP [running]": {
+   "min_margin_rad": 0.5377135082946642,
+   "joint": 2,
+   "q": -0.3631808350946642,
+   "lo": -3.316125327,
+   "hi": 0.1745326732,
+   "t_s": 60.31333333338599
+  },
+  "seg3|3/4 NAV: starting": {
+   "min_margin_rad": 0.537713503765495,
+   "joint": 2,
+   "q": -0.363180830565495,
+   "lo": -3.316125327,
+   "hi": 0.1745326732,
+   "t_s": 60.320000000052666
+  },
+  "seg3|4/4 PLACE: starting": {
+   "min_margin_rad": 0.5377134988559735,
+   "joint": 2,
+   "q": -0.36318082565597354,
+   "lo": -3.316125327,
+   "hi": 0.1745326732,
+   "t_s": 60.32666666671934
+  },
+  "seg3|4/4 PLACE: OVER [running]": {
+   "min_margin_rad": 0.16853118075981416,
+   "joint": 2,
+   "q": 0.006001492440185831,
+   "lo": -3.316125327,
+   "hi": 0.1745326732,
+   "t_s": 61.53333333338748
+  },
+  "seg3|4/4 PLACE: RETRY 2: arm to the zombie pose [recovering]": {
+   "min_margin_rad": 0.17588711271427557,
+   "joint": 2,
+   "q": -0.0013544395142755716,
+   "lo": -3.316125327,
+   "hi": 0.1745326732,
+   "t_s": 71.44000000006625
+  }
+ },
+ "clearance": {
+  "1/4 NAV: ARMS [running]": {
+   "bench": [
+    0.3,
+    "openarm_left_link3_collision",
+    "bench"
+   ],
+   "hotplate+beaker": [
+    0.3,
+    "openarm_left_link3_collision",
+    "task_hotplate"
+   ],
+   "torso": [
+    0.03878644104587769,
+    "openarm_right_hand_collision",
+    "openarm_body_link0"
+   ],
+   "pedestal": [
+    0.10211648997320151,
+    "openarm_right_right_finger_collision",
+    "pedestal_top"
+   ],
+   "base": [
+    0.3,
+    "openarm_left_link3_collision",
+    "base_link"
+   ],
+   "camera": [
+    0.266525649180419,
+    "openarm_right_link3_collision",
+    "eagle_cam_body"
+   ],
+   "battery": [
+    0.3,
+    "openarm_left_link3_collision",
+    "battery"
+   ],
+   "other arm": [
+    0.11745813545180507,
+    "openarm_left_hand_collision",
+    "openarm_right_hand"
+   ]
+  },
+  "1/4 NAV: PEDESTAL [running]": {
+   "bench": [
+    0.3,
+    "openarm_left_link3_collision",
+    "bench"
+   ],
+   "hotplate+beaker": [
+    0.3,
+    "openarm_left_link3_collision",
+    "task_hotplate"
+   ],
+   "torso": [
+    0.09221151615792514,
+    "openarm_right_link5_collision",
+    "openarm_body_link0"
+   ],
+   "pedestal": [
+    0.3,
+    "openarm_left_link3_collision",
+    "pedestal_base"
+   ],
+   "base": [
+    0.3,
+    "openarm_left_link3_collision",
+    "base_link"
+   ],
+   "camera": [
+    0.2755197630851813,
+    "openarm_right_link3_collision",
+    "eagle_cam_body"
+   ],
+   "battery": [
+    0.3,
+    "openarm_left_link3_collision",
+    "battery"
+   ],
+   "other arm": [
+    0.11678721329746895,
+    "openarm_left_hand_collision",
+    "openarm_right_hand"
+   ]
+  },
+  "1/4 NAV: DRIVE [running]": {
+   "bench": [
+    0.2610785171422813,
+    "openarm_left_left_finger_collision",
+    "bench"
+   ],
+   "hotplate+beaker": [
+    0.2851357993640608,
+    "openarm_left_left_finger_collision",
+    "task_hotplate"
+   ],
+   "torso": [
+    0.09145067552679848,
+    "openarm_right_link5_collision",
+    "openarm_body_link0"
+   ],
+   "pedestal": [
+    0.3,
+    "openarm_left_link3_collision",
+    "pedestal_base"
+   ],
+   "base": [
+    0.3,
+    "openarm_left_link3_collision",
+    "base_link"
+   ],
+   "camera": [
+    0.2749374652578137,
+    "openarm_left_link3_collision",
+    "eagle_cam_body"
+   ],
+   "battery": [
+    0.3,
+    "openarm_left_link3_collision",
+    "battery"
+   ],
+   "other arm": [
+    0.11696063201978979,
+    "openarm_left_hand_collision",
+    "openarm_right_hand"
+   ]
+  },
+  "1/4 NAV: CREEP_IN [running]": {
+   "bench": [
+    0.12486990404711384,
+    "openarm_left_left_finger_collision",
+    "bench"
+   ],
+   "hotplate+beaker": [
+    0.1001588037151542,
+    "openarm_left_left_finger_collision",
+    "task_hotplate"
+   ],
+   "torso": [
+    0.0920777778112553,
+    "openarm_right_link5_collision",
+    "openarm_body_link0"
+   ],
+   "pedestal": [
+    0.3,
+    "openarm_left_link3_collision",
+    "pedestal_base"
+   ],
+   "base": [
+    0.3,
+    "openarm_left_link3_collision",
+    "base_link"
+   ],
+   "camera": [
+    0.2755702445230949,
+    "openarm_right_link3_collision",
+    "eagle_cam_body"
+   ],
+   "battery": [
+    0.3,
+    "openarm_left_link3_collision",
+    "battery"
+   ],
+   "other arm": [
+    0.118379839964834,
+    "openarm_left_hand_collision",
+    "openarm_right_hand"
+   ]
+  },
+  "2/4 PICK: OVER [running]": {
+   "bench": [
+    0.1248691947708512,
+    "openarm_left_left_finger_collision",
+    "bench"
+   ],
+   "hotplate+beaker": [
+    0.10015843261777367,
+    "openarm_left_left_finger_collision",
+    "task_hotplate"
+   ],
+   "torso": [
+    0.09239469699813423,
+    "openarm_right_link5_collision",
+    "openarm_body_link0"
+   ],
+   "pedestal": [
+    0.3,
+    "openarm_left_link3_collision",
+    "pedestal_base"
+   ],
+   "base": [
+    0.3,
+    "openarm_left_link3_collision",
+    "base_link"
+   ],
+   "camera": [
+    0.2755595675531083,
+    "openarm_right_link3_collision",
+    "eagle_cam_body"
+   ],
+   "battery": [
+    0.3,
+    "openarm_left_link3_collision",
+    "battery"
+   ],
+   "other arm": [
+    0.1191311093087953,
+    "openarm_left_hand_collision",
+    "openarm_right_hand"
+   ]
+  },
+  "2/4 PICK: DOWN [running]": {
+   "bench": [
+    0.034078772059294646,
+    "openarm_left_right_finger_collision",
+    "bench"
+   ],
+   "hotplate+beaker": [
+    0.06765312744181474,
+    "openarm_left_left_finger_collision",
+    "task_hotplate"
+   ],
+   "torso": [
+    0.09237923986140573,
+    "openarm_right_link5_collision",
+    "openarm_body_link0"
+   ],
+   "pedestal": [
+    0.3,
+    "openarm_left_link3_collision",
+    "pedestal_base"
+   ],
+   "base": [
+    0.3,
+    "openarm_left_link3_collision",
+    "base_link"
+   ],
+   "camera": [
+    0.27554472255873247,
+    "openarm_right_link3_collision",
+    "eagle_cam_body"
+   ],
+   "battery": [
+    0.3,
+    "openarm_left_link3_collision",
+    "battery"
+   ],
+   "other arm": [
+    0.19790857513046994,
+    "openarm_left_hand_collision",
+    "openarm_right_hand"
+   ]
+  },
+  "2/4 PICK: IN [running]": {
+   "bench": [
+    0.01992674671804917,
+    "openarm_left_right_finger_collision",
+    "bench"
+   ],
+   "hotplate+beaker": [
+    0.005698771877820147,
+    "openarm_left_right_finger_collision",
+    "task_beaker"
+   ],
+   "torso": [
+    0.09236753348573079,
+    "openarm_right_link5_collision",
+    "openarm_body_link0"
+   ],
+   "pedestal": [
+    0.3,
+    "openarm_left_link3_collision",
+    "pedestal_base"
+   ],
+   "base": [
+    0.3,
+    "openarm_left_link3_collision",
+    "base_link"
+   ],
+   "camera": [
+    0.26560480125985897,
+    "openarm_left_link3_collision",
+    "eagle_cam_body"
+   ],
+   "battery": [
+    0.3,
+    "openarm_left_link3_collision",
+    "battery"
+   ],
+   "other arm": [
+    0.2092400555668925,
+    "openarm_left_hand_collision",
+    "openarm_right_right_finger"
+   ]
+  },
+  "2/4 PICK: CLOSE [running]": {
+   "bench": [
+    0.021884572774060085,
+    "openarm_left_left_finger_collision",
+    "bench"
+   ],
+   "hotplate+beaker": [
+    -0.0013404823267903281,
+    "openarm_left_right_finger_collision",
+    "task_beaker"
+   ],
+   "torso": [
+    0.09236570580535003,
+    "openarm_right_link5_collision",
+    "openarm_body_link0"
+   ],
+   "pedestal": [
+    0.3,
+    "openarm_left_link3_collision",
+    "pedestal_base"
+   ],
+   "base": [
+    0.3,
+    "openarm_left_link3_collision",
+    "base_link"
+   ],
+   "camera": [
+    0.2656373171529301,
+    "openarm_left_link3_collision",
+    "eagle_cam_body"
+   ],
+   "battery": [
+    0.3,
+    "openarm_left_link3_collision",
+    "battery"
+   ],
+   "other arm": [
+    0.24348339976514535,
+    "openarm_left_link5_collision",
+    "openarm_right_hand"
+   ]
+  },
+  "2/4 PICK: UP [running]": {
+   "bench": [
+    0.021909312655725818,
+    "openarm_left_left_finger_collision",
+    "bench"
+   ],
+   "hotplate+beaker": [
+    -3.3972547124502367e-05,
+    "openarm_left_right_finger_collision",
+    "task_beaker"
+   ],
+   "torso": [
+    0.09236503831649578,
+    "openarm_right_link5_collision",
+    "openarm_body_link0"
+   ],
+   "pedestal": [
+    0.3,
+    "openarm_left_link3_collision",
+    "pedestal_base"
+   ],
+   "base": [
+    0.3,
+    "openarm_left_link3_collision",
+    "base_link"
+   ],
+   "camera": [
+    0.26566529050525817,
+    "openarm_left_link3_collision",
+    "eagle_cam_body"
+   ],
+   "battery": [
+    0.3,
+    "openarm_left_link3_collision",
+    "battery"
+   ],
+   "other arm": [
+    0.24154560418822613,
+    "openarm_left_link5_collision",
+    "openarm_right_hand"
+   ]
+  },
+  "4/4 PLACE: starting": {
+   "bench": [
+    0.12470784170609424,
+    "openarm_right_right_finger_collision",
+    "bench"
+   ],
+   "hotplate+beaker": [
+    -2.6317875728415882e-05,
+    "openarm_left_right_finger_collision",
+    "task_beaker"
+   ],
+   "torso": [
+    0.09236514170261909,
+    "openarm_right_link5_collision",
+    "openarm_body_link0"
+   ],
+   "pedestal": [
+    0.3,
+    "openarm_left_link3_collision",
+    "pedestal_base"
+   ],
+   "base": [
+    0.3,
+    "openarm_left_link3_collision",
+    "base_link"
+   ],
+   "camera": [
+    0.2668327254838668,
+    "openarm_left_link3_collision",
+    "eagle_cam_body"
+   ],
+   "battery": [
+    0.3,
+    "openarm_left_link3_collision",
+    "battery"
+   ],
+   "other arm": [
+    0.2440595305274448,
+    "openarm_left_link5_collision",
+    "openarm_right_hand"
+   ]
+  },
+  "4/4 PLACE: OVER [running]": {
+   "bench": [
+    0.11579508079305435,
+    "openarm_left_right_finger_collision",
+    "bench"
+   ],
+   "hotplate+beaker": [
+    -3.0172150671491192e-05,
+    "openarm_left_left_finger_collision",
+    "task_beaker"
+   ],
+   "torso": [
+    0.08797209448948672,
+    "openarm_left_link3_collision",
+    "openarm_body_link0"
+   ],
+   "pedestal": [
+    0.3,
+    "openarm_left_link3_collision",
+    "pedestal_base"
+   ],
+   "base": [
+    0.3,
+    "openarm_left_link3_collision",
+    "base_link"
+   ],
+   "camera": [
+    0.24933596195875124,
+    "openarm_left_link3_collision",
+    "eagle_cam_body"
+   ],
+   "battery": [
+    0.3,
+    "openarm_left_link3_collision",
+    "battery"
+   ],
+   "other arm": [
+    0.06649982006113604,
+    "openarm_left_link6_collision",
+    "openarm_right_hand"
+   ]
+  },
+  "4/4 PLACE: RETRY 2: arm to the zombie pose [recovering]": {
+   "bench": [
+    0.10824090568322053,
+    "openarm_left_left_finger_collision",
+    "bench"
+   ],
+   "hotplate+beaker": [
+    -3.363257347304012e-05,
+    "openarm_left_left_finger_collision",
+    "task_beaker"
+   ],
+   "torso": [
+    0.07138110281317829,
+    "openarm_left_link4_collision",
+    "openarm_body_link0"
+   ],
+   "pedestal": [
+    0.3,
+    "openarm_left_link3_collision",
+    "pedestal_base"
+   ],
+   "base": [
+    0.3,
+    "openarm_left_link3_collision",
+    "base_link"
+   ],
+   "camera": [
+    0.24967370808455489,
+    "openarm_left_link3_collision",
+    "eagle_cam_body"
+   ],
+   "battery": [
+    0.3,
+    "openarm_left_link3_collision",
+    "battery"
+   ],
+   "other arm": [
+    0.05558325588561787,
+    "openarm_left_link6_collision",
+    "openarm_right_hand"
+   ]
+  }
+ },
+ "joint_limits": {
+  "lo": [
+   -3.490659,
+   -3.316125327,
+   -1.570796,
+   0.0,
+   -1.570796,
+   -0.785398,
+   -1.570796
+  ],
+  "hi": [
+   1.396263,
+   0.1745326732,
+   1.570796,
+   2.443461,
+   1.570796,
+   0.785398,
+   1.570796
+  ]
+ }
+}

@@ -67,7 +67,8 @@ def main():
     tagged = postprocess(PLAN4, False, say=quiet)
 
     print("\n2. an obstacle between the objects")
-    w = world(extra=[pillar((0.9, 0.66), 0.25, radius=0.03)])
+    hp_xy = (0.70, 0.66)                                       # 30 cm from the beaker (1.0, 0.66): the post at 0.85 is 15 cm from each, outside the filter's reach around either grasp point
+    w = world(hotplate_xy=hp_xy, extra=[pillar((0.85, 0.66), 0.25, radius=0.03)])
     sel = select_bench_stance(tagged, w, TASK_CFG, ctx, cfg, say=quiet)
     rep = sel["report"]
     tb = [t for t in rep["tried"] if "transit_blocked" in t]
@@ -81,9 +82,9 @@ def main():
     check("with the check off the same world lets k=2 through (the switch is the only difference)", sw["ok"] and [r["steps"] for r in sw["report"]["runs"]] == [[1, 3]], f"{[r['steps'] for r in sw['report']['runs']] if sw['ok'] else sw['stop']}")
 
     print("\n3. nothing between the objects")
-    sel0 = select_bench_stance(tagged, world(), TASK_CFG, ctx, cfg, say=quiet)
+    sel0 = select_bench_stance(tagged, world(hotplate_xy=hp_xy), TASK_CFG, ctx, cfg, say=quiet)
     r0 = sel0["report"]
-    check("k=2 passes as before: one run with both steps, the second navigation step null", sel0["ok"] and [r["steps"] for r in r0["runs"]] == [[1, 3]] and r0["null_nav"] == [2] and not any("transit_blocked" in t for t in r0["tried"]), f"{r0['tried']}")
+    check("k=2 passes as before (same 30 cm spacing, no post): one run with both steps, the second navigation step null", sel0["ok"] and [r["steps"] for r in r0["runs"]] == [[1, 3]] and r0["null_nav"] == [2] and not any("transit_blocked" in t for t in r0["tried"]), f"{r0['tried']} {sel0['stop']}")
 
     print("\n4. the held beaker in the home clearance and the creep-in sweep")
     hcm = ctx.hcm

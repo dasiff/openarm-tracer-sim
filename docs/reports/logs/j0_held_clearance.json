@@ -1,0 +1,85 @@
+{
+ "beaker": {
+  "diameter_m": 0.07,
+  "height_m": 0.1,
+  "pad_centre_above_bottom_m": 0.052500000000000005,
+  "pad_centre_below_top_m": 0.0475
+ },
+ "approach_back_m": 0.2063,
+ "stances": {
+  "TASK_CFG": {
+   "stance": [
+    0.765,
+    1.085,
+    -1.5707963267948966,
+    0.155
+   ],
+   "pad_centre_at_home": [
+    0.916558912690689,
+    0.7814904068835407,
+    1.1444415724265473
+   ],
+   "pad_ahead_of_base_origin_m": 0.3035095931164593,
+   "pad_lateral_m": 0.15155891269068897,
+   "held_at_stance": {
+    "world": {
+     "m": 0.0695483753196203,
+     "pair": "task_beaker_bottom vs task_hotplate:task_hotplate_top_plate"
+    },
+    "robot_other": {
+     "m": 0.05745474365918751,
+     "pair": "task_beaker_wall_6 vs openarm_left_link7:openarm_left_link7_collision"
+    }
+   },
+   "held_creep_in_min": {
+    "world": {
+     "m": 0.07158539571163935,
+     "pair": "task_beaker_bottom vs task_hotplate:task_hotplate_top_plate",
+     "back_m": 0.0062999999999998335
+    },
+    "robot_other": {
+     "m": 0.05745474365918741,
+     "pair": "task_beaker_wall_6 vs openarm_left_link7:openarm_left_link7_collision",
+     "back_m": 0.17629999999999998
+    }
+   }
+  },
+  "overlay's pick": {
+   "stance": [
+    0.755,
+    1.145,
+    -1.5707963267948966,
+    0.1
+   ],
+   "pad_centre_at_home": [
+    0.906558912690689,
+    0.8414904068835405,
+    1.0894415724265476
+   ],
+   "pad_ahead_of_base_origin_m": 0.30350959311645953,
+   "pad_lateral_m": 0.15155891269068897,
+   "held_at_stance": {
+    "world": {
+     "m": 0.06040141105056216,
+     "pair": "task_beaker_bottom vs task_hotplate:task_hotplate_base"
+    },
+    "robot_other": {
+     "m": 0.05745474365918751,
+     "pair": "task_beaker_wall_6 vs openarm_left_link7:openarm_left_link7_collision"
+    }
+   },
+   "held_creep_in_min": {
+    "world": {
+     "m": 0.0663807624870081,
+     "pair": "task_beaker_bottom vs task_hotplate:task_hotplate_base",
+     "back_m": 0.0062999999999998335
+    },
+    "robot_other": {
+     "m": 0.05745474365918741,
+     "pair": "task_beaker_wall_6 vs openarm_left_link7:openarm_left_link7_collision",
+     "back_m": 0.11629999999999993
+    }
+   }
+  }
+ }
+}

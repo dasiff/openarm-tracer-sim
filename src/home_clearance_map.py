@@ -222,6 +222,7 @@ class HomeClearanceMap:
             slack (float): A cell counts as clear down to home_min_clearance - slack (the full check decides exactly), metres. Defaults to 0.01.
         """
         self.cfg, self.min_clear, self.slack, self.sample_margin = cfg, float(requirements["home_min_clearance"]), float(slack), float(sample_margin)
+        self._model, self._chk, self._held = model, chk, {}
         self.lift = 1.0 if robot_geometry is None else float(robot_geometry["lift_factor"])
         self.coarse = float(coarse_cell)
         self.centre = np.asarray(window_centre, float)
@@ -242,11 +243,59 @@ class HomeClearanceMap:
         self.grid = SdfGrid(prims, lo, hi, voxel=voxel)
         self.n_primitives = len(prims)
 
-    def clearance(self, theta, q, x, y):
+    def held_points(self, radius, height, frac, spacing=0.015):
+        """J2: surface samples of the held beaker's cylinder with the arms at home, in the same frame as `points` (a base at the origin, yaw 0, pedestal command 0).
+
+        The cylinder stands with its axis vertical through the left pad centre (the grasp is at the beaker's axis), the pad centre `frac` of the height above its bottom; the gripper is closed (an object is held).
+        """
+        key = (round(float(radius), 4), round(float(height), 4), round(float(frac), 4))
+        if key not in self._held:
+            from src.gripper_geometry import gripper_frame
+            m, chk = self._model, self._chk
+            chk.place((0.0, 0.0, 0.0, 0.0))
+            d = chk.d
+            pad = d.xpos[m.body("openarm_left_hand_tcp").id] + d.xmat[m.body("openarm_left_hand_tcp").id].reshape(3, 3) @ np.asarray(gripper_frame(m, "left")["pad_center_in_tcp"], float)
+            z0 = pad[2] - frac * height
+            pts = []
+            for z in np.arange(z0, z0 + height + 1e-9, spacing):
+                for a in np.arange(0.0, 2 * math.pi, spacing / radius):
+                    pts.append([pad[0] + radius * math.cos(a), pad[1] + radius * math.sin(a), z])
+            for rr in np.arange(spacing, radius, spacing):                 # the two end caps
+                for a in np.arange(0.0, 2 * math.pi, spacing / rr):
+                    for z in (z0, z0 + height):
+                        pts.append([pad[0] + rr * math.cos(a), pad[1] + rr * math.sin(a), z])
+            self._held[key] = np.asarray(pts, float)
+        return self._held[key]
+
+    def held_clear_mask(self, heading, qs, X, Y, radius, height, frac, back_m=None, step=0.05):
+        """J2: the clear mask of clear_mask with the held beaker counted, as a base drives in holding it: the arms and the beaker at the stance, and the beaker alone along the creep-in path.
+
+        Args:
+            heading, qs, X, Y: As clear_mask.
+            radius (float): The beaker's radius, metres.
+            height (float): Its height, metres.
+            frac (float): The pad centre's height as a fraction of the beaker's height.
+            back_m (float or None): The creep-in distance; the base is at the stance `s` metres back along its heading for s in 0 .. back_m (every `step`); None: the stance only.
+            step (float): The spacing of the path samples, metres. Defaults to 0.05.
+
+        Returns:
+            numpy.ndarray: Bool (nq, ny, nx): True where the clearance is at least home_min_clearance - slack everywhere.
+        """
+        hp = self.held_points(radius, height, frac)
+        both = np.concatenate([self.points, hp])
+        ok = self.clear_mask(heading, qs, X, Y, points=both)
+        if back_m:
+            c, s_ = math.cos(heading), math.sin(heading)
+            for s in np.arange(step, back_m + 1e-9, step):
+                ok &= self.clear_mask(heading, qs, X - c * s, Y - s_ * s, points=hp)
+        return ok
+
+    def clearance(self, theta, q, x, y, points=None):
         """The smallest distance of the arms at home to the furniture, metres (at most the field's look distance), for base positions x, y (arrays of any shape) at heading theta and pedestal command q."""
         x, y = np.asarray(x, float), np.asarray(y, float)
         c, s = math.cos(theta), math.sin(theta)
-        px, py, pz = self.points[:, 0], self.points[:, 1], self.points[:, 2] + self.lift * q
+        pts = self.points if points is None else points
+        px, py, pz = pts[:, 0], pts[:, 1], pts[:, 2] + self.lift * q
         out = np.empty(x.size)
         xf, yf = x.ravel(), y.ravel()
         step = max(1, 4_000_000 // max(len(px), 1))
@@ -256,7 +305,7 @@ class HomeClearanceMap:
             out[a:a + step] = self.grid.lookup(W).min(axis=1)
         return out.reshape(x.shape) - self.sample_margin
 
-    def clear_mask(self, heading, qs, X, Y):
+    def clear_mask(self, heading, qs, X, Y, points=None):
         """Which cells are clear of the furniture with the arms at home, for the quick search: (nq, ny, nx) bool, with the heading robustness of the quick search (the heading +-delta too).
 
         Args:
@@ -264,6 +313,7 @@ class HomeClearanceMap:
             qs (iterable of float): The pedestal commands.
             X (numpy.ndarray): The quick search's cell centre x coordinates (ny, nx), metres.
             Y (numpy.ndarray): Their y coordinates (ny, nx).
+            points (numpy.ndarray or None): Surface points (M, 3) in the frame of `points` to use instead of the arms' (J2: the arms and the held beaker, or the beaker alone). Defaults to the arms'.
 
         Returns:
             numpy.ndarray: Bool (nq, ny, nx): True where the clearance is at least home_min_clearance - slack at the heading and at heading +-heading_robust_deg.
@@ -278,7 +328,7 @@ class HomeClearanceMap:
         iy = (Y - y0) / max(y1 - y0, 1e-9) * (nyc - 1)
         out = np.zeros((len(qs), *X.shape), bool)
         for qi, q in enumerate(qs):
-            worst = np.minimum.reduce([self.clearance(th, float(q), XC, YC) for th in thetas])
+            worst = np.minimum.reduce([self.clearance(th, float(q), XC, YC, points) for th in thetas])
             fine = ndimage.map_coordinates(worst, np.stack([iy.ravel(), ix.ravel()]), order=1, mode="nearest").reshape(X.shape)
             out[qi] = fine >= self.min_clear - self.slack
         return out

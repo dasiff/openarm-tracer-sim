@@ -574,5 +574,11 @@ BENCH_STANCE_CFG = {
     "rank_keep": 4,                             # count: the ranked stances the overlay returns (the best and the next three the full check falls back to) [row M175]
     "rank_min_distance_m": 0.10,                # m: a ranked stance is at least this far from a better one (the finder's nms_distance) [row M175]
     "chain_samples": 24,                        # count: points along each chain segment tested against a cylinder [row M170]
+    # Transit check (J1, M176): a run of two or more manipulation steps (the beaker is carried from one grasp point to the next with no navigation between) is rejected when the straight line between the
+    # consecutive grasp points, at the height of the carried object's top standing on the higher of the two surfaces, comes within `obstacle_margin_m` + `arm_radius_m` of any cylinder that is not a
+    # target of either step (the filter's own cylinders and margin). The longest-run search then drops to k-1; at k=1 each step has its own navigation. True: on. False: off (a test switch). Conservative by
+    # design: the scripted place moves the hand in a straight line at a carry height (src/mpvi_modules.py plan_pick UP, plan_place OVER), so a path that goes around is not tried; manipulation-time path
+    # planning is LATER and would relax this check.
+    "transit_check": True,                      # [row M176]
 }
 

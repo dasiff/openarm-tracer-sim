@@ -73,6 +73,7 @@ class StanceContext:
         self.furniture = furn
         hcm = HomeClearanceMap(model, data, self.chk, np.array(task_cfg["beaker_xy"], float), robot_geometry=self.rg, slack=0.0)
         self.home_clear = hcm.clear_mask
+        self.hcm, self._extra_held = hcm, {}
         self.extra = bs.make_extra_blocked(furn, self.rg, self.yaw, hcm.clear_mask, creep_back_m=task_cfg.get("staging_approach_back_m"))
         self.bench = {"yaw": self.yaw, "open": task_cfg["bench_open"]}
         self.bench_top = bench_top_z(model)
@@ -81,6 +82,27 @@ class StanceContext:
         n, _ = bs.bench_frame(self.yaw)
         corners = np.array([[c[0] + sx * hs[0], c[1] + sy * hs[1]] for sx in (-1, 1) for sy in (-1, 1)])
         self.near = float((corners @ n).min())
+
+
+def _extra_held(self, radius, height, frac):
+    """J2: the overlay's `extra_blocked` for a run that is reached while the beaker is held (the gripper closed): the same furniture map and creep-in sweep, and the home-clearance mask with the beaker's cylinder at the
+    pad centre counted, at the stance (with the arms) and along the creep-in path (the beaker alone); the 40 mm threshold is the home clearance's. Built once per beaker size, and the masks are kept."""
+    key = (round(float(radius), 4), round(float(height), 4), round(float(frac), 4))
+    if key not in self._extra_held:
+        back = self.task_cfg.get("staging_approach_back_m")
+        memo = {}
+
+        def held_clear(heading, qs, X, Y):
+            k = (float(heading), tuple(float(q) for q in qs), X.shape, round(float(X.sum()), 6), round(float(Y.sum()), 6))
+            if k not in memo:
+                memo[k] = self.hcm.held_clear_mask(heading, qs, X, Y, radius, height, frac, back)
+            return memo[k]
+
+        self._extra_held[key] = bs.make_extra_blocked(self.furniture, self.rg, self.yaw, held_clear, creep_back_m=back)
+    return self._extra_held[key]
+
+
+StanceContext.extra_held = _extra_held
 
 
 def make_context(model, data, maps, task_cfg=TASK_CFG, cfg=BENCH_STANCE_CFG, chk=None, say=print):
@@ -153,7 +175,7 @@ def step_target(ctx, world, seg, index, say=print):
     samples = bs.cylinder_surface_samples(xy, hx, body["z0"], body["z1"]) if body["kind"] == "cylinder" else bs.box_surface_samples(corners)
     n, _ = bs.bench_frame(ctx.yaw)
     ob = {"name": f"{index}:{target.id}", "xy": xy, "depth": float(xy @ n - ctx.near), "z_points": z_pts, "surface_z": surface_z, "corners": corners, "samples": samples,
-          "hidden_max": STANCE_REQUIREMENTS["occlusion_max_hidden"].get(target.id, 0.0), "radius": body["radius"], "z0": body["z0"], "z1": body["z1"], "step": index, "surface": info["surface"],
+          "hidden_max": STANCE_REQUIREMENTS["occlusion_max_hidden"].get(target.id, 0.0), "radius": body["radius"], "z0": body["z0"], "z1": body["z1"], "height": H_obj, "step": index, "surface": info["surface"],
           "info": info, "entry": target.id, "primitive": prim, "raise_m": method["raise_m"], "supported_by": [e.id for e in chain[1:-1]]}
     if body["kind"] == "cylinder":
         ob["radius_shape"] = body["radius"]
@@ -182,6 +204,52 @@ def step_target(ctx, world, seg, index, say=print):
         pts += [{"p": [float(xy[0]), float(xy[1]), float(z + ABOVE_M)], "arm": "either", "bin": None, "path": "above"} for z in z_pts]
     ob["points"] = pts
     return ob
+
+
+def transit_blocked(a, b, others, cfg=BENCH_STANCE_CFG):
+    """J1: does the straight line between two steps' grasp points meet a cylinder that is not a target of either?
+
+    The line is at the height of the carried object's top standing on the higher of the two surfaces (the surface height plus the object's height); a cylinder blocks it when the distance from its axis
+    to the line, less its radius, and its vertical gap to that height are together under the filter's margin (`obstacle_margin_m` + `arm_radius_m`).
+
+    Args:
+        a (dict): The first step's overlay object (step_target): "xy", "surface_z", "height", "entry", "extra_obstacles".
+        b (dict): The second step's.
+        others (list of dict): More cylinders {"name", "xy", "radius", "z0", "z1"} (the other targets of the run).
+        cfg (dict): BENCH_STANCE_CFG.
+
+    Returns:
+        dict or None: {"obstacle": name, "distance_m": the distance, "limit_m": the margin} of the nearest blocking cylinder, or None when the line is clear.
+    """
+    p0, p1 = np.asarray(a["xy"], float), np.asarray(b["xy"], float)
+    z = max(a["surface_z"], b["surface_z"]) + max(a.get("height", 0.0), b.get("height", 0.0))
+    rr = cfg["obstacle_margin_m"] + cfg["arm_radius_m"]
+    seg = p1 - p0
+    L2 = float(seg @ seg)
+    seen, worst = {a.get("entry"), b.get("entry")}, None                     # the two steps' own targets are not obstacles (the hotplate is the pick's obstacle but the place's target)
+    for c in list(a.get("extra_obstacles") or []) + list(b.get("extra_obstacles") or []) + list(others):
+        if c["name"] in seen:
+            continue
+        seen.add(c["name"])
+        t = 0.0 if L2 == 0.0 else min(max(float((np.asarray(c["xy"], float) - p0) @ seg) / L2, 0.0), 1.0)
+        gap = max(float(np.linalg.norm(np.asarray(c["xy"], float) - (p0 + t * seg))) - c["radius"], 0.0)
+        dz = max(c["z0"] - z, z - c["z1"], 0.0)
+        d = float(math.hypot(gap, dz))
+        if d < rr and (worst is None or d < worst["distance_m"]):
+            worst = {"obstacle": c["name"], "distance_m": d, "limit_m": rr}
+    return worst
+
+
+def run_transit_blocked(objs, cfg=BENCH_STANCE_CFG, prev=None):
+    """J1: the first blocked transit between consecutive steps of a run (None when all are clear); `prev` is the step before the run's first one when no navigation separates them."""
+    chain = ([prev] if prev is not None else []) + list(objs)
+    for i in range(len(chain) - 1):
+        a, b = chain[i], chain[i + 1]
+        others = [{"name": o["name"], "xy": o["xy"], "radius": o["radius"], "z0": o["z0"], "z1": o["z1"]} for o in chain if o is not a and o is not b]
+        r = transit_blocked(a, b, others, cfg)
+        if r:
+            return {**r, "from_step": a["step"], "to_step": b["step"]}
+    return None
 
 
 def _manip_steps(tagged):
@@ -235,8 +303,15 @@ def select_bench_stance(tagged, world, task_cfg, ctx, cfg=BENCH_STANCE_CFG, full
                 qi = int(np.argmin(abs(np.array(ctx.cams["qs"]) - cur["q"])))
                 X, Y = res["grid"]
                 iy, ix = int(np.argmin(abs(Y[:, 0] - cur["xy"][1]))), int(np.argmin(abs(X[0] - cur["xy"][0])))
+                prev_last = targets[rep["runs"][-1]["steps"][-1]] if rep["runs"] and rep["runs"][-1]["steps"] else None
                 for k in range(len(cand)):
                     if res["stack"][k, qi, iy, ix] > 0 and res["allowed"][qi, iy, ix]:
+                        if cfg.get("transit_check", True):
+                            blk = run_transit_blocked([targets[cand[k]]], cfg, prev=targets[cand[k - 1]] if k else prev_last)
+                            if blk:
+                                rep["tried"].append({"steps": cand[:k + 1], "transit_blocked": blk})
+                                say(f"[stance] transit from step {blk['from_step']} to {blk['to_step']} blocked by {blk['obstacle']} ({1000 * blk['distance_m']:.0f} mm, limit {1000 * blk['limit_m']:.0f} mm): the current stance does not serve it")
+                                break
                         kk += 1
                     else:
                         break
@@ -264,10 +339,21 @@ def select_bench_stance(tagged, world, task_cfg, ctx, cfg=BENCH_STANCE_CFG, full
                 return out
         # 2. a new run: the longest group from the next step on
         chosen = None
+        prev = targets[steps[pos - 1]] if pos > 0 else None
+        held = prev is not None and prev["primitive"] == "pick"        # J2: the robot drives to this run's stance holding the beaker (the previous step picked it and nothing has placed it)
+        extra = ctx.extra_held(BEAKER_CFG["outer_diameter"] / 2, prev["height"], PICK_PLACE_CFG["grasp_height_frac"]) if held else ctx.extra
+        if held:
+            rep["notes"].append(f"run from step {cand[0]}: reached holding the beaker: the home clearance and the creep-in sweep count the held beaker")
         for k in range(len(cand), 0, -1):
             objs = [targets[i] for i in cand[:k]]
+            if k >= 2 and cfg.get("transit_check", True):                  # J1: the beaker is carried between the grasp points: a cylinder on the line rejects this k
+                blk = run_transit_blocked(objs, cfg)
+                if blk:
+                    rep["tried"].append({"steps": cand[:k], "transit_blocked": blk})
+                    say(f"[stance] run of steps {cand[:k]} rejected: transit from step {blk['from_step']} to {blk['to_step']} blocked by {blk['obstacle']} ({1000 * blk['distance_m']:.0f} mm, limit {1000 * blk['limit_m']:.0f} mm)")
+                    continue
             try:
-                res = bs.overlay(objs, ctx.maps, ctx.rg, ctx.cams, ctx.bench, ctx.extra, arm=cfg["arm"], cfg=cfg, say=say)
+                res = bs.overlay(objs, ctx.maps, ctx.rg, ctx.cams, ctx.bench, extra, arm=cfg["arm"], cfg=cfg, say=say)
             except bs.BenchStanceError as e:
                 rep["tried"].append({"steps": cand[:k], "stop": str(e)[:300]})
                 if k == 1:

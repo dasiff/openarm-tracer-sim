@@ -529,9 +529,12 @@ INSTRUCTION_CFG = {
 # Bench stance selection by an inverse-reach region (David 2026-10-23, step 3 part C; src/bench_stance.py; replaced the measured rectangle, which is on record in the design plan as not built)
 # ----------------------------------------------------------------------------------------------------------
 BENCH_STANCE_CFG = {
-    # The stance-selection setting (David 2026-10-23, C3, M175). "task_cfg" (the default): today's fixed stance, TASK_CFG's, nothing else changes. "bench_region": this algorithm (src/stance_select.py): the planner's
-    # runs of consecutive steps on one bench surface are given a stance by the inverse-reach region and the full check, behind make_pipeline_task.
-    "mode": "task_cfg",                         # [row M175]
+    # The stance-selection setting (David 2026-10-23, C3, M175; default flipped 2026-10-25, M178). "bench_region" (the default): this algorithm (src/stance_select.py): the planner's runs of consecutive steps on one
+    # bench surface are given a stance by the inverse-reach region and the full check, behind make_pipeline_task, so it works for any layout of the objects on the bench. "task_cfg": today's fixed stance, TASK_CFG's;
+    # still selectable, but valid only for the test scene's layout (the objects where TASK_CFG puts them), because that stance was found for that layout and is not recomputed when the objects move.
+    # Why bench_region is the default: David decided it after the held-beaker contact results (both stances place the held beaker the same way) and the moved-layout episode (task_cfg's fixed stance cannot follow moved
+    # objects). Known open issue: on the moved layout the place fails at OVER (12.2 mm short), cause under diagnosis [row M178].
+    "mode": "bench_region",                     # [row M175, M178]
     # Plain words: with navigation ON the robot may be driven to the stance the algorithm chooses (the first navigation step moves it, later ones are null when the next objects are served from the same stance);
     # with navigation OFF it stays at TASK_CFG's stance and a plan that stance does not serve stops with "needs navigation on".
     "navigation": True,                         # [row M175: David: the new setting value runs with navigation on]

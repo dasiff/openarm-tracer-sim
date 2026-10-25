@@ -179,3 +179,5 @@ STEP2 script experiments/moved_place_split_diag.py written (measure only). RUN: 
 STEP2 first run had a script bug (phase label is '4/4 PLACE: OVER [running]'), fixed in the script only. RERUN: tmux diag3, log data/logs/moved_place_split_diag_20261025_063446.log, started 06:34:46.
 STEP2 DONE (see docs/reports/*_overnight.md). Current step: 3 (Gemini planner call oracle, then 2 VLM, then cache-only).
 STEP3a RUN: planner call, tmux gem1, log data/logs/mpvi_text_oracle_live_20261025_063832.log, started 06:38:32: mpvi_text_test --mode cache_or_live --checker oracle (one Gemini planner call; on quota error STOP all Gemini work).
+STEP3a RESULT: planner call failed with 503 UNAVAILABLE (high demand), NOT quota; the client's own 6 retries (4 to 65 s) were used up, log data/logs/mpvi_text_oracle_live_20261025_063832.log. No further live calls made (no VLM calls). Next: cache-only passes, then step 4.
+STEP3 DONE (cache-only passes: cache miss, expected, no stored planner reply). Current step: 4 (default stance -> bench_region).

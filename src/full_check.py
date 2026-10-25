@@ -94,6 +94,7 @@ class PathClearance:
                 self.d.qpos[a] = v
             for j in arm_ids(m, sd)["finger_jnt"]:
                 self.d.qpos[m.jnt_qposadr[j]] = STAGING_CFG["finger_open"]
+        self.home_left = [float(v) for v in TASK_CFG["home_q_left"]]      # body_distance puts the left arm back here (arm_distances leaves it at the last joint vector it was given)
         self.slot_geoms = [g for g in range(m.ngeom) if (m.geom(g).name or "").startswith("fc_slot")]
 
     def place(self, stance):
@@ -132,6 +133,7 @@ class PathClearance:
         """The smallest distance of the whole robot (both arms at home, the camera box on the torso included) to the world geoms (bench, hotplate, objects) at a stance."""
         self.place(stance)
         d, m = self.d, self.model
+        d.qpos[self.qadr] = self.home_left                    # P3 (M181): both arms at home as documented; arm_distances leaves the left arm at the last joint vector it tried
         mujoco.mj_kinematics(m, d)
         return self._min(self.robot, self.world, True)
 

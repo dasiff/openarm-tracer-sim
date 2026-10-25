@@ -66,6 +66,14 @@ def main():
     pts = task_points(fc.model, fc.scene_data)
     print(f"the check's own simulation loaded in {fc.load_seconds:.1f} s; {len(pts)} points; {len(maps)} reach maps")
 
+    print("\n3b. the body distance does not depend on the arm joints a path check left behind (P3, M181)")
+    sB = (A[0], A[1], A[2], max(A[3] - 0.02, 0.0))
+    pc = fc.clear
+    fc.clear.arm_distances(sB, np.array([[0.0, 0.5, 0.0, 1.5, 0.0, 0.0, 0.0]]))      # leaves the left arm at this joint vector
+    check("(precondition) arm_distances leaves the left arm away from home", not np.allclose(pc.d.qpos[pc.qadr], pc.home_left))
+    pc.body_distance(sB)
+    check("body_distance puts the left arm back at home before it measures", np.allclose(pc.d.qpos[pc.qadr], pc.home_left))
+
     print("\n4. the stance of TASK_CFG and an early failure")
     t0 = time.perf_counter()
     rA = fc.check(A, pts)

@@ -1,0 +1,633 @@
+{
+ "stance_mode": "task_cfg",
+ "stance": {
+  "xy": [
+   0.765,
+   1.085
+  ],
+  "q": 0.155,
+  "yaw": -1.5707963267948966
+ },
+ "outcome": "SUCCESS",
+ "status": [
+  "done",
+  "done",
+  "done",
+  "done"
+ ],
+ "success": true,
+ "geoms": {
+  "beaker": 26,
+  "hotplate": 2,
+  "fingers": 4
+ },
+ "contacts": {
+  "seg0|1/4 NAV: starting": {
+   "task_beaker_bottom / bench:bench_top": {
+    "first_s": 1.4000000000000121,
+    "last_s": 1.4000000000000121,
+    "ticks": 4,
+    "max_force_N": 0.49550513354215386,
+    "min_dist_m": -0.0002020698615201603
+   }
+  },
+  "seg0|1/4 NAV: ARMS [running]": {
+   "task_beaker_bottom / bench:bench_top": {
+    "first_s": 1.4066666666666792,
+    "last_s": 11.706666666665644,
+    "ticks": 6184,
+    "max_force_N": 0.5950799953326968,
+    "min_dist_m": -0.0002115454911264688
+   }
+  },
+  "seg0|1/4 NAV: PEDESTAL [running]": {
+   "task_beaker_bottom / bench:bench_top": {
+    "first_s": 11.71333333333231,
+    "last_s": 14.813333333331968,
+    "ticks": 1864,
+    "max_force_N": 0.5948609005593206,
+    "min_dist_m": -0.0002096490605697472
+   }
+  },
+  "seg0|1/4 NAV: DRIVE [running]": {
+   "task_beaker_bottom / bench:bench_top": {
+    "first_s": 14.819999999998634,
+    "last_s": 35.00000000002172,
+    "ticks": 12112,
+    "max_force_N": 0.5956040711365693,
+    "min_dist_m": -0.00021180941539833832
+   }
+  },
+  "seg0|1/4 NAV: CREEP_IN [running]": {
+   "task_beaker_bottom / bench:bench_top": {
+    "first_s": 35.006666666688396,
+    "last_s": 46.373333333368954,
+    "ticks": 6824,
+    "max_force_N": 0.5962205049993772,
+    "min_dist_m": -0.00021178272883279364
+   }
+  },
+  "seg1|1/4 NAV: CREEP_IN [running]": {
+   "task_beaker_bottom / bench:bench_top": {
+    "first_s": 46.38000000003563,
+    "last_s": 46.38000000003563,
+    "ticks": 4,
+    "max_force_N": 0.5879396600055418,
+    "min_dist_m": -0.0002014619598599597
+   }
+  },
+  "seg1|2/4 PICK: starting": {
+   "task_beaker_bottom / bench:bench_top": {
+    "first_s": 46.386666666702304,
+    "last_s": 46.386666666702304,
+    "ticks": 4,
+    "max_force_N": 0.5890976163415274,
+    "min_dist_m": -0.00020147701545464216
+   }
+  },
+  "seg1|2/4 PICK: OVER [running]": {
+   "task_beaker_bottom / bench:bench_top": {
+    "first_s": 46.39333333336898,
+    "last_s": 49.12666666670565,
+    "ticks": 1644,
+    "max_force_N": 0.5942593571478618,
+    "min_dist_m": -0.00021089048299838433
+   }
+  },
+  "seg1|2/4 PICK: DOWN [running]": {
+   "task_beaker_bottom / bench:bench_top": {
+    "first_s": 49.13333333337233,
+    "last_s": 53.01333333337707,
+    "ticks": 2332,
+    "max_force_N": 0.5961690253152181,
+    "min_dist_m": -0.0002125913653237114
+   }
+  },
+  "seg1|2/4 PICK: IN [running]": {
+   "task_beaker_bottom / bench:bench_top": {
+    "first_s": 53.020000000043744,
+    "last_s": 56.220000000047655,
+    "ticks": 1924,
+    "max_force_N": 0.5941316679274625,
+    "min_dist_m": -0.00020943662773895345
+   }
+  },
+  "seg1|2/4 PICK: CLOSE [running]": {
+   "task_beaker_bottom / bench:bench_top": {
+    "first_s": 56.22666666671433,
+    "last_s": 57.22666666671555,
+    "ticks": 588,
+    "max_force_N": 1.3267759911065427,
+    "min_dist_m": -0.000413683546757117
+   },
+   "task_beaker_wall_0 / openarm_left_right_finger:openarm_left_right_finger_collision": {
+    "first_s": 56.233333333381005,
+    "last_s": 57.22666666671555,
+    "ticks": 150,
+    "max_force_N": 10.399881504041712,
+    "min_dist_m": -0.001833798929063147
+   },
+   "task_beaker_wall_1 / openarm_left_right_finger:openarm_left_right_finger_collision": {
+    "first_s": 56.233333333381005,
+    "last_s": 56.26666666671438,
+    "ticks": 6,
+    "max_force_N": 2.1917112840590214,
+    "min_dist_m": -0.0017819818727173
+   },
+   "task_beaker_wall_23 / openarm_left_right_finger:openarm_left_right_finger_collision": {
+    "first_s": 56.233333333381005,
+    "last_s": 56.27333333338105,
+    "ticks": 7,
+    "max_force_N": 1.0329915113269195,
+    "min_dist_m": -0.0017866774230133335
+   },
+   "task_beaker_wall_11 / openarm_left_left_finger:openarm_left_left_finger_collision": {
+    "first_s": 56.233333333381005,
+    "last_s": 56.26666666671438,
+    "ticks": 12,
+    "max_force_N": 0.0,
+    "min_dist_m": -0.0014602262570463506
+   },
+   "task_beaker_wall_12 / openarm_left_left_finger:openarm_left_left_finger_collision": {
+    "first_s": 56.233333333381005,
+    "last_s": 57.22666666671555,
+    "ticks": 314,
+    "max_force_N": 12.163742695702203,
+    "min_dist_m": -0.001528641882998638
+   },
+   "task_beaker_wall_13 / openarm_left_left_finger:openarm_left_left_finger_collision": {
+    "first_s": 56.233333333381005,
+    "last_s": 56.29333333338108,
+    "ticks": 20,
+    "max_force_N": 0.05236323672964609,
+    "min_dist_m": -0.0014955402630291703
+   }
+  },
+  "seg1|2/4 PICK: UP [running]": {
+   "task_beaker_wall_0 / openarm_left_right_finger:openarm_left_right_finger_collision": {
+    "first_s": 57.23333333338223,
+    "last_s": 60.126666666719096,
+    "ticks": 435,
+    "max_force_N": 8.300097412431574,
+    "min_dist_m": -3.7240962154956533e-05
+   },
+   "task_beaker_wall_12 / openarm_left_left_finger:openarm_left_left_finger_collision": {
+    "first_s": 57.23333333338223,
+    "last_s": 60.126666666719096,
+    "ticks": 1213,
+    "max_force_N": 5.2063805176612625,
+    "min_dist_m": -3.459803275153545e-05
+   },
+   "task_beaker_bottom / bench:bench_top": {
+    "first_s": 57.23333333338223,
+    "last_s": 57.88666666671636,
+    "ticks": 300,
+    "max_force_N": 0.733758151380911,
+    "min_dist_m": -0.0003627636870479992
+   },
+   "task_beaker_wall_13 / openarm_left_left_finger:openarm_left_left_finger_collision": {
+    "first_s": 57.2666666667156,
+    "last_s": 58.1133333333833,
+    "ticks": 50,
+    "max_force_N": 0.0,
+    "min_dist_m": -1.0811212642507096e-06
+   },
+   "task_beaker_wall_23 / openarm_left_right_finger:openarm_left_right_finger_collision": {
+    "first_s": 57.58666666671599,
+    "last_s": 57.68000000004944,
+    "ticks": 15,
+    "max_force_N": 0.4286868930385152,
+    "min_dist_m": -3.4259770954799686e-06
+   }
+  },
+  "seg2|2/4 PICK: UP [running]": {
+   "task_beaker_wall_0 / openarm_left_right_finger:openarm_left_right_finger_collision": {
+    "first_s": 60.13333333338577,
+    "last_s": 60.13333333338577,
+    "ticks": 1,
+    "max_force_N": 8.017388627818924,
+    "min_dist_m": -1.8891825653265036e-05
+   },
+   "task_beaker_wall_12 / openarm_left_left_finger:openarm_left_left_finger_collision": {
+    "first_s": 60.13333333338577,
+    "last_s": 60.13333333338577,
+    "ticks": 3,
+    "max_force_N": 4.302342856266409,
+    "min_dist_m": -3.1392497938418444e-05
+   }
+  },
+  "seg3|3/4 NAV: starting": {
+   "task_beaker_wall_0 / openarm_left_right_finger:openarm_left_right_finger_collision": {
+    "first_s": 60.140000000052446,
+    "last_s": 60.140000000052446,
+    "ticks": 1,
+    "max_force_N": 8.017376475516897,
+    "min_dist_m": -1.8887716671234423e-05
+   },
+   "task_beaker_wall_12 / openarm_left_left_finger:openarm_left_left_finger_collision": {
+    "first_s": 60.140000000052446,
+    "last_s": 60.140000000052446,
+    "ticks": 3,
+    "max_force_N": 4.30306254460249,
+    "min_dist_m": -3.13997953885276e-05
+   }
+  },
+  "seg3|4/4 PLACE: starting": {
+   "task_beaker_wall_0 / openarm_left_right_finger:openarm_left_right_finger_collision": {
+    "first_s": 60.14666666671912,
+    "last_s": 60.14666666671912,
+    "ticks": 1,
+    "max_force_N": 8.017384300183185,
+    "min_dist_m": -1.888490424938557e-05
+   },
+   "task_beaker_wall_12 / openarm_left_left_finger:openarm_left_left_finger_collision": {
+    "first_s": 60.14666666671912,
+    "last_s": 60.14666666671912,
+    "ticks": 3,
+    "max_force_N": 4.303776966811835,
+    "min_dist_m": -3.140571120079505e-05
+   }
+  },
+  "seg3|4/4 PLACE: OVER [running]": {
+   "task_beaker_wall_0 / openarm_left_right_finger:openarm_left_right_finger_collision": {
+    "first_s": 60.153333333385795,
+    "last_s": 62.7466666667223,
+    "ticks": 390,
+    "max_force_N": 8.11115181109406,
+    "min_dist_m": -2.0006031273506318e-05
+   },
+   "task_beaker_wall_12 / openarm_left_left_finger:openarm_left_left_finger_collision": {
+    "first_s": 60.153333333385795,
+    "last_s": 62.7466666667223,
+    "ticks": 1170,
+    "max_force_N": 4.479868171488909,
+    "min_dist_m": -3.585610623691688e-05
+   },
+   "task_beaker_wall_13 / openarm_left_left_finger:openarm_left_left_finger_collision": {
+    "first_s": 61.38000000005396,
+    "last_s": 61.7133333333877,
+    "ticks": 80,
+    "max_force_N": 0.0,
+    "min_dist_m": -2.308022098253939e-06
+   }
+  },
+  "seg3|4/4 PLACE: DOWN [running]": {
+   "task_beaker_wall_0 / openarm_left_right_finger:openarm_left_right_finger_collision": {
+    "first_s": 62.75333333338897,
+    "last_s": 64.98000000005835,
+    "ticks": 335,
+    "max_force_N": 8.327955484479478,
+    "min_dist_m": -5.578347159361962e-05
+   },
+   "task_beaker_wall_12 / openarm_left_left_finger:openarm_left_left_finger_collision": {
+    "first_s": 62.75333333338897,
+    "last_s": 64.98000000005835,
+    "ticks": 757,
+    "max_force_N": 7.854187019333781,
+    "min_dist_m": -4.107903740883603e-05
+   },
+   "task_beaker_bottom / task_hotplate:task_hotplate_top_plate": {
+    "first_s": 63.406666666723105,
+    "last_s": 64.98000000005835,
+    "ticks": 252,
+    "max_force_N": 2.7825194427264237,
+    "min_dist_m": -0.0007509774661888555
+   },
+   "task_beaker_wall_13 / openarm_left_left_finger:openarm_left_left_finger_collision": {
+    "first_s": 63.41333333338978,
+    "last_s": 63.446666666723154,
+    "ticks": 12,
+    "max_force_N": 0.0,
+    "min_dist_m": -7.669279460966725e-06
+   },
+   "task_beaker_wall_23 / openarm_left_right_finger:openarm_left_right_finger_collision": {
+    "first_s": 64.0133333333905,
+    "last_s": 64.98000000005835,
+    "ticks": 136,
+    "max_force_N": 1.1501240054696926,
+    "min_dist_m": -2.170950167397438e-05
+   },
+   "task_beaker_wall_1 / openarm_left_right_finger:openarm_left_right_finger_collision": {
+    "first_s": 64.0933333333906,
+    "last_s": 64.98000000005835,
+    "ticks": 124,
+    "max_force_N": 0.21372927141784775,
+    "min_dist_m": -2.1702045092073535e-05
+   }
+  },
+  "seg3|4/4 PLACE: OPEN [running]": {
+   "task_beaker_wall_0 / openarm_left_right_finger:openarm_left_right_finger_collision": {
+    "first_s": 64.98666666672503,
+    "last_s": 64.98666666672503,
+    "ticks": 1,
+    "max_force_N": 0.0,
+    "min_dist_m": -3.4587646752252095e-05
+   },
+   "task_beaker_wall_1 / openarm_left_right_finger:openarm_left_right_finger_collision": {
+    "first_s": 64.98666666672503,
+    "last_s": 64.98666666672503,
+    "ticks": 1,
+    "max_force_N": 0.0,
+    "min_dist_m": -5.235558031115639e-07
+   },
+   "task_beaker_wall_23 / openarm_left_right_finger:openarm_left_right_finger_collision": {
+    "first_s": 64.98666666672503,
+    "last_s": 64.98666666672503,
+    "ticks": 1,
+    "max_force_N": 0.0,
+    "min_dist_m": -1.5463554822926258e-07
+   },
+   "task_beaker_wall_12 / openarm_left_left_finger:openarm_left_left_finger_collision": {
+    "first_s": 64.98666666672503,
+    "last_s": 64.98666666672503,
+    "ticks": 2,
+    "max_force_N": 0.0,
+    "min_dist_m": -1.5831748171619606e-05
+   },
+   "task_beaker_bottom / task_hotplate:task_hotplate_top_plate": {
+    "first_s": 64.98666666672503,
+    "last_s": 65.98666666672625,
+    "ticks": 598,
+    "max_force_N": 1.650331672631715,
+    "min_dist_m": -0.0008714436063979795
+   }
+  },
+  "seg3|4/4 PLACE: BACK [running]": {
+   "task_beaker_bottom / task_hotplate:task_hotplate_top_plate": {
+    "first_s": 65.99333333339293,
+    "last_s": 67.72666666672838,
+    "ticks": 1044,
+    "max_force_N": 0.5946224883209359,
+    "min_dist_m": -0.00012403967392331133
+   }
+  },
+  "seg3|4/4 PLACE: HOME [running]": {
+   "task_beaker_bottom / task_hotplate:task_hotplate_top_plate": {
+    "first_s": 67.73333333339505,
+    "last_s": 72.44666666673415,
+    "ticks": 2832,
+    "max_force_N": 0.5961341745658585,
+    "min_dist_m": -0.00012517487612688112
+   }
+  },
+  "seg4|4/4 PLACE: HOME [running]": {
+   "task_beaker_bottom / task_hotplate:task_hotplate_top_plate": {
+    "first_s": 72.45333333340082,
+    "last_s": 72.45333333340082,
+    "ticks": 4,
+    "max_force_N": 0.5918236786958242,
+    "min_dist_m": -0.00011910054967172065
+   }
+  },
+  "seg4|PLAN DONE": {
+   "task_beaker_bottom / task_hotplate:task_hotplate_top_plate": {
+    "first_s": 72.4600000000675,
+    "last_s": 74.45333333340326,
+    "ticks": 1200,
+    "max_force_N": 0.5952933933611733,
+    "min_dist_m": -0.00012447814481186733
+   }
+  }
+ },
+ "distances": {
+  "seg0|1/4 NAV: ARMS [running]": {
+   "hotplate": {
+    "m": 0.07497990082604963,
+    "t_s": 3.633333333333199,
+    "beaker_geom": "task_beaker_wall_12",
+    "other": "task_hotplate:task_hotplate_base"
+   },
+   "fingers": {
+    "m": 0.3,
+    "t_s": 1.4066666666666792,
+    "beaker_geom": "task_beaker_wall_0",
+    "other": "openarm_left_right_finger:openarm_left_right_finger_collision"
+   }
+  },
+  "seg0|1/4 NAV: PEDESTAL [running]": {
+   "hotplate": {
+    "m": 0.07497902220350137,
+    "t_s": 12.07333333333227,
+    "beaker_geom": "task_beaker_wall_12",
+    "other": "task_hotplate:task_hotplate_base"
+   },
+   "fingers": {
+    "m": 0.3,
+    "t_s": 11.71333333333231,
+    "beaker_geom": "task_beaker_wall_0",
+    "other": "openarm_left_right_finger:openarm_left_right_finger_collision"
+   }
+  },
+  "seg0|1/4 NAV: DRIVE [running]": {
+   "hotplate": {
+    "m": 0.07497878404827242,
+    "t_s": 32.68666666668556,
+    "beaker_geom": "task_beaker_wall_12",
+    "other": "task_hotplate:task_hotplate_base"
+   },
+   "fingers": {
+    "m": 0.3,
+    "t_s": 14.819999999998634,
+    "beaker_geom": "task_beaker_wall_0",
+    "other": "openarm_left_right_finger:openarm_left_right_finger_collision"
+   }
+  },
+  "seg0|1/4 NAV: CREEP_IN [running]": {
+   "hotplate": {
+    "m": 0.07497952513766612,
+    "t_s": 45.18000000003416,
+    "beaker_geom": "task_beaker_wall_12",
+    "other": "task_hotplate:task_hotplate_base"
+   },
+   "fingers": {
+    "m": 0.1236577877808667,
+    "t_s": 46.27333333336883,
+    "beaker_geom": "task_beaker_wall_7",
+    "other": "openarm_left_right_finger:openarm_left_right_finger_collision"
+   }
+  },
+  "seg1|1/4 NAV: CREEP_IN [running]": {
+   "hotplate": {
+    "m": 0.0749876769920597,
+    "t_s": 46.38000000003563,
+    "beaker_geom": "task_beaker_wall_12",
+    "other": "task_hotplate:task_hotplate_base"
+   },
+   "fingers": {
+    "m": 0.12366140764199932,
+    "t_s": 46.38000000003563,
+    "beaker_geom": "task_beaker_wall_7",
+    "other": "openarm_left_right_finger:openarm_left_right_finger_collision"
+   }
+  },
+  "seg1|2/4 PICK: OVER [running]": {
+   "hotplate": {
+    "m": 0.07498098709169061,
+    "t_s": 46.940000000036314,
+    "beaker_geom": "task_beaker_wall_12",
+    "other": "task_hotplate:task_hotplate_base"
+   },
+   "fingers": {
+    "m": 0.11775397297540878,
+    "t_s": 47.286666666703404,
+    "beaker_geom": "task_beaker_wall_5",
+    "other": "openarm_left_right_finger:openarm_left_right_finger_collision"
+   }
+  },
+  "seg1|2/4 PICK: DOWN [running]": {
+   "hotplate": {
+    "m": 0.07497854941918054,
+    "t_s": 49.740000000039736,
+    "beaker_geom": "task_beaker_wall_12",
+    "other": "task_hotplate:task_hotplate_base"
+   },
+   "fingers": {
+    "m": 0.08558893712122907,
+    "t_s": 53.006666666710395,
+    "beaker_geom": "task_beaker_wall_5",
+    "other": "openarm_left_right_finger:openarm_left_right_finger_collision"
+   }
+  },
+  "seg1|2/4 PICK: IN [running]": {
+   "hotplate": {
+    "m": 0.07497960108677454,
+    "t_s": 53.42000000004423,
+    "beaker_geom": "task_beaker_wall_12",
+    "other": "task_hotplate:task_hotplate_base"
+   },
+   "fingers": {
+    "m": 0.005776753838712834,
+    "t_s": 56.220000000047655,
+    "beaker_geom": "task_beaker_wall_0",
+    "other": "openarm_left_right_finger:openarm_left_right_finger_collision"
+   }
+  },
+  "seg1|2/4 PICK: CLOSE [running]": {
+   "hotplate": {
+    "m": 0.07466899239366581,
+    "t_s": 56.233333333381005,
+    "beaker_geom": "task_beaker_wall_12",
+    "other": "task_hotplate:task_hotplate_base"
+   },
+   "fingers": {
+    "m": -0.001833798929063147,
+    "t_s": 56.233333333381005,
+    "beaker_geom": "task_beaker_wall_0",
+    "other": "openarm_left_right_finger:openarm_left_right_finger_collision"
+   }
+  },
+  "seg1|2/4 PICK: UP [running]": {
+   "hotplate": {
+    "m": 0.06859272383347918,
+    "t_s": 58.033333333383204,
+    "beaker_geom": "task_beaker_wall_12",
+    "other": "task_hotplate:task_hotplate_base"
+   },
+   "fingers": {
+    "m": -3.724096215495658e-05,
+    "t_s": 57.646666666716065,
+    "beaker_geom": "task_beaker_wall_0",
+    "other": "openarm_left_right_finger:openarm_left_right_finger_collision"
+   }
+  },
+  "seg3|3/4 NAV: starting": {
+   "hotplate": {
+    "m": 0.08863167782768275,
+    "t_s": 60.140000000052446,
+    "beaker_geom": "task_beaker_bottom",
+    "other": "task_hotplate:task_hotplate_base"
+   },
+   "fingers": {
+    "m": -3.139969552379592e-05,
+    "t_s": 60.140000000052446,
+    "beaker_geom": "task_beaker_wall_12",
+    "other": "openarm_left_left_finger:openarm_left_left_finger_collision"
+   }
+  },
+  "seg3|4/4 PLACE: OVER [running]": {
+   "hotplate": {
+    "m": 0.027353434249140315,
+    "t_s": 61.10000000005362,
+    "beaker_geom": "task_beaker_bottom",
+    "other": "task_hotplate:task_hotplate_top_plate"
+   },
+   "fingers": {
+    "m": -3.585603213832891e-05,
+    "t_s": 61.42000000005401,
+    "beaker_geom": "task_beaker_wall_12",
+    "other": "openarm_left_left_finger:openarm_left_left_finger_collision"
+   }
+  },
+  "seg3|4/4 PLACE: DOWN [running]": {
+   "hotplate": {
+    "m": -0.0007509429039109453,
+    "t_s": 63.420000000056454,
+    "beaker_geom": "task_beaker_bottom",
+    "other": "task_hotplate:task_hotplate_top_plate"
+   },
+   "fingers": {
+    "m": -5.578347159361962e-05,
+    "t_s": 64.83333333339151,
+    "beaker_geom": "task_beaker_wall_0",
+    "other": "openarm_left_right_finger:openarm_left_right_finger_collision"
+   }
+  },
+  "seg3|4/4 PLACE: OPEN [running]": {
+   "hotplate": {
+    "m": -0.0008802759857905185,
+    "t_s": 65.0200000000584,
+    "beaker_geom": "task_beaker_bottom",
+    "other": "task_hotplate:task_hotplate_top_plate"
+   },
+   "fingers": {
+    "m": 0.0007974046049590154,
+    "t_s": 64.9933333333917,
+    "beaker_geom": "task_beaker_wall_0",
+    "other": "openarm_left_right_finger:openarm_left_right_finger_collision"
+   }
+  },
+  "seg3|4/4 PLACE: BACK [running]": {
+   "hotplate": {
+    "m": -0.0001244285740386996,
+    "t_s": 66.27333333339327,
+    "beaker_geom": "task_beaker_bottom",
+    "other": "task_hotplate:task_hotplate_top_plate"
+   },
+   "fingers": {
+    "m": 0.004484309397398978,
+    "t_s": 65.99333333339293,
+    "beaker_geom": "task_beaker_wall_0",
+    "other": "openarm_left_right_finger:openarm_left_right_finger_collision"
+   }
+  },
+  "seg3|4/4 PLACE: HOME [running]": {
+   "hotplate": {
+    "m": -0.00012510486835087443,
+    "t_s": 69.82000000006427,
+    "beaker_geom": "task_beaker_bottom",
+    "other": "task_hotplate:task_hotplate_top_plate"
+   },
+   "fingers": {
+    "m": 0.018700435110854563,
+    "t_s": 68.20666666672896,
+    "beaker_geom": "task_beaker_wall_7",
+    "other": "openarm_left_left_finger:openarm_left_left_finger_collision"
+   }
+  },
+  "seg4|PLAN DONE": {
+   "hotplate": {
+    "m": -0.0001245602611775261,
+    "t_s": 73.92666666673595,
+    "beaker_geom": "task_beaker_bottom",
+    "other": "task_hotplate:task_hotplate_top_plate"
+   },
+   "fingers": {
+    "m": 0.09524564053078294,
+    "t_s": 73.38000000006862,
+    "beaker_geom": "task_beaker_wall_4",
+    "other": "openarm_left_left_finger:openarm_left_left_finger_collision"
+   }
+  }
+ },
+ "sim_time_end": 74.46000000006994
+}

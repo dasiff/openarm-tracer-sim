@@ -2,7 +2,7 @@
 """
 Split diagnosis of the moved layout's place failure at OVER (David 2026-10-25, overnight step 2). Measurement only: nothing in src/ or any setting is changed.
 
-The same selection and episode as stance_select_moved_test.py (task_cfg MOVED, stance mode bench_region). A test source records, during the first OVER of the place (segment 4/4):
+The same selection and episode as stance_select_moved_test.py (task_cfg MOVED). A test source records, during the first OVER of the place (segment 4/4):
   b. the hand's smallest distance to the hotplate (the left arm's links 3 to 7, hand and fingers against the hotplate's geoms; the held beaker is not in the group), against the 8 mm limit;
   c. per joint, the commanded angle (the arm's q_cmd) against the measured one, and the commanded angle's distance to the solver's own bounds (the joint limit minus the 10 degree margin);
 and keeps the state at the first tick of OVER and at its last tick. After the episode, on scratch copies of that state:
@@ -57,7 +57,7 @@ def pose_err(arm, d, target, R):
 
 
 def main():
-    task = make_pipeline_task(PLAN4, task_cfg=MOVED, stance_mode="bench_region")
+    task = make_pipeline_task(PLAN4, task_cfg=MOVED)
     sim = load_task(MOVED, cameras=True)
     m, d = sim.model, sim.data
     ids = arm_ids(m, "left")

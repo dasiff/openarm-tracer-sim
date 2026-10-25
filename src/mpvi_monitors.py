@@ -10,12 +10,21 @@ the grasp (the width of what was held) for PICK_PLACE_CFG["drop_dwell_s"]. It us
 commanded state (known from the events); no object pose. An effort (current) drop is NOT modelled: the simulator has no gripper effort readback the real robot would match. The log entry has the time, the
 finger opening, the width held and, beside it, the sim oracle's "held?" verdict at that tick (ground truth, for the log only, never an input of the monitor).
 
+Carry slice monitor (M180, log only): from the pick's "gripper_closed" event to the end of the place's first waypoint (OVER) it records, every tick, the left arm's hand (pad centre), the beaker's bottom rim and the
+forearm (the line from the elbow to the wrist) and, once the place is under way, logs the largest distance each lies outside the carry slice (no margin) that the stance selection's carry check uses
+(src/stance_select.slice_distance: apex at the shoulder, edges to the beaker's xy at the grasp and over the hotplate, arc of the larger shoulder-to-hand distance). It warns when the forearm is outside by more than
+BENCH_STANCE_CFG["carry_slice_margin_m"] (the margin the check allows). It reads the simulator's true state (a log for the tests, never an input of the robot).
+
 Contents:
-    make_drop_monitor(model, oracle_checker, side, cfg).
+    make_drop_monitor(model, oracle_checker, side, cfg), make_carry_slice_monitor(model, data, manip, side, cfg).
 """
 
+import math
+
+import numpy as np
+
 from src.robot_helpers import arm_ids
-from src.task_config import PICK_PLACE_CFG
+from src.task_config import BEAKER_CFG, BENCH_STANCE_CFG, PICK_PLACE_CFG
 
 
 def make_drop_monitor(model, oracle_checker, side="left", cfg=PICK_PLACE_CFG, decides=None):
@@ -64,3 +73,78 @@ def make_drop_monitor(model, oracle_checker, side="left", cfg=PICK_PLACE_CFG, de
         return new
 
     return {"name": "drop monitor", "tick": tick, "log": S["log"], "report": lambda: {"log": list(S["log"])}}
+
+
+def make_carry_slice_monitor(model, data, manip, side="left", cfg=BENCH_STANCE_CFG, beaker_cfg=BEAKER_CFG):
+    """Builds the carry slice monitor (log only).
+
+    Args:
+        model (mujoco.MjModel): The task model.
+        data (mujoco.MjData): The live state, read.
+        manip (dict): The scripted manipulation module (make_scripted_manipulation): its "pad_pose"() and "state" (the place's OVER target gives the second edge of the slice).
+        side (str): The carrying arm. Defaults to "left".
+        cfg (dict): BENCH_STANCE_CFG ("carry_slice_margin_m"). Defaults to it.
+        beaker_cfg (dict): BEAKER_CFG (the body name and the outer diameter, for the bottom rim).
+
+    Returns:
+        dict: {"name": "carry slice monitor", "tick": tick(obs, events, segment) -> new log entries, "log": the entries so far, "report": () -> {"log"}}. An entry {"kind": "carry_slice", "hand_mm", "beaker_rim_mm",
+        "forearm_mm", "margin_mm", ...} per carry, and {"kind": "carry_slice_warning", ...} when the forearm exceeds the margin.
+    """
+    from src.stance_select import slice_distance
+    ids = arm_ids(model, side)
+    jan = [ids["jnt"][i] for i in (0, 3, 5)]                                       # the shoulder (joint 1), elbow (joint 4) and wrist (joint 6) anchors
+    bj = int(model.jnt_qposadr[model.joint("task_beaker_free").id])
+    rim = 0.5 * beaker_cfg["outer_diameter"]
+    ring = np.array([[math.cos(a), math.sin(a)] for a in np.linspace(0.0, 2 * math.pi, 24, endpoint=False)]) * rim
+    S = {"on": False, "rows": [], "p0": None, "apex": None, "off": None, "log": []}
+    st = manip["state"]
+
+    def emit(obs):
+        rows = S["rows"]
+        moved = float(np.hypot(*(data.xanchor[jan[0]][:2] - S["apex"])))
+        if moved > 0.01:                                                    # the base moved during the carry (a run with a navigation step that moves): there is no one slice
+            S.update(on=False, rows=[])
+            entry = {"kind": "carry_slice_skipped", "time": float(obs["time"]), "reason": f"the shoulder moved {1000 * moved:.0f} mm during the carry (the base drove)"}
+            S["log"].append(entry)
+            return [entry]
+        hand, bxy, el, wr = (np.array([r[i] for r in rows]) for i in range(4))
+        over = next((x for x in reversed(st["steps"]) if x["name"] == "OVER"), None)
+        p1 = (np.asarray(over["target"], float)[:2] - S["off"]) if over is not None else bxy[-1]       # the beaker's xy over the hotplate: the hand's target less the hand-to-beaker offset at the grasp
+        p0, apex = S["p0"], S["apex"]
+        d_hand = float(slice_distance(hand, apex, p0, p1).max())
+        d_rim = float(slice_distance(bxy[:, None, :] + ring[None], apex, p0, p1).max())
+        fa = el[:, None, :] + np.linspace(0.0, 1.0, 11)[None, :, None] * (wr - el)[:, None, :]
+        d_fore = float(slice_distance(fa, apex, p0, p1).max())
+        entry = {"kind": "carry_slice", "time": float(obs["time"]), "hand_mm": 1000 * d_hand, "beaker_rim_mm": 1000 * d_rim, "forearm_mm": 1000 * d_fore, "margin_mm": 1000 * cfg["carry_slice_margin_m"],
+                 "ticks": len(rows)}
+        new = [entry]
+        if d_fore > cfg["carry_slice_margin_m"]:
+            new.append({"kind": "carry_slice_warning", "time": float(obs["time"]), "warning": f"the forearm was {1000 * d_fore:.0f} mm outside the carry slice, more than its {1000 * cfg['carry_slice_margin_m']:.0f} mm margin"})
+        S["log"].extend(new)
+        S.update(on=False, rows=[])
+        return new
+
+    def tick(obs, events, segment=None):
+        new = []
+        try:
+            for ev, seg in events:
+                if ev == "gripper_closed":
+                    pad, _ = manip["pad_pose"]()
+                    bxy = data.qpos[bj:bj + 2].copy()
+                    S.update(on=True, rows=[], p0=bxy, apex=data.xanchor[jan[0]][:2].copy(), off=pad[:2] - bxy)
+                elif ev == "gripper_opened" and S["on"]:
+                    new += emit(obs)
+            if S["on"]:
+                pad, _ = manip["pad_pose"]()
+                S["rows"].append((pad[:2].copy(), data.qpos[bj:bj + 2].copy(), data.xanchor[jan[1]][:2].copy(), data.xanchor[jan[2]][:2].copy()))
+                cur = st["steps"][st["i"]]["name"] if st["i"] < len(st["steps"]) else None
+                over_seen = any(x["name"] == "OVER" for x in st["steps"]) and st["ctx"].get("primitive") == "place"
+                if over_seen and (cur != "OVER" or st["error"]):
+                    new += emit(obs)                                           # the carry ends where the place's OVER ends (DOWN begins) or the place fails
+        except Exception as e:                                      # noqa: BLE001 - a monitor only logs: its own failure is logged and never stops the run
+            entry = {"kind": "monitor_error", "time": obs.get("time"), "error": f"{type(e).__name__}: {e}"}
+            S["log"].append(entry)
+            new.append(entry)
+        return new
+
+    return {"name": "carry slice monitor", "tick": tick, "log": S["log"], "report": lambda: {"log": list(S["log"])}}

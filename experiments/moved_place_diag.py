@@ -29,7 +29,7 @@ from stance_select_test import PLAN4  # noqa: E402
 
 
 def main():
-    task = make_pipeline_task(PLAN4, task_cfg=MOVED, stance_mode="bench_region")
+    task = make_pipeline_task(PLAN4, task_cfg=MOVED)
     sim = load_task(MOVED, cameras=True)
     m, d = sim.model, sim.data
     ids = arm_ids(m, "left")

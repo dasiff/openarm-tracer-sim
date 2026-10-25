@@ -4,7 +4,7 @@ The held beaker's contacts through the pipeline episode (David 2026-10-25): the 
 and a test source that logs, per orchestrator segment and phase, every contact of the beaker's geoms (pair, first and last time, ticks, largest normal force) and the smallest distances of the beaker's
 geoms to the hotplate's geoms and to the fingers' geoms. Nothing in the algorithm or the full check changes.
 
-    MUJOCO_GL=egl python experiments/held_beaker_contacts.py --stance-mode task_cfg|bench_region --out data/held_beaker/<name>
+    MUJOCO_GL=egl python experiments/held_beaker_contacts.py [--at-reference-stance] --out data/held_beaker/<name>
 
 Writes <out>/contacts.json (also printed in short) and the kept episode (<out>/episode, <out>/recording).
 """
@@ -29,7 +29,7 @@ import numpy as np  # noqa: E402
 from src.episode_runner import run_episode  # noqa: E402
 from src.mpvi_pipeline import make_pipeline_task  # noqa: E402
 from src.task_beaker_hotplate import load_task  # noqa: E402
-from src.task_config import TASK_CFG  # noqa: E402
+from src.task_config import BENCH_STANCE_CFG, TASK_CFG  # noqa: E402
 from stance_select_test import PLAN4  # noqa: E402
 
 
@@ -98,11 +98,13 @@ def main(args):
     for sub in ("episode", "recording"):
         shutil.rmtree(out / sub, ignore_errors=True)
     out.mkdir(parents=True, exist_ok=True)
-    task = make_pipeline_task(PLAN4, stance_mode=args.stance_mode)
+    if args.at_reference_stance:
+        BENCH_STANCE_CFG["navigation"] = False       # navigation off: the robot stays at TASK_CFG's stance (the reference stance for tests), the selection only checks that it serves the plan
+    task = make_pipeline_task(PLAN4)
     gc.collect()
     rep = task["stance_selection"]
     st = rep["runs"][0]["stance"] if rep else {"xy": list(TASK_CFG["staging_xy"]), "q": TASK_CFG["pedestal_q"], "yaw": TASK_CFG["staging_yaw"]}
-    print(f"stance mode {args.stance_mode}: stance xy {np.round(st['xy'], 3).tolist()} pedestal {st['q']}", flush=True)
+    print(f"at the reference stance {args.at_reference_stance}: stance xy {np.round(st['xy'], 3).tolist()} pedestal {st['q']}", flush=True)
     sim = load_task(cameras=True)
     src = {}
 
@@ -114,7 +116,7 @@ def main(args):
     state = task["pipeline"]["orchestrator"]["state"]
     ok, diag = task["check_success"](sim.model, sim.data)
     S = src["s"]["state"]
-    res = {"stance_mode": args.stance_mode, "stance": st, "outcome": s["outcome"], "status": state["status"], "success": bool(ok), "geoms": S["geoms"], "contacts": S["contacts"], "distances": S["dist"],
+    res = {"at_reference_stance": args.at_reference_stance, "stance": st, "outcome": s["outcome"], "status": state["status"], "success": bool(ok), "geoms": S["geoms"], "contacts": S["contacts"], "distances": S["dist"],
            "sim_time_end": float(sim.data.time)}
     tmp = out / "contacts.json.tmp"
     tmp.write_text(json.dumps(res, indent=1, default=str))
@@ -131,6 +133,6 @@ def main(args):
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
-    ap.add_argument("--stance-mode", choices=["task_cfg", "bench_region"], required=True)
+    ap.add_argument("--at-reference-stance", action="store_true", help="stay at TASK_CFG's stance (the reference stance for tests) instead of the region's pick: navigation off for the run")
     ap.add_argument("--out", required=True)
     sys.exit(0 if main(ap.parse_args()) else 1)

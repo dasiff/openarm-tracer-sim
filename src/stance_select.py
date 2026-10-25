@@ -7,9 +7,10 @@
     sel["task_cfg"]          # task_cfg with staging_xy, staging_yaw and pedestal_q set to the first run's stance (the staging goes there as today)
     sel["plan"]              # the tagged plan with "end_at_zombie" set on the picks that are followed by a navigation step that moves (M074)
     sel["report"]            # the runs, their stances, the null navigation steps, the full checks and what was tried
-    task = apply_stance_selection(tagged, task_cfg, maps_dir, say)           # what make_pipeline_task calls when BENCH_STANCE_CFG["mode"] is "bench_region"
+    task = apply_stance_selection(tagged, task_cfg, maps_dir, say)           # what make_pipeline_task calls
 
-The setting BENCH_STANCE_CFG["mode"]: "task_cfg" (the default) leaves today's stance (TASK_CFG) alone, nothing else changes; "bench_region" selects this algorithm.
+This is the pipeline's only way to choose a stance (the old fixed-stance mode "task_cfg" was deleted 2026-10-25, M179); TASK_CFG's staging_xy, staging_yaw and pedestal_q are a reference stance for tests and map
+building, and the robot's fixed stance when navigation is off (below).
 
 Rules (David 2026-10-23):
   * A run is consecutive manipulation steps served from one stance: the same root surface (src/support.py, G), each inside the bench_max_raise_m band, all objects covered by one overlay call. For k from
@@ -27,6 +28,7 @@ Contents:
 
 import copy
 import math
+import time
 
 import mujoco
 import numpy as np
@@ -206,50 +208,122 @@ def step_target(ctx, world, seg, index, say=print):
     return ob
 
 
-def transit_blocked(a, b, others, cfg=BENCH_STANCE_CFG):
-    """J1: does the straight line between two steps' grasp points meet a cylinder that is not a target of either?
+CARRY_LIFT_M = 0.05          # m: the scripted pick lifts the carry height to at least this far above the grasp height of the pick (src/mpvi_modules.py plan_pick: z_carry = max(hotplate + gap, grasp + 0.05))
 
-    The line is at the height of the carried object's top standing on the higher of the two surfaces (the surface height plus the object's height); a cylinder blocks it when the distance from its axis
-    to the line, less its radius, and its vertical gap to that height are together under the filter's margin (`obstacle_margin_m` + `arm_radius_m`).
+
+def shoulder_xy(rg, arm, xy, yaw):
+    """The world xy of an arm's shoulder when the robot stands at base position `xy` facing `yaw` (the shoulder's base-frame offset from robot_geometry; the pedestal only moves it vertically)."""
+    n, t = bs.bench_frame(yaw)
+    sx, sy, _ = rg["shoulder"][arm]
+    return np.asarray(xy, float) + n * sx + t * sy
+
+
+def slice_distance(x, apex, p0, p1):
+    """Distance, seen from above, from the point `x` to the carry slice: the circular sector with its apex at the shoulder, its two straight edges toward the hand at `p0` and at `p1`, and its far edge an arc
+    around the shoulder with the larger of the two shoulder-to-hand distances as radius. The sector spans the smaller angle between the two edges (the shorter edge is extended to the arc). 0 inside it.
+
+    `x` and `apex` may each be an array of points (shape (..., 2)); the answer has their broadcast shape (a 0-d array for two single points).
+    """
+    A = np.asarray(apex, float)
+    X = np.asarray(x, float)
+    v0, v1, v = np.asarray(p0, float) - A, np.asarray(p1, float) - A, X - A
+    n0, n1, r = np.hypot(v0[..., 0], v0[..., 1]), np.hypot(v1[..., 0], v1[..., 1]), np.hypot(v[..., 0], v[..., 1])
+    R = np.maximum(n0, n1)
+    a0, a1, av = np.arctan2(v0[..., 1], v0[..., 0]), np.arctan2(v1[..., 1], v1[..., 0]), np.arctan2(v[..., 1], v[..., 0])
+    wrap = lambda d: (d + np.pi) % (2 * np.pi) - np.pi
+    span, rel = wrap(a1 - a0), wrap(av - a0)
+    inside = np.where(span >= 0.0, (rel >= 0.0) & (rel <= span), (rel <= 0.0) & (rel >= span))      # within the angle the slice spans
+    d_in = np.maximum(r - R, 0.0)                                                                    # inside the angle: 0 inside the arc, the excess beyond it
+    d_out = np.full(np.broadcast(r, R).shape, 9e9)
+    for ang in (a0, a1):                                                                             # outside the angle: the nearest point is on one of the two straight edges (each as long as the arc's radius)
+        ux, uy = np.cos(ang), np.sin(ang)
+        t = np.clip(v[..., 0] * ux + v[..., 1] * uy, 0.0, R)
+        d_out = np.minimum(d_out, np.hypot(v[..., 0] - t * ux, v[..., 1] - t * uy))
+    return np.where(R == 0.0, r, np.where(inside, d_in, d_out))
+
+
+def carry_bottom_z(a, b, cfg=BENCH_STANCE_CFG):
+    """The height of the carried beaker's bottom during the carry between two steps: the higher of the two surfaces under the grasp points plus the carry gap (`carry_gap_m`: the beaker's bottom passes this far
+    above the hotplate), and at least CARRY_LIFT_M above the lower one (the pick's lift above the surface it is picked from). The scripted carry's own height (plan_pick's z_carry less the grasp height)."""
+    sa, sb = a["surface_z"], b["surface_z"]
+    return max(max(sa, sb) + PICK_PLACE_CFG["carry_gap_m"], min(sa, sb) + CARRY_LIFT_M)
+
+
+def carry_blocked(a, b, others, shoulder, cfg=BENCH_STANCE_CFG):
+    """J1, revised (M180): does the carry between two steps' grasp points meet a cylinder that is not a target of either?
+
+    The carry is the pie slice of `slice_distance`, seen from above (apex at the carrying arm's shoulder, edges to the two grasp points, an arc of the larger shoulder-to-hand distance), grown by the slice's
+    own margin (`carry_slice_margin_m`, 120 mm). A cylinder in it blocks the carry when its top is above the carried beaker's bottom (`carry_bottom_z`).
 
     Args:
         a (dict): The first step's overlay object (step_target): "xy", "surface_z", "height", "entry", "extra_obstacles".
         b (dict): The second step's.
         others (list of dict): More cylinders {"name", "xy", "radius", "z0", "z1"} (the other targets of the run).
+        shoulder (array-like): The carrying arm's shoulder, world xy, at the candidate stance (`shoulder_xy`).
         cfg (dict): BENCH_STANCE_CFG.
 
     Returns:
-        dict or None: {"obstacle": name, "distance_m": the distance, "limit_m": the margin} of the nearest blocking cylinder, or None when the line is clear.
+        dict or None: {"obstacle": name, "distance_m": the horizontal gap to the slice, "limit_m": the margin} of the nearest blocking cylinder, or None when the carry is clear.
     """
-    p0, p1 = np.asarray(a["xy"], float), np.asarray(b["xy"], float)
-    z = max(a["surface_z"], b["surface_z"]) + max(a.get("height", 0.0), b.get("height", 0.0))
-    rr = cfg["obstacle_margin_m"] + cfg["arm_radius_m"]
-    seg = p1 - p0
-    L2 = float(seg @ seg)
+    rr = cfg["carry_slice_margin_m"]
+    zb = carry_bottom_z(a, b, cfg)
     seen, worst = {a.get("entry"), b.get("entry")}, None                     # the two steps' own targets are not obstacles (the hotplate is the pick's obstacle but the place's target)
     for c in list(a.get("extra_obstacles") or []) + list(b.get("extra_obstacles") or []) + list(others):
         if c["name"] in seen:
             continue
         seen.add(c["name"])
-        t = 0.0 if L2 == 0.0 else min(max(float((np.asarray(c["xy"], float) - p0) @ seg) / L2, 0.0), 1.0)
-        gap = max(float(np.linalg.norm(np.asarray(c["xy"], float) - (p0 + t * seg))) - c["radius"], 0.0)
-        dz = max(c["z0"] - z, z - c["z1"], 0.0)
-        d = float(math.hypot(gap, dz))
+        if c["z1"] <= zb:
+            continue                                                         # its top is not above the beaker's bottom
+        d = max(float(slice_distance(c["xy"], shoulder, a["xy"], b["xy"])) - c["radius"], 0.0)
         if d < rr and (worst is None or d < worst["distance_m"]):
             worst = {"obstacle": c["name"], "distance_m": d, "limit_m": rr}
     return worst
 
 
-def run_transit_blocked(objs, cfg=BENCH_STANCE_CFG, prev=None):
-    """J1: the first blocked transit between consecutive steps of a run (None when all are clear); `prev` is the step before the run's first one when no navigation separates them."""
+def run_transit_blocked(objs, cfg=BENCH_STANCE_CFG, shoulder=None, prev=None):
+    """J1: the first blocked carry between consecutive steps of a run (None when all are clear), for the stance whose shoulder is `shoulder`; `prev` is the step before the run's first one when no navigation separates them."""
     chain = ([prev] if prev is not None else []) + list(objs)
     for i in range(len(chain) - 1):
         a, b = chain[i], chain[i + 1]
         others = [{"name": o["name"], "xy": o["xy"], "radius": o["radius"], "z0": o["z0"], "z1": o["z1"]} for o in chain if o is not a and o is not b]
-        r = transit_blocked(a, b, others, cfg)
+        r = carry_blocked(a, b, others, shoulder, cfg)
         if r:
             return {**r, "from_step": a["step"], "to_step": b["step"]}
     return None
+
+
+def carry_blocked_mask(objs, X, Y, yaw, rg, arm, cfg=BENCH_STANCE_CFG):
+    """The carry check as a quick filter on the overlay's grid (M180): True where a robot standing at the base position (X, Y) facing `yaw` has an obstacle in the carry slice of a consecutive pair of `objs`.
+
+    The same rule as `carry_blocked` (the slice from the shoulder at that spot, grown by `carry_slice_margin_m`, the obstacles whose top is above the carried beaker's bottom, the steps' own targets left out),
+    for every grid cell at once. The pedestal height does not move the shoulder sideways, so the mask is the same for every height.
+
+    Args:
+        objs (list of dict): The run's steps (step_target dicts), in order.
+        X, Y (numpy.ndarray): The grid of base positions (ny, nx), metres.
+        yaw (float): The heading that faces the bench.
+        rg (dict): robot_geometry (the shoulder offset).
+        arm (str): The carrying arm.
+        cfg (dict): BENCH_STANCE_CFG.
+
+    Returns:
+        numpy.ndarray: Bool (ny, nx), True where the carry is blocked.
+    """
+    apex = shoulder_xy(rg, arm, np.stack([X, Y], axis=-1), yaw)
+    out = np.zeros(X.shape, bool)
+    for i in range(len(objs) - 1):
+        a, b = objs[i], objs[i + 1]
+        zb = carry_bottom_z(a, b, cfg)
+        others = [{"name": o["name"], "xy": o["xy"], "radius": o["radius"], "z0": o["z0"], "z1": o["z1"]} for o in objs if o is not a and o is not b]
+        seen = {a.get("entry"), b.get("entry")}
+        for c in list(a.get("extra_obstacles") or []) + list(b.get("extra_obstacles") or []) + others:
+            if c["name"] in seen:
+                continue
+            seen.add(c["name"])
+            if c["z1"] <= zb:
+                continue
+            out |= np.maximum(slice_distance(c["xy"], apex, a["xy"], b["xy"]) - c["radius"], 0.0) < cfg["carry_slice_margin_m"]
+    return out
 
 
 def _manip_steps(tagged):
@@ -272,7 +346,7 @@ def select_bench_stance(tagged, world, task_cfg, ctx, cfg=BENCH_STANCE_CFG, full
         dict: "ok", "stop" (the message when not ok), "task_cfg", "plan", "report".
     """
     segs = tagged["segments"]
-    rep = {"runs": [], "null_nav": [], "tried": [], "notes": [], "mode": cfg["mode"]}
+    rep = {"runs": [], "null_nav": [], "tried": [], "notes": []}
     out = {"ok": False, "stop": None, "task_cfg": task_cfg, "plan": tagged, "report": rep}
     steps = _manip_steps(tagged)
     try:
@@ -307,7 +381,7 @@ def select_bench_stance(tagged, world, task_cfg, ctx, cfg=BENCH_STANCE_CFG, full
                 for k in range(len(cand)):
                     if res["stack"][k, qi, iy, ix] > 0 and res["allowed"][qi, iy, ix]:
                         if cfg.get("transit_check", True):
-                            blk = run_transit_blocked([targets[cand[k]]], cfg, prev=targets[cand[k - 1]] if k else prev_last)
+                            blk = run_transit_blocked([targets[cand[k]]], cfg, shoulder_xy(ctx.rg, cfg["arm"], cur["xy"], yaw), prev=targets[cand[k - 1]] if k else prev_last)
                             if blk:
                                 rep["tried"].append({"steps": cand[:k + 1], "transit_blocked": blk})
                                 say(f"[stance] transit from step {blk['from_step']} to {blk['to_step']} blocked by {blk['obstacle']} ({1000 * blk['distance_m']:.0f} mm, limit {1000 * blk['limit_m']:.0f} mm): the current stance does not serve it")
@@ -346,14 +420,16 @@ def select_bench_stance(tagged, world, task_cfg, ctx, cfg=BENCH_STANCE_CFG, full
             rep["notes"].append(f"run from step {cand[0]}: reached holding the beaker: the home clearance and the creep-in sweep count the held beaker")
         for k in range(len(cand), 0, -1):
             objs = [targets[i] for i in cand[:k]]
-            if k >= 2 and cfg.get("transit_check", True):                  # J1: the beaker is carried between the grasp points: a cylinder on the line rejects this k
-                blk = run_transit_blocked(objs, cfg)
-                if blk:
-                    rep["tried"].append({"steps": cand[:k], "transit_blocked": blk})
-                    say(f"[stance] run of steps {cand[:k]} rejected: transit from step {blk['from_step']} to {blk['to_step']} blocked by {blk['obstacle']} ({1000 * blk['distance_m']:.0f} mm, limit {1000 * blk['limit_m']:.0f} mm)")
-                    continue
+            extra_k = extra
+            if k >= 2 and cfg.get("transit_check", True):               # J1 (M180): the beaker is carried between the grasp points: the carry slice depends on the spot, so it is a quick filter on every candidate spot of the overlay (before the ranking)
+                def extra_k(X, Y, qs, _objs=objs, _extra=extra, _k=k):
+                    t_c = time.perf_counter()
+                    cm = carry_blocked_mask(_objs, X, Y, yaw, ctx.rg, cfg["arm"], cfg)
+                    rep["carry_check_seconds"] = rep.get("carry_check_seconds", 0.0) + time.perf_counter() - t_c
+                    rep.setdefault("carry_filter", []).append({"steps": cand[:_k], "spots_removed": int(cm.sum()), "spots": int(cm.size)})
+                    return np.asarray(_extra(X, Y, qs), bool) | cm[None]
             try:
-                res = bs.overlay(objs, ctx.maps, ctx.rg, ctx.cams, ctx.bench, extra, arm=cfg["arm"], cfg=cfg, say=say)
+                res = bs.overlay(objs, ctx.maps, ctx.rg, ctx.cams, ctx.bench, extra_k, arm=cfg["arm"], cfg=cfg, say=say)
             except bs.BenchStanceError as e:
                 rep["tried"].append({"steps": cand[:k], "stop": str(e)[:300]})
                 if k == 1:
@@ -449,7 +525,7 @@ def _best_stance(ctx, targets, cand, cfg, say):
 
 
 def apply_stance_selection(tagged, task_cfg, maps_dir="data/reach_map", cfg=BENCH_STANCE_CFG, say=print):
-    """What make_pipeline_task calls for BENCH_STANCE_CFG["mode"] == "bench_region": builds the scene's context and the full check once, selects, frees them.
+    """What make_pipeline_task calls: builds the scene's context and the full check once, selects, frees them.
 
     Returns:
         dict: select_bench_stance's result.

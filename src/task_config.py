@@ -76,13 +76,13 @@ TASK_CFG = {
     # 7 cm, heading +-8 deg, pedestal +-4.2 cm). The pedestal height is the middle of its passing range 0.10 to 0.21 m (11 cm wide: the finder prefers the widest range). Finder tolerance (distance to the
     # edge of the valid reach region) 7.1 cm; the xy region around it that passes everything is 39 of 49 points of a +-6 cm grid, radius 5.7 cm. Re-run the finder when the scene, the band, the
     # home pose or the robot changes. (History: (0.655, 0.995) pedestal 0.11 for the old placeholder home pose; (0.750, 1.221) pedestal 0.0452 for the old band and the solid bench.)
-    "staging_xy": (0.7650, 1.0850),        # base_link origin, m (finder output) [row M079]
+    "staging_xy": (0.7650, 1.0850),        # base_link origin, m (finder output) [row M079]. Reference stance for tests and map building, not used by the pipeline (the pipeline chooses its stance by the bench region, M175; only with BENCH_STANCE_CFG navigation off does it stay here, M175)
     # Approach spot: the staging pose is under the open bench, so DRIVE (at normal speed, arms at home) ends this far behind it along its heading (0.2063 m: the old staging spot, where the straight
     # arm move was verified at the old stance) and the staging phase CREEP_IN covers the last stretch at creep speed with the clearance and lean checks running every tick. None or 0 = DRIVE
     # goes straight to the staging pose. Not finder output (a staging setting).
     "staging_approach_back_m": 0.2063,  # [row M079]
-    "staging_yaw": math.radians(-90.0),    # facing the bench [row M079]
-    "pedestal_q": 0.1550,                  # pedestal_lift command, m of height above the collapsed pedestal (0 = collapsed, 0.418 = raised); the torso is 0.3048 + 0.155 = 0.460 m above the pedestal base (finder output: the middle of the passing range 0.10 to 0.21) [row M079]
+    "staging_yaw": math.radians(-90.0),    # facing the bench [row M079]. Reference stance for tests and map building, not used by the pipeline (the region's selection uses the same facing)
+    "pedestal_q": 0.1550,                  # [reference stance for tests and map building, not used by the pipeline] pedestal_lift command, m of height above the collapsed pedestal (0 = collapsed, 0.418 = raised); the torso is 0.3048 + 0.155 = 0.460 m above the pedestal base (finder output: the middle of the passing range 0.10 to 0.21) [row M079]
     "arm": "left",                         # the arm of the task's scripted grasp poses below (LEGACY: staging now moves both arms to home) [row M101 PENDING David: no decision recorded]
 
     # --- Home pose ("zombie pose"; 2026-10-20, David: the search's rank 1, chosen over A and ranks 2 and 3; design plan 1 and 3.4): where the staging ARMS phase puts both arms and where the handoff
@@ -529,15 +529,12 @@ INSTRUCTION_CFG = {
 # Bench stance selection by an inverse-reach region (David 2026-10-23, step 3 part C; src/bench_stance.py; replaced the measured rectangle, which is on record in the design plan as not built)
 # ----------------------------------------------------------------------------------------------------------
 BENCH_STANCE_CFG = {
-    # The stance-selection setting (David 2026-10-23, C3, M175; default flipped 2026-10-25, M178). "bench_region" (the default): this algorithm (src/stance_select.py): the planner's runs of consecutive steps on one
-    # bench surface are given a stance by the inverse-reach region and the full check, behind make_pipeline_task, so it works for any layout of the objects on the bench. "task_cfg": today's fixed stance, TASK_CFG's;
-    # still selectable, but valid only for the test scene's layout (the objects where TASK_CFG puts them), because that stance was found for that layout and is not recomputed when the objects move.
-    # Why bench_region is the default: David decided it after the held-beaker contact results (both stances place the held beaker the same way) and the moved-layout episode (task_cfg's fixed stance cannot follow moved
-    # objects). Known open issue: on the moved layout the place fails at OVER (12.2 mm short), cause under diagnosis [row M178].
-    "mode": "bench_region",                     # [row M175, M178]
+    # The stance selection (David 2026-10-23, C3, M175): the pipeline's one way to choose where to park. The planner's runs of consecutive steps on one bench surface are given a stance by the inverse-reach region
+    # and the full check (src/stance_select.py, behind make_pipeline_task), so it works for any layout of the objects on the bench. The older fixed-stance method ("task_cfg": park at TASK_CFG's stance, valid
+    # only for the test scene's layout) was the default until 2026-10-25 (M178) and was deleted the same day (David, row M179), so there is no mode setting any more.
     # Plain words: with navigation ON the robot may be driven to the stance the algorithm chooses (the first navigation step moves it, later ones are null when the next objects are served from the same stance);
     # with navigation OFF it stays at TASK_CFG's stance and a plan that stance does not serve stops with "needs navigation on".
-    "navigation": True,                         # [row M175: David: the new setting value runs with navigation on]
+    "navigation": True,                         # [row M175: David: the new setting value runs with navigation on; row M180: must stay ON by default (David 2026-10-25); False is kept for tests (stance_select_test section 6, the held-beaker script's --at-reference-stance)]
     "max_run_steps": 4,                         # count: the most manipulation steps in one run (the longest-run search starts at min(this, the steps left)) [row M175: David]
     "full_check_fallbacks": 3,                  # count: when the full check fails the best stance of a run, this many of the next ranked stances are tried [row M175: David]
     # Plain words: every one of the 12 approach bins of the reach maps is a level side grasp (the hand's approach axis and finger axis within 5 degrees of horizontal), so none is "from above or below". What
@@ -582,6 +579,13 @@ BENCH_STANCE_CFG = {
     # target of either step (the filter's own cylinders and margin). The longest-run search then drops to k-1; at k=1 each step has its own navigation. True: on. False: off (a test switch). Conservative by
     # design: the scripted place moves the hand in a straight line at a carry height (src/mpvi_modules.py plan_pick UP, plan_place OVER), so a path that goes around is not tried; manipulation-time path
     # planning is LATER and would relax this check.
-    "transit_check": True,                      # [row M176]
+    "transit_check": True,                      # [row M176, M180]
+    # Carry slice (M180, revises the line above: the carry check is a pie slice, not a line): seen from above, apex at the carrying arm's shoulder at the candidate spot, two straight edges to the hand at the two
+    # grasp points, far edge an arc around the shoulder of the larger shoulder-to-hand distance; an obstacle in it blocks the carry when its top is above the carried beaker's bottom. It is a quick filter on every
+    # candidate spot of the overlay, before the ranking. Its margin is its own (not `obstacle_margin_m` + `arm_radius_m`, which other checks use): it also covers the forearm, which the elbow swings out of the
+    # shoulder-to-hand wedge. Measured on the two recorded place episodes (TASK_CFG's stance and the overlay's pick): the forearm's centre line was up to 105 mm outside the slice, the hand 1 to 5 mm, the beaker's
+    # bottom rim 45 mm; 120 mm is the forearm's 105 mm plus a buffer. Every episode that carries an object logs the largest distance outside the slice (no margin) for the hand, the beaker's bottom rim and the forearm,
+    # and warns when the forearm is outside by more than this margin.
+    "carry_slice_margin_m": 0.120,              # m [row M180: David 2026-10-25]
 }
 

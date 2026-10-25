@@ -4,7 +4,7 @@ Tests of the bench region stance selection (src/stance_select.py, src/bench_stan
 
     MUJOCO_GL=egl python experiments/stance_select_test.py
 
-1. The test scene: one run for both steps, the second navigation step is null, the chosen stance covers both objects; the stance setting defaults to "task_cfg".
+1. The test scene: one run for both steps, the second navigation step is null, the chosen stance covers both objects.
 2. (4) Two objects far apart: k=2 fails, k=1 passes for each, two navigation steps move (navigation on).
 3. (5) An obstacle between the robot and the target that blocks at a low pedestal height and clears at a high one: the algorithm picks the higher pedestal.
 4. (6) All approaches blocked: the selection stops with the right message.
@@ -86,7 +86,6 @@ def main():
     cfg = copy.deepcopy(BENCH_STANCE_CFG)
 
     print("\n1. the test scene")
-    check("the default stance setting is 'task_cfg' (today's stance)", BENCH_STANCE_CFG["mode"] == "task_cfg")
     sel = select_bench_stance(tagged, world(), TASK_CFG, ctx, cfg, say=quiet)
     rep = sel["report"]
     ch = rep.get("chosen")

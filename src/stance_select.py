@@ -305,7 +305,7 @@ def select_bench_stance(tagged, world, task_cfg, ctx, cfg=BENCH_STANCE_CFG, full
             rep["tried"].append({"steps": cand[:k], "full_check": tries})
             return out
         run = {"stance": {"xy": passed["xy"], "q": passed["q"], "yaw": yaw}, "steps": list(cand[:k]), "nav": [], "surface": surf, "counts": passed["counts"], "score": passed["score"], "full_check": tries,
-               "ranked": res["ranked"], "seconds": res["seconds"]}
+               "ranked": res["ranked"], "overlay_run_q": [float(x) for x in res["run"]], "seconds": res["seconds"]}
         nj = _nav_before(segs, cand[0])
         if nj is not None:
             run["nav"].append(nj)
@@ -372,7 +372,7 @@ def apply_stance_selection(tagged, task_cfg, maps_dir="data/reach_map", cfg=BENC
     from src.full_check import FullCheck
     from src.world_model import StaticTaskSource, WorldModel
     maps = bs.load_maps(maps_dir, sides=(cfg["arm"],))
-    fc = FullCheck(maps={**bs.load_maps(maps_dir)})
+    fc = FullCheck(maps={**bs.load_maps(maps_dir)}, task_cfg=task_cfg)
     ctx = make_context(fc.model, fc.scene_data, maps, task_cfg, cfg, chk=fc.chk, say=say)
     world = WorldModel([StaticTaskSource(task_cfg)])
     world.refresh(0.0)

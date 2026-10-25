@@ -178,3 +178,4 @@ STEP1 DONE 06:30: suitej2 all exit 0 except nav_pipeline_follow_test (NEW: Attri
 STEP2 script experiments/moved_place_split_diag.py written (measure only). RUN: tmux diag2, log data/logs/moved_place_split_diag_20261025_063150.log, started 06:31:50. NEXT: read log + docs/reports/logs/moved_place_split_diag.json, commit, step 3.
 STEP2 first run had a script bug (phase label is '4/4 PLACE: OVER [running]'), fixed in the script only. RERUN: tmux diag3, log data/logs/moved_place_split_diag_20261025_063446.log, started 06:34:46.
 STEP2 DONE (see docs/reports/*_overnight.md). Current step: 3 (Gemini planner call oracle, then 2 VLM, then cache-only).
+STEP3a RUN: planner call, tmux gem1, log data/logs/mpvi_text_oracle_live_20261025_063832.log, started 06:38:32: mpvi_text_test --mode cache_or_live --checker oracle (one Gemini planner call; on quota error STOP all Gemini work).

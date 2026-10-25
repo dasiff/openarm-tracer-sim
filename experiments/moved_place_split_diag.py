@@ -86,12 +86,9 @@ def main():
         orch = task["pipeline"].get("orchestrator")
         if not ep or not orch or S["done"]:
             return None
-        seg = sum(1 for x in orch["state"]["status"] if x == "done")
-        if seg != 3:
-            return None
         manip = task["pipeline"]["manipulation"]
         arm = manip["arm"]
-        if ep["phase"] != "OVER":
+        if "4/4 PLACE: OVER" not in ep["phase"]:
             if S["seen"]:
                 S["done"] = True
             return None

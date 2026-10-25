@@ -204,6 +204,17 @@ def step_target(ctx, world, seg, index, say=print):
     pts = [{"p": [float(xy[0]), float(xy[1]), float(z)], "arm": "either", "bin": None, "path": "setdown" if prim == "place" else "grasp"} for z in z_pts]
     if prim == "place":
         pts += [{"p": [float(xy[0]), float(xy[1]), float(z + ABOVE_M)], "arm": "either", "bin": None, "path": "above"} for z in z_pts]
+    fwd = np.array([math.cos(ctx.yaw), math.sin(ctx.yaw)])         # the skill approaches along the robot's forward direction (plan_pick / plan_place: forward())
+    zm = float(np.mean(z_pts))
+    sd, rt = PICK_PLACE_CFG["standoff_m"], PICK_PLACE_CFG["retreat_m"]
+    if prim == "pick":                                              # P3 (M181): the skill's other waypoints, not only the band: OVER and the DOWN start a standoff back, UP, and BACK before the arm goes home holding the beaker
+        pts += [{"p": [float(xy[0] - sd * fwd[0]), float(xy[1] - sd * fwd[1]), float(surface_z + PICK_PLACE_CFG["clearance_m"])], "arm": "either", "bin": None, "path": "over"},
+                {"p": [float(xy[0] - sd * fwd[0]), float(xy[1] - sd * fwd[1]), zm], "arm": "either", "bin": None, "path": "standoff"},
+                {"p": [float(xy[0]), float(xy[1]), zm + ABOVE_M], "arm": "either", "bin": None, "path": "lift"},
+                {"p": [float(xy[0] - rt * fwd[0]), float(xy[1] - rt * fwd[1]), zm + ABOVE_M], "arm": "either", "bin": None, "path": "back"}]
+    else:                                                           # the place's OVER is at the carry height (the beaker's bottom carry_gap_m above the plate), its BACK a retreat after the release
+        pts += [{"p": [float(xy[0]), float(xy[1]), float(surface_z + PICK_PLACE_CFG["grasp_height_frac"] * H_obj + PICK_PLACE_CFG["carry_gap_m"])], "arm": "either", "bin": None, "path": "carry"},
+                {"p": [float(xy[0] - rt * fwd[0]), float(xy[1] - rt * fwd[1]), zm + gap], "arm": "either", "bin": None, "path": "back"}]
     ob["points"] = pts
     return ob
 

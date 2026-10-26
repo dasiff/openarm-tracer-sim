@@ -249,8 +249,11 @@ class FullCheck:
         self._slots = [g for g in range(m.ngeom) if (m.geom(g).name or "").startswith("fc_slot")]
         self._checkers = {}
         self.rng = np.random.default_rng(11)
+        self.zombie_q = np.array(TASK_CFG[f"home_q_{SIDE}"], float)    # the arm's start pose (the zombie pose): where the robot's own solver starts a skill
+        self.start_log = []                                         # one entry per solved stop (see _log_stop): how it was started, whether a random rescue was used
         self.cache = {}
         self.stats, self.seconds = {}, {}
+        self.start_log = []
         self.load_seconds = time.perf_counter() - t0
         self.objects = []
         self._beaker_free = m.joint("task_beaker_free").qposadr[0]
@@ -362,6 +365,14 @@ class FullCheck:
             R = np.array([[co, -si, 0.0], [si, co, 0.0], [0.0, 0.0, 1.0]]) @ R
         return t, R
 
+    def _log_stop(self, stance, pt, theta, starts, labels, ok, source, phase_ok, rescue, rescuable):
+        """One entry of `start_log` per stop solved (the checker-start measurement, M187): the stance, the stop (path, pose kind, point), the start labels tried first, whether the stop passed and from which start
+        ("random" = the random phase), `rescue` (today's mode: the starts tried first all failed and a random start passed it) and `forced_random` (no start was available: random was the only way),
+        `rescuable` (the neighbourhood mode: the stop FAILED from its starts, but a random start could have reached it; logged only)."""
+        self.start_log.append({"stance": [round(float(v), 4) for v in stance], "theta_deg": None if pt.get("pose") != "place" else round(math.degrees(theta)), "path": pt.get("path"), "pose": pt.get("pose"),
+                               "p": [round(float(v), 4) for v in pt["p"]], "tried_first": list(labels), "ok": bool(ok), "source": source, "rescue": bool(rescue), "forced_random": bool(ok and source == "random" and not starts),
+                               "rescuable": rescuable})
+
     def _log_ik(self, pt, phase, iters, accepted):
         """One batch of the exact-pose IK of a skill stop, for the pose_ik_iterations report: the iterations each start used (`iters`; the limit means it did not converge) and those of the accepted
         start (None: no start of the batch was accepted)."""
@@ -372,11 +383,15 @@ class FullCheck:
         clear of the furniture and the objects, no elbow flip against `prev`). Returns (joint vector, None, source) or None."""
         C, cfg = self.C, self.cfg
         tp, R = self._pose_target(stance, pt, t, theta)
+        mode = cfg.get("start_mode", "today")
         starts, labels = [], []
-        if warm is not None and not np.isnan(warm).any():
-            starts.append(warm); labels.append("nominal")
-        if prev is not None:
-            starts.append(prev); labels.append("previous point")
+        if mode == "neighbourhood":                        # as the robot: the first stop from the zombie pose, later ones from the previous stop's answer; no random rescue decides
+            starts, labels = ([prev], ["previous point"]) if prev is not None else ([self.zombie_q], ["zombie pose"])
+        else:
+            if warm is not None and not np.isnan(warm).any():
+                starts.append(warm); labels.append("nominal")
+            if prev is not None:
+                starts.append(prev); labels.append("previous point")
         tol_m, tol_rad = PICK_PLACE_CFG["tol_m"], PICK_PLACE_CFG["tol_rad"]
         for phase in ("warm", "random"):
             if phase == "warm":
@@ -405,7 +420,13 @@ class FullCheck:
             if adm.any():
                 j = cand[int(np.argmax(adm))]
                 self._log_ik(pt, phase, iters, int(iters[j]))
-                return Q[j], None, labels[j] if phase == "warm" and j < len(labels) else "random"
+                src = labels[j] if phase == "warm" and j < len(labels) else "random"
+                if mode == "neighbourhood" and phase == "random":      # diagnostic only: another arm shape could reach it, but the robot would not get there from here
+                    self._log_stop(stance, pt, theta, starts, labels, False, None, False, False, True)
+                    return None
+                self._log_stop(stance, pt, theta, starts, labels, True, src, True, phase == "random" and bool(starts), None)
+                return Q[j], None, src
+        self._log_stop(stance, pt, theta, starts, labels, False, None, False, False, False if mode == "neighbourhood" else None)
         return None
 
     def _solve_stance(self, stance, points, approach_bin, warm=None, theta=0.0):

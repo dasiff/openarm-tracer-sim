@@ -30,11 +30,12 @@ import time
 
 import mujoco
 import numpy as np
+from scipy.spatial.transform import Rotation
 
 from src import robot_specs
 from src.arm_collision import ArmCollisionChecker
-from src.arm_kinematics import arm_chain, solve_ik
-from src.grasp_rules import bin_center, joint_bounds, make_constraint
+from src.arm_kinematics import arm_chain, batch_fk, solve_ik
+from src.grasp_rules import bin_center, joint_bounds, make_constraint, make_pose_constraint
 from src.gripper_geometry import grasp_cfg
 from src.robot_helpers import arm_ids
 from src.stance_checks import StanceChecks
@@ -42,7 +43,7 @@ from src.stance_finder import robot_geometry
 from src.task_beaker_hotplate import bench_top_z, load_task
 from src.robot_specs import EAGLE_MOUNT
 from src.task_points import task_points  # noqa: F401  (moved to src/task_points.py; kept importable from here)
-from src.task_config import BEAKER_CFG, FULLCHECK_CFG, STAGING_CFG, STANCE_REQUIREMENTS, TASK_CFG
+from src.task_config import BEAKER_CFG, FULLCHECK_CFG, PICK_PLACE_CFG, STAGING_CFG, STANCE_REQUIREMENTS, TASK_CFG
 
 SIDE = "left"
 SLOT_PARK = (0.0, 0.0, -5.0)
@@ -174,6 +175,14 @@ class FullCheck:
         self.lo, self.hi = joint_bounds(m, SIDE, self.C)
         self.centres = np.array([bin_center(k, self.C) for k in range(self.C["n_bins"])])
         self.shoulder = np.asarray(self.rg["shoulder"][SIDE], float)
+        Rpi = np.column_stack([self.C["closing_axis"], np.cross(self.C["approach_axis"], self.C["closing_axis"]), self.C["approach_axis"]])      # the pad frame in the tool frame (as MinkArm)
+        _, Rh = batch_fk(self.chain, np.asarray(task_cfg["home_q_left"], float)[None], self.pad)
+        z = np.array([1.0, 0.0, 0.0])                                    # the skill approaches along the robot's forward direction (the torso frame's x) with the hand level (plan_pick: pad_rotation)
+        hint = (Rh[0] @ Rpi)[:, 0]                                        # the closing axis of the pad at the zombie pose keeps the hand's roll, as pad_rotation's closing_hint
+        x = hint - z * float(hint @ z)
+        x[2] = 0.0
+        x /= np.linalg.norm(x)
+        self.R_skill = np.column_stack([x, np.cross(z, x), z]) @ Rpi.T     # the skill's tool frame rotation in the torso frame (level, straight forward)
         self.clear = PathClearance(m, self.rg["base_z"])
         self._slots = [g for g in range(m.ngeom) if (m.geom(g).name or "").startswith("fc_slot")]
         self._checkers = {}
@@ -218,7 +227,7 @@ class FullCheck:
         h = hashlib.sha256()
         h.update(np.round(np.asarray(stance, float), 6).tobytes())
         for pt in points:
-            h.update(np.round(np.asarray(pt["p"], float), 6).tobytes() + repr((pt.get("bin"), pt.get("path"), pt.get("arm"))).encode())
+            h.update(np.round(np.asarray(pt["p"], float), 6).tobytes() + repr((pt.get("bin"), pt.get("path"), pt.get("arm"), pt.get("pose"), pt.get("pivot"))).encode())
         for o in objects:
             h.update(np.round(np.asarray(o["outline"], float), 6).tobytes() + np.round(np.asarray(o["height_range"], float), 6).tobytes() + str(o.get("id")).encode())
         h.update(repr(approach_bin).encode() + repr(sorted(self.cfg.items(), key=lambda kv: kv[0])).encode() + repr(sorted(STANCE_REQUIREMENTS.items())).encode() + repr(sorted(EAGLE_MOUNT.items())).encode())      # the camera's mount is part of the answer (it sets the view)
@@ -279,8 +288,61 @@ class FullCheck:
             ok[idx[~good]] = False
         return ok
 
-    def _solve_stance(self, stance, points, approach_bin, warm=None):
-        """The IK path check at one stance: for every point in order a joint solution (first success), or the first point that fails. Returns a dict."""
+    def _pose_target(self, stance, pt, t, theta):
+        """The exact target of a skill point in the torso frame: (pad centre (3,), tool frame rotation (3, 3)). A "skill" point keeps the skill's level, straight-forward hand; a "place" point has the hand
+        turned by `theta` (radians, counter-clockwise seen from above) about the vertical axis through the beaker's centre (pt["pivot"], world xy), the pad centre turning with it."""
+        R = self.R_skill
+        if pt["pose"] == "place" and theta:
+            c = self.to_torso(stance, np.array([[pt["pivot"][0], pt["pivot"][1], 0.0]]))[0]
+            co, si = math.cos(theta), math.sin(theta)
+            d = t[:2] - c[:2]
+            t = np.array([c[0] + co * d[0] - si * d[1], c[1] + si * d[0] + co * d[1], t[2]])
+            R = np.array([[co, -si, 0.0], [si, co, 0.0], [0.0, 0.0, 1.0]]) @ R
+        return t, R
+
+    def _solve_pose_point(self, stance, pt, t, theta, prev, warm):
+        """The IK of one skill point at the skill's own pose (no turn or tilt allowance): reached within the episode's waypoint tolerance (PICK_PLACE_CFG tol_m, tol_rad) and admissible (no collision,
+        clear of the furniture and the objects, no elbow flip against `prev`). Returns (joint vector, None, source) or None."""
+        C, cfg = self.C, self.cfg
+        tp, R = self._pose_target(stance, pt, t, theta)
+        starts, labels = [], []
+        if warm is not None and not np.isnan(warm).any():
+            starts.append(warm); labels.append("nominal")
+        if prev is not None:
+            starts.append(prev); labels.append("previous point")
+        tol_m, tol_rad = PICK_PLACE_CFG["tol_m"], PICK_PLACE_CFG["tol_rad"]
+        for phase in ("warm", "random"):
+            if phase == "warm":
+                if not starts:
+                    continue
+                Q0 = np.array(starts)
+            else:
+                Q0 = self.rng.uniform(self.lo, self.hi, (cfg["ik_seeds"], 7))
+            t0 = time.perf_counter()
+            Q, _, iters = solve_ik(self.chain, Q0, self.lo, self.hi, make_pose_constraint(np.repeat(tp[None, :], len(Q0), axis=0), R), self.pad, cfg["pose_ik_iterations"], C["ik_damping"], C["ik_max_step"])
+            p, Rf = batch_fk(self.chain, Q, self.pad)
+            err = np.linalg.norm(p - tp, axis=1)
+            ang = np.linalg.norm(Rotation.from_matrix(R[None] @ Rf.transpose(0, 2, 1)).as_rotvec(), axis=1)
+            good = (err <= tol_m) & (ang <= tol_rad)
+            self.stats["ik_batches"] = self.stats.get("ik_batches", 0) + 1
+            self.stats["ik_starts"] = self.stats.get("ik_starts", 0) + len(Q0)
+            self.stats["ik_iterations"] = self.stats.get("ik_iterations", 0) + int(np.sum(iters))
+            self.seconds["ik_solve"] = self.seconds.get("ik_solve", 0.0) + time.perf_counter() - t0
+            cand = np.nonzero(good)[0]
+            if not len(cand):
+                continue
+            t0 = time.perf_counter()
+            adm = self._admissible(stance, Q[cand], prev, True)
+            self.seconds["ik_admissible"] = self.seconds.get("ik_admissible", 0.0) + time.perf_counter() - t0
+            if adm.any():
+                j = cand[int(np.argmax(adm))]
+                return Q[j], None, labels[j] if phase == "warm" and j < len(labels) else "random"
+        return None
+
+    def _solve_stance(self, stance, points, approach_bin, warm=None, theta=0.0):
+        """The IK path check at one stance: for every point in order a joint solution (first success), or the first point that fails. Returns a dict.
+
+        A point with "pose" "skill" or "place" is solved at the skill's own pose (`_solve_pose_point`; a "place" point with the hand turned by `theta` radians); any other point as a grasp in any bin."""
         C, cfg = self.C, self.cfg
         P = np.array([pt["p"] for pt in points], float)
         T = self.to_torso(stance, P)
@@ -289,6 +351,14 @@ class FullCheck:
         for i, pt in enumerate(points):
             prev = sol[i - 1] if i > 0 and points[i - 1].get("path") == pt.get("path") and not np.isnan(sol[i - 1]).any() else None
             found = None
+            if pt.get("pose") in ("skill", "place"):
+                found = self._solve_pose_point(stance, pt, T[i], theta, prev, None if warm is None else warm[i])
+                if found is None:
+                    info.update(ok=False, failed_point=i, failed_path=pt.get("path"))
+                    break
+                sol[i] = found[0]
+                info["bins"].append(None); info["sources"].append(found[2])
+                continue
             for k in self._bin_order(pt, T[i], approach_bin):
                 info["tried_bins"] += 1
                 starts, labels = [], []
@@ -338,6 +408,68 @@ class FullCheck:
         out += [(f"y{sg:+d}", (x, y + sg * e["y"], th, q)) for sg in (1, -1)]
         out += [(f"heading{sg:+d}", (x, y, th + sg * dh, q)) for sg in (1, -1)]
         out += [(f"pedestal{sg:+d}", (x, y, th, float(np.clip(q + sg * e["pedestal"], 0.0, robot_specs.PEDESTAL_SPECS["range"][1])))) for sg in (1, -1)]
+        return out
+
+    def _place_window(self, stances, place_pts):
+        """The hand turns at which the whole place works (Part 5, M183): for each turn theta of `place_turn_step_deg` steps all the way round (0 to 355 degrees, counter-clockwise seen from above), every place
+        stop (the carry stop over the destination, the lowering stops, the back-off) is reached within the episode's own waypoint tolerance and admissible (the collision tests) at the nominal stance and at
+        each error stance. The working window is a run of consecutive working turns (around the circle); the widest is chosen and the middle turn of it.
+
+        Args:
+            stances (list of tuple): [(name, (x, y, th, q))]: the nominal stance first, then each error stance (`_error_stances`).
+            place_pts (list of dict): The "place" points in the skill's order.
+
+        Returns:
+            dict: "theta_deg" (the chosen turn or None), "window_deg" ([first, last] of the chosen window), "width_deg", "passing_deg" (every working turn), "windows" (every run [first, last]),
+            "failed_stop" (per failing turn at the nominal stance: the path name of the first stop that failed, or the error stance that failed), "reason" (when no window is wide enough).
+        """
+        cfg = self.cfg
+        step, need = cfg["place_turn_step_deg"], cfg["place_turn_min_window_deg"]
+        passing, failed_at, warm = [], {}, None
+        for deg in range(0, 360, step):
+            th = math.radians(deg)
+            ok, nominal_sol = True, None
+            for name, s in stances:
+                info = self._solve_stance(s, place_pts, None, warm if name == "nominal" else nominal_sol, theta=th)
+                if not info["ok"]:
+                    failed_at[deg] = (name, info.get("failed_path"))
+                    ok = False
+                    break
+                if name == "nominal":
+                    nominal_sol = info["solution"]
+            if ok:
+                passing.append(deg)
+                warm = nominal_sol
+        runs, cur = [], []
+        for deg in range(0, 360, step):
+            if deg in passing:
+                cur.append(deg)
+            elif cur:
+                runs.append(cur)
+                cur = []
+        if cur:
+            runs.append(cur)
+        if len(runs) > 1 and runs[0][0] == 0 and runs[-1][-1] == 360 - step:       # a window across 0 degrees
+            runs[0] = runs[-1] + runs[0]
+            runs.pop()
+        elif len(runs) == 1 and len(runs[0]) == 360 // step:
+            pass
+        wrap = lambda d: d - 360 if d > 180 else d
+        out = {"theta_deg": None, "window_deg": None, "width_deg": 0, "passing_deg": [wrap(d) for d in passing], "windows": [[wrap(r[0]), wrap(r[-1])] for r in runs],
+               "failed_stop": {wrap(d): v for d, v in failed_at.items()}, "reason": ""}
+        if not runs:
+            counts = {}
+            for _, (nm, pth) in failed_at.items():
+                counts[(nm, pth)] = counts.get((nm, pth), 0) + 1
+            top = sorted(counts.items(), key=lambda kv: -kv[1])[:2]
+            out["reason"] = "no place angle window: no hand turn reaches every place stop within the tolerance and passes the collision tests (most common failure: " + "; ".join(f"stance '{k[0]}' stop '{k[1]}' at {v} turns" for k, v in top) + ")"
+            return out
+        best = max(runs, key=len)
+        out["window_deg"], out["width_deg"] = [wrap(best[0]), wrap(best[-1])], (len(best) - 1) * step
+        if out["width_deg"] < need:
+            out["reason"] = f"no place angle window: the widest window of working hand turns is {out['width_deg']} degrees ({out['window_deg'][0]} to {out['window_deg'][1]}), under the {need} degrees minimum"
+            return out
+        out["theta_deg"] = wrap(best[len(best) // 2])
         return out
 
     # ------------------------------------------------------------------ the check
@@ -396,7 +528,10 @@ class FullCheck:
                 return finish(["placed_beaker"], f"at pedestal {h:.3f} the arms at home are {1000 * pb:.0f} mm from a beaker placed on the hotplate")
         # 2. the IK path check: the nominal stance and each error on its own
         nominal = None
-        for name, s in self._error_stances((x, y, th, q0)):
+        stances = self._error_stances((x, y, th, q0))
+        place_pts = [pt for pt in points if pt.get("pose") == "place"]
+        points = [pt for pt in points if pt.get("pose") != "place"]      # the place points are tested over the hand turns below (P3 part 5, M183)
+        for name, s in stances:
             bd, pair = timed("body", self.clear.body_distance, s)
             if bd <= cfg["body_clearance"]:
                 res["ik"].append({"stance": name, "ok": False, "failed_point": None})
@@ -409,6 +544,11 @@ class FullCheck:
                 return finish(["ik"], f"at the stance '{name}' point {info['failed_point']} ({pt.get('path')}, {np.round(pt['p'], 3).tolist()}) has no collision-free solution")
             if nominal is None:
                 nominal = info
+        if place_pts:
+            win = timed("place_window", self._place_window, stances, place_pts)
+            res["place"] = win
+            if win["theta_deg"] is None:
+                return finish(["place_angle_window"], win["reason"])
         # 3. the fixed view and the occlusion at the heights
         for h, row in zip(heights, res["heights"]):
             st = (x, y, th, h)

@@ -478,6 +478,12 @@ FULLCHECK_CFG = {
     "body_clearance": 0.0,                  # m: the whole robot at the stance must not touch the bench or an object (the old check: no contact; row M146 PENDING David)
     "object_slots": 6,                      # count: boxes of the private model that stand for unknown objects on the table (more objects than this make the check refuse; row M147 PENDING David)
     "checkers_kept": 3,                     # count: arm collision checkers kept (one per pedestal height, a model copy each) (row M136: memory)
+    # The hand's angle in the place (David, 2026-10-26; row M183). The skill's pick stops are tested at exactly the skill's own angle (level hand, straight forward) and the episode's own waypoint tolerance
+    # (PICK_PLACE_CFG tol_m and tol_rad), no turn or tilt allowed. The place stops (carry stop, lowering and release stops, back-off) are tested at every hand turn theta about the vertical axis through the
+    # beaker's centre (the hand stays level, the beaker upright): all of them must be reached within the same tolerance and pass the collision tests, at the nominal stance and at every error stance.
+    "place_turn_step_deg": 5,               # degrees: the steps of the hand turns tried, all the way round (0 to 355); the same steps as the Part 4 sweep [row M183]
+    "place_turn_min_window_deg": 10,        # degrees: the widest run of working hand turns must span at least this (first to last working turn), or the spot fails with "no place angle window": a narrower window is too fragile (David) [row M183]
+    "pose_ik_iterations": 150,              # count: iterations at most of the inverse kinematics of one skill stop at the exact pose (the grasp-bin IK uses ik_max_iter 40; an exact orientation needs more steps) [row M183 PENDING David: my choice]
 }
 
 # Navigation core (src/nav_*.py; overnight queue stage 2; navigation proposal docs/reports/20261021_2121_navigation_design.md). Names follow Nav2 where an equivalent exists (proposal section 11).

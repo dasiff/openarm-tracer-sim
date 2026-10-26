@@ -114,7 +114,10 @@ def main(args):
               all(v["details"]["frozen"]["image_source"] == "render" and v["details"]["frozen"]["tick"] is not None for v in deciding), f"{[v['details']['frozen'] for v in deciding]}")
     print(f"\nthe drop monitor (logs only): {state['monitors'] if state['monitors'] else 'nothing logged'}")
     print(f"the skill ends (logged beside, not part of any check): {state['skill_end']}")
-    check("the drop monitor logged no drop and no error in this clean run (a measurement: a drop here would be reported, not hidden)", state["monitors"] == [], f"{state['monitors']}")
+    drops = [m for m in state["monitors"] if m.get("monitor") != "carry slice monitor"]           # the carry slice monitor (M180) logs every carry; only the drop monitor's entries are drops
+    carry = [m for m in state["monitors"] if m.get("monitor") == "carry slice monitor"]
+    check("the drop monitor logged no drop and no error in this clean run (a measurement: a drop here would be reported, not hidden)", drops == [], f"{drops}")
+    print(f"the carry slice monitor (logs only): {carry}")
     check("the place's return to home is its own log line after the skill ended, with the arm at home", len(state["skill_end"]) == 1 and state["skill_end"][0]["at_home"], f"{state['skill_end']}")
     finish("done")
     blob = (out / "llm_log.json").read_text() + (out / "summary.json").read_text()

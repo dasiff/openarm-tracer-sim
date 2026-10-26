@@ -92,7 +92,10 @@ def grasp():
         weight_axial = BEAKER_KG * 9.81 * abs(r["closing_axis_z"])        # the beaker's weight along the (slightly tilted) closing axis loads one finger and unloads the other
         if F is not None and welded:
             # the beaker cannot move, so the gripper's own force control is measured: each finger presses with the limit, +-0.10 N
-            check(f"{tag}: each finger's contact force is the limit (+-0.10 N)", all(abs(f - limit) <= 0.10 for f in cf), f"{np.round(cf, 3)} N")
+            # M185: with the gravity feedforward the gripper actuator carries the SUM of the two fingers' weight along the coupled coordinate (the arm's gravity torque as the real controller would), so each
+            # finger's own weight along the (slightly tilted) closing axis loads one finger and unloads the other; MuJoCo's gravcomp (setting "physics") removed it. A finger is 36 g.
+            finger_axial = 0.0 if robot_specs.ARM_ACTUATOR_SPECS["gravity_comp"] == "physics" else 0.036025 * 9.81 * abs(r["closing_axis_z"])
+            check(f"{tag}: each finger's contact force is the limit (+-{0.10 + finger_axial:.2f} N: 0.10 plus, with the gravity feedforward, the finger's own weight along the closing axis)", all(abs(f - limit) <= 0.10 + finger_axial for f in cf), f"{np.round(cf, 3)} N")
         elif F is not None and F == 1.0:
             print(f"      (information, not checked: the free beaker at 1 N slips, the finger split {np.round(cf, 3)} N is within {weight_axial + 0.02:.2f} N of the limit: {all(abs(f - limit) <= weight_axial + 0.02 for f in cf)})")
         elif F is not None:

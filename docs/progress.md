@@ -263,3 +263,5 @@ UPDATE 20261026_160137: step 1 code done+committed; full_check_test run 152649 D
 UPDATE 20261026_160416: step 1 DONE: full_check_test 31/31 (log data/logs/fct2_20261026_160137.log). RUN step 4: tmux gp, grip_pad_contact.py, log data/logs/gp_20261026_160416.log, result data/grip_pad/20261026_160416/result.json
 
 ## 2026-10-26 16:11 TASK steps 1-5: DONE. Report docs/reports/20261026_1611_neighbourhood_start_scripts_retired_grip_pads.md. Tag before-script-cleanup is local. Not pushed.
+
+## 2026-10-26 16:47 TASK steps 1-3: 1 why contacts land near the pad tips (measurement: pad face angles, beaker segments vs fingers, half-segment rotation test), 2 condim 4 for finger-pad/beaker pairs (behavior change; value from physics; decisions row), measure 3 masses, full suite; 3 report. RULE: one MuJoCo process at a time; checked none running before each run. Current step: 1 (harness).

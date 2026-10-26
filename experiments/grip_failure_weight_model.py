@@ -43,6 +43,7 @@ from src.task_beaker_hotplate import load_task  # noqa: E402
 from src.task_config import BEAKER_CFG, GRIP_FORCE_TABLE, MINK_CFG, PICK_PLACE_CFG, TASK_CFG  # noqa: E402
 from src.weight_estimate import hand_load_with_balance_point  # noqa: E402
 from stance_select_test import PLAN4  # noqa: E402
+import grip_pad_contact as gpc  # noqa: E402     # pad coordinates of the contacts (step 2 of Oct 26, twisting friction)
 
 HZ = 150
 STILL_SPEED, WINDOW_S = 0.005, 0.30            # strict still window (rad/s, s)
@@ -113,7 +114,14 @@ def make_sampler(model, data):
     f6 = np.zeros(6)
     dt = 1.0 / HZ
     R = {"rows": [], "t": [], "qd": [], "q": [], "tau": [], "done": 0, "pending": [], "readings": [], "base": None, "prev_pad": None, "first_plate": None, "loss": None,
-         "series": [], "down": {"rows": []}, "recov": []}
+         "series": [], "down": {"rows": []}, "recov": [], "pad": {"moments": {}, "extent": {"left_finger": {"from_tip": [1e9, -1e9], "across_w": [-1e9 * 0 + 1e9, -1e9]}, "right_finger": {"from_tip": [1e9, -1e9], "across_w": [1e9, -1e9]}}, "n": 0, "pf": None, "prev": None}}
+    fgs_pad = {k: {g for g in range(model.ngeom) if int(model.geom_bodyid[g]) == model.body(f"openarm_{arm_name}_{k}").id and (model.geom_contype[g] or model.geom_conaffinity[g])} for k in ("left_finger", "right_finger")}
+
+    def pad_moment(tag):
+        pf = gpc.pad_frames(model, data)
+        cs = gpc.contacts_on_pads(model, data, bg, fgs_pad, pf)
+        R["pad"]["moments"][tag] = {"t": float(data.time), "contacts": {k: gpc.summarize_contacts(v_) for k, v_ in cs.items()}, "pad_length_mm": pf["fingers"]["left_finger"]["length_mm"],
+                                    "pad_width_mm": pf["fingers"]["left_finger"]["width_mm"], "tip_from_pad_centre_mm": 1000 * float(pf["fingers"]["left_finger"]["tip_a"] - pf["pad_center_world"] @ pf["a"])}
 
     def contacts(axis, bpos):
         """Per finger: normal force sum, force-weighted contact position and inward normal; the beaker-hotplate normal force and the closest approach."""
@@ -217,6 +225,23 @@ def make_sampler(model, data):
                "latR": cs["R"].get("lat_mm"), "face": facing(cs), "grip_act": float(data.actuator_force[gaid]), "finger": float(data.qpos[fq]), "speed": speed, "plate_F": plate_F,
                "bottom_clear_mm": 1000 * float(bpos[2] - plate_top), "beaker_pad_mm": 1000 * float(np.linalg.norm(p - bpos))}
         R["rows"].append(row)
+        pd_ = R["pad"]
+        if label == "pick:UP" and pd_["prev"] == "pick:CLOSE":
+            pad_moment("end_of_closing")
+        if label in ("pick:UP", "pick:CHECK", "place:OVER", "place:DOWN"):
+            pd_["n"] += 1
+            if pd_["n"] % 5 == 1:
+                pd_["pf"] = gpc.pad_frames(model, data)
+            for k, lst in gpc.contacts_on_pads(model, data, bg, fgs_pad, pd_["pf"]).items():
+                for x in lst:
+                    e = pd_["extent"][k]
+                    e["from_tip"] = [min(e["from_tip"][0], x["from_tip_mm"]), max(e["from_tip"][1], x["from_tip_mm"])]
+                    e["across_w"] = [min(e["across_w"][0], x["across_w_mm"]), max(e["across_w"][1], x["across_w_mm"])]
+        if label == "pick:CHECK":
+            pd_["last_check_tick"] = True
+        if pd_["prev"] == "pick:CHECK" and label != "pick:CHECK" and "end_of_lift" not in pd_["moments"] and pd_.get("pf") is not None:
+            pad_moment("end_of_lift")
+        pd_["prev"] = label
         # 1b: during the place's DOWN and OVER
         if cur is not None and prim == "place" and cur["name"] in ("OVER", "DOWN") and "target" in cur:
             err = p - cur["target"]
@@ -321,7 +346,7 @@ def main(args):
     res = {"liquid_kg": args.liquid, "true_total_kg": true_kg, "grip_force_cap_N_per_finger": GRIP_FORCE_TABLE["glass_beaker"], "outcome": s["outcome"], "failure": state["failure"], "status": state["status"],
            "beaker_on_hotplate": bool(ok), "grip": summ, "first_plate_contact": R["first_plate"], "recovery_loss": R["loss"], "readings": R["readings"],
            "down_series": down_rows[::15], "down_last": down_rows[-1] if down_rows else None, "recovery_series": R["recov"][::5], "series": R["series"],
-           "sag_caps": {"sag_max_m": PICK_PLACE_CFG["sag_max_m"], "sag_max_rad": PICK_PLACE_CFG["sag_max_rad"], "tol_m": PICK_PLACE_CFG["tol_m"], "tol_rad": PICK_PLACE_CFG["tol_rad"]}}
+           "pad": {"moments": R["pad"]["moments"], "extent": R["pad"]["extent"]}, "sag_caps": {"sag_max_m": PICK_PLACE_CFG["sag_max_m"], "sag_max_rad": PICK_PLACE_CFG["sag_max_rad"], "tol_m": PICK_PLACE_CFG["tol_m"], "tol_rad": PICK_PLACE_CFG["tol_rad"]}}
     tmp = out / "result.json.tmp"
     tmp.write_text(json.dumps(res, indent=1, default=str))
     tmp.replace(out / "result.json")

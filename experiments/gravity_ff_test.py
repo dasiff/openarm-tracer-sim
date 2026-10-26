@@ -4,8 +4,8 @@ The gravity feedforward (src/gravity_ff.py, M185): ctrl = q_target + tau_ff / kp
 
     MUJOCO_GL=egl python experiments/gravity_ff_test.py
 
-1. The calculated torque equals the torque MuJoCo's gravcomp applies when it is switched on (in this test only, on a copy of the model's flags: gravcomp = 1 on the same bodies, qfrc_gravcomp read), at the
-   zombie pose and at the extended ready pose, for all 14 arm joints and the two grippers: the calculation is right, and (because gravcomp is on the same bodies) it is the arm-only torque.
+1. The calculated torque equals MuJoCo's own gravity bias force at standstill (qfrc_bias with zero velocity: the holding torque, from the recursive Newton-Euler pass, an independent calculation; an arm joint
+   only feels the bodies beyond it, which are the arm's own), at the zombie pose and at the extended ready pose, for all 14 arm joints and the two grippers.
 2. A held object's weight is not in it: the torque is unchanged (to rounding, 1e-12 N m) when the beaker's mass is 10 times larger, and when the plate and the battery masses change; the bodies it uses are only the arms' own
    (names openarm_<side>_<link, hand, finger>).
 3. With the feedforward and NO physics gravcomp the arms hold the poses as the old setting did (real gains): every joint within 0.05 degrees, the hand within 1 mm, still at the end (the criteria of
@@ -72,20 +72,17 @@ def main():
     gff = ArmGravityFeedforward(ffs.model, fa, ff_)
     print("1. the calculated torque against MuJoCo's gravcomp torque")
     m1 = ffs.model
-    bodies = [b for b, _ in gff.bodies]
     for pn, pose in POSES.items():
         place(m1, ffs.data, pose, fids)
         tau = gff.torques(ffs.data).copy()
-        m1.body_gravcomp[bodies] = 1.0                      # the reference only: MuJoCo's own gravity compensation on the same bodies
-        mujoco.mj_forward(m1, ffs.data)
+        mujoco.mj_forward(m1, ffs.data)                     # the reference: qfrc_bias at standstill (qvel 0) is the holding torque; an arm joint only feels the bodies beyond it, which are the arm's own
         ref = []
         for s_ in SIDES:
-            ref += [ffs.data.qfrc_gravcomp[int(m1.jnt_dofadr[m1.actuator_trnid[a, 0]])] for a in fa[s_]]
-            ref.append(sum(ffs.data.qfrc_gravcomp[int(m1.joint(f"openarm_{s_}_finger_joint{k}").dofadr[0])] for k in (1, 2)))
-        m1.body_gravcomp[bodies] = 0.0
+            ref += [ffs.data.qfrc_bias[int(m1.jnt_dofadr[m1.actuator_trnid[a, 0]])] for a in fa[s_]]
+            ref.append(sum(ffs.data.qfrc_bias[int(m1.joint(f"openarm_{s_}_finger_joint{k}").dofadr[0])] for k in (1, 2)))
         ref = np.array(ref)
         err = float(np.max(np.abs(tau - ref)))
-        check(f"{pn}: all 16 values (14 joints + 2 grippers) agree with qfrc_gravcomp", err < 1e-9 and np.max(np.abs(ref)) > 1.0, f"largest difference {err:.2e}, largest torque {np.max(np.abs(ref)):.2f} N m")
+        check(f"{pn}: all 16 values (14 joints + 2 grippers) agree with MuJoCo's qfrc_bias at standstill", err < 1e-9 and np.max(np.abs(ref)) > 1.0, f"largest difference {err:.2e}, largest torque {np.max(np.abs(ref)):.2f} N m")
         print("      tau_ff left arm 1..7 (N m):", np.round(tau[:7], 3).tolist())
 
     print("\n2. a held object's weight is not in it")

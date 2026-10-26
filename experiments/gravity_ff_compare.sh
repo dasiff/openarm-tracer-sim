@@ -1,5 +1,5 @@
 #!/bin/bash
-# Part C step 1: the 8 comparison episodes, one after the other (one MuJoCo process at a time). usage: bash experiments/gravity_ff_compare.sh TAG
+# HISTORICAL (the physics setting was deleted 2026-10-26, M185; the "physics" runs below no longer work). Part C step 1: the 8 comparison episodes, one after the other (one MuJoCo process at a time). usage: bash experiments/gravity_ff_compare.sh TAG
 cd "$(dirname "$0")/.." && source .venv/bin/activate
 TAG=${1:-$(date +%Y%m%d_%H%M%S)}
 for variant in plain zombie_held; do

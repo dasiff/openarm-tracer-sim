@@ -40,7 +40,7 @@ def pedestal_load(model, pedestal_specs):
     """Weight the lift carries, from the compiled model's body masses.
 
     Returns the mass above the joint (the moving pedestal part, the torso, both arms and everything on them) and the force the one actuator must hold: the weight of that mass minus the part
-    that gravity compensation takes (the arms' links, hands and fingers have gravcomp 1, so they do not load the lift in the simulation).
+    that gravity compensation takes (none since M185: the arms' gravity is a calculated torque in the arm joints, so the arms load the lift; `body_gravcomp` is 0 on every body).
     """
     (joint,) = pedestal_specs["joints"]
     root = model.joint(joint).bodyid[0]

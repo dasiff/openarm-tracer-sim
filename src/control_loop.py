@@ -354,10 +354,8 @@ def run_loop(model, data, sources, cfg, viewer=None, logger=None):
     vadr = lambda a: int(model.jnt_dofadr[model.actuator_trnid[a, 0]])
     arm_vadr = {s: [vadr(a) for a in arm_act[s]] for s in sides}
     fing_vadr = [vadr(a) for s in sides for a in fing_act[s]]
-    gff = None                                                       # M185: the arm's gravity torque as a feedforward on the targets (None: MuJoCo's gravcomp does it, the old way)
-    if robot_specs.ARM_ACTUATOR_SPECS["gravity_comp"] == "feedforward":
-        from src.gravity_ff import ArmGravityFeedforward
-        gff = ArmGravityFeedforward(model, arm_act, fing_act, sides)
+    from src.gravity_ff import ArmGravityFeedforward
+    gff = ArmGravityFeedforward(model, arm_act, fing_act, sides)          # M185: the arm's gravity torque as a feedforward on the targets
     ped_aid = aid(robot_specs.PEDESTAL_SPECS["actuator_name"])
     ped_lo, ped_hi = model.actuator_ctrlrange[ped_aid]
     ped_vadr = vadr(ped_aid)
@@ -386,8 +384,7 @@ def run_loop(model, data, sources, cfg, viewer=None, logger=None):
         # Only apply hold targets for unclaimed position actuators; zero the rest
         for a in range(model.nu):
             data.ctrl[a] = hold_qpos_targets[a] if (a in unclaimed_ids and is_pos[a]) else 0.0
-        if gff is not None:
-            gff.apply(data.ctrl, data)
+        gff.apply(data.ctrl, data)
         mujoco.mj_step(model, data)
     print(f"Settled at z={data.qpos[2]:.4f}")
 
@@ -412,8 +409,7 @@ def run_loop(model, data, sources, cfg, viewer=None, logger=None):
         for a in unclaimed_ids:
             if is_pos[a]:
                 data.ctrl[a] = hold_qpos_targets[a]
-        if gff is not None:
-            gff.apply(data.ctrl, data)
+        gff.apply(data.ctrl, data)
         mujoco.mj_step(model, data)
     print(f"Arms locked at resting pose, re-settled at z={data.qpos[2]:.4f}")
 
@@ -822,11 +818,10 @@ def run_loop(model, data, sources, cfg, viewer=None, logger=None):
             ctrl_steps (numpy.ndarray): The ctrl vector of each physics step, shape (steps_per_frame, model.nu).
         """
         nonlocal step_count, cam_tick
-        ff_off = None if gff is None else gff.torques(data) / gff.kp          # M185: one tau_ff / kp per tick from the measured pose (the real controller's gravity torque), held for the tick's steps
+        ff_off = gff.torques(data) / gff.kp          # M185: one tau_ff / kp per tick from the measured pose (the real controller's gravity torque), held for the tick's steps
         for k in range(steps_per_frame):
             data.ctrl[:] = ctrl_steps[k]
-            if ff_off is not None:
-                gff.apply_offsets(data.ctrl, ff_off)
+            gff.apply_offsets(data.ctrl, ff_off)
             if base_dof is not None:
                 apply_base_velocity(data, base_dof, vx, vy, wz)
             mujoco.mj_step(model, data)

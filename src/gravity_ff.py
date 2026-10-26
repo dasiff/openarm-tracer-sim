@@ -89,16 +89,7 @@ class ArmGravityFeedforward:
         ctrl[self.ids] = np.clip(ctrl[self.ids], self.lo, self.hi) + off
 
 
-class _NoFeedforward:
-    """What `for_tests` gives under the "physics" setting: MuJoCo's gravcomp does the work, so applying it changes nothing."""
-
-    def apply(self, ctrl, data):
-        pass
-
-
 def for_tests(model):
-    """For tests and scripts that write data.ctrl themselves: an object whose `apply(ctrl, data)` adds the feedforward to the arm and gripper targets in `ctrl` under the "feedforward" setting
-    (call it after writing the targets, before every mj_step), and does nothing under "physics"."""
-    if robot_specs.ARM_ACTUATOR_SPECS["gravity_comp"] == "feedforward":
-        return ArmGravityFeedforward.from_model(model)
-    return _NoFeedforward()
+    """For tests and scripts that write data.ctrl themselves (not through src/control_loop.py): an object whose `apply(ctrl, data)` adds the feedforward to the arm and gripper targets in `ctrl`
+    (call it after writing the targets, before every mj_step)."""
+    return ArmGravityFeedforward.from_model(model)

@@ -34,8 +34,6 @@ calibration to-do list) are in docs/robot_reference.md.
 # Teleop targets are NOT clocked here: SEW-Mimic computes faster (retargeting
 # 60 kHz, safety filter 3 kHz per Kong), but on hardware the 750 Hz loop is
 # the ceiling, so the sim uses the latest target on each PD step.
-import os  # only for the temporary OPENARM_GRAVITY_COMP switch (M185)
-
 PHYSICS_HZ = 750  # Hz: the physics rate (equal to the real arms' control rate) [row M099]
 CAMERA_HZ = 30  # camera tick rate; set CC_ROUNDROBIN=0 in the viewer so every camera updates at this rate [row M100]
 SIMULATION_TIMESTEP = 1 / PHYSICS_HZ  # seconds (sim choice: one physics step per PD step)
@@ -164,11 +162,9 @@ ARM_ACTUATOR_SPECS = {
         7: {"motor": "DM4310", "armature": 0.0100, "kp": 10.0, "kv": 0.5, "torque_nm": 7.0},
     },  # [row M097]
 
-    # Gravity compensation: on, for these bodies of both arms (link1 through the hand and fingers; link0, the
-    # fixed arm mount, is left out; the updated description has no link8). Assumes the real controller compensates for gravity.
-    # TEMPORARY comparison switch (M185; deleted once David decides): "feedforward" = the arm's gravity pull is calculated from the arm's own bodies at the measured pose and added to each joint's target as
-    # ctrl = q_target + tau_ff / kp (src/gravity_ff.py, applied in src/control_loop.py), like the real controller's gravity torque; "physics" = MuJoCo's gravcomp = 1 on the bodies below (the old way).
-    "gravity_comp": os.environ.get("OPENARM_GRAVITY_COMP", "feedforward"),      # the environment variable OPENARM_GRAVITY_COMP=physics runs the old way in a separate process (comparison runs)
+    # Gravity compensation (M185; the temporary switch back to MuJoCo's gravcomp was deleted 2026-10-26): the arm's gravity torque is CALCULATED from the arm's own bodies listed here at the measured pose
+    # and added to each joint's target as ctrl = q_target + tau_ff / kp (src/gravity_ff.py, applied in src/control_loop.py), like the real controller's gravity torque. The bodies: link1 through the hand and
+    # fingers of both arms (link0, the fixed arm mount, is left out; the updated description has no link8). The key keeps its old name; nothing is switched off in the physics. Assumes the real controller compensates for gravity.
     "gravcomp_bodies": ("link1", "link2", "link3", "link4", "link5", "link6", "link7",
                         "hand", "hand_tcp", "right_finger", "left_finger"),  # [row M097]
 

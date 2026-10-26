@@ -4,14 +4,14 @@ The gravity feedforward (src/gravity_ff.py, M185): ctrl = q_target + tau_ff / kp
 
     MUJOCO_GL=egl python experiments/gravity_ff_test.py
 
-1. The calculated torque equals the torque MuJoCo's gravcomp applies (qfrc_gravcomp of a model built with the old "physics" setting), at the zombie pose and at the extended ready pose, for all 14 arm joints
-   and the two grippers: the calculation is right, and (because gravcomp is on the same bodies) it is the arm-only torque.
+1. The calculated torque equals the torque MuJoCo's gravcomp applies when it is switched on (in this test only, on a copy of the model's flags: gravcomp = 1 on the same bodies, qfrc_gravcomp read), at the
+   zombie pose and at the extended ready pose, for all 14 arm joints and the two grippers: the calculation is right, and (because gravcomp is on the same bodies) it is the arm-only torque.
 2. A held object's weight is not in it: the torque is unchanged (to rounding, 1e-12 N m) when the beaker's mass is 10 times larger, and when the plate and the battery masses change; the bodies it uses are only the arms' own
    (names openarm_<side>_<link, hand, finger>).
 3. With the feedforward and NO physics gravcomp the arms hold the poses as the old setting did (real gains): every joint within 0.05 degrees, the hand within 1 mm, still at the end (the criteria of
    arm_sag_test); and the torque needed is inside the motors' caps at these poses.
 4. The ctrl rule: a target outside the joint range is clipped to the range before tau_ff / kp is added, and the actuators' ctrlrange is widened by torque limit / kp so the sum is not clipped
-   (physics setting: the range is the joint range).
+   .
 5. The copy of the real gains in docs/openarm_control_gains.yaml equals the numbers of robot_specs.
 """
 
@@ -45,8 +45,7 @@ def check(name, ok, detail=""):
     print(f"  {'PASS' if ok else 'FAIL'}  {name}  {detail}", flush=True)
 
 
-def make(mode):
-    robot_specs.ARM_ACTUATOR_SPECS["gravity_comp"] = mode
+def make():
     return RobotSimulator(pedestal_lift=robot_specs.PEDESTAL_SPECS, cameras=None)
 
 
@@ -68,19 +67,22 @@ def place(m, d, pose, ids):
 
 
 def main():
-    phys, ffs = make("physics"), make("feedforward")
-    pa, pf, pids = acts(phys.model)
+    ffs = make()
     fa, ff_, fids = acts(ffs.model)
     gff = ArmGravityFeedforward(ffs.model, fa, ff_)
     print("1. the calculated torque against MuJoCo's gravcomp torque")
+    m1 = ffs.model
+    bodies = [b for b, _ in gff.bodies]
     for pn, pose in POSES.items():
-        place(phys.model, phys.data, pose, pids)
-        place(ffs.model, ffs.data, pose, fids)
-        tau = gff.torques(ffs.data)
+        place(m1, ffs.data, pose, fids)
+        tau = gff.torques(ffs.data).copy()
+        m1.body_gravcomp[bodies] = 1.0                      # the reference only: MuJoCo's own gravity compensation on the same bodies
+        mujoco.mj_forward(m1, ffs.data)
         ref = []
-        for s in SIDES:
-            ref += [phys.data.qfrc_gravcomp[int(phys.model.jnt_dofadr[phys.model.actuator_trnid[a, 0]])] for a in pa[s]]
-            ref.append(sum(phys.data.qfrc_gravcomp[int(phys.model.joint(f"openarm_{s}_finger_joint{k}").dofadr[0])] for k in (1, 2)))
+        for s_ in SIDES:
+            ref += [ffs.data.qfrc_gravcomp[int(m1.jnt_dofadr[m1.actuator_trnid[a, 0]])] for a in fa[s_]]
+            ref.append(sum(ffs.data.qfrc_gravcomp[int(m1.joint(f"openarm_{s_}_finger_joint{k}").dofadr[0])] for k in (1, 2)))
+        m1.body_gravcomp[bodies] = 0.0
         ref = np.array(ref)
         err = float(np.max(np.abs(tau - ref)))
         check(f"{pn}: all 16 values (14 joints + 2 grippers) agree with qfrc_gravcomp", err < 1e-9 and np.max(np.abs(ref)) > 1.0, f"largest difference {err:.2e}, largest torque {np.max(np.abs(ref)):.2f} N m")
@@ -150,7 +152,8 @@ def main():
     gff.apply_offsets(ctrl2, np.full(len(gff.ids), 0.05))
     k = list(gff.ids).index(a)
     check("a target above the joint's range is clipped to the range, then tau_ff / kp is added", abs(ctrl2[a] - (hi + 0.05)) < 1e-12, f"{ctrl2[a]:.4f} (range top {hi:.4f})")
-    check("the feedforward model's ctrlrange is the joint range widened by torque limit / kp; the physics model's is the joint range", np.allclose(mm.actuator_ctrlrange[a], [lo - cap['torque_nm'] / cap['kp'], hi + cap['torque_nm'] / cap['kp']]) and np.allclose(phys.model.actuator_ctrlrange[pa["left"][3]], phys.model.jnt_range[phys.model.actuator_trnid[pa["left"][3], 0]]))
+    check("the actuator's ctrlrange is the joint range widened by torque limit / kp", np.allclose(mm.actuator_ctrlrange[a], [lo - cap['torque_nm'] / cap['kp'], hi + cap['torque_nm'] / cap['kp']]))
+    check("no body has MuJoCo's gravcomp on (the old physics path is gone)", float(np.abs(mm.body_gravcomp).max()) == 0.0)
 
     print("\n5. the tracked copy of the real gains")
     import re

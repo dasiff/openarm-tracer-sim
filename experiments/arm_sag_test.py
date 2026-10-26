@@ -4,7 +4,7 @@ How far the arms sag under their own weight at the real gains (control_gains.yam
 
     MUJOCO_GL=egl python experiments/arm_sag_test.py
 
-Gravity compensation is on in the simulator (robot_specs.ARM_ACTUATOR_SPECS["gravcomp_bodies"]; it assumes the real controller compensates for gravity, which is not confirmed). With it
+Gravity compensation is on in the simulator (the calculated feedforward of src/gravity_ff.py over robot_specs.ARM_ACTUATOR_SPECS["gravcomp_bodies"]; it assumes the real controller compensates for gravity, which is not confirmed). With it
 on a position servo holds its target exactly; the numbers that matter for the real robot are the ones WITHOUT it, so both are measured, at the real gains and at the earlier placeholder
 gains (kp 100/100/80/80/50/50/50, kd 10/10/8/8/5/5/5), at two poses: the home pose (arms at the side, elbows bent) and the extended ready pose of the left arm (the grasp approach; the right arm stays at home).
 
@@ -56,7 +56,7 @@ def run_case(sim, pose, gains, gravcomp):
                 m.actuator_gainprm[a, 0] = OLD_KP[k]
                 m.actuator_biasprm[a, 1:3] = [-OLD_KP[k], -OLD_KV[k]]
     from src.gravity_ff import for_tests
-    ff = for_tests(m) if gravcomp else None              # M185: "gravity compensation on" is the calculated feedforward unless the setting is "physics"
+    ff = for_tests(m) if gravcomp else None              # M185: "gravity compensation on" is the calculated feedforward (the only method; "OFF" applies none)
     mujoco.mj_resetData(m, d)
     d.qpos[0:7] = [0.0, 0.0, 0.1527, 1.0, 0.0, 0.0, 0.0]
     ped = m.actuator(robot_specs.PEDESTAL_SPECS["actuator_name"]).id

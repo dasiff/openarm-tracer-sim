@@ -471,12 +471,9 @@ ORCH_CFG = {
 FULLCHECK_CFG = {
     "height_offsets": (0.0, 0.02, -0.02),   # m: the pedestal heights tested, as offsets from the middle height; all must pass (R2a, row M131). 3 heights span the 4 cm minimum range (row M141)
     "error_budget": {"x": 0.01, "y": 0.01, "heading_deg": 1.0, "pedestal": 0.02},   # the errors the IK is tested at, each on its own, plus the nominal stance: 9 stances (R2b, row M132); m, m, degrees, m
-    # TEMPORARY setting for the checker-start measurement (M187; David decides after the report, then it is deleted or made the default). "today": the stops of a path start from the previous stop's answer (and,
-    # for an error stance or the next hand turn, from the nominal stance's answer), the first stop of a path from a random arm shape, and random restarts rescue a stop the first starts failed. "neighbourhood":
-    # as the robot's own solver: the first stop of each path starts from the zombie pose, later stops from the previous stop's answer, no other start; a stop that fails from there FAILS (random restarts still
-    # run on the side and are only logged in FullCheck.start_log as "rescuable"). Default "today" (no change of behaviour).
-    "start_mode": "today",
-    "ik_seeds": 24,                         # count: random starts per tried approach direction when the warm starts fail [row M145 PENDING David: the number of random starts was not decided; the old search used 24]
+    # The IK starts (M187, decided by David, Oct 26): the first stop of each path starts from the zombie pose, later stops from the previous stop's answer, like the robot's own solver; a stop that fails from
+    # there fails; random restarts (ik_seeds below) run only as a logged diagnostic in FullCheck.start_log ("rescuable") and never change the verdict.
+    "ik_seeds": 24,                         # count: random starts per tried approach direction when the warm starts fail (the legacy grasp-bin path); in the skill path only the logged diagnostic [row M145 PENDING David: the number of random starts was not decided; the old search used 24]
     "ik_flip_rad": 1.0,                     # rad: along one skill path the solution may not change by more than this on any joint between consecutive points; more is an elbow flip, a failure (R2d, row M134; the 1.0 is my choice, row M145)
     "hand_clearance": 0.01,                 # m: the hand and fingers must stay this far from the bench, the hotplate and every other object at the IK solutions (the old case 'open_b45' used 1 cm; row M146 PENDING David)
     "arm_clearance": 0.0,                   # m: the other arm parts must not touch the furniture or the objects (row M146 PENDING David)

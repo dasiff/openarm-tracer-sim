@@ -366,9 +366,8 @@ class FullCheck:
         return t, R
 
     def _log_stop(self, stance, pt, theta, starts, labels, ok, source, phase_ok, rescue, rescuable):
-        """One entry of `start_log` per stop solved (the checker-start measurement, M187): the stance, the stop (path, pose kind, point), the start labels tried first, whether the stop passed and from which start
-        ("random" = the random phase), `rescue` (today's mode: the starts tried first all failed and a random start passed it) and `forced_random` (no start was available: random was the only way),
-        `rescuable` (the neighbourhood mode: the stop FAILED from its starts, but a random start could have reached it; logged only)."""
+        """One entry of `start_log` per stop solved (M187): the stance, the stop (path, pose kind, point), the start tried ("zombie pose" or "previous point"), whether the stop passed and from which start,
+        and `rescuable` (the stop FAILED from its start, but a random start could have reached it: a logged diagnostic only, it never changes the verdict). `rescue` and `forced_random` are always False now."""
         self.start_log.append({"stance": [round(float(v), 4) for v in stance], "theta_deg": None if pt.get("pose") != "place" else round(math.degrees(theta)), "path": pt.get("path"), "pose": pt.get("pose"),
                                "p": [round(float(v), 4) for v in pt["p"]], "tried_first": list(labels), "ok": bool(ok), "source": source, "rescue": bool(rescue), "forced_random": bool(ok and source == "random" and not starts),
                                "rescuable": rescuable})
@@ -383,15 +382,9 @@ class FullCheck:
         clear of the furniture and the objects, no elbow flip against `prev`). Returns (joint vector, None, source) or None."""
         C, cfg = self.C, self.cfg
         tp, R = self._pose_target(stance, pt, t, theta)
-        mode = cfg.get("start_mode", "today")
-        starts, labels = [], []
-        if mode == "neighbourhood":                        # as the robot: the first stop from the zombie pose, later ones from the previous stop's answer; no random rescue decides
-            starts, labels = ([prev], ["previous point"]) if prev is not None else ([self.zombie_q], ["zombie pose"])
-        else:
-            if warm is not None and not np.isnan(warm).any():
-                starts.append(warm); labels.append("nominal")
-            if prev is not None:
-                starts.append(prev); labels.append("previous point")
+        # M187 (decided by David, Oct 26): as the robot's own solver, the first stop of each path starts from the zombie pose, later stops from the previous stop's answer, and no other start decides: a stop
+        # that fails from there FAILS. Random restarts still run, but only as a logged diagnostic ("rescuable": failed, but another arm shape could reach it). `warm` (the nominal stance's answer) is not used.
+        starts, labels = ([prev], ["previous point"]) if prev is not None else ([self.zombie_q], ["zombie pose"])
         tol_m, tol_rad = PICK_PLACE_CFG["tol_m"], PICK_PLACE_CFG["tol_rad"]
         for phase in ("warm", "random"):
             if phase == "warm":
@@ -421,12 +414,12 @@ class FullCheck:
                 j = cand[int(np.argmax(adm))]
                 self._log_ik(pt, phase, iters, int(iters[j]))
                 src = labels[j] if phase == "warm" and j < len(labels) else "random"
-                if mode == "neighbourhood" and phase == "random":      # diagnostic only: another arm shape could reach it, but the robot would not get there from here
+                if phase == "random":                                  # diagnostic only: another arm shape could reach it, but the robot would not get there from here
                     self._log_stop(stance, pt, theta, starts, labels, False, None, False, False, True)
                     return None
-                self._log_stop(stance, pt, theta, starts, labels, True, src, True, phase == "random" and bool(starts), None)
+                self._log_stop(stance, pt, theta, starts, labels, True, src, True, False, None)
                 return Q[j], None, src
-        self._log_stop(stance, pt, theta, starts, labels, False, None, False, False, False if mode == "neighbourhood" else None)
+        self._log_stop(stance, pt, theta, starts, labels, False, None, False, False, False)
         return None
 
     def _solve_stance(self, stance, points, approach_bin, warm=None, theta=0.0):

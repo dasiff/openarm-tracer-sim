@@ -86,9 +86,9 @@ def pad_faces(model, data, pf):
                      "c_at_root_mm": 1000 * float(pc[root].mean()), "tip_a": float(pa.max()), "d": d.tolist()}
     n1, n2 = np.array(out["left_finger"]["normal"]), np.array(out["right_finger"]["normal"])
     out["angle_between_faces_deg"] = math.degrees(math.acos(float(np.clip(n1 @ -n2, -1, 1))))
-    gap_tip = (out["right_finger"]["c_at_tip_mm"] - out["left_finger"]["c_at_tip_mm"]) * (1 if np.array(out["left_finger"]["d"]) @ c > 0 else -1)
-    gap_root = (out["right_finger"]["c_at_root_mm"] - out["left_finger"]["c_at_root_mm"]) * (1 if np.array(out["left_finger"]["d"]) @ c > 0 else -1)
-    out["gap_tip_mm"], out["gap_root_mm"] = abs(gap_tip), abs(gap_root)
+    out["gap_tip_mm"] = -out["right_finger"]["c_at_tip_mm"] - out["left_finger"]["c_at_tip_mm"]       # each finger's c is measured along its own direction toward the other finger (opposite signs)
+    out["gap_root_mm"] = -out["right_finger"]["c_at_root_mm"] - out["left_finger"]["c_at_root_mm"]
+    out["converging_toward_tips"] = bool(out["gap_tip_mm"] < out["gap_root_mm"])
     return out
 
 
@@ -108,7 +108,9 @@ def make_sampler(model, data, rotate_deg):
         arm, S = gpc.H["arm"], gpc.H["S"]
         if arm is None:
             return None
-        if rotate_deg and not R["rotated"] and data.time < 0.5:
+        steps0 = S.get("steps") or []
+        cur0 = steps0[S["i"]] if S.get("i") is not None and S["i"] < len(steps0) else None
+        if rotate_deg and not R["rotated"] and cur0 is not None and S["ctx"].get("primitive") == "pick" and cur0["name"] == "OVER":      # the arm is still far above: turn the beaker in place now
             q = data.qpos[jq + 3:jq + 7].copy()
             h = math.radians(rotate_deg) / 2
             qz = np.array([math.cos(h), 0.0, 0.0, math.sin(h)])
@@ -148,12 +150,16 @@ def make_sampler(model, data, rotate_deg):
             pad_c = pf["pad_center_world"]
             axis_off_a = 1000 * float(((bpos - pad_c) - (((bpos - pad_c) @ axis) * axis)) @ a)
             round_pred, meas = {}, {}
+            conv = 1.0 if faces["converging_toward_tips"] else -1.0
             for k in ("left_finger", "right_finger"):
-                yaw = faces[k]["yaw_toward_tips_deg"]
-                round_pred[k] = {"offset_from_axis_along_approach_mm_toward_tips": 1000 * r_out * math.sin(math.radians(yaw)), "from_tip_mm": None}
-                tip_off = 1000 * float(faces[k]["tip_a"] - (pad_c @ a))                          # the tip edge's distance from the pad centre along the approach
-                round_pred[k]["from_tip_mm"] = tip_off - round_pred[k]["offset_from_axis_along_approach_mm_toward_tips"] - axis_off_a * 0.0
+                alpha = faces[k]["angle_to_closing_axis_deg"]
+                tip_off = 1000 * float(faces[k]["tip_a"] - (pad_c @ a))                        # the tip edge's distance from the pad centre along the approach
+                off_round = conv * 1000 * r_out * math.sin(math.radians(alpha))              # the tangent point of a circle on the tilted pad plane, from the axis, toward the tips
+                off_corner = conv * facet_width_mm / 2                                         # a flat facet square to the closing axis touches the tilted pad at its tip-side vertical edge
                 cc = gpc.summarize_contacts(cs[k])
+                meas_off = None if cc is None else tip_off - cc["from_tip_mm_weighted"] - axis_off_a
+                round_pred[k] = {"round_offset_from_axis_toward_tips_mm": off_round, "round_from_tip_mm": tip_off - (axis_off_a + off_round), "facet_edge_offset_from_axis_toward_tips_mm": off_corner,
+                                 "facet_edge_from_tip_mm": tip_off - (axis_off_a + off_corner), "pad_centre_from_tip_mm": tip_off, "measured_offset_from_axis_toward_tips_mm": meas_off}
                 meas[k] = cc
             R["result"] = {"t": float(data.time), "tilt_deg": float(np.degrees(np.arccos(np.clip(axis[2], -1, 1)))), "faces": faces, "n_segments": n_seg, "segment_step_deg": step_deg, "facet_width_mm": facet_width_mm,
                            "closing_axis_horizontal_deg": ang_c, "facet_nearest_closing_axis_offset_deg": {"plus": fo_plus, "minus": fo_minus}, "pad_centre_to_axis_along_approach_mm": axis_off_a,

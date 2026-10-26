@@ -125,7 +125,8 @@ BEAKER_CFG = {
     # Contact of the beaker with the gripper. The finger / palm geoms have priority 1 in the robot model, so their own friction (1.0) wins over
     # the beaker's: setting the beaker's friction would do nothing. Explicit contact pairs set it instead (finger and palm geoms of both hands
     # against every beaker geom); everything else the beaker touches (bench, hotplate) keeps its own friction.
-    "contact_friction": (0.4, 0.005, 0.0001),   # sliding, torsional, rolling: glass on the gripper pads [row M081]
+    "contact_friction": (0.4, 0.0012, 0.0001),  # sliding, torsional, rolling: glass on the gripper pads [row M081; torsional changed from 0.005 (unused then: condim 3) to 0.0012 m by M189]
+    "pad_condim": 4,                       # contact dimension of the finger pads against the beaker: 4 = sliding friction plus TORSIONAL friction (resistance to twisting about the contact normal); the palm stays at 3. Real rubber pads touch over a small area and resist twisting; with 3 the beaker swung freely about the pinch line. Torsional value 0.0012 m = sliding 0.4 x a 3 mm contact patch radius (an assumption: the real pads' material and friction are unknown) [row M189]
     "contact_solref": (0.005, 1.0),        # the same softness the finger geoms have in the robot model, so only the friction changes [row M102 PENDING David: no decision recorded]
     "contact_solimp": (0.9, 0.95, 0.001, 0.5, 2.0),  # MuJoCo solimp (contact impedance) of the beaker-gripper contact, dimensionless; the same as the finger geoms' own [row M102 PENDING David: no decision recorded]
     "gripper_geoms": ("hand_collision", "left_finger_collision", "right_finger_collision"),   # per hand: "openarm_<side>_" + these [row M102 PENDING David: no decision recorded]

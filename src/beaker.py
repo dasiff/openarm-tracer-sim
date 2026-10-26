@@ -14,7 +14,8 @@ What it builds (all of it is rigid, one body):
   * the glass mass, shared by the wall segments and the bottom disk by volume (MuJoCo then gives the body its centre of mass and inertia);
   * the liquid: a separate rigid mass, a cylinder as wide as the inside and as tall as that mass of liquid fills (liquid_mass / liquid_density), sitting on the
     bottom, with no collision and no visuals (alpha 0). It only places the mass low in the beaker;
-  * the contact pairs: every finger and palm geom of both hands against every wall and bottom geom, with the gripper friction of BEAKER_CFG["contact_friction"].
+  * the contact pairs: every finger and palm geom of both hands against every wall and bottom geom, with the gripper friction of BEAKER_CFG["contact_friction"]. The finger pairs have
+    BEAKER_CFG["pad_condim"] (4: sliding plus torsional friction, so a pad resists twisting about the contact, M189); the palm pairs stay at 3.
     The robot's gripper geoms have priority 1, so their friction (1.0) would win over the beaker's own and no beaker setting could change it; an explicit
     pair does. Everything else the beaker touches keeps the beaker's own friction (BEAKER_CFG["friction"]), mixed with the other surface's the usual way.
 """
@@ -99,7 +100,7 @@ def add_hollow_beaker(spec, cfg=BEAKER_CFG):
             for beaker_geom in glass:
                 p = spec.add_pair()
                 p.geomname1, p.geomname2 = name, beaker_geom
-                p.condim = 3
+                p.condim = cfg["pad_condim"] if "finger" in gripper_geom else 3        # M189: the finger pads resist twisting about the contact (torsional friction, condim 4); the palm keeps condim 3
                 p.friction = [cfg["contact_friction"][0], cfg["contact_friction"][0], cfg["contact_friction"][1], cfg["contact_friction"][2],
                               cfg["contact_friction"][2]]
                 p.solref = list(cfg["contact_solref"])

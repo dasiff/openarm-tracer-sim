@@ -79,7 +79,7 @@ def get_poses():
 
 # ---------------------------------------------------------------- model / sim
 def build(lift=True, dt=DT, spec_hook=None, arm_actuators=True):
-    """Gravcomp is always on: add_arm_actuators applies it. arm_actuators=False reproduces the old model
+    """Gravity: with add_arm_actuators the arm's gravity is the calculated feedforward (M185; HoldSim applies it); arm_actuators=False reproduces the old model
     (torque motors + Python PD, no armature) for experiments/arm_hold_fixes.py, with gravcomp set here."""
     spec = mujoco.MjSpec.from_file(str(SCENE))
     if arm_actuators:
@@ -128,6 +128,8 @@ class HoldSim:
         self.arm_body_ids = {m.body(n).id for n in ARM_BODIES}
         self.body_name = [m.body(i).name for i in range(m.nbody)]
         self.d2 = mujoco.MjData(m)
+        from src.gravity_ff import for_tests
+        self.ff = for_tests(m) if arm_actuators else None       # M185: the new-model arms have no MuJoCo gravcomp any more: the calculated feedforward
 
     def reset(self, q_arm, spawn):
         m, d = self.m, self.d
@@ -152,6 +154,8 @@ class HoldSim:
         d.ctrl[:] = np.where(self.pd_mask, pd, 0.0)
         if self.native_pd:                                # MuJoCo servo: ctrl is the target angle
             d.ctrl[self.arm_ids_all] = self.targets[self.arm_ids_all]
+        if self.ff is not None:
+            self.ff.apply(d.ctrl, d)
         d.qvel[self.base_dof:self.base_dof + 2] = 0.0
         d.qvel[self.base_dof + 3:self.base_dof + 6] = 0.0
         mujoco.mj_step(self.m, d)
@@ -250,7 +254,8 @@ def static_checks(sim_gc, q_pd):
     acts = sim_gc.arm_act[ARM]
     dofs = [sim_gc.dadr(a) for a in acts]
     tau_g = -d.qfrc_bias[dofs]                      # gravity generalized force on each joint (qvel = 0)
-    comp = d.qfrc_gravcomp[dofs]
+    ffq = sim_gc.ff.torques(d) if sim_gc.ff is not None else None            # M185: the compensation is the calculated feedforward (left arm values first, then the left gripper, then the right arm)
+    comp = (ffq[:7] if ARM == 'left' else ffq[8:15]) if ffq is not None else d.qfrc_gravcomp[dofs]
     out["gravity"], out["comp"], out["resid"] = tau_g, comp, tau_g + comp
     M = np.zeros((sim_gc.m.nv, sim_gc.m.nv))
     mujoco.mj_fullM(sim_gc.m, d, M)

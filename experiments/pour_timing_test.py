@@ -24,7 +24,7 @@ if not os.environ.get("DISPLAY"):
 import mujoco  # noqa: E402
 import numpy as np  # noqa: E402
 
-from pour_helpers import run_pour, settle  # noqa: E402
+from pour_helpers import hold_ctrl, run_pour, settle  # noqa: E402
 from src.pour_scene import ball_counts  # noqa: E402
 from src.task_beaker_hotplate import load_task  # noqa: E402
 from src.task_config import BEAKER_CFG, POUR_CFG  # noqa: E402
@@ -45,7 +45,7 @@ def main(args):
             m, d = sim.model, sim.data
             ts = []
             for _ in range(750):
-                d.ctrl[:] = hold
+                hold_ctrl(d, hold)
                 t0 = time.perf_counter()
                 mujoco.mj_step(m, d)
                 ts.append(time.perf_counter() - t0)

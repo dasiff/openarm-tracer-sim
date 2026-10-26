@@ -27,11 +27,13 @@ def run_simulation():
     print("=" * 50)
     
     # Initialize
+    from src.gravity_ff import for_tests
     sim = RobotSimulator(
         model_path=str(project_root / "models/scenes/single_block.xml"),
         track_bodies=["block"],  # this scene's object of interest
     )
     controller = RobotController(sim.model)  # now needs the model to derive correct addressing
+    ff = for_tests(sim.model)
     policy = DummyPolicy()
     logger = TrajectoryLogger()
     
@@ -69,6 +71,7 @@ def run_simulation():
             action = policy(observation, t)
             torques = controller.step(action, observation)
             sim.data.ctrl[:] = torques
+            ff.apply(sim.data.ctrl, sim.data)   # M185: the arms' gravity as the calculated feedforward
             sim.step()
             viewer.sync()
             

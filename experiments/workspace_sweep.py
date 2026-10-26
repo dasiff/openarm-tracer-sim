@@ -41,6 +41,8 @@ def sweep_workspace():
         model_path=str(project_root / "models/scenes/single_block.xml")
     )
     controller = RobotController(sim.model)  # built once, needs model to derive correct addressing
+    from src.gravity_ff import for_tests
+    ff = for_tests(sim.model)  # M185: the arms' gravity as the calculated feedforward (the simulator no longer sets MuJoCo gravcomp)
     
     # Joint indices for right arm (7 joints)
     right_joints = [
@@ -94,7 +96,10 @@ def sweep_workspace():
                                     sim.data.ctrl[:] = torques
                                     
                                     # Step physics a few times to settle
+                                    target = sim.data.ctrl.copy()
                                     for _ in range(10):
+                                        sim.data.ctrl[:] = target
+                                        ff.apply(sim.data.ctrl, sim.data)
                                         sim.step()
                                     
                                     # Get end-effector position

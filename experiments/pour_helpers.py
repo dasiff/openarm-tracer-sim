@@ -64,13 +64,23 @@ def body_pose(lip, phi, direction, beaker_cfg=BEAKER_CFG):
     return lip - R @ ell, np.array([math.cos(a / 2), 0.0, math.sin(a / 2), 0.0])
 
 
+_FF = {}                                         # M185: the arm's gravity feedforward of the settled model (src/gravity_ff via spawn_and_settle)
+
+
+def hold_ctrl(d, hold):
+    """Writes the control vector that holds the robot, with the gravity feedforward added to the arm targets (M185)."""
+    d.ctrl[:] = hold
+    _FF["ff"].apply(d.ctrl, d)
+
+
 def settle(sim, seconds=1.0):
     """Spawns the robot, brings everything to rest, then runs `seconds` more with the robot holding still. Returns the control vector that holds the robot (see spawn_and_settle)."""
     info = spawn_and_settle(sim)
     hold = info["hold"]
+    _FF["ff"] = info["ff"]
     m, d = sim.model, sim.data
     for _ in range(int(seconds / m.opt.timestep)):
-        d.ctrl[:] = hold
+        hold_ctrl(d, hold)
         mujoco.mj_step(m, d)
     return hold
 
@@ -112,7 +122,7 @@ def run_pour(sim, hold, source, destination, on_step=None, beaker_cfg=BEAKER_CFG
         d.qvel[da:da + 3] = (pos - old) / dt
         d.qvel[da + 3:da + 6] = [0.0, direction * (phi - prev_phi) / dt, 0.0]
         prev_phi = phi
-        d.ctrl[:] = hold
+        hold_ctrl(d, hold)
         t0 = time.perf_counter()
         mujoco.mj_step(m, d)
         step_t.append(time.perf_counter() - t0)

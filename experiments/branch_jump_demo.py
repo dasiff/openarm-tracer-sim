@@ -269,8 +269,7 @@ def load_model():
 
     Built through MjSpec with src/arm_actuators.py applied, as in RobotSimulator: the arm and finger
     position actuators (RobotController.step passes the targets straight through for them) and
-    gravcomp = 1 on GRAVCOMP_BODIES (ngravcomp is fixed at compile time, so it cannot be set on a
-    compiled model).
+    (no MuJoCo gravcomp any more, M185: the callers add the calculated gravity feedforward with src.gravity_ff.for_tests(model).apply(ctrl, data)).
     """
     import mujoco
     from src.arm_actuators import add_arm_actuators
@@ -297,6 +296,8 @@ def hold_check(policy, poses, settle=0.5, hold=2.0, verbose=True):
     log = print if verbose else (lambda *args, **kwargs: None)
 
     m = load_model()
+    from src.gravity_ff import for_tests
+    ff = for_tests(m)                                       # M185: the arm's gravity as the calculated feedforward (add_arm_actuators no longer sets MuJoCo gravcomp)
     d, d2 = mujoco.MjData(m), mujoco.MjData(m)
     aid = lambda n: mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_ACTUATOR, n)
     qadr = lambda a: m.jnt_qposadr[m.actuator_trnid[a, 0]]
@@ -343,6 +344,7 @@ def hold_check(policy, poses, settle=0.5, hold=2.0, verbose=True):
             pd = ctrl.step(targets, {"joint_angles": d.qpos, "joint_velocities": d.qvel})
             pd = np.where(limited, np.clip(pd, lo, hi), pd)
             d.ctrl[:] = np.where(pd_mask, pd, 0.0)
+            ff.apply(d.ctrl, d)
             d.qvel[base_dof:base_dof + 2] = 0.0
             d.qvel[base_dof + 3:base_dof + 6] = 0.0
             mujoco.mj_step(m, d)
@@ -385,6 +387,8 @@ def render_video(path, t, cmd, out_on, policy, events, rich=False, still_dir=Non
     from legacy.controller import RobotController
 
     m = load_model()
+    from src.gravity_ff import for_tests
+    ff = for_tests(m)                                       # M185: the arm's gravity as the calculated feedforward (add_arm_actuators no longer sets MuJoCo gravcomp)
     w, h = (1280, 720) if rich else (640, 480)
     m.vis.global_.offwidth = max(m.vis.global_.offwidth, w)
     m.vis.global_.offheight = max(m.vis.global_.offheight, h)
@@ -418,6 +422,7 @@ def render_video(path, t, cmd, out_on, policy, events, rich=False, still_dir=Non
         pd = ctrl.step(tgt, {"joint_angles": d.qpos, "joint_velocities": d.qvel})
         pd = np.where(limited, np.clip(pd, lo, hi), pd)         # motor torque limits
         d.ctrl[:] = np.where(pd_mask, pd, 0.0)
+        ff.apply(d.ctrl, d)
         d.qvel[base_dof:base_dof + 2] = 0.0                      # base stays put
         d.qvel[base_dof + 3:base_dof + 6] = 0.0
         mujoco.mj_step(m, d)

@@ -65,6 +65,8 @@ class Drive:
         self.torso = m.body("openarm_body_link0").id
         self.tcp = {s: m.body(f"openarm_{s}_hand_tcp").id for s in ("left", "right")}
         self.ctrl = RobotController(m)
+        from src.gravity_ff import for_tests
+        self.ff = for_tests(m) if new else None            # M185: NEW has no MuJoCo gravcomp any more: the calculated feedforward
         self.hold = np.zeros(m.nu)
         self.hold[names.index(robot_specs.PEDESTAL_SPECS["actuator_name"])] = robot_specs.PEDESTAL_SPECS["target_height"]
         self.d.qpos[0:3] = SPAWN
@@ -75,6 +77,7 @@ class Drive:
         d.ctrl[:] = 0.0
         if self.new:                                       # position actuators: ctrl = target
             d.ctrl[self.nonwheel] = self.hold[self.nonwheel]
+            self.ff.apply(d.ctrl, d)
         else:                                              # old: Python PD torque every physics step
             pd = self.ctrl.step(self.hold, {"joint_angles": d.qpos, "joint_velocities": d.qvel})
             d.ctrl[self.nonwheel] = pd[self.nonwheel]

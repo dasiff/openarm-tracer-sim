@@ -534,7 +534,7 @@ BENCH_STANCE_CFG = {
     # only for the test scene's layout) was the default until 2026-10-25 (M178) and was deleted the same day (David, row M179), so there is no mode setting any more.
     # Plain words: with navigation ON the robot may be driven to the stance the algorithm chooses (the first navigation step moves it, later ones are null when the next objects are served from the same stance);
     # with navigation OFF it stays at TASK_CFG's stance and a plan that stance does not serve stops with "needs navigation on".
-    "navigation": True,                         # [row M175: David: the new setting value runs with navigation on; David 2026-10-25: must stay ON by default (no separate row; the decision is the last sentence of the carry-slice row M180); False is kept for tests (stance_select_test section 6, the held-beaker script's --at-reference-stance)]
+    "navigation": True,                         # [row M182: ON by default (David, Oct 25); False is kept for tests (stance_select_test section 6, the held-beaker script's --at-reference-stance); row M175: what navigation on and off mean in stance selection]
     "max_run_steps": 4,                         # count: the most manipulation steps in one run (the longest-run search starts at min(this, the steps left)) [row M175: David]
     "full_check_fallbacks": 3,                  # count: when the full check fails the best stance of a run, this many of the next ranked stances are tried [row M175: David]
     # Plain words: every one of the 12 approach bins of the reach maps is a level side grasp (the hand's approach axis and finger axis within 5 degrees of horizontal), so none is "from above or below". What

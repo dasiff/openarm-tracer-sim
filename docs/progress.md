@@ -232,3 +232,6 @@ MPVI_TEXT CACHE-ONLY ORACLE RUN: tmux mtx, log data/logs/mpvi_text_oracle_202610
 STEP 5 DONE: report docs/reports/20261026_1100_part5_hand_angle.md; mpvi_text_test cache-only oracle 9/9 (log data/logs/mpvi_text_oracle_20261026_103018.log). Not pushed.
 
 ## 2026-10-26 TASK Part C gravity compensation read-only: DONE. Report docs/reports/20261026_1110_gravity_comp_readonly.md. No code changed; Parts A (push) and B (place angle) of the earlier prompt were replaced by this message and NOT done. Not pushed.
+
+## 2026-10-26 11:30 TASK: A push (DONE, remote main = b4373e4), B place angle without stance selection, C step 1 gravity feedforward (ctrl = q_target + tau_ff/kp, temp switch, measure old vs new)
+Plan: B1 compute theta at the current stance when none given; B2 update nav-off tests; B3 new test place_theta_logic_test; B4 pose_ik_iterations logging; B5 decisions row. Then C1-C6. Current step: B1.

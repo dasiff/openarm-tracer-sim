@@ -66,7 +66,8 @@ def main():
     colliding = [g for g in geoms if m.geom_contype[g] or m.geom_conaffinity[g]]
     walls = [g for g in colliding if "_wall_" in name(g)]
     print("\n1. the model")
-    check("24 box segments and one bottom disk collide", len(walls) == cfg["n_segments"] == 24 and len(colliding) == 25 and all(m.geom_type[g] == mujoco.mjtGeom.mjGEOM_BOX for g in walls),
+    n_seg = cfg["n_segments"]
+    check(f"{n_seg} box segments and one bottom disk collide", len(walls) == n_seg and len(colliding) == n_seg + 1 and all(m.geom_type[g] == mujoco.mjtGeom.mjGEOM_BOX for g in walls),
           f"{len(walls)} walls, {len(colliding)} colliding geoms")
     liquid = m.geom("task_beaker_liquid").id
     check("the liquid is a mass only: no collision, invisible", not (m.geom_contype[liquid] or m.geom_conaffinity[liquid]) and m.geom_rgba[liquid][3] == 0.0)
@@ -103,7 +104,7 @@ def main():
     check("outer diameter 70 mm (the box corners stick out 0.3 mm a side)", abs(2 * rad.max() - cfg["outer_diameter"]) < 0.0007 and rad.min() > dim["r_in"] - 0.0006,
           f"outer {2000 * rad.max():.2f} mm, inner {2000 * rad.min():.2f} mm")
     check("the site beaker_base is at the body origin (the bottom centre)", np.allclose(m.site("beaker_base").pos, 0.0))
-    check("150 explicit contact pairs: 2 hands x 3 gripper geoms x 25 beaker geoms", m.npair == 150, f"{m.npair}")
+    check(f"{6 * (n_seg + 1)} explicit contact pairs: 2 hands x 3 gripper geoms x {n_seg + 1} beaker geoms", m.npair == 6 * (n_seg + 1), f"{m.npair}")
 
     print("\n2. the friction MuJoCo uses in the contacts")
     gripper_geoms = [f"openarm_{sd}_{g}" for sd in ("left", "right") for g in cfg["gripper_geoms"]]

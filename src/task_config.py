@@ -116,7 +116,7 @@ BEAKER_CFG = {
     "outer_diameter": 0.070,               # m. The gripper opens to ~84 mm between the finger pads (7 mm of margin a side) [row M102 PENDING David: no decision recorded]
     "height": 0.100,                       # m [row M102 PENDING David: no decision recorded]
     "wall": 0.002,                         # m, glass wall thickness (also the bottom disk's thickness) [row M102 PENDING David: no decision recorded]
-    "n_segments": 24,                      # thin box geoms in the wall ring; 24 keeps the polygon 0.29 mm from a circle (16: 0.65 mm, 32: 0.16 mm) [row M081]
+    "n_segments": 48,                      # thin box geoms in the wall ring (48 since 2026-10-26, was 24): a many-sided ring stands in for a round beaker; with 24 the flat 9.2 mm facets touched the finger pads at a facet edge (2.3 mm from the pad tip), with 48 (4.6 mm facets) the contact sits at the pad centre. Diameter, height, wall and mass do not change; the physics costs about 17 % more CPU time per simulated second [rows M081, M191]
     "glass_mass": 0.100,                   # kg, shared by the wall and the bottom by volume (a 250 ml borosilicate beaker of this size) [row M081]
     "liquid_mass": 0.100,                  # kg, a rigid mass inside, low in the beaker (100 g of water fills 29 mm); 0 = an empty beaker. No visuals yet [row M081]
     "liquid_density": 1000.0,              # kg/m^3, gives the height of the liquid column (where its mass sits) [row M102 PENDING David: no decision recorded]

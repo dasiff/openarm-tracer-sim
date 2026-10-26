@@ -17,7 +17,7 @@ Method
      axis roughly horizontal). The TCP positions are stored in the openarm_body_link0 frame. The pedestal and the
      base only move that frame rigidly (it sits 0.3048 + q above base_link, q = the lift command (the pedestal height; the old two-stage pedestal was 0.75 + 2q)), so one sample
      set serves every base pose and pedestal height; the sampling is not repeated per candidate.
-     (experiments/workspace_sweep.py was not reused: it is a physics-stepped sweep of 78k poses on the old
+     (experiments/workspace_sweep.py (retired 2026-10-26, docs/retired_scripts.md) was not reused: it is a physics-stepped sweep of 78k poses on the old
      single_block scene through the pre-position-actuator controller, far too slow for millions of samples, and
      its CSV predates the pedestal change.)
   2. Candidate grid: standoff (base front edge to bench edge) x lateral offset along the bench x pedestal command

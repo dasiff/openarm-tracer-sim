@@ -1,0 +1,19 @@
+# Retired scripts
+
+Seven old scripts were deleted on 2026-10-26 (David's decision) because they were obsolete. They are not lost: the commit just before the deletion is tagged `before-script-cleanup`, and each can be restored with the command below it.
+
+**About the tag.** `before-script-cleanup` is a local git tag on the last commit that still has the scripts. A tag is not sent by a normal push: it must be pushed too (`git push origin before-script-cleanup`, or `git push origin --tags`) for anyone else to see it. It goes out with the next push David approves; until then only this machine has it.
+
+To look at a script without restoring it: `git show before-script-cleanup:experiments/<name>.py`.
+
+| script | what it did | why it was retired | restore |
+|---|---|---|---|
+| `experiments/arm_hold_diagnosis.py` | Diagnosed why the old arm PD held some poses perfectly and let others sag 81 to 262 mm (static gravity load against the compensation, effective inertia, explicit-PD stability margins, contacts); a diagnosis only. | The question was answered (the arms are MuJoCo position actuators with armature now), and the script was already broken: it looks for the old pedestal joint "MiddleBottom", which no longer exists. | `git checkout before-script-cleanup -- experiments/arm_hold_diagnosis.py` |
+| `experiments/arm_hold_fixes.py` | What-if tests (in memory only) for the wrist PD chatter that `arm_hold_diagnosis.py` found: smaller wrist damping, a half-size timestep, native position actuators. | Same issue, long fixed; it imported `arm_hold_diagnosis.py`, so it could not run without it. | `git checkout before-script-cleanup -- experiments/arm_hold_fixes.py experiments/arm_hold_diagnosis.py` (it needs the diagnosis script) |
+| `experiments/realistic_snap.py` | Looked for a realistic arm motion that shows the IK solver's elbow snap with physics on, and filmed it. | A demo for a solver problem that the safety filter and the neighbourhood start address; it depended on the old hold scripts' model setup and was not run any more. | `git checkout before-script-cleanup -- experiments/realistic_snap.py` |
+| `experiments/workspace_sweep.py` | Swept arm joint angles with physics stepping (78,125 poses) to map the workspace into a CSV. | Replaced by the reach maps (`src/reach_map.py`, `data/reach_map`) and the full check; it used the legacy controller and the old single-block scene. | `git checkout before-script-cleanup -- experiments/workspace_sweep.py` |
+| `experiments/run_with_dummy_policy.py` | Ran a dummy policy in the viewer on the old single-block scene and captured snapshots. | An early smoke script; the control loop, the episode runner and the pipeline tests replaced it; it used the legacy controller. | `git checkout before-script-cleanup -- experiments/run_with_dummy_policy.py` |
+| `experiments/chemistry_lab_tracer_teleop.py` | Keyboard teleop of the Tracer base alone in the chemistry lab scene, with a raw GLFW window. | An early base-only teleop; `experiments/combined_controller.py` (the viewer app with the real control loop) replaced it. | `git checkout before-script-cleanup -- experiments/chemistry_lab_tracer_teleop.py` |
+| `experiments/empty_room_joint_test.py` | For each of the 20 actuators: moved only that one in an empty room and logged the before and after state of every joint (a CSV for checking the actuator-to-joint wiring). | A one-time wiring check of the first model; the actuators have since been rebuilt (position actuators, one gripper actuator) and other tests cover them. | `git checkout before-script-cleanup -- experiments/empty_room_joint_test.py` |
+
+Nothing else imports or calls these scripts. The remaining mentions are history or lists: `docs/session_log.md` (a log of an old session), `legacy/README.md` and `README.md`'s file tree (updated to say they are retired), and a comment in `experiments/beaker_hotplate_staging_search.py`.

@@ -130,9 +130,8 @@ openarm-tracer-sim/
 │   ├── target_mode_test.py        # test of the arm / gripper target modes (interpolate / hold) and of the per-source command rate
 │   ├── viewer_profile.py          # Where the wall-clock time of a viewer run goes (cProfile)
 │   ├── camera_snapshot.py         # Render the simulated cameras once to PNGs
-│   ├── chemistry_lab_tracer_teleop.py
-│   ├── run_basic_sim.py, run_with_dummy_policy.py, test_controller.py
-│   └── workspace_sweep.py, visualize_workspace.py, empty_room_joint_test.py, ...
+│   ├── run_basic_sim.py, test_controller.py
+│   └── visualize_workspace.py, ...      # seven obsolete scripts were retired 2026-10-26: see docs/retired_scripts.md (tag before-script-cleanup)
 ├── data/                    # Logged trajectories, camera snapshots, diagnostics
 ├── docs/
 │   ├── TODO.md              # Roadmap and open items

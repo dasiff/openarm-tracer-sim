@@ -1,8 +1,8 @@
 # legacy/
 
 Modules that the current simulator no longer uses. They are kept only for the old experiments and policies that still import them
-(`experiments/test_controller.py`, `run_with_dummy_policy.py`, `workspace_sweep.py`, `arm_hold_*`, `branch_jump_demo.py`, `pedestal_lift_test.py`,
-`empty_room_joint_test.py`, and `models/policies/*`). Nothing in `src/` imports them.
+(`experiments/test_controller.py`, `arm_hold_drive_test.py` (the other `arm_hold_*`, `run_with_dummy_policy.py` and `workspace_sweep.py` were retired 2026-10-26, see docs/retired_scripts.md), `branch_jump_demo.py`, `pedestal_lift_test.py`,
+(`empty_room_joint_test.py`, retired) and `models/policies/*`). Nothing in `src/` imports them.
 
 - `controller.py`: `RobotController`, the old per-joint proportional-derivative controller. Since the arm and finger joints are MuJoCo position
   actuators (`src/arm_actuators.py`) it only passes their targets through.

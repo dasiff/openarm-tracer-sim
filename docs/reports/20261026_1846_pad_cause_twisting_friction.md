@@ -1,5 +1,8 @@
 # Why the contacts sit near the pad tips, and twisting friction at the finger pads (2026-10-26)
 
+> **ERRATUM (2026-10-26, found while doing the next task; see docs/reports/20261026_2200_parallel_pads_rounder_beaker.md).** The "toe-in of 3.09 degrees per pad" in this report is WRONG. My pad-face measurement counted every triangle within 25 degrees of the closing axis and within 3 mm of the innermost plane, which also takes in the pad's chamfered root-side edge (a 17 degree triangle). The pad's flat face alone is 12.2 mm along the approach by 23.7 mm, and it is parallel to the closing direction within 0.15 degrees per pad (0.39 degrees between the two faces, gap 5.43 vs 5.37 mm over the face). So the toe-in explanation in Step 1 (summary, section a and the interpretation d) does not hold. The measured contact positions, the facet findings and all of Step 2 (condim 4, torsional friction) are unaffected: they were measured, not derived from the angle.
+
+
 Written for: David, deciding whether the twisting friction and the beaker's facets are acceptable. Not pushed. Step 1 is measurement only; step 2 is the behavior change you decided (row M189). Every MuJoCo run today in this task was one process at a time (I checked that none was running before each start).
 
 ## Summary

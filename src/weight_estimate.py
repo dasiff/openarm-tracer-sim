@@ -19,6 +19,33 @@ import numpy as np
 G = 9.81
 
 
+def reading_status(speeds, trigger_t, now, speed_thr, window_s, max_wait_s, rate_hz):
+    """Decides, at one tick, whether the hand-load reading can be taken at a handoff (decisions-log M192).
+
+    The reading needs the arm still: the largest joint speed of each of the last `window_s` seconds below `speed_thr`. It must also come soon after the handoff: if the arm is not still within
+    `max_wait_s` of the handoff, the answer is "no reading" (a reading taken later, in the next move, is not the weight at the handoff). The window may reach back before the handoff, as it did
+    when the arm was already still.
+
+    Args:
+        speeds (sequence of float): The largest absolute joint speed (rad/s) of the arm at each tick up to now, the last one being now.
+        trigger_t (float): Time of the handoff (s).
+        now (float): Time of the last tick (s).
+        speed_thr (float): Still means below this speed (rad/s).
+        window_s (float): Length of the still window (s).
+        max_wait_s (float): Longest wait after the handoff (s), WEIGHT_READING_CFG["max_wait_s"].
+        rate_hz (float): Ticks per second of `speeds`.
+
+    Returns:
+        str: "take" (the arm is still now and it is in time), "wait" (not still yet, still in time) or "no reading" (out of time).
+    """
+    n = int(round(window_s * rate_hz))
+    late = now - trigger_t > max_wait_s
+    still = len(speeds) >= n and all(abs(v) < speed_thr for v in list(speeds)[-n:])
+    if still and not late:
+        return "take"
+    return "no reading" if late or now - trigger_t >= max_wait_s else "wait"
+
+
 def hand_load(model, qpos, applied7, arm, gff):
     """Fits the load at the pad centre of one arm.
 

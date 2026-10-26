@@ -42,14 +42,15 @@ from src.gravity_ff import ArmGravityFeedforward  # noqa: E402
 from src.mpvi_pipeline import make_pipeline_task  # noqa: E402
 from src.task_beaker_hotplate import load_task  # noqa: E402
 from src.task_config import BEAKER_CFG, GRIP_FORCE_TABLE, MINK_CFG, PICK_PLACE_CFG, TASK_CFG  # noqa: E402
-from src.weight_estimate import hand_load_with_balance_point  # noqa: E402
+from src.task_config import WEIGHT_READING_CFG  # noqa: E402
+from src.weight_estimate import hand_load_with_balance_point, reading_status  # noqa: E402
 from stance_select_test import PLAN4  # noqa: E402
 import grip_pad_contact as gpc  # noqa: E402     # pad coordinates of the contacts (step 2 of Oct 26, twisting friction)
 
 HZ = 150
 STILL_SPEED, WINDOW_S = 0.005, 0.30            # strict still window (rad/s, s)
 LOOSE_SPEED, LOOSE_WINDOW_S = 0.02, 0.20       # the module's own settled speed
-TIMEOUT_S = 6.0
+TIMEOUT_S = WEIGHT_READING_CFG["max_wait_s"]      # how long after the handoff the arm may take to be still (src/task_config.py, row M192 PENDING David)
 H = {"events": [], "arm": None, "S": None, "cmd": None}
 
 
@@ -281,10 +282,13 @@ def make_sampler(model, data):
         keep = []
         for item in R["pending"]:
             lab, ev, thr, win, strict = item
-            if measure(lab, ev, thr, win, strict):
+            nwin = int(round(win * HZ))
+            recent = np.abs(np.array(R["qd"][-nwin:])).max(axis=1) if R["qd"] else []
+            status = reading_status(recent, ev["t"], t, thr, win, TIMEOUT_S, HZ)
+            if status == "take" and measure(lab, ev, thr, win, strict):
                 continue
-            if t - ev["t"] > TIMEOUT_S:
-                R["readings"].append({"label": lab, "strict": strict, "event": ev["name"], "trigger_t": ev["t"], "failed": f"not still for {win} s below {thr} rad/s within {TIMEOUT_S} s"})
+            if status == "no reading":
+                R["readings"].append({"label": lab, "strict": strict, "event": ev["name"], "trigger_t": ev["t"], "failed": f"no reading: not still for {win} s below {thr} rad/s within {TIMEOUT_S} s of the handoff"})
                 continue
             keep.append(item)
         R["pending"] = keep
@@ -329,6 +333,8 @@ def main(args):
     cfg = {**BEAKER_CFG, "liquid_mass": args.liquid}
     if args.segments:
         cfg["n_segments"] = args.segments                                   # harness only: same diameter, height, wall and mass (David, Oct 26, step 3)
+    if args.grip_force and args.grip_force > robot_specs.ARM_ACTUATOR_SPECS["fingers"]["force_limit"]:
+        robot_specs.ARM_ACTUATOR_SPECS["fingers"]["force_limit"] = args.grip_force      # harness only, this process: the gripper's ceiling raised to the tested force (the default 9 N is unchanged)
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
     task = make_pipeline_task(PLAN4, module_hook=make_hook(), grip_force=(args.grip_force or None))       # harness only (David, Oct 26, step 4): a fixed higher cap for this run; GRIP_FORCE_TABLE is not changed

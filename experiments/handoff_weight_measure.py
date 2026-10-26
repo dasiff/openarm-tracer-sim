@@ -36,14 +36,15 @@ from src.gravity_ff import ArmGravityFeedforward  # noqa: E402
 from src.mpvi_pipeline import make_pipeline_task  # noqa: E402
 from src.task_beaker_hotplate import load_task  # noqa: E402
 from src.task_config import BEAKER_CFG, TASK_CFG  # noqa: E402
-from src.weight_estimate import hand_load  # noqa: E402
+from src.task_config import WEIGHT_READING_CFG  # noqa: E402
+from src.weight_estimate import hand_load, reading_status  # noqa: E402
 from stance_select_test import PLAN4  # noqa: E402
 
 STILL_SPEED = 0.005          # rad/s: every joint of the arm slower than this (the module's own settled speed is 0.02)
 WINDOW_S = 0.30              # s: the mean is taken over this long a still window
 LOOSE_SPEED = 0.02           # rad/s: for the extra reading at the end of BACK (the module's settled speed)
 LOOSE_WINDOW_S = 0.20
-TIMEOUT_S = 6.0
+TIMEOUT_S = WEIGHT_READING_CFG["max_wait_s"]      # how long after the handoff the arm may take to be still (src/task_config.py, row M192 PENDING David)
 H = {"events": [], "arm": None, "S": None, "slip": {"rel0": None, "max_mm": 0.0, "track": True, "at": {}}, "series": []}
 
 
@@ -140,10 +141,13 @@ def make_sampler(model, data):
         keep = []
         for item in R["pending"]:
             label, ev, thr, win, strict = item
-            if measure(label, ev, thr, win, strict):
+            nwin = int(round(win * 150))
+            recent = np.abs(np.array(R["qd"][-nwin:])).max(axis=1) if R["qd"] else []
+            status = reading_status(recent, ev["t"], t, thr, win, TIMEOUT_S, 150)
+            if status == "take" and measure(label, ev, thr, win, strict):
                 continue
-            if t - ev["t"] > TIMEOUT_S:
-                R["results"].append({"label": label, "strict": strict, "event": ev["name"], "trigger_t": ev["t"], "failed": f"not still for {win} s below {thr} rad/s within {TIMEOUT_S} s"})
+            if status == "no reading":
+                R["results"].append({"label": label, "strict": strict, "event": ev["name"], "trigger_t": ev["t"], "failed": f"no reading: not still for {win} s below {thr} rad/s within {TIMEOUT_S} s of the handoff"})
                 continue
             keep.append(item)
         R["pending"] = keep

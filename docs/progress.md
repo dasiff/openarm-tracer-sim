@@ -261,3 +261,5 @@ UPDATE 20261026_142915: step 2 selections DONE (data/checker_start/20261026_1422
 RUN step 1: tmux fct, full_check_test, log data/logs/fct_20261026_152649.log
 UPDATE 20261026_160137: step 1 code done+committed; full_check_test run 152649 DIED silently at 15:28 (I had loaded a model in a second process at the same time: my fault, the single-instance rule). Steps 2 and 3 done (M188; 7 scripts retired, tag before-script-cleanup, docs/retired_scripts.md). Step 4 harness written. RUN again: tmux fct2, full_check_test, log data/logs/fct2_20261026_160137.log; NO other MuJoCo process until it ends. NEXT: grip_pad_contact episode, report.
 UPDATE 20261026_160416: step 1 DONE: full_check_test 31/31 (log data/logs/fct2_20261026_160137.log). RUN step 4: tmux gp, grip_pad_contact.py, log data/logs/gp_20261026_160416.log, result data/grip_pad/20261026_160416/result.json
+
+## 2026-10-26 16:11 TASK steps 1-5: DONE. Report docs/reports/20261026_1611_neighbourhood_start_scripts_retired_grip_pads.md. Tag before-script-cleanup is local. Not pushed.

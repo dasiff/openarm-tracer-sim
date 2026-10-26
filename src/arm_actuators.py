@@ -18,7 +18,8 @@ What it does
      actuators is now the target angle in rad.
   3. One gripper position actuator per hand, on finger_joint1 (finger_joint2 follows through the joint equality). ARM_ACTUATOR_SPECS["fingers"] gives the numbers per finger;
      the actuator drives both fingers, so its gain, damping and force limit are "fingers_per_actuator" (2) times those.
-  4. Gravity compensation, always on: gravcomp = 1 on both arms' link1 through the fingers
+  4. Gravity compensation, always on. TEMPORARY switch ARM_ACTUATOR_SPECS["gravity_comp"] (M185): "feedforward" (default): no gravcomp in the physics; src/gravity_ff.py computes the arm's gravity torque
+     and the control loop adds it to the targets (ctrl = q_target + tau_ff / kp), so the ctrlrange here is widened by torque limit / kp; "physics": gravcomp = 1 on both arms' link1 through the fingers
      (ARM_ACTUATOR_SPECS["gravcomp_bodies"]). Assumes the real controller compensates for gravity.
   5. Integrator implicitfast. The scene XML asks for "implicit". Both integrate the actuator and joint
      damping terms implicitly, which is what makes the servo stable; they differ only in that "implicit"
@@ -47,20 +48,25 @@ def _make_position(act, kp, kv, lo, hi, fmax):
 def add_arm_actuators(spec):
     """Apply the arm armature, the position actuators on arm and fingers, gravcomp and the integrator."""
     specs = robot_specs.ARM_ACTUATOR_SPECS
+    if specs["gravity_comp"] not in ("feedforward", "physics"):
+        raise ValueError("ARM_ACTUATOR_SPECS['gravity_comp'] is 'feedforward' or 'physics'")
+    ff = specs["gravity_comp"] == "feedforward"
     for side in ("left", "right"):
         for i, j in specs["joints"].items():
             joint, act = spec.joint(f"openarm_{side}_joint{i}"), spec.actuator(f"{side}_joint{i}_ctrl")
             if joint is None or act is None:
                 raise ValueError(f"arm joint/actuator for {side} joint {i} not found in model")
             joint.armature = j["armature"]
-            _make_position(act, j["kp"], j["kv"], joint.range[0], joint.range[1], j["torque_nm"])
+            m = j["torque_nm"] / j["kp"] if ff else 0.0         # feedforward: the target plus tau_ff / kp may leave the joint range (the loop clips the target itself)
+            _make_position(act, j["kp"], j["kv"], joint.range[0] - m, joint.range[1] + m, j["torque_nm"])
         f = specs["fingers"]
         n = f["fingers_per_actuator"]
         joint, act = spec.joint(f"openarm_{side}_finger_joint1"), spec.actuator(f"{side}_gripper_ctrl")
         if joint is None or act is None:
             raise ValueError(f"finger joint or gripper actuator for the {side} hand not found in model")
-        _make_position(act, n * f["kp"], n * f["kv"], joint.range[0], joint.range[1], n * f["force_limit"])
-        for name in specs["gravcomp_bodies"]:
+        m = n * f["force_limit"] / (n * f["kp"]) if ff else 0.0
+        _make_position(act, n * f["kp"], n * f["kv"], joint.range[0] - m, joint.range[1] + m, n * f["force_limit"])
+        for name in specs["gravcomp_bodies"] if not ff else ():
             body = spec.body(f"openarm_{side}_{name}")
             if body is None:
                 raise ValueError(f"gravcomp body openarm_{side}_{name} not found in model")

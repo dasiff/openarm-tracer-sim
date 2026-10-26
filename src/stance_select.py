@@ -286,7 +286,7 @@ def carry_blocked(a, b, others, shoulder, cfg=BENCH_STANCE_CFG):
         if c["z1"] <= zb:
             continue                                                         # its top is not above the beaker's bottom
         d = max(float(slice_distance(c["xy"], shoulder, a["xy"], b["xy"])) - c["radius"], 0.0)
-        if d < rr and (worst is None or d < worst["distance_m"]):
+        if d <= rr and (worst is None or d < worst["distance_m"]):            # "<=": an obstacle that overlaps the slice (gap 0) blocks even with a zero margin (M180, David 2026-10-26)
             worst = {"obstacle": c["name"], "distance_m": d, "limit_m": rr}
     return worst
 
@@ -333,7 +333,7 @@ def carry_blocked_mask(objs, X, Y, yaw, rg, arm, cfg=BENCH_STANCE_CFG):
             seen.add(c["name"])
             if c["z1"] <= zb:
                 continue
-            out |= np.maximum(slice_distance(c["xy"], apex, a["xy"], b["xy"]) - c["radius"], 0.0) < cfg["carry_slice_margin_m"]
+            out |= np.maximum(slice_distance(c["xy"], apex, a["xy"], b["xy"]) - c["radius"], 0.0) <= cfg["carry_slice_margin_m"]
     return out
 
 

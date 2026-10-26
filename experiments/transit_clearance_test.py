@@ -75,7 +75,7 @@ def main():
     check("... and the old line check passed it", not old_line_blocked(c1))
     mid = (np.asarray(a["xy"]) + np.asarray(b["xy"])) / 2
     out_dir = (mid - sh) / np.linalg.norm(mid - sh)
-    cfg0 = {**cfg, "carry_slice_margin_m": 0.001}     # 1 mm: the check blocks when the gap is under the margin, so an exact 0 never blocks
+    cfg0 = {**cfg, "carry_slice_margin_m": 0.0}       # zero margin: an obstacle that overlaps the slice still blocks (the test is "gap <= margin", M180)
     c2 = cyl("bulge", tuple(mid + 0.010 * out_dir), 0.005, 0.96, 1.2)    # 10 mm beyond the chord, inside the arc (the arc is about 16 mm beyond the chord at its middle), the line check's distance to the chord is over its radius
     check("an obstacle in the arc's bulge, outside the straight line between the grasp points, is blocked", carry_blocked(a, b, [c2], sh, cfg0) is not None and float(slice_distance(c2["xy"], sh, a["xy"], b["xy"])) == 0.0, f"{carry_blocked(a, b, [c2], sh, cfg0)}")
     line_gap = abs(float(np.dot(np.asarray(c2["xy"]) - np.asarray(a["xy"]), [0.0, 1.0])))

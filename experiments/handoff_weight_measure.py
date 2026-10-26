@@ -44,7 +44,7 @@ WINDOW_S = 0.30              # s: the mean is taken over this long a still windo
 LOOSE_SPEED = 0.02           # rad/s: for the extra reading at the end of BACK (the module's settled speed)
 LOOSE_WINDOW_S = 0.20
 TIMEOUT_S = 6.0
-H = {"events": [], "arm": None, "S": None, "slip": {"rel0": None, "max_mm": 0.0, "track": True, "at": {}}}
+H = {"events": [], "arm": None, "S": None, "slip": {"rel0": None, "max_mm": 0.0, "track": True, "at": {}}, "series": []}
 
 
 def make_hook():
@@ -125,6 +125,8 @@ def make_sampler(model, data):
                 d = 1000 * float(np.linalg.norm(rel - sl["rel0"]))
                 sl["max_mm"] = max(sl["max_mm"], d)
                 sl["last_mm"] = d
+                if len(R["t"]) % 15 == 0:                      # every 0.1 s: time, the beaker's change in the pad frame, the step, the arm's largest joint speed
+                    H["series"].append([round(t, 2), round(d, 2), f"{prim}:{cur['name']}", float(np.abs(data.qvel[arm.vadr]).max()), float(data.qpos[model.joint('openarm_left_finger_joint1').qposadr[0]])])
             if prim == "place" and cur["name"] == "BACK":
                 sl["track"] = False
         # new step-end events
@@ -166,7 +168,7 @@ def main(args):
     ok, _ = task["check_success"](sim.model, sim.data)
     true_kg = float(sim.model.body_mass[sim.model.body("task_beaker").id])          # the answer key, read only now
     res = {"liquid_kg": args.liquid, "true_total_kg": true_kg, "outcome": s["outcome"], "failure": state["failure"], "status": state["status"], "beaker_on_hotplate": bool(ok),
-           "readings": holder["s"]["state"]["results"], "slip": {"max_mm": H["slip"]["max_mm"], "last_mm": H["slip"].get("last_mm"), "rel0_m": None if H["slip"]["rel0"] is None else [float(x) for x in H["slip"]["rel0"]]},
+           "readings": holder["s"]["state"]["results"], "slip_series": H["series"], "slip": {"max_mm": H["slip"]["max_mm"], "last_mm": H["slip"].get("last_mm"), "rel0_m": None if H["slip"]["rel0"] is None else [float(x) for x in H["slip"]["rel0"]]},
            "thresholds": {"still_speed": STILL_SPEED, "window_s": WINDOW_S, "loose_speed": LOOSE_SPEED, "loose_window_s": LOOSE_WINDOW_S}}
     tmp = out / "result.json.tmp"
     tmp.write_text(json.dumps(res, indent=1, default=str))

@@ -230,3 +230,5 @@ STEP 3 DONE: full_check_test 31/31, transit_clearance_test 27/27, mpvi_pipeline_
 STEP 4 DONE 2026-10-26: full suite p5_20261026_023829 finished ALL_DONE, every test exit 0 (summary data/logs/suite_p5_20261026_023829_summary.txt); mpvi_text_test skipped (Gemini 503, not run on the new code). No run in progress. NEXT: step 5 Part 5 report (docs/reports), then mpvi_text_test cache-only check. Status report docs/reports/20261026_1030_status.md.
 MPVI_TEXT CACHE-ONLY ORACLE RUN: tmux mtx, log data/logs/mpvi_text_oracle_20261026_103018.log, started 10:30:18 (no API call: mode cache_only)
 STEP 5 DONE: report docs/reports/20261026_1100_part5_hand_angle.md; mpvi_text_test cache-only oracle 9/9 (log data/logs/mpvi_text_oracle_20261026_103018.log). Not pushed.
+
+## 2026-10-26 TASK Part C gravity compensation read-only: DONE. Report docs/reports/20261026_1110_gravity_comp_readonly.md. No code changed; Parts A (push) and B (place angle) of the earlier prompt were replaced by this message and NOT done. Not pushed.

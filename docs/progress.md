@@ -256,3 +256,5 @@ UPDATE 20261026_142253: step 1 results in (data/grip_failure/20261026_140242, lo
 UPDATE 20261026_142915: step 2 selections DONE (data/checker_start/20261026_142253; no rescue, no difference). RUN verification batch: tmux vf, summary data/logs/vf_20261026_142915_summary.txt: full_check_test place_theta_logic_test stance_select_pipeline_test pour_scene_test pour_timing_test arm_hold_drive_test arm_hold_diagnosis branch_jump_demo. NEXT: step 5 report.
 
 ## 2026-10-26 14:49 TASK step 1 + steps 2-5: DONE. Report docs/reports/20261026_1449_grip_checker_start_scripts.md. Not pushed.
+
+## 2026-10-26 15:26 TASK steps 1-5 (David): 1 adopt neighbourhood start (delete start_mode setting, M187 decided, rerun full_check_test), 2 record one-number weight fit (decision row + design plan small item), 3 retire 7 scripts (tag before-script-cleanup, docs/retired_scripts.md), 4 grip measurement (pad contact geometry, 0.20 kg), 5 report. Current step: 1.

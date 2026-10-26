@@ -199,6 +199,12 @@ def make_scripted_manipulation(model, data, world, side, home_q, task_cfg=TASK_C
         a = forward()
         R = pad_rotation(a, R0[:, 0])
         off = p - b                                          # the pad centre relative to the beaker's bottom centre in the hand (measured now)
+        th = S["ctx"].get("place_theta", 0.0)                # M183: the hand turn the stance selection chose for this place (radians, counter-clockwise seen from above); 0: straight forward as before
+        co, si = math.cos(th), math.sin(th)
+        Rz = np.array([[co, -si, 0.0], [si, co, 0.0], [0.0, 0.0, 1.0]])
+        R = Rz @ R                                           # the hand stays level and turns about the vertical axis through the beaker's centre: the beaker stays upright (the carry move turns it smoothly from the grasp angle)
+        off = Rz @ off                                       # the pad centre turns round the beaker's axis with the hand
+        a = Rz @ a                                           # so does the approach direction (the back-off goes out along it)
         over = np.array([hp[0] + off[0], hp[1] + off[1], p[2]])
         down = np.array([hp[0] + off[0], hp[1] + off[1], hp[2] + off[2] + cfg["setdown_gap_m"]])
         back = down.copy()
@@ -216,6 +222,7 @@ def make_scripted_manipulation(model, data, world, side, home_q, task_cfg=TASK_C
         ids = segment.get("grounded") or {}
         S["ctx"]["obj"] = ids.get("manipulated")
         S["ctx"]["end_at_zombie"] = bool(segment.get("end_at_zombie"))
+        S["ctx"]["place_theta"] = math.radians(float(segment.get("place_theta_deg", 0.0)))      # M183 (0 when the stance selection gave none: navigation off, the reference stance)
         arm.reset(data)
         C["p"], C["r"] = np.zeros(3), np.zeros(3)
         try:

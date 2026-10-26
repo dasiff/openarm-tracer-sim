@@ -61,8 +61,12 @@ def main():
     hold[ped] = PS["target_height"]
     mujoco.mj_forward(m, d)
 
+    from src.gravity_ff import for_tests
+    ff = for_tests(m)                                    # M185: the arms' gravity as a feedforward unless the setting is "physics"
+
     def step():
         d.ctrl[:] = hold
+        ff.apply(d.ctrl, d)
         d.ctrl[list(wheels)] = 0.0
         d.qvel[base_dof:base_dof + 2] = 0.0
         d.qvel[base_dof + 3:base_dof + 6] = 0.0

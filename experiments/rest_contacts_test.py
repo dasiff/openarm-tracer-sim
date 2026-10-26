@@ -62,6 +62,8 @@ def main():
     floor = m.geom("floor").id
     sphere_names = {m.geom(g).name for g in range(m.ngeom) if m.geom(g).name.startswith("contact_")}
     g_by_body = lambda b: [g for g in range(m.ngeom) if m.body(m.geom_bodyid[g]).name == b and (m.geom_contype[g] or m.geom_conaffinity[g])]
+    from src.gravity_ff import for_tests
+    ff = for_tests(m)
     for label, q in (("raised (the model's start)", robot_specs.PEDESTAL_SPECS["target_height"]), ("staging height", TASK_CFG["pedestal_q"])):
         mujoco.mj_resetData(m, d)
         d.qpos[0:7] = [-1.0, 3.5, 0.1527, 1.0, 0.0, 0.0, 0.0]               # in the open, away from the furniture
@@ -73,6 +75,7 @@ def main():
             ctrl[arm_ids(m, s)["gripper"]] = 0.044
         for _ in range(int(3.0 * robot_specs.PHYSICS_HZ)):
             d.ctrl[:] = ctrl
+            ff.apply(d.ctrl, d)                         # M185: the arms' gravity feedforward (nothing under the "physics" setting)
             d.ctrl[wheels] = 0.0
             d.qvel[base_dof:base_dof + 2] = 0.0
             d.qvel[base_dof + 3:base_dof + 6] = 0.0

@@ -55,6 +55,8 @@ def run_case(sim, pose, gains, gravcomp):
             for k, a in enumerate(ids[s]["act"]):
                 m.actuator_gainprm[a, 0] = OLD_KP[k]
                 m.actuator_biasprm[a, 1:3] = [-OLD_KP[k], -OLD_KV[k]]
+    from src.gravity_ff import for_tests
+    ff = for_tests(m) if gravcomp else None              # M185: "gravity compensation on" is the calculated feedforward unless the setting is "physics"
     mujoco.mj_resetData(m, d)
     d.qpos[0:7] = [0.0, 0.0, 0.1527, 1.0, 0.0, 0.0, 0.0]
     ped = m.actuator(robot_specs.PEDESTAL_SPECS["actuator_name"]).id
@@ -75,6 +77,8 @@ def run_case(sim, pose, gains, gravcomp):
     base_dof = int(m.jnt_dofadr[m.joint("base_float").id])
     for _ in range(int(3.0 * robot_specs.PHYSICS_HZ)):
         d.ctrl[:] = ctrl
+        if ff is not None:
+            ff.apply(d.ctrl, d)
         d.ctrl[wheels] = 0.0
         d.qvel[base_dof:base_dof + 2] = 0.0
         d.qvel[base_dof + 3:base_dof + 6] = 0.0

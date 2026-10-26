@@ -54,6 +54,7 @@ def main():
     def settle(seconds=1.0):
         for _ in range(int(round(seconds * robot_specs.PHYSICS_HZ))):
             data.ctrl[:] = st["hold"]
+            st["ff"].apply(data.ctrl, data)
             data.qvel[st["base_dof"] + 0:st["base_dof"] + 2] = 0.0      # xy and rotation held, z left to physics
             data.qvel[st["base_dof"] + 3:st["base_dof"] + 6] = 0.0
             mujoco.mj_step(model, data)

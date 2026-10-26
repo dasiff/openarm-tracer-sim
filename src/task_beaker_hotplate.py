@@ -166,6 +166,7 @@ def spawn_and_settle(sim, cfg=TASK_CFG):
             "ped" (int): Actuator id of the pedestal lift.
             "wheels" (set of int): Actuator ids of the two wheel motors.
             "base_dof" (int): Address in qvel of the base's free joint.
+            "ff": the gravity feedforward (src/gravity_ff.for_tests): call ff.apply(data.ctrl, data) after writing `hold`, before each step (a no-op under the "physics" setting).
     """
     model, data = sim.model, sim.data
     data.qpos[0:3] = [cfg["spawn_xy"][0], cfg["spawn_xy"][1], 0.22]
@@ -178,6 +179,8 @@ def spawn_and_settle(sim, cfg=TASK_CFG):
     unclaimed = [a for a in range(model.nu) if a not in wheels]
     hold = np.zeros(model.nu)
     hold[ped] = robot_specs.PEDESTAL_SPECS["target_height"]
+    from src.gravity_ff import for_tests
+    ff = for_tests(model)                            # M185: the arm's gravity feedforward under the "feedforward" setting (nothing under "physics"); callers that go on stepping with "hold" apply st["ff"] too
 
     def run(seconds):
         """Simulates `seconds` with ctrl set to `hold` and the base held still.
@@ -191,6 +194,7 @@ def spawn_and_settle(sim, cfg=TASK_CFG):
         """
         for _ in range(int(round(seconds * robot_specs.PHYSICS_HZ))):
             data.ctrl[:] = hold
+            ff.apply(data.ctrl, data)
             data.qvel[dof + 0:dof + 2] = 0.0              # base held still: xy, roll, pitch, yaw rate; z is left to
             data.qvel[dof + 3:dof + 6] = 0.0              # physics so the robot settles onto its wheels
             mujoco.mj_step(model, data)
@@ -205,7 +209,7 @@ def spawn_and_settle(sim, cfg=TASK_CFG):
     mujoco.mj_forward(model, data)
     run(cfg["resettle_s"])
 
-    return {"hold": hold, "ped": ped, "wheels": wheels, "base_dof": dof}
+    return {"hold": hold, "ped": ped, "wheels": wheels, "base_dof": dof, "ff": ff}
 
 
 # ----------------------------------------------------------------------------------------------------------

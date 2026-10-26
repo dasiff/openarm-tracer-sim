@@ -1,0 +1,53 @@
+# The real OpenArm's joint stiffness (kp, N m/rad) and damping (kd, N m s/rad), copied unchanged.
+# Source file: assets/robot/openarm_v1.0/config/arm/control_gains.yaml
+# Package: enactic/openarm_description (https://github.com/enactic/openarm_description), pinned commit 1fba2cb
+#   (the repo's gitignored download cache holds it at data/import_cache/openarm_description/; the v2.0 file
+#   assets/robot/openarm_v2.0/config/arm/control/control_gains.yaml has the same arm values and no "hand" entry).
+# Used by: src/robot_specs.py ARM_ACTUATOR_SPECS (the same numbers); experiments/gravity_ff_test.py checks they agree.
+# The file has NO gravity compensation setting, no feedforward torque and no integral gain.
+# The original file's own licence header follows, then the values.
+# Copyright 2026 Enactic, Inc.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+joint1:
+  kp: 70.0
+  kd: 2.75
+
+joint2:
+  kp: 70.0
+  kd: 2.5
+
+joint3:
+  kp: 70.0
+  kd: 2.0
+
+joint4:
+  kp: 60.0
+  kd: 2.0
+
+joint5:
+  kp: 10.0
+  kd: 0.7
+
+joint6:
+  kp: 10.0
+  kd: 0.6
+
+joint7:
+  kp: 10.0
+  kd: 0.5
+
+hand:
+  kp: 5.0
+  kd: 0.1

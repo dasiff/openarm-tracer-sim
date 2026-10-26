@@ -40,7 +40,7 @@ from src.episode_runner import run_episode  # noqa: E402
 from src.gravity_ff import ArmGravityFeedforward  # noqa: E402
 from src.mpvi_pipeline import make_pipeline_task  # noqa: E402
 from src.task_beaker_hotplate import load_task  # noqa: E402
-from src.task_config import BEAKER_CFG, GRIP_FORCE_TABLE, PICK_PLACE_CFG, TASK_CFG  # noqa: E402
+from src.task_config import BEAKER_CFG, GRIP_FORCE_TABLE, MINK_CFG, PICK_PLACE_CFG, TASK_CFG  # noqa: E402
 from src.weight_estimate import hand_load_with_balance_point  # noqa: E402
 from stance_select_test import PLAN4  # noqa: E402
 
@@ -128,11 +128,8 @@ def make_sampler(model, data):
             mujoco.mj_contactForce(model, data, i, f6)
             Fn = float(f6[0])
             nvec = np.array(c.frame[:3])
-            if a in bg:                                         # the normal points from geom1 to geom2; make it point from the finger into the beaker
-                nvec = nvec
-            else:
+            if a not in bg:                                     # the contact normal points from geom1 to geom2: make nvec point from the beaker to the other geom
                 nvec = -nvec
-            nvec = -nvec if False else nvec
             if other in fgL or other in fgR:
                 key = "L" if other in fgL else "R"
                 fin[key]["F"] += Fn
@@ -230,7 +227,7 @@ def make_sampler(model, data):
                 Cr = float(np.linalg.norm(Rotation.from_matrix(cmd[1] @ cur["R"].T).as_rotvec()))
             q = data.qpos[arm.qadr]
             lim = np.minimum(q - jr[:, 0], jr[:, 1] - q)
-            bound = lim - robot_specs.PICK_PLACE_CFG["joint_margin_rad"] if "joint_margin_rad" in getattr(robot_specs, "PICK_PLACE_CFG", {}) else lim - math.radians(10.0)
+            bound = lim - MINK_CFG["joint_margin_rad"]                  # the solver's own bound: the limit less its margin
             share = np.abs(data.actuator_force[aid]) / cap
             R["down"]["rows"].append({"t": t, "step": cur["name"], "err_mm": [1000 * float(x) for x in err], "err_norm_mm": 1000 * float(np.linalg.norm(err)), "Cp_m": Cp, "Cr_rad": Cr, "min_limit_margin_rad": float(lim.min()),
                                       "min_limit_joint": int(np.argmin(lim)) + 1, "min_solver_bound_margin_rad": float(bound.min()), "max_torque_share": float(share.max()), "max_torque_joint": int(np.argmax(share)) + 1})

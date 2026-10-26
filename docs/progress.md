@@ -235,3 +235,4 @@ STEP 5 DONE: report docs/reports/20261026_1100_part5_hand_angle.md; mpvi_text_te
 
 ## 2026-10-26 11:30 TASK: A push (DONE, remote main = b4373e4), B place angle without stance selection, C step 1 gravity feedforward (ctrl = q_target + tau_ff/kp, temp switch, measure old vs new)
 Plan: B1 compute theta at the current stance when none given; B2 update nav-off tests; B3 new test place_theta_logic_test; B4 pose_ik_iterations logging; B5 decisions row. Then C1-C6. Current step: B1.
+UPDATE 20261026_111815: B1-B3 code done, place_theta_logic_test 14/14. RUN: tmux sst, log data/logs/stance_select_test_20261026_111815.log (stance_select_test with new section 6). NEXT: held-beaker --at-reference-stance run (B2, B4 iteration numbers), decisions row M184 (B5), then Part C.

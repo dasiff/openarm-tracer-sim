@@ -23,6 +23,7 @@ import json
 import math
 import os
 import sys
+import time
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -326,9 +327,11 @@ def summarize(R):
 
 def main(args):
     cfg = {**BEAKER_CFG, "liquid_mass": args.liquid}
+    if args.segments:
+        cfg["n_segments"] = args.segments                                   # harness only: same diameter, height, wall and mass (David, Oct 26, step 3)
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
-    task = make_pipeline_task(PLAN4, module_hook=make_hook())
+    task = make_pipeline_task(PLAN4, module_hook=make_hook(), grip_force=(args.grip_force or None))       # harness only (David, Oct 26, step 4): a fixed higher cap for this run; GRIP_FORCE_TABLE is not changed
     gc.collect()
     sim = load_task(TASK_CFG, cameras=True, beaker_cfg=cfg)
     holder = {}
@@ -336,14 +339,16 @@ def main(args):
     def extra(m, d):
         holder["s"] = make_sampler(m, d)
         return {"grip_sampler": holder["s"]}
+    t0_wall, t0_sim = time.perf_counter(), float(sim.data.time)
     s = run_episode(task, sim.model, sim.data, out_dir=out / "episode", extra_sources=extra, stop_after_handoff_s=None)
+    wall_s, sim_s = time.perf_counter() - t0_wall, float(sim.data.time) - t0_sim
     state = task["pipeline"]["orchestrator"]["state"]
     ok, _ = task["check_success"](sim.model, sim.data)
     true_kg = float(sim.model.body_mass[sim.model.body("task_beaker").id])          # the answer key, read only now
     R = holder["s"]["state"]
     summ = summarize(R)
     down_rows = R["down"]["rows"]
-    res = {"liquid_kg": args.liquid, "true_total_kg": true_kg, "grip_force_cap_N_per_finger": GRIP_FORCE_TABLE["glass_beaker"], "outcome": s["outcome"], "failure": state["failure"], "status": state["status"],
+    res = {"n_segments": cfg["n_segments"], "wall_s": wall_s, "sim_s": sim_s, "wall_per_sim_s": wall_s / max(sim_s, 1e-9), "liquid_kg": args.liquid, "true_total_kg": true_kg, "grip_force_cap_N_per_finger": (args.grip_force or GRIP_FORCE_TABLE["glass_beaker"]), "outcome": s["outcome"], "failure": state["failure"], "status": state["status"],
            "beaker_on_hotplate": bool(ok), "grip": summ, "first_plate_contact": R["first_plate"], "recovery_loss": R["loss"], "readings": R["readings"],
            "down_series": down_rows[::15], "down_last": down_rows[-1] if down_rows else None, "recovery_series": R["recov"][::5], "series": R["series"],
            "pad": {"moments": R["pad"]["moments"], "extent": R["pad"]["extent"]}, "sag_caps": {"sag_max_m": PICK_PLACE_CFG["sag_max_m"], "sag_max_rad": PICK_PLACE_CFG["sag_max_rad"], "tol_m": PICK_PLACE_CFG["tol_m"], "tol_rad": PICK_PLACE_CFG["tol_rad"]}}
@@ -361,4 +366,6 @@ if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--liquid", type=float, required=True)
     ap.add_argument("--out", required=True)
+    ap.add_argument("--segments", type=int, default=0)
+    ap.add_argument("--grip-force", type=float, default=0.0)
     main(ap.parse_args())

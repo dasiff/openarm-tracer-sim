@@ -50,3 +50,39 @@ def hand_load(model, qpos, applied7, arm, gff):
     ang = float(np.degrees(np.arccos(np.clip(-f_load[2] / max(mag, 1e-12), -1.0, 1.0))))
     return {"extra_nm": extra, "weight_n": W, "mass_kg": W / G, "unexplained_down": float(np.linalg.norm(extra - W * jz) / n), "free_force_n": f_load, "free_mag_n": mag,
             "angle_from_down_deg": ang, "unexplained_free": float(np.linalg.norm(extra + J.T @ f_load) / n), "pad_point": point}
+
+
+def hand_load_with_balance_point(model, qpos, applied7, arm, gff):
+    """Weight and balance point of the load from the same extra torques (measurement only, as `hand_load`).
+
+    A weight W straight down acting at a point a (world vector from the pad centre) loads the joints with -J(p+a)^T (0, 0, -W). Moving the point by a changes the translational Jacobian by -[a]x Jr
+    (Jr the rotational Jacobian), so the motors must give  extra = W Jp_z - m^T Jr  with m = W (z x a) = W (-a_y, a_x, 0). That is linear in (W, m_x, m_y): three numbers. The vertical part of the
+    balance point a_z does not enter at all (a force along its own line of action gives the same joint torques wherever it is applied along that line), so it cannot be found from the torques at one
+    pose (nor at any two poses with the hand level); it is returned as None. The horizontal offset (a_x, a_y) = (m_y, -m_x) / W is returned in the world and, with a_z set to 0, in the pad frame.
+    Inputs and the ground rule are those of `hand_load`: no mass or centre of mass is read.
+
+    Returns:
+        dict: "weight_n", "mass_kg", "offset_world_xy_m" (a_x, a_y), "offset_pad_frame_m" (3, with a_z = 0), "a_z" None, "unexplained" (norm of the residual over the norm of the extra torque, this fit),
+        "unexplained_down_only" (the one-number fit, for comparison), "extra_nm" (7,), "pad_rot" (3, 3).
+    """
+    d = mujoco.MjData(model)
+    d.qpos[:] = qpos
+    mujoco.mj_kinematics(model, d)
+    mujoco.mj_comPos(model, d)
+    tau_g = gff.torques(d)[:7]
+    extra = np.asarray(applied7, float) - tau_g
+    point, R = arm.pad_pose(d)
+    jp, jr = np.zeros((3, model.nv)), np.zeros((3, model.nv))
+    mujoco.mj_jac(model, d, jp, jr, point, arm.tcp)
+    Jp, Jr = jp[:, arm.vadr], jr[:, arm.vadr]
+    n = max(float(np.linalg.norm(extra)), 1e-12)
+    jz = Jp[2]
+    W1 = float(jz @ extra / (jz @ jz))
+    A = np.stack([Jp[2], -Jr[0], -Jr[1]], axis=1)             # (7, 3): columns for W, m_x, m_y
+    x, *_ = np.linalg.lstsq(A, extra, rcond=None)
+    W, mx, my = (float(v) for v in x)
+    ax, ay = (my / W, -mx / W) if abs(W) > 1e-9 else (float("nan"), float("nan"))
+    a_world = np.array([ax, ay, 0.0])
+    return {"weight_n": W, "mass_kg": W / G, "offset_world_xy_m": [ax, ay], "offset_pad_frame_m": [float(v) for v in R.T @ a_world], "a_z": None,
+            "unexplained": float(np.linalg.norm(extra - A @ x) / n), "unexplained_down_only": float(np.linalg.norm(extra - W1 * jz) / n), "mass_down_only_kg": W1 / G,
+            "extra_nm": extra, "pad_rot": R, "pad_point": point}

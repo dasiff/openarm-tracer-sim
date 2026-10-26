@@ -411,6 +411,16 @@ def select_bench_stance(tagged, world, task_cfg, ctx, cfg=BENCH_STANCE_CFG, full
                 else:
                     first_nav = False
                 run = rep["runs"][-1]
+                for i in cand[:kk]:                                            # M184: a place step served from the current stance has no angle from a full check: search it here, at this stance
+                    if targets[i]["primitive"] == "place" and hasattr(full_check, "place_theta_at") and i not in run.get("place_theta_by_step", {}):
+                        pp = [p for p in targets[i]["points"] if p.get("pose") == "place"]
+                        win = full_check.place_theta_at((cur["xy"][0], cur["xy"][1], yaw, cur["q"]), pp)
+                        rep.setdefault("place_search_at_current_stance", []).append({"step": i, "stance": [float(cur["xy"][0]), float(cur["xy"][1]), float(cur["q"])], "theta_deg": win["theta_deg"], "window_deg": win["window_deg"], "width_deg": win["width_deg"], "reason": win["reason"]})
+                        if win["theta_deg"] is None:
+                            out["stop"] = win["reason"]
+                            rep["notes"].append(win["reason"])
+                            return out
+                        run.setdefault("place_theta_by_step", {})[i] = float(win["theta_deg"])
                 for i in cand[:kk]:
                     nj = _nav_before(segs, i)
                     if nj is not None:
@@ -509,11 +519,16 @@ def select_bench_stance(tagged, world, task_cfg, ctx, cfg=BENCH_STANCE_CFG, full
         nxt = plan2["segments"][j + 1] if j + 1 < len(plan2["segments"]) else None
         if seg["type"] == "manipulation" and seg.get("primitive") == "pick" and nxt is not None and nxt["type"] == "navigation" and (j + 1) in moving_nav and (j + 1) != min(moving_nav):
             seg["end_at_zombie"] = True
-    for r in rep["runs"]:                                             # M183: the hand turn the full check chose for a run's place goes to that place step (none: the skill uses 0, today's straight forward)
-        if r.get("place_theta_deg") is not None:
-            for i in r["steps"]:
-                if plan2["segments"][i].get("primitive") == "place":
-                    plan2["segments"][i]["place_theta_deg"] = float(r["place_theta_deg"])
+    for r in rep["runs"]:                                             # M183: the hand turn the full check chose for a run's place goes to that place step; M184: a place step served from the current stance has its own searched angle
+        for i in r["steps"]:
+            if plan2["segments"][i].get("primitive") == "place":
+                th = r.get("place_theta_by_step", {}).get(i, r.get("place_theta_deg"))
+                if th is not None:
+                    plan2["segments"][i]["place_theta_deg"] = float(th)
+    if full_check is not None and getattr(full_check, "pose_ik_log", None):
+        from src.full_check import pose_ik_summary
+        rep["pose_ik"] = pose_ik_summary(full_check.pose_ik_log, full_check.cfg["pose_ik_iterations"])
+        say(f"[stance] pose IK iterations: {rep['pose_ik']}")
     out.update(ok=True, plan=plan2)
     rep["chosen"] = {"xy": list(st["xy"]), "yaw": yaw, "pedestal_q": st["q"], "task_cfg_xy": list(task_cfg["staging_xy"]), "task_cfg_q": task_cfg["pedestal_q"]}
     return out

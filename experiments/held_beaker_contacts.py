@@ -99,11 +99,13 @@ def main(args):
         shutil.rmtree(out / sub, ignore_errors=True)
     out.mkdir(parents=True, exist_ok=True)
     if args.at_reference_stance:
-        BENCH_STANCE_CFG["navigation"] = False       # navigation off: the robot stays at TASK_CFG's stance (the reference stance for tests), the selection only checks that it serves the plan
+        BENCH_STANCE_CFG["navigation"] = False       # navigation off: the robot stays at TASK_CFG's stance (the reference stance for tests); the selection checks that it serves the plan and (M184) searches the place angle at that stance, as with navigation on
     task = make_pipeline_task(PLAN4)
     gc.collect()
     rep = task["stance_selection"]
     st = rep["runs"][0]["stance"] if rep else {"xy": list(TASK_CFG["staging_xy"]), "q": TASK_CFG["pedestal_q"], "yaw": TASK_CFG["staging_yaw"]}
+    if rep and rep.get("place_search_at_current_stance"):
+        print(f"place angle searched at the current stance (M184): {rep['place_search_at_current_stance']}", flush=True)
     print(f"at the reference stance {args.at_reference_stance}: stance xy {np.round(st['xy'], 3).tolist()} pedestal {st['q']}", flush=True)
     sim = load_task(cameras=True)
     src = {}

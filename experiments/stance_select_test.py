@@ -58,6 +58,16 @@ class FakeCheck:
         ok = len(self.calls) > self.fail
         return {"ok": ok, "failed": [] if ok else ["home_clearance"], "reason": "" if ok else "fake: home_clearance 10 mm"}
 
+    place_calls = []
+    theta, window = 35, True                      # what place_theta_at gives (class attributes; section 6 changes them)
+
+    def place_theta_at(self, stance, points):
+        """The place angle search at one stance (M184): the fake gives `theta` or, with window False, no window."""
+        FakeCheck.place_calls.append((tuple(stance), [p.get("path") for p in points]))
+        if not FakeCheck.window:
+            return {"theta_deg": None, "window_deg": None, "width_deg": 0, "windows": [], "reason": "no place angle window: fake"}
+        return {"theta_deg": FakeCheck.theta, "window_deg": [FakeCheck.theta - 20, FakeCheck.theta + 20], "width_deg": 40, "windows": [], "reason": ""}
+
 
 def world(beaker_xy=None, hotplate_xy=None, extra=()):
     w = WorldModel([StaticTaskSource()])
@@ -140,6 +150,18 @@ def main():
     cfg_off = {**cfg, "navigation": False}
     s6 = select_bench_stance(tagged, world(), TASK_CFG, ctx, cfg_off, say=quiet)
     check("the test scene is served from TASK_CFG's stance: kept, no stop", s6["ok"] and s6["task_cfg"]["staging_xy"] == tuple(TASK_CFG["staging_xy"]) and s6["task_cfg"]["pedestal_q"] == TASK_CFG["pedestal_q"], f"{s6['stop']}")
+    # M184 (Oct 26): navigation off no longer means "the skill turns the hand by 0": the place angle is searched at TASK_CFG's stance (the same window search) and goes to the place step.
+    # Before: this section only checked that the stance is kept. Now it also checks that the search ran at that stance, on the place points, and that its angle is in the plan.
+    s6b = select_bench_stance(tagged, world(), TASK_CFG, ctx, cfg_off, full_check=FakeCheck(fail=0), say=quiet)
+    place_seg = [g for g in s6b["plan"]["segments"] if g.get("primitive") == "place"]
+    st0 = FakeCheck.place_calls[-1][0] if FakeCheck.place_calls else None
+    check("navigation off: the place angle is searched at TASK_CFG's stance and the plan's place step carries it (no default 0)",
+          s6b["ok"] and len(FakeCheck.place_calls) == 1 and st0[:2] == tuple(TASK_CFG["staging_xy"]) and abs(st0[3] - TASK_CFG["pedestal_q"]) < 1e-9 and all(p == "carry" or p in ("setdown", "back") for p in FakeCheck.place_calls[-1][1])
+          and place_seg and all(g.get("place_theta_deg") == 35.0 for g in place_seg), f"calls {FakeCheck.place_calls}, place steps {[g.get('place_theta_deg') for g in place_seg]}")
+    FakeCheck.window = False
+    s6c = select_bench_stance(tagged, world(), TASK_CFG, ctx, cfg_off, full_check=FakeCheck(fail=0), say=quiet)
+    FakeCheck.window = True
+    check("navigation off, no window at the stance: the selection stops with 'no place angle window'", (not s6c["ok"]) and s6c["stop"].startswith("no place angle window"), f"{s6c['stop']}")
     s7 = select_bench_stance(tagged, world(beaker_xy=(1.45, 0.66), hotplate_xy=(1.25, 0.66)), TASK_CFG, ctx, cfg_off, say=quiet)
     print(f"    stop: {s7['stop']}")
     check("objects TASK_CFG's stance does not serve stop with 'needs navigation on' and the two stances", (not s7["ok"]) and s7["stop"].startswith("needs navigation on: the current stance is (0.765, 1.085)") and "the best stance" in s7["stop"])

@@ -139,6 +139,67 @@ class PathClearance:
         return self._min(self.robot, self.world, True)
 
 
+
+def _wrap_deg(d):
+    """A turn in degrees as -180 .. 180 (counter-clockwise positive)."""
+    return d - 360 if d > 180 else d
+
+
+def choose_place_window(passing_deg, step, need):
+    """The place angle from which hand turns work (the pure part of FullCheck._place_window; decisions-log M183 and M184).
+
+    The turns are `step` degrees apart all the way round (0 to 360 - step). A window is a run of consecutive working turns, and the circle is closed: 345, 350, 355, 0, 5 is ONE window.
+    Rules: the widest window (most turns) wins; two equally wide windows: the one that comes first going up from 0 degrees, a window across 0 counting as the one at 0 (so it wins a tie);
+    the chosen angle is the middle turn of the window listed from its first to its last turn: with an odd number of turns the exact middle, with an even number (the middle falls between two
+    steps) the later of the two middle turns. The width is (turns - 1) * step, first turn to last; under `need` degrees there is no window.
+
+    Args:
+        passing_deg (iterable of int): The working turns, degrees, multiples of `step`, 0 to 360 - step.
+        step (int): The spacing of the turns, degrees.
+        need (float): The smallest width (degrees) of the chosen window.
+
+    Returns:
+        dict: "theta_deg" (chosen turn, -180..180, or None), "window_deg" ([first, last] or None), "width_deg", "passing_deg" (wrapped), "windows" (every run [first, last], wrapped), "reason" ("" or why none).
+    """
+    ps = set(int(d) % 360 for d in passing_deg)
+    turns = list(range(0, 360, step))
+    runs, cur = [], []
+    for deg in turns:
+        if deg in ps:
+            cur.append(deg)
+        elif cur:
+            runs.append(cur)
+            cur = []
+    if cur:
+        runs.append(cur)
+    if len(runs) > 1 and runs[0][0] == 0 and runs[-1][-1] == 360 - step:       # a window across 0 degrees
+        runs[0] = runs[-1] + runs[0]
+        runs.pop()
+    out = {"theta_deg": None, "window_deg": None, "width_deg": 0, "passing_deg": [_wrap_deg(d) for d in turns if d in ps], "windows": [[_wrap_deg(r[0]), _wrap_deg(r[-1])] for r in runs], "reason": ""}
+    if not runs:
+        out["reason"] = "no place angle window: no hand turn works"
+        return out
+    best = max(runs, key=len)                          # max keeps the first of equals (see the tie rule above)
+    out["window_deg"], out["width_deg"] = [_wrap_deg(best[0]), _wrap_deg(best[-1])], (len(best) - 1) * step
+    if out["width_deg"] < need:
+        out["reason"] = f"no place angle window: the widest window of working hand turns is {out['width_deg']} degrees ({out['window_deg'][0]} to {out['window_deg'][1]}), under the {need} degrees minimum"
+        return out
+    out["theta_deg"] = _wrap_deg(best[len(best) // 2])
+    return out
+
+
+def pose_ik_summary(log, limit):
+    """The pose_ik_iterations report from FullCheck.pose_ik_log: the iterations the accepted start of each stop used (typical = median, 90th percentile, largest, and how many sit at `limit`), and
+    how many batches had at least one start run to the limit (random starts often do; they are not accepted)."""
+    acc = [e["accepted"] for e in log if e["accepted"] is not None]
+    out = {"limit": limit, "stops_accepted": len(acc), "batches": len(log), "batches_not_accepted": len(log) - len(acc),
+           "batches_with_a_start_at_limit": sum(1 for e in log if e["batch_at_limit"] > 0)}
+    if acc:
+        a = np.asarray(acc)
+        out.update(typical=float(np.median(a)), p90=float(np.percentile(a, 90)), largest=int(a.max()), accepted_at_limit=int(np.sum(a >= limit)))
+    return out
+
+
 class FullCheck:
     """The full check of a stance candidate (see the module docstring).
 
@@ -161,6 +222,7 @@ class FullCheck:
             say (callable): Where progress lines go. Defaults to print.
         """
         self.cfg, self.maps, self.say = cfg, maps or {}, say
+        self.pose_ik_log = []                                  # one entry per IK batch of a skill stop (see _log_ik)
         t0 = time.perf_counter()
         self.sim = load_task(task_cfg, cameras=True, extra_hooks=[lambda spec: add_object_slots(spec, cfg["object_slots"])])
         self.model, self.scene_data = self.sim.model, self.sim.data
@@ -300,6 +362,11 @@ class FullCheck:
             R = np.array([[co, -si, 0.0], [si, co, 0.0], [0.0, 0.0, 1.0]]) @ R
         return t, R
 
+    def _log_ik(self, pt, phase, iters, accepted):
+        """One batch of the exact-pose IK of a skill stop, for the pose_ik_iterations report: the iterations each start used (`iters`; the limit means it did not converge) and those of the accepted
+        start (None: no start of the batch was accepted)."""
+        self.pose_ik_log.append({"path": pt.get("path"), "phase": phase, "starts": int(len(iters)), "batch_max": int(np.max(iters)), "batch_at_limit": int(np.sum(iters >= self.cfg["pose_ik_iterations"])), "accepted": accepted})
+
     def _solve_pose_point(self, stance, pt, t, theta, prev, warm):
         """The IK of one skill point at the skill's own pose (no turn or tilt allowance): reached within the episode's waypoint tolerance (PICK_PLACE_CFG tol_m, tol_rad) and admissible (no collision,
         clear of the furniture and the objects, no elbow flip against `prev`). Returns (joint vector, None, source) or None."""
@@ -330,12 +397,14 @@ class FullCheck:
             self.seconds["ik_solve"] = self.seconds.get("ik_solve", 0.0) + time.perf_counter() - t0
             cand = np.nonzero(good)[0]
             if not len(cand):
+                self._log_ik(pt, phase, iters, None)
                 continue
             t0 = time.perf_counter()
             adm = self._admissible(stance, Q[cand], prev, True)
             self.seconds["ik_admissible"] = self.seconds.get("ik_admissible", 0.0) + time.perf_counter() - t0
             if adm.any():
                 j = cand[int(np.argmax(adm))]
+                self._log_ik(pt, phase, iters, int(iters[j]))
                 return Q[j], None, labels[j] if phase == "warm" and j < len(labels) else "random"
         return None
 
@@ -440,37 +509,20 @@ class FullCheck:
             if ok:
                 passing.append(deg)
                 warm = nominal_sol
-        runs, cur = [], []
-        for deg in range(0, 360, step):
-            if deg in passing:
-                cur.append(deg)
-            elif cur:
-                runs.append(cur)
-                cur = []
-        if cur:
-            runs.append(cur)
-        if len(runs) > 1 and runs[0][0] == 0 and runs[-1][-1] == 360 - step:       # a window across 0 degrees
-            runs[0] = runs[-1] + runs[0]
-            runs.pop()
-        elif len(runs) == 1 and len(runs[0]) == 360 // step:
-            pass
-        wrap = lambda d: d - 360 if d > 180 else d
-        out = {"theta_deg": None, "window_deg": None, "width_deg": 0, "passing_deg": [wrap(d) for d in passing], "windows": [[wrap(r[0]), wrap(r[-1])] for r in runs],
-               "failed_stop": {wrap(d): v for d, v in failed_at.items()}, "reason": ""}
-        if not runs:
+        out = choose_place_window(passing, step, need)
+        out["failed_stop"] = {_wrap_deg(d): v for d, v in failed_at.items()}
+        if not out["windows"]:
             counts = {}
             for _, (nm, pth) in failed_at.items():
                 counts[(nm, pth)] = counts.get((nm, pth), 0) + 1
             top = sorted(counts.items(), key=lambda kv: -kv[1])[:2]
             out["reason"] = "no place angle window: no hand turn reaches every place stop within the tolerance and passes the collision tests (most common failure: " + "; ".join(f"stance '{k[0]}' stop '{k[1]}' at {v} turns" for k, v in top) + ")"
-            return out
-        best = max(runs, key=len)
-        out["window_deg"], out["width_deg"] = [wrap(best[0]), wrap(best[-1])], (len(best) - 1) * step
-        if out["width_deg"] < need:
-            out["reason"] = f"no place angle window: the widest window of working hand turns is {out['width_deg']} degrees ({out['window_deg'][0]} to {out['window_deg'][1]}), under the {need} degrees minimum"
-            return out
-        out["theta_deg"] = wrap(best[len(best) // 2])
         return out
+
+    def place_theta_at(self, stance, place_pts):
+        """The place angle search at one stance (what the robot does when no stance selection chose an angle: navigation off, the reference stance): the same `_place_window` over the nominal stance and
+        the error stances, on the "place" points only. Returns the `_place_window` dict ("theta_deg" None and "reason" when there is no window)."""
+        return self._place_window(self._error_stances(tuple(stance)), place_pts)
 
     # ------------------------------------------------------------------ the check
     def check(self, stance, points, objects=(), source_data=None, approach_bin=None, use_cache=True):

@@ -199,7 +199,10 @@ def make_scripted_manipulation(model, data, world, side, home_q, task_cfg=TASK_C
         a = forward()
         R = pad_rotation(a, R0[:, 0])
         off = p - b                                          # the pad centre relative to the beaker's bottom centre in the hand (measured now)
-        th = S["ctx"].get("place_theta", 0.0)                # M183: the hand turn the stance selection chose for this place (radians, counter-clockwise seen from above); 0: straight forward as before
+        th = S["ctx"]["place_theta"]
+        if th is None:
+            raise ValueError("the place step has no place_theta_deg: the stance selection gives every place step its hand angle (M184)")
+        # M183/M184: th is the hand turn the stance selection chose or searched for this place (radians, counter-clockwise seen from above)
         co, si = math.cos(th), math.sin(th)
         Rz = np.array([[co, -si, 0.0], [si, co, 0.0], [0.0, 0.0, 1.0]])
         R = Rz @ R                                           # the hand stays level and turns about the vertical axis through the beaker's centre: the beaker stays upright (the carry move turns it smoothly from the grasp angle)
@@ -222,7 +225,7 @@ def make_scripted_manipulation(model, data, world, side, home_q, task_cfg=TASK_C
         ids = segment.get("grounded") or {}
         S["ctx"]["obj"] = ids.get("manipulated")
         S["ctx"]["end_at_zombie"] = bool(segment.get("end_at_zombie"))
-        S["ctx"]["place_theta"] = math.radians(float(segment.get("place_theta_deg", 0.0)))      # M183 (0 when the stance selection gave none: navigation off, the reference stance)
+        S["ctx"]["place_theta"] = None if segment.get("place_theta_deg") is None else math.radians(float(segment["place_theta_deg"]))      # M184: no default angle (0 is the marginal angle); a place without one fails below
         arm.reset(data)
         C["p"], C["r"] = np.zeros(3), np.zeros(3)
         try:

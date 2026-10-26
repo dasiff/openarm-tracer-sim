@@ -161,3 +161,33 @@ def make_constraint(target, k, cfg):
         return r, J, ok
 
     return constraint
+
+
+def make_pose_constraint(target, R_target, rot_weight=0.2):
+    """Makes the IK constraint "the pad centre is at the target and the tool frame has exactly this rotation" (the skill's own pose: level hand, approach along a fixed direction).
+
+    Unlike make_constraint (a grasp in bin k: level within a few degrees, any direction within the bin), nothing is left free: the residual is the position error and the rotation error vector. The
+    constraint says "satisfied" only for a very small error, so the solver converges as far as it can; the caller judges the result against the episode's own tolerances (PICK_PLACE_CFG).
+
+    Args:
+        target (numpy.ndarray): The pad centre target (3,) or one per start vector (N, 3), torso frame, metres.
+        R_target (numpy.ndarray): The wanted tool frame rotation, torso frame (3, 3).
+        rot_weight (float): Metres per radian that weigh the rotation error against the position error in the least squares. Defaults to 0.2.
+
+    Returns:
+        callable: constraint(p, R, Jv, Jw, idx) -> (r (n, 6), J (n, 6, 7), ok (n,)) for src/arm_kinematics.solve_ik, used with offset = cfg["pad_center_in_tcp"].
+    """
+    from scipy.spatial.transform import Rotation
+    target = np.asarray(target, float)
+    Rt = np.asarray(R_target, float)
+
+    def constraint(p, R, Jv, Jw, idx):
+        t = target if target.ndim == 1 else target[idx]
+        e = Rotation.from_matrix(Rt[None] @ R.transpose(0, 2, 1)).as_rotvec()
+        r = np.concatenate([p - t, rot_weight * e], axis=1)
+        J = np.concatenate([Jv, -rot_weight * Jw], axis=1)
+        ok = (np.linalg.norm(p - t, axis=1) < 1e-4) & (np.linalg.norm(e, axis=1) < 1e-3)
+        return r, J, ok
+
+    return constraint
+

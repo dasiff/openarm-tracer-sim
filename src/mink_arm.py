@@ -117,22 +117,24 @@ class MinkArm:
                                                         collision_detection_distance=cfg["detect_distance"]))
         return out
 
-    def joint_travel(self, data, position, rotation, dt=0.05, max_iters=200, tol=1e-4):
-        """Dry run: how far the farthest joint must turn to take the pad from the command now to a pad pose.
+    def joint_arc(self, data, positions, rotations, dt=0.05, max_iters=100, tol=1e-4):
+        """Dry run along a pad path: the arc length each joint travels, and how far the farthest joint is from where it started at the end.
 
-        The same solve (frame task, posture task, joint limits, collision avoidance, the other joints frozen) as step(), repeated on a scratch configuration in time steps of `dt`
-        and without the joint speed limit, until the pad pose is reached; nothing of the arm or the data is changed.
+        Solves the IK at every pad pose of the path, in order, each from the previous solution (the first from the command now): the same solve (frame task, posture task, joint
+        limits, collision avoidance, the other joints frozen) as step(), repeated on a scratch configuration in time steps of `dt` until the pose is reached, without the joint
+        speed limit (which would only slow the dry run down, not change where it ends). Nothing of the arm or the data is changed.
 
         Args:
             data (mujoco.MjData): The simulation state (everything but the arm's joints is taken from it).
-            position (array-like): The wanted pad centre in the world (3,), metres.
-            rotation (array-like): The wanted pad frame rotation (3 x 3).
+            positions (array-like): The pad centres in the world, (n, 3), metres.
+            rotations (array-like): The pad frame rotations, (n, 3, 3).
             dt (float): The integration time of one iteration, seconds. Defaults to 0.05.
-            max_iters (int): The most iterations. Defaults to 200.
+            max_iters (int): The most iterations per pose. Defaults to 100.
             tol (float): The pose error (mink's 6-vector norm, metres and radians) that ends the iteration. Defaults to 1e-4.
 
         Returns:
-            float: The largest absolute change of any of the arm's 7 joints between the command now and the solution, radians.
+            tuple: (arc (7,), end (7,)): per joint the sum of the absolute changes between consecutive solutions starting at the command now, and the absolute change from the
+                command now to the last solution, radians.
 
         Raises:
             mink.NoSolutionFound: If the limits and the collision avoidance leave no solution.
@@ -141,15 +143,21 @@ class MinkArm:
         q[self.qadr] = self.q_cmd
         config = mink.Configuration(self.model, q=q)
         frame = mink.FrameTask(f"openarm_{self.side}_hand_tcp", "body", position_cost=self.cfg["position_cost"], orientation_cost=self.cfg["orientation_cost"])
-        R_tcp = np.asarray(rotation, float) @ self.R_pad_in_tcp.T
-        p_tcp = np.asarray(position, float) - R_tcp @ self.pad_in_tcp
-        frame.set_target(mink.SE3.from_rotation_and_translation(mink.SO3.from_matrix(R_tcp), p_tcp))
-        for _ in range(max_iters):
-            if float(np.linalg.norm(frame.compute_error(config))) < tol:
-                break
-            v = mink.solve_ik(config, [frame, self.posture], dt, self.cfg["solver"], damping=self.cfg["damping"], limits=self.pose_limits, constraints=[self.freeze])
-            config.integrate_inplace(v, dt)
-        return float(np.max(np.abs(config.q[self.qadr] - self.q_cmd)))
+        prev = self.q_cmd.copy()
+        arc = np.zeros(len(self.qadr))
+        for position, rotation in zip(positions, rotations):
+            R_tcp = np.asarray(rotation, float) @ self.R_pad_in_tcp.T
+            p_tcp = np.asarray(position, float) - R_tcp @ self.pad_in_tcp
+            frame.set_target(mink.SE3.from_rotation_and_translation(mink.SO3.from_matrix(R_tcp), p_tcp))
+            for _ in range(max_iters):
+                if float(np.linalg.norm(frame.compute_error(config))) < tol:
+                    break
+                v = mink.solve_ik(config, [frame, self.posture], dt, self.cfg["solver"], damping=self.cfg["damping"], limits=self.pose_limits, constraints=[self.freeze])
+                config.integrate_inplace(v, dt)
+            now = config.q[self.qadr].copy()
+            arc += np.abs(now - prev)
+            prev = now
+        return arc, np.abs(prev - self.q_cmd)
 
     def reset(self, data):
         """Starts from the arm's measured joints: the command equals them."""

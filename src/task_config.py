@@ -144,7 +144,7 @@ BEAKER_CFG = {
 WEIGHT_READING_CFG = {
     # The held object's weight is read where control is handed back (the end of the pick, the end of the place): the arm must be still, and it must be still SOON after the handoff.
     # Measured 2026-10-26: when the arm was still at all, it was already still at the handoff (0.00 s wait); the one late reading (300 g, 5.5 s after the handoff, during the next move) was wrong (-16 g).
-    "max_wait_s": 1.0,                     # s. How long after the handoff the arm may take to become still. Later than this the answer is "no reading", never a measurement taken later [row M192 PENDING David: 1.0 s is my choice, not decided]
+    "max_wait_s": 1.0,                     # s. How long after the handoff the arm may take to become still. Later than this the answer is "no reading", never a measurement taken later [row M192, approved by David 2026-10-27]
 }
 
 GRIP_FORCE_TABLE = {

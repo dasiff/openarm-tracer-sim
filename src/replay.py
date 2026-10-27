@@ -178,7 +178,7 @@ class PngFrames:
 
 
 def replay_run(run_dir, out_dir=None, cameras=None, video="preview", hz=30.0, size=None, shadows="policy", codec="mp4v", quality=None,
-               verify=True, max_ticks=None, render_ticks=None, quiet=False, name="viewer", after_handoff_s=None, legend_extra=None, face=None):
+               verify=True, max_ticks=None, render_ticks=None, quiet=False, name="viewer", after_handoff_s=None, legend_extra=None, face=None, intro=None, still_ticks=None):
     """Replays a recorded run: verifies its states and optionally renders its cameras.
 
     The recording is rebuilt and re-simulated through src/control_loop.run_loop (see the module docstring for what is checked and
@@ -214,7 +214,13 @@ def replay_run(run_dir, out_dir=None, cameras=None, video="preview", hz=30.0, si
             at which the task's success check first passes, if the recording's recipe names one). None follows FACE_CFG / the --no-face switch. The model hash that
             verifies the replay does not depend on it. Defaults to None.
         legend_extra (list or None): "viewer" mode only: extra (key, label) pairs for the key legend of the status panel; None
-            means the keys of the episode viewer for the recorded mode. Defaults to None.
+            means the keys of the episode viewer for the recorded mode. Defaults to None. (The video draws no key legend; kept for the callers.)
+        intro (list or None): "viewer" mode only: pictures held at the start, before the first tick, for the phases before the robot moves. Each entry is a
+            dict {"note": str (the message of the panel, e.g. "Planning..."), "seconds": float (how long it is held), "plan": bool (whether the plan rows are
+            shown), "still": str or None (a label: the last picture of the entry is saved as PNG, see `still_ticks`)}. The picture is the state after the settle, drawn with
+            the panel's "sim time" at that state; these frames are not sim time and have tick -1 in the frame table. None means no intro. Defaults to None.
+        still_ticks (dict or None): "viewer" mode only: {label: control tick}; the first picture at or after each tick is saved as <out>/<name>_still_<label>.png
+            (the whole picture) and <name>_panel_<label>.png (the status panel alone). Defaults to None.
 
     Returns:
         dict: The report, also written to out_dir/replay_report.json (out_dir/<name>_report.json in "viewer" mode) unless `video` is
@@ -285,7 +291,7 @@ def replay_run(run_dir, out_dir=None, cameras=None, video="preview", hz=30.0, si
     out = Path(out_dir) if out_dir else None
     if video not in ("none", "preview", "training", "viewer"):
         raise ValueError(f"video must be none, preview, training or viewer, not {video!r}")
-    composite, still = None, {"path": None, "saved": False}
+    composite, still = None, {"path": None, "saved": False, "done": set()}
     if video == "viewer":
         size = tuple(size) if size else (1920, 1080)
         shadows = "on"
@@ -318,7 +324,7 @@ def replay_run(run_dir, out_dir=None, cameras=None, video="preview", hz=30.0, si
             from src.viewer_composite import CompositeRenderer
             if legend_extra is None:
                 legend_extra = ([("F9", "take over"), ("Enter", "hand back")] if meta.get("mode") == "auto" else []) + [("Del", "abort")]
-            composite = CompositeRenderer(model, context, specs, size=size, legend_extra=legend_extra)
+            composite = CompositeRenderer(model, context, specs, size=size, legend_extra=legend_extra, panel_static=(meta.get("task") or {}).get("panel"))
             path = out / f"{name}.mp4"
             writers["viewer"] = open_video(path, hz, size, codec, quality)
             report["videos"]["viewer"] = str(path)
@@ -355,6 +361,25 @@ def replay_run(run_dir, out_dir=None, cameras=None, video="preview", hz=30.0, si
         get_state(model_, data_, buf)
         if verify and not np.array_equal(buf, rec["initial_state"]):
             raise ReplayMismatch("the state after the settle differs from the live run's: " + "; ".join(describe_state_diff(model_, buf, rec["initial_state"])))
+        if composite is not None and intro:
+            static = (meta.get("task") or {}).get("panel") or {}
+            for entry in intro:
+                info = composite_info(0, data_)
+                info["panel"] = {"instruction": static.get("instruction"), "note": entry["note"], "steps": static.get("steps") if entry.get("plan") else None, "index": 0, "phase": None}
+                bgr = None
+                for _ in range(max(1, int(round(entry["seconds"] * hz)))):
+                    bgr = cv2.cvtColor(composite.render(data_, info), cv2.COLOR_RGB2BGR)
+                    writers["viewer"].write(bgr)
+                    fw.writerow([st["frames"], -1, f"{data_.time:.6f}"])
+                    st["frames"] += 1
+                if entry.get("still"):
+                    save_still(entry["still"], bgr)
+
+    def save_still(label, bgr):
+        """Saves the whole picture and the status panel alone as PNG files (`intro` and `still_ticks`)."""
+        left, top, pw, ph = composite.panel_box
+        cv2.imwrite(str(out / f"{name}_still_{label}.png"), bgr)
+        cv2.imwrite(str(out / f"{name}_panel_{label}.png"), bgr[top:top + ph, left:left + pw])
 
     phase_at = np.empty(len(rec["ctrl"]), dtype=object)
     for i, l in enumerate(labels):
@@ -404,6 +429,9 @@ def replay_run(run_dir, out_dir=None, cameras=None, video="preview", hz=30.0, si
             tick = (step_count - 1) // spt
             bgr = cv2.cvtColor(composite.render(data_, composite_info(tick, data_)), cv2.COLOR_RGB2BGR)
             writers["viewer"].write(bgr)
+            for label in [l for l, t in (still_ticks or {}).items() if tick >= t and l not in still["done"]]:
+                save_still(label, bgr)
+                still["done"].add(label)
             if not still["saved"] and handoff_tick is not None and tick >= handoff_tick:        # the picture at the handoff frame
                 cv2.imwrite(str(still["path"]), bgr)
                 still["saved"] = True

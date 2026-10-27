@@ -44,6 +44,22 @@ SHIFT_X = -0.15
 MOVED = {**TASK_CFG, "beaker_xy": (TASK_CFG["beaker_xy"][0] + SHIFT_X, TASK_CFG["beaker_xy"][1]), "hotplate_xy": (TASK_CFG["hotplate_xy"][0] + SHIFT_X, TASK_CFG["hotplate_xy"][1])}
 
 
+# The phases before the robot moves (these happen in wall time before the episode, so the video holds the first picture while the panel says what is going on): seconds held, plan rows shown or not.
+# The last entry's note is replaced by the chosen spot and the place hand angle (from the recording's panel data).
+INTRO = [{"note": "Planning...", "seconds": 1.5, "plan": False, "still": "intro_planning"},
+         {"note": "Choosing a parking spot...", "seconds": 1.5, "plan": True, "still": "intro_choosing"},
+         {"note": None, "seconds": 2.5, "plan": True, "still": "intro_chosen"}]
+
+
+def intro_for(recording_dir):
+    """INTRO with the last note filled in from the recording's panel data: the chosen parking spot, the pedestal height and the place hand angle."""
+    meta = json.loads((Path(recording_dir) / "meta.json").read_text())
+    p = (meta.get("task") or {}).get("panel") or {}
+    xy, q, th = p.get("spot_xy"), p.get("pedestal_q"), p.get("place_theta_deg")
+    note = (f"Parking spot x {xy[0]:.2f} m, y {xy[1]:.2f} m, pedestal {q:.2f} m" if xy else "Parking spot chosen") + (f"; place hand angle {th:+.0f} deg" if th is not None else "")
+    return [{**e, "note": e["note"] or note} for e in INTRO]
+
+
 class X264Writer:
     """Writes BGR frames (numpy arrays, like cv2.VideoWriter.write) to an H.264 MP4 through a pipe to ffmpeg."""
 
@@ -65,7 +81,23 @@ class X264Writer:
             raise RuntimeError(f"ffmpeg exited with {rc}")
 
 
+def record_only(args):
+    """Runs the episode as main() does and keeps the recording in args.record_only; no video. Returns 0 on SUCCESS."""
+    out = Path(args.record_only)
+    out.mkdir(parents=True, exist_ok=True)
+    caller = GeminiCaller(mode="cache_only")
+    plan = make_llm_planner(caller.bind("plan", LLM_CFG["planner_prompt_version"]))(args.instruction)
+    sim = load_task(MOVED, cameras=True)
+    task = make_pipeline_task(plan, task_cfg=MOVED, stop_on_disagreement=True, checker="oracle", instruction=args.instruction)
+    s = run_episode(task, sim.model, sim.data, out_dir=out / "episode", record_dir=out / "recording")
+    state = task["pipeline"]["orchestrator"]["state"]
+    print(f"outcome {s['outcome']}; plan failure {state['failure']}; status {state['status']}", flush=True)
+    return 0 if s["outcome"] == "SUCCESS" else 1
+
+
 def main(args):
+    if args.record_only:
+        return record_only(args)
     stamp = time.strftime("%Y%m%d_%H%M%S")
     stem = f"{args.name}_{stamp}"
     vids = PROJECT_ROOT / "data" / "videos"
@@ -76,7 +108,7 @@ def main(args):
     plan = make_llm_planner(caller.bind("plan", LLM_CFG["planner_prompt_version"]))(args.instruction)
     print("the plan:\n" + "\n".join(f"  {i}. [{s['type']}] {s['description']}" for i, s in enumerate(plan["segments"])), flush=True)
     sim = load_task(MOVED, cameras=True)
-    task = make_pipeline_task(plan, task_cfg=MOVED, stop_on_disagreement=True, checker="oracle")
+    task = make_pipeline_task(plan, task_cfg=MOVED, stop_on_disagreement=True, checker="oracle", instruction=args.instruction)
     t0 = time.perf_counter()
     s = run_episode(task, sim.model, sim.data, out_dir=work / "episode", record_dir=work / "recording")
     state = task["pipeline"]["orchestrator"]["state"]
@@ -89,7 +121,7 @@ def main(args):
         return 1
     del sim, task
     replay_mod.open_video = lambda path, fps, size, codec="mp4v", quality=None: X264Writer(path, fps, size, work / "ffmpeg.log")
-    r = replay_mod.replay_run(work / "recording", out_dir=work / "video", video="viewer", hz=float(args.hz), name=stem, quiet=True)
+    r = replay_mod.replay_run(work / "recording", out_dir=work / "video", video="viewer", hz=float(args.hz), name=stem, quiet=True, intro=intro_for(work / "recording"))
     facts.update(replay_ok=bool(r["ok"]), replay_ticks=r.get("n_ticks_recorded"), mismatch=r.get("mismatch"), frames=r.get("frames_rendered"))
     print(f"replay ok {r['ok']} ({r.get("n_ticks_recorded")} ticks, mismatch {r.get("mismatch")}); frames {r.get("frames_rendered")}", flush=True)
     made = work / "video" / f"{stem}.mp4"
@@ -118,4 +150,5 @@ if __name__ == "__main__":
     ap.add_argument("--instruction", default="put the beaker on the hotplate")
     ap.add_argument("--hz", type=int, default=30, help="video frames per simulated second (a whole divisor of the physics rate)")
     ap.add_argument("--name", default="demo_moved")
+    ap.add_argument("--record-only", metavar="DIR", help="run the episode and keep its recording in DIR (data/demo_record/...); make no video, no files in data/videos (for measurements and panel screenshots)")
     sys.exit(main(ap.parse_args()))

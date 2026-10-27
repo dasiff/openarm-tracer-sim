@@ -28,7 +28,7 @@ from src.task_config import EPISODE_CFG, PICK_PLACE_CFG, SUCCESS_CFG, STAGING_CF
 
 
 def make_pipeline_task(plan=BEAKER_ON_HOTPLATE_PLAN, task_cfg=TASK_CFG, staging_cfg=STAGING_CFG, episode_cfg=EPISODE_CFG, success_cfg=SUCCESS_CFG, arm="left",
-                       operator=None, search=None, stop_on_disagreement=False, checker="oracle", vlm_caller=None, drop_monitor=True, orch_cfg=None, grip_force=None, module_hook=None):
+                       operator=None, search=None, stop_on_disagreement=False, checker="oracle", vlm_caller=None, drop_monitor=True, orch_cfg=None, grip_force=None, module_hook=None, instruction=None):
     """Packages the pipeline as a task for the generic episode runner.
 
     Args:
@@ -46,6 +46,7 @@ def make_pipeline_task(plan=BEAKER_ON_HOTPLATE_PLAN, task_cfg=TASK_CFG, staging_
         drop_monitor (bool): Run the drop monitor (src/mpvi_monitors.py; it only logs). Defaults to True.
         orch_cfg (dict or None): The orchestrator's failure settings (ORCH_CFG: retry_max, knocked_over_deg). Defaults to ORCH_CFG.
         grip_force (float or None): Overrides the grip force per finger, newtons, for a test (the forced slip test); None uses the grip force table (GRIP_FORCE_TABLE is never changed).
+        instruction (str or None): The typed instruction the plan was made from; shown in the viewer's status panel and the demo video (task["meta"]["panel"]). Defaults to None (not shown).
         module_hook (callable or None): A test seam: module_hook(modules, model, data) -> modules, called on the module dictionary before the orchestrator is built (a test wraps a module to inject a failure).
 
     Returns:
@@ -90,7 +91,11 @@ def make_pipeline_task(plan=BEAKER_ON_HOTPLATE_PLAN, task_cfg=TASK_CFG, staging_
         return ok and finished, {**diag, "plan_finished": finished}
 
     task.update(make_policy=make_policy, check_success=check_success, pipeline=built)
-    task["meta"] = {**task["meta"], "plan": plan}
+    place_deg = next((seg["place_theta_deg"] for seg in tagged["segments"] if seg.get("primitive") == "place" and seg.get("place_theta_deg") is not None), None)
+    first = (stance_report.get("chosen") or {})
+    panel = {"instruction": instruction, "steps": [seg["description"] for seg in tagged["segments"]],      # what the status panel shows (src/viewer_layout.panel_from_status); the same text in the live window and the video
+             "spot_xy": first.get("xy"), "pedestal_q": first.get("pedestal_q"), "place_theta_deg": place_deg}
+    task["meta"] = {**task["meta"], "plan": plan, "panel": panel}
     task["tagged_plan"] = tagged
     task["stance_selection"] = stance_report
     return task

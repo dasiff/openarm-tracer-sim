@@ -36,7 +36,7 @@ from src import robot_specs
 from src.alert_sound import play_alert
 from src.face import Face, settle_renderer, show_face_group
 from src.viewer_layout import (FOVY_DEG, banner_bitmap, hud_bitmap, hud_key_list, hud_position, hud_rows, inset_layout, inset_tile, order_tiles,
-                               setup_follow_camera, update_follow_camera)
+                               panel_from_status, setup_follow_camera, update_follow_camera)
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 CAMERA_SNAPSHOT_DIR = "data/camera_snapshots"
@@ -209,6 +209,8 @@ def make_glfw_viewer(model, data, vcfg):
               "legend_extra": list of (key, label) entries added to the
                 key legend. Defaults to an empty list.
               "has_teleop": bool, whether the F2 entry is in the legend.
+              "panel": dict or None, the static part of the plan block of the status panel (the typed instruction and the
+                plan's steps in plain language, see viewer_layout.panel_from_status). Defaults to None (no plan block).
 
     Returns:
         dict: The viewer, with these keys:
@@ -525,6 +527,7 @@ def make_glfw_viewer(model, data, vcfg):
             hud_state["ms"] += 0.1 * (1000.0 * dt_wall - hud_state["ms"])
             ds = info["drive_state"]
             teleop_status = info.get("teleop_status")
+            panel = panel_from_status(vcfg.get("panel"), info.get("status"))      # the plan block (same code as the video's), if the run has a plan
             hud = hud_bitmap(hud_rows(
                 t, (base_vx, base_vy, base_wz), yaw_deg, data.qpos[0:3],
                 middle_rows=[
@@ -534,8 +537,8 @@ def make_glfw_viewer(model, data, vcfg):
                      f"{ds.get('angular', 0):+.2f}"),
                     ("recording (F6)", "off" if not recorder.active else
                      f"REC {recorder.frames} frames, {recorder.frames / recorder.fps:.1f} s")],
-                status=info.get("status"), mode=info.get("mode"),
-                extra_rows=([("arms (F2 toggles)", teleop_status)] if teleop_status is not None else [])), hud_keys)
+                status=None if panel is not None else info.get("status"), mode=info.get("mode"),
+                extra_rows=([("arms (F2 toggles)", teleop_status)] if teleop_status is not None else [])), hud_keys, 1.0, panel)
             hud_left, hud_top = hud_position(1.0, banner_h)
             blit(hud, hud_left, height - hud.shape[0] - hud_top)
         if show_insets:

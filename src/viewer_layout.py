@@ -14,6 +14,7 @@ object passed to the follow-camera functions is used only through its attributes
 """
 
 import math
+import re
 
 import cv2
 import numpy as np
@@ -54,13 +55,64 @@ def hud_key_list(has_teleop, legend_extra=()):
          ("F6", "rec video"), ("Esc", "quit")]
 
 
-def text_bitmap(rows, w, label_w, keys=(), scale=1.0):
+def wrap_text(text, max_w, font, fs, thick, max_lines=None):
+    """Breaks a text into lines that fit a pixel width, with "..." at the end of the last line if lines had to be dropped.
+
+    Args:
+        text (str): The text. Words are kept whole unless one is wider than a line.
+        max_w (int): Line width in pixels.
+        font (int): OpenCV font id.
+        fs (float): OpenCV font scale.
+        thick (int): Line thickness in pixels.
+        max_lines (int or None): Most lines to return; None means no limit. Defaults to None.
+
+    Returns:
+        list[str]: At least one line (an empty text gives one empty line), each at most `max_w` pixels wide.
+    """
+    width = lambda t: cv2.getTextSize(t, font, fs, thick)[0][0]
+    lines, cur = [], ""
+    for word in str(text).split():
+        while width(word) > max_w:                         # a word wider than a line: cut it
+            k = len(word)
+            while k > 1 and width(word[:k]) > max_w:
+                k -= 1
+            if cur:
+                lines.append(cur)
+                cur = ""
+            lines.append(word[:k])
+            word = word[k:]
+        trial = f"{cur} {word}" if cur else word
+        if width(trial) <= max_w:
+            cur = trial
+        else:
+            lines.append(cur)
+            cur = word
+    lines.append(cur)
+    if max_lines is not None and len(lines) > max_lines:
+        lines = lines[:max_lines]
+        last = lines[-1] + "..."
+        while len(last) > 3 and width(last) > max_w:
+            last = last[:-4] + "..."
+        lines[-1] = last
+    return lines
+
+
+# How a row of the plan block is drawn: (label colour, text colour, font scale factor, highlighted background or None). RGB.
+ROW_STYLES = {"normal": ((190, 190, 190), (255, 255, 255), 1.0, None),
+              "dim": ((150, 150, 150), (200, 200, 200), 1.0, None),
+              "current": ((255, 255, 255), (255, 255, 255), 1.0, (150, 90, 40)),
+              "note": ((190, 190, 190), (120, 220, 255), 1.0, None),
+              "small": ((150, 150, 150), (170, 170, 170), 0.82, None)}
+
+
+def text_bitmap(rows, w, label_w, keys=(), scale=1.0, block=(), block_label_w=None):
     """Draw the status panel as an image.
 
-    The panel has one text row per (label, value) pair, then the key legend:
+    The panel has one text row per (label, value) pair, then the plan block (rows with a style and a line limit), then the key legend:
     each entry is a key cap icon with a short label, laid out left to right
     and wrapped at the panel width so that the legend uses as little height as
-    possible. The panel height follows from the number of rows and legend lines.
+    possible. A value that does not fit the panel width is wrapped onto further lines (at most 4 for a plain row, the block's own
+    limit for a block row, then "..."), so nothing is cut off at the panel's edge. The panel height follows from the number of lines.
 
     Args:
         rows (Sequence[tuple[str, str]]): (label, value) text rows.
@@ -72,6 +124,10 @@ def text_bitmap(rows, w, label_w, keys=(), scale=1.0):
         scale (float): Factor applied to every other size (row height, font
             size, line thickness, margins). Defaults to 1.0, which is the live
             viewer.
+        block (Sequence[tuple[str, str, str, int]]): Plan block rows (label, value, style key of ROW_STYLES, most lines), from
+            panel_block(). Defaults to an empty tuple.
+        block_label_w (int or None): Value column offset of the block rows, already multiplied by `scale`; None uses `label_w`.
+            Defaults to None.
 
     Returns:
         numpy.ndarray: Image of shape (height, w, 3), dtype uint8, in
@@ -88,13 +144,31 @@ def text_bitmap(rows, w, label_w, keys=(), scale=1.0):
             x, line = S(6), line + 1
         layout.append((key, label, x, line, kw))
         x += kw + S(4) + lw + S(12)
-    top = line_h * len(rows) + S(8)
+    blw = label_w if block_label_w is None else block_label_w
+    items = [(lab, wrap_text(val, w - label_w - S(6), font, fs_row, thick, 4), "normal", label_w) for lab, val in rows]
+    if block:
+        items.append(None)                                  # a separator line between the rows and the block
+        items += [(lab, wrap_text(val, w - blw - S(6), font, fs_row * ROW_STYLES[st][2], thick, ml), st, blw) for lab, val, st, ml in block]
+    n_lines = sum(1 if it is None else len(it[1]) for it in items)
+    top = line_h * n_lines + S(8)
     h = top + (key_h * (line + 1) + S(6) if keys else 0)
     bmp = np.full((h, w, 3), 45, np.uint8)
-    for i, (lab, val) in enumerate(rows):
-        y = line_h * (i + 1) - S(3)
-        cv2.putText(bmp, lab, (S(6), y), font, fs_row, (190, 190, 190), thick, cv2.LINE_AA)
-        cv2.putText(bmp, val, (label_w, y), font, fs_row, (255, 255, 255), thick, cv2.LINE_AA)
+    y0 = 0
+    for it in items:
+        if it is None:
+            cv2.line(bmp, (S(6), y0 + S(10)), (w - S(6), y0 + S(10)), (110, 110, 110), thick)
+            y0 += line_h
+            continue
+        lab, lines, st, lw_ = it
+        lc, tc, fk, bg = ROW_STYLES[st]
+        if bg is not None:
+            cv2.rectangle(bmp, (S(2), y0 + S(1)), (w - S(2), y0 + line_h * len(lines) + S(1)), bg, -1)
+        for k, ln in enumerate(lines):
+            y = y0 + line_h * (k + 1) - S(3)
+            if k == 0:
+                cv2.putText(bmp, lab, (S(6), y), font, fs_row * fk, lc, thick, cv2.LINE_AA)
+            cv2.putText(bmp, ln, (lw_, y), font, fs_row * fk, tc, thick, cv2.LINE_AA)
+        y0 += line_h * len(lines)
     if keys:
         cv2.line(bmp, (S(6), top - S(2)), (w - S(6), top - S(2)), (110, 110, 110), thick)
     for key, label, kx, ln, kw in layout:
@@ -104,6 +178,67 @@ def text_bitmap(rows, w, label_w, keys=(), scale=1.0):
         cv2.putText(bmp, key, (kx + S(4), y), font, fs_key, (255, 255, 255), thick, cv2.LINE_AA)
         cv2.putText(bmp, label, (kx + kw + S(4), y), font, fs_key, (150, 220, 150), thick, cv2.LINE_AA)
     return bmp
+
+
+def panel_from_status(static, status):
+    """Works out what the plan block shows from the episode status text, for the live window and the video alike.
+
+    The orchestrator's status text is "<k>/<N> <NAV|PICK|PLACE>: <phase> [<status>]" (or "PLAN DONE"); the step index comes from it, so a
+    recording needs no extra data besides the static part, and the live window and the video give the same picture.
+
+    Args:
+        static (dict or None): What does not change during a run: "instruction" (str or None, the typed instruction), "steps" (list of
+            str, the plan's steps in plain language, the planner's descriptions); other keys are ignored. None means no plan block.
+        status (str or None): The episode status text.
+
+    Returns:
+        dict or None: "instruction", "steps", "index" (0-based index of the current step; the step count once the plan is done), "phase"
+        (the status text without the step counter: the internal phase code, shown small), or None when `static` is None.
+    """
+    if not static:
+        return None
+    steps = list(static.get("steps") or [])
+    text = (status or "").strip()
+    m = re.match(r"(\d+)/(\d+)\s+(.*)$", text)
+    if m:
+        index, phase = max(0, min(int(m.group(1)) - 1, len(steps))), m.group(3)
+    elif text.startswith("PLAN DONE"):
+        index, phase = len(steps), text
+    else:
+        index, phase = 0, text
+    return {"instruction": static.get("instruction"), "steps": steps, "index": index, "phase": phase or None}
+
+
+def panel_block(panel):
+    """The plan block of the status panel as rows for text_bitmap: typed instruction, step k of N, previous / current / next step, phase code.
+
+    Args:
+        panel (dict or None): From panel_from_status(), or built by hand for the phases before the robot moves; keys "instruction" (str or
+            None: shown in quotes, two lines at most), "note" (str or None: a message such as "Planning...", shown in its own row), "steps"
+            (list of str or None: no plan rows when empty), "index" (int, as in panel_from_status), "phase" (str or None: the internal
+            phase code, small).
+
+    Returns:
+        list[tuple[str, str, str, int]]: Rows (label, value, style key of ROW_STYLES, most lines); empty if `panel` is None.
+    """
+    if not panel:
+        return []
+    out = []
+    if panel.get("instruction"):
+        out.append(("instruction", f'"{panel["instruction"]}"', "normal", 2))
+    if panel.get("note"):
+        out.append(("status", panel["note"], "note", 4))
+    steps = panel.get("steps") or []
+    if steps:
+        n, i = len(steps), max(0, min(int(panel.get("index") or 0), len(steps)))
+        done = i >= n
+        out.append(("step", f"{n} of {n} (all done)" if done else f"{i + 1} of {n}", "normal", 1))
+        out.append(("previous", steps[i - 1] if i >= 1 else "-", "dim", 2))
+        out.append(("NOW", "all steps done" if done else steps[i], "current", 2))
+        out.append(("next", steps[i + 1] if i + 1 < n else "-", "dim", 2))
+    if panel.get("phase"):
+        out.append(("code", panel["phase"], "small", 3))
+    return out
 
 
 def setup_follow_camera(cam):
@@ -168,18 +303,19 @@ def hud_rows(time_s, base_vel, yaw_deg, position, middle_rows=(), status=None, m
     return rows + list(extra_rows)
 
 
-def hud_bitmap(rows, keys, scale=1.0):
-    """Draws the status panel (rows and key legend) as a bitmap of the standard width.
+def hud_bitmap(rows, keys, scale=1.0, panel=None):
+    """Draws the status panel (rows, plan block and key legend) as a bitmap of the standard width.
 
     Args:
         rows (list[tuple[str, str]]): (label, value) rows, from hud_rows().
-        keys (list[tuple[str, str]]): Key legend entries, from hud_key_list().
+        keys (list[tuple[str, str]]): Key legend entries, from hud_key_list(); empty for no legend (the video).
         scale (float): Size factor relative to the live window. Defaults to 1.0.
+        panel (dict or None): The plan block (see panel_block()); None draws none. Defaults to None.
 
     Returns:
         numpy.ndarray: RGB bitmap of shape (height, round(400 * scale), 3), dtype uint8.
     """
-    return text_bitmap(rows, int(round(400 * scale)), int(round(180 * scale)), keys, scale)
+    return text_bitmap(rows, int(round(400 * scale)), int(round(180 * scale)), keys, scale, panel_block(panel), int(round(96 * scale)))
 
 
 def hud_position(scale=1.0, banner_height=0):

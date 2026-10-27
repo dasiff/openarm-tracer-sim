@@ -9,14 +9,14 @@ CompositeRenderer draws one frame per call from a simulation state, without a wi
 The layout is the live viewer's (src/glfw_viewer.py), scaled by the frame height divided by 960 (the live viewer
 window is 1280 by 960 pixels). The follow camera fills the frame (3.5 m behind and 45 degrees above the robot base,
 turning with it, 90 degree vertical field of view (FOV)). The status panel is at the top left, with the same rows and
-key legend. The simulated cameras (eagle and both wrists) are in a row of tiles along the bottom, each with its name in
+the same plan block (src/viewer_layout.py), but no key legend. The simulated cameras (eagle and both wrists) are in a row of tiles along the bottom, each with its name in
 the corner.
 
 Differences from the live viewer, all deliberate and made for a video: shadows are on in the follow view and in
 all the cameras; the tiles come from full-size (640 by 480 pixel) renders of the policy cameras, updated every frame
 (the live insets are 320 by 240 pixels, have shadows off and update once per second per camera); and the rows that only
-mean something live are replaced or left out (the viewer frame time becomes the video frame time, the F6 recording state
-and the keyboard's own normalised command are left out, and a "twist lin, ang" row shows the applied base command). The
+mean something live are left out or replaced (the key legend, the frame time and the F6 recording state are not drawn,
+the keyboard's own normalised command is left out, and a "twist lin, ang" row shows the applied base command). The
 "episode" and "controller" rows are filled from the `info` dictionary that render() takes.
 """
 
@@ -28,8 +28,8 @@ import numpy as np
 from src import robot_specs
 from src.cameras import CameraRig
 from src.face import Face, settle_renderer, show_face_group
-from src.viewer_layout import (FOVY_DEG, REFERENCE_HEIGHT, hud_bitmap, hud_key_list, hud_position, hud_rows, inset_layout, inset_tile, order_tiles,
-                               setup_follow_camera, update_follow_camera)
+from src.viewer_layout import (FOVY_DEG, REFERENCE_HEIGHT, hud_bitmap, hud_position, hud_rows, inset_layout, inset_tile, order_tiles,
+                               panel_from_status, setup_follow_camera, update_follow_camera)
 
 
 class CompositeRenderer:
@@ -53,11 +53,9 @@ class CompositeRenderer:
             shadows on. The tiles are its images.
         base_body (int): Id of the body "base_link" that the follow camera
             tracks (1 if the model has no such body).
-        keys (list[tuple[str, str]]): Key legend entries of the panel (without
-            the F2 entry).
     """
 
-    def __init__(self, model, context, camera_specs, size=(1920, 1080), legend_extra=()):
+    def __init__(self, model, context, camera_specs, size=(1920, 1080), legend_extra=(), panel_static=None):
         """Set up the follow camera, the scene and the camera rig.
 
         Sets model.vis.global_.fovy to FOVY_DEG (90 degrees), as the live
@@ -74,9 +72,12 @@ class CompositeRenderer:
                 to (1920, 1080).
             legend_extra (Sequence[tuple[str, str]]): Extra (key, label)
                 entries for the key legend, for example ("F9", "take over").
-                Defaults to an empty tuple.
+                Defaults to an empty tuple. Not drawn: the video has no key legend.
+            panel_static (dict or None): The static part of the plan block (the typed instruction and the plan's steps, see
+                viewer_layout.panel_from_status). Defaults to None (no plan block).
         """
         self.model, self.context = model, context
+        self.panel_static = panel_static
         self.W, self.H = size
         self.s = self.H / REFERENCE_HEIGHT
         model.vis.global_.fovy = FOVY_DEG                              # as the viewer sets it (the follow camera is a free camera)
@@ -92,7 +93,6 @@ class CompositeRenderer:
         self.scene.flags[mujoco.mjtRndFlag.mjRND_REFLECTION] = 1
         self.rig = CameraRig(model, [{**cs, "shadows": True} for cs in camera_specs], context, shadows=True)
         self.base_body = max(mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, "base_link"), 1)
-        self.keys = hud_key_list(False, legend_extra)
 
     def render(self, data, info):
         """Render one frame: follow view, status panel and camera tiles.
@@ -115,8 +115,9 @@ class CompositeRenderer:
                 "status" (str | None): Episode status text, or None for no row.
                 "mode" (str | None): "auto" or "teleop", or None for no row.
                   Shown in upper case.
-                "fps" (float): Video frame rate, in frames per second, for the
-                  video row of the panel.
+                "fps" (float): Video frame rate (not drawn: the video has no frame-rate row).
+                "panel" (dict, optional): The plan block as viewer_layout.panel_block() takes it, instead of the one worked
+                  out from "status" (used for the phases before the robot moves).
 
         Returns:
             numpy.ndarray: Frame of shape (H, W, 3), dtype uint8, in
@@ -139,12 +140,13 @@ class CompositeRenderer:
 
         # --- the status panel, top left ---
         lin, ang = info["twist"]
+        panel = info.get("panel") or panel_from_status(self.panel_static, info.get("status"))
         hud = hud_bitmap(hud_rows(info["time"], info["base_vel"], yaw_deg, data.qpos[0:3],
-                                  middle_rows=[("video (ms, fps)", f"{1000.0 / info['fps']:.0f}, {info['fps']:.1f}"),
-                                               ("twist lin, ang", f"{lin:+.2f}, {ang:+.2f}")],
-                                  status=info.get("status"), mode=info.get("mode")), self.keys, self.s)
+                                  middle_rows=[("twist lin, ang", f"{lin:+.2f}, {ang:+.2f}")],
+                                  status=None if panel is not None else info.get("status"), mode=info.get("mode")), (), self.s, panel)
         left, top = hud_position(self.s)
         frame[top:top + hud.shape[0], left:left + hud.shape[1]] = hud
+        self.panel_box = (left, top, hud.shape[1], hud.shape[0])        # (left, top, width, height) of the status panel in the frame
 
         # --- the camera tiles, along the bottom ---
         tiles = order_tiles(list(self.rig.images.items()))

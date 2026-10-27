@@ -185,8 +185,10 @@ def main(args):
         plt.close(fig)
 
     plot(float(D["t"][0]), float(D["t"][-1]), "plot_full.png")
-    plot(44.5, 52.0, "plot_over.png")
-    plot(55.5, 62.0, "plot_up.png")
+    t_over = next(p["t0"] for p in phases if "PICK: OVER" in p["key"])                # the windows follow the run (a slower ARMS phase moves everything later)
+    t_up = next(p["t0"] for p in phases if "PICK: UP" in p["key"])
+    plot(t_over - 2.5, t_over + 5.0, "plot_over.png")
+    plot(t_up - 2.0, t_up + 4.5, "plot_up.png")
     if args.compare:
         o = Path(args.compare)
         mo = json.loads((o / "metrics.json").read_text())

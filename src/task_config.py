@@ -420,7 +420,7 @@ PICK_PLACE_CFG = {
     "turn_rad_s": 0.5,                     # orientation speed limit of a waypoint move [row M112 PENDING David: no decision recorded]
     "joint_limited_duration": True,        # a waypoint move lasts at least min_jerk_peak_factor * (the arc length of its farthest-travelling joint along a dry-run IK of the path) / MINK_CFG["max_joint_speed"], so the reference never outruns the joints; False = the old distance / speed time only [row M194]
     "arc_points": 20,                      # the dry run solves the IK at this many equal steps along the straight-line path (plus its start): the joint arc length is the sum of the changes between them [row M194]
-    "min_jerk_peak_factor": 1.875,         # the minimum-jerk speed profile peaks at 1.875 times its average speed (maximum of 30 u^2 (1 - u)^2), so the average must stay under the speed limit / 1.875 [row M194]
+    "min_jerk_peak_factor": 2.0,           # the minimum-jerk speed profile peaks at 1.875 times its average speed (maximum of 30 u^2 (1 - u)^2); 2.0 adds about 6 % headroom for the mink solver's response, which exceeds that theoretical peak (David, 2026-10-27) [row M194]
     "min_move_s": 1.0,  # s: the shortest duration of a waypoint move [row M112 PENDING David: no decision recorded]
     "tol_m": 0.003, "tol_rad": math.radians(2.0),    # a waypoint is reached within these (measured pad pose) and settled [row M112 PENDING David: no decision recorded]
     "settle_speed_rad_s": 0.02, "settle_dwell_s": 0.2,  # rad/s and s: a waypoint counts as settled when the arm's joints are slower than the speed for the dwell time [row M112 PENDING David: no decision recorded]

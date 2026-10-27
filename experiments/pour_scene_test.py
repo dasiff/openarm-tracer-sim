@@ -49,13 +49,14 @@ def main():
     mouth = 2 * (BEAKER_CFG["outer_diameter"] / 2 - BEAKER_CFG["wall"])
     check("the beaker's mouth is at least 5 balls across (no arching)", mouth / (2 * cfg["ball_radius"]) >= 5.0, f"{mouth / (2 * cfg['ball_radius']):.2f} balls")
     check("both beakers are the 100 g glass beaker with no rigid liquid mass", all(abs(m.body_mass[m.body(b).id] - 0.1) < 1e-6 for b in ("task_beaker", "task_beaker_2")))
-    check("the second beaker has its own gripper contact pairs (300 = 2 beakers x 150)", m.npair == 300, f"{m.npair}")
+    PAIRS = 6 * (BEAKER_CFG["n_segments"] + 1)                     # 2 hands x 3 gripper geoms x (wall segments + bottom) per beaker
+    check(f"the second beaker has its own gripper contact pairs ({2 * PAIRS} = 2 beakers x {PAIRS})", m.npair == 2 * PAIRS, f"{m.npair}")
     b1, b2 = d.xpos[m.body("task_beaker").id], d.xpos[m.body("task_beaker_2").id]
     check("the beakers stand 20 cm apart on the bench, the first at its task position", abs(np.linalg.norm(b2[:2] - b1[:2]) - 0.20) < 1e-9 and np.allclose(b1[:2], [1.0, 0.66]), f"{np.round(b1, 3)} {np.round(b2, 3)}")
     P = np.array([d.xpos[b] for b in balls]) - b1
     check("every ball starts inside the first beaker (within its inside radius and below its rim)", (np.hypot(P[:, 0], P[:, 1]) < 0.0336 - 0.005).all() and (P[:, 2] > 0.002).all() and (P[:, 2] < BEAKER_CFG["height"]).all(), f"radius max {1000 * np.hypot(P[:, 0], P[:, 1]).max():.1f} mm, height max {1000 * P[:, 2].max():.0f} mm")
     plain = load_task(cameras=False)
-    check("without `pour` the scene is as before: no second beaker, no balls, one beaker's 150 pairs", plain.model.npair == 150 and not any(plain.model.body(b).name.startswith(BALL_PREFIX) for b in range(plain.model.nbody)))
+    check("without `pour` the scene is as before: no second beaker, no balls, one beaker's pairs", plain.model.npair == PAIRS and not any(plain.model.body(b).name.startswith(BALL_PREFIX) for b in range(plain.model.nbody)))
     del plain
 
     print("\n2. the draw")
@@ -72,7 +73,7 @@ def main():
     v = np.array([np.linalg.norm(d.cvel[b][3:]) for b in balls])
     check("the balls are nearly still (largest speed under 2 cm/s)", v.max() < 0.02, f"{100 * v.max():.2f} cm/s")
     check("the pile is low: the top ball is under 4 cm above the bottom", P[:, 2].max() < 0.045, f"{1000 * P[:, 2].max():.0f} mm")
-    ball_g, wall_g = m.geom(f"{BALL_PREFIX}0_geom").id, [m.geom(f"task_beaker_wall_{i}").id for i in range(24)]
+    ball_g, wall_g = m.geom(f"{BALL_PREFIX}0_geom").id, [m.geom(f"task_beaker_wall_{i}").id for i in range(BEAKER_CFG["n_segments"])]
     mu = [d.contact[i].friction[0] for i in range(d.ncon) if (d.contact[i].geom1 == ball_g and d.contact[i].geom2 in wall_g) or (d.contact[i].geom2 == ball_g and d.contact[i].geom1 in wall_g)]
     allmu = [d.contact[i].friction[0] for i in range(d.ncon) if m.geom(d.contact[i].geom1).name.startswith(BALL_PREFIX) != m.geom(d.contact[i].geom2).name.startswith(BALL_PREFIX)]
     check("a ball-on-glass contact uses the ball's friction 0.3 (not the glass's 1.0)", len(allmu) > 0 and abs(np.mean(allmu) - 0.3) < 1e-6, f"{len(allmu)} ball-vs-other contacts, mean friction {np.mean(allmu):.3f}")

@@ -1,5 +1,6 @@
 # Progress log
 
+## 2026-10-27 TASK (David, review of the demo video): 1 status panel in the video = the same code as the live viewer (typed instruction, previous/current/next plain-language step labels, step k of N, small phase code, pre-move phases Planning/Choosing a parking spot/chosen spot + place hand angle; nothing clipped; panel screenshots per phase; frame check in the final video), 2 hide key legend + "video (ms, fps)" row in the VIDEO only, 3 results of steps 1-3 (report), 4 MEASUREMENT ONLY left-arm commanded/actual pos, vel, acc, jerk through the moved-layout episode, phase boundaries marked, report (a)-(e), no motion change, 5 do NOT re-render the video (David decides smoothing first, then one re-render). Do not push (overrides push-regularly for this task). One MuJoCo process at a time. Current step: reading code (Step 4 panel was NOT built: only the one-line episode row exists in viewer_layout.hud_rows).
 ## 2026-10-27: TASK expand CLAUDE.md with project overview/env/working rules (from README, design_plan section 0, memory notes). DONE, committed.
 
 ## 2026-10-21 11:10: TASK checker close-out (David's F1-F7, decisions of 2026-10-21). Previous task (D1-D7) DONE, report docs/reports/20261021_1050_vlm_checker_alignment.md

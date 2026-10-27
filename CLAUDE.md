@@ -7,7 +7,7 @@
    entries with a one-line summary when a task finishes.
 
 2. **Commit often.** Commit after each completed step and always before starting any run longer than a couple of minutes. Unfinished work gets a commit message starting
-   "WIP:" saying what's done and what isn't. Never push WIP without asking.
+   "WIP:" saying what's done and what isn't.
 
 3. **Long runs survive the session.** Run anything longer than a couple of minutes in a detached tmux session, with all output written to a timestamped log file under
    `data/logs/`. Record the command and log path in `docs/progress.md` before starting. Check results by reading the log, not by waiting in the session.
@@ -62,5 +62,5 @@ recordings, baselines), `docs/reports/` (dated reports).
 
 - Commits use the repo author David Siff. Push only with `git push origin main` to github.com/dasiff over HTTPS (never the gatech mirror).
 - **Push regularly (David, 2026-10-27):** after each completed step's commit, push (no need to ask), so the remote is never more than a step behind. Also push before starting a long run
-  and at the end of a task. Never push while the history to be pushed contains an unpushed "WIP:" commit without asking (WIP commits are fine locally; ask before pushing them).
+  and at the end of a task.
 - Record the last push in `docs/progress.md` when it matters (e.g. "pushed through <hash>").

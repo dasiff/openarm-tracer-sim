@@ -80,7 +80,7 @@ def main():
     a, res, seen = run(150, lambda k, rest: {"mode": "arms", "arm_targets": {"left": [float(x) for x in (rest + np.where(np.arange(7) == 2, 0.6, 0.0))]}} if k >= 30 else None, {"enabled": True})
     ev = [e for e in res["bridge_log"] if "step too large" in e["kind"]]
     check("the command did not move", abs(a[-1] - a[0]) < 1e-9, f"{a[0]:.3f} -> {a[-1]:.3f}")
-    check("rejections logged with joint, value and limit", len(ev) > 0 and ev[0]["side"] == "left" and ev[0]["joint"] == 3 and abs(ev[0]["value"] - 0.6) < 1e-6 and ev[0]["limit"] == 0.25, str(ev[:1]))
+    check("rejections logged with joint, value and limit", len(ev) > 0 and ev[0]["side"] == "left" and ev[0]["joint"] == 3 and abs(ev[0]["value"] - 0.6) < 1e-6 and ev[0]["limit"] == 0.25 and ev[0]["count"] > 10, str(ev[:1]))
 
     print("4. bridge ON: a target outside the joint limits is rejected and logged", flush=True)
     a, res, seen = run(150, lambda k, rest: {"mode": "arms", "arm_targets": {"left": [float(x) for x in np.where(np.arange(7) == 2, 10.0, rest)]}} if k >= 30 else None, {"enabled": True})

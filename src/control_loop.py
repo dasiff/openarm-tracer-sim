@@ -38,8 +38,8 @@ targets that sources give are not applied directly: the bridge keeps the latest 
 command is more than max_tracking_error_rad from its measured position (the command stays where it is until the arm has caught up), (2) rejects a target as a whole if it is more
 than max_target_step_rad from the current command on any joint (the previous accepted target stays), (3) moves the command at most max_joint_velocity_rad_s / rate_hz toward the accepted
 target and applies it, ramped over the 3 ticks by the "interpolate" target mode. A command whose arm targets are outside the joint limits is rejected as a whole before that. Grippers and
-the pedestal are not touched. Every rejection and every suspension (and its end) is logged: {tick, time, status, kind, side, joint, value, limit} in the returned "bridge_log" and printed
-(the first 20 lines; the rest are counted in the final summary line).
+the pedestal are not touched. Every rejection and every suspension (and its end) is logged: {tick, time, status, kind, side, joint, value, limit, count} in the returned "bridge_log" (an event that repeats the previous one is merged into it and counted)
+and printed (the first 20 lines; a summary line at the end counts them all).
 
 Controller mode (cfg["mode"], cfg["auto_source"]): "teleop" is the router exactly as configured (keyboard, webcam teleop, a policy on some
 fields: what the manual / teleop / policy launcher modes have always been). With cfg["auto_source"] naming a task-policy source there is
@@ -267,7 +267,7 @@ def run_loop(model, data, sources, cfg, viewer=None, logger=None):
             "routes": the router table at the end of the run (dict of field to source name or tuple of names).
             "stopped_by": reason given to loop["stop"] by the hook or "aborted_by_operator", or None if the run ended otherwise (window
             closed, Esc, benchmark frames reached, replay finished).
-            "bridge_log": list of the command bridge's rejections and suspensions (empty if the bridge is off), each {"tick", "time", "status", "kind", "side", "joint", "value", "limit"}.
+            "bridge_log": list of the command bridge's rejections and suspensions (empty if the bridge is off), each {"tick", "time", "status" (the episode phase text), "kind", "side", "joint", "value", "limit", "count" (how many times in a row, merged), "last_tick"}.
             "mode_log": list of mode switch records, each {"tick", "time", "from", "to", "cause", "reason", "stage"}.
 
     Raises:
@@ -580,8 +580,16 @@ def run_loop(model, data, sources, cfg, viewer=None, logger=None):
     arm_qadr = {s: [int(model.jnt_qposadr[model.actuator_trnid[a, 0]]) for a in arm_act[s]] for s in sides}
 
     def bridge_note(frame_, side, joint, kind, value, limit):
-        """Logs a bridge rejection or suspension (the joint's number is 1 to 7) and prints the first 20."""
-        rec_ = {"tick": frame_, "time": float(data.time), "status": status, "kind": kind, "side": side, "joint": joint, "value": float(value), "limit": float(limit)}
+        """Logs a bridge rejection or suspension (the joint's number is 1 to 7) and prints the first 20 distinct ones.
+
+        An event that repeats the previous one (same kind, arm and joint, at most one update later) is not a new entry: its "count" and "last_tick" grow.
+        """
+        last = bridge["log"][-1] if bridge["log"] else None
+        if last is not None and (last["kind"], last["side"], last["joint"]) == (kind, side, joint) and frame_ - last["last_tick"] <= bridge_every:
+            last["count"] += 1
+            last["last_tick"] = frame_
+            return
+        rec_ = {"tick": frame_, "time": float(data.time), "status": status, "kind": kind, "side": side, "joint": joint, "value": float(value), "limit": float(limit), "count": 1, "last_tick": frame_}
         bridge["log"].append(rec_)
         if bridge["printed"] < 20:
             bridge["printed"] += 1
@@ -631,7 +639,7 @@ def run_loop(model, data, sources, cfg, viewer=None, logger=None):
             return
         if bridge["suspended"]:
             bridge["suspended"] = False
-            bridge_note(frame_, worst[1], 0, "resumed: tracking error recovered", worst[0], bcfg["max_tracking_error_rad"])
+            bridge_note(frame_, worst[1], int(np.argmax(np.abs(err[worst[1]]))) + 1, "resumed: tracking error recovered", worst[0], bcfg["max_tracking_error_rad"])
         out = {}
         for s, tgt in bridge["target"].items():
             d_ = tgt - cmd_q[s]
@@ -1167,6 +1175,6 @@ def run_loop(model, data, sources, cfg, viewer=None, logger=None):
     if bridge["on"]:
         kinds = {}
         for e in bridge["log"]:
-            kinds[e["kind"]] = kinds.get(e["kind"], 0) + 1
-        print(f"[bridge] {len(bridge['log'])} events: {kinds}")
+            kinds[e["kind"]] = kinds.get(e["kind"], 0) + e["count"]
+        print(f"[bridge] {len(bridge['log'])} log entries, {sum(kinds.values())} events: {kinds}")
     return {"frames": frame, "hold_log": ex["log"], "routes": routes, "stopped_by": stop_req[0], "mode_log": ctl["log"], "bridge_log": bridge["log"]}

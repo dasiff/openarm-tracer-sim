@@ -288,7 +288,14 @@ def make_scripted_manipulation(model, data, world, side, home_q, task_cfg=TASK_C
                 p0, R0 = arm.pad_pose(data)
                 dist = float(np.linalg.norm(st["target"] - p0)) if st["kind"] == "move" else 0.0
                 ang = float(np.linalg.norm(Rotation.from_matrix(R0.T @ st["R"]).as_rotvec()))
-                st.update(p0=p0, slerp=Slerp([0.0, 1.0], Rotation.from_matrix([R0, st["R"]])), T=max(cfg["min_move_s"], dist / st["speed"], ang / cfg["turn_rad_s"]))
+                T = max(cfg["min_move_s"], dist / st["speed"], ang / cfg["turn_rad_s"])
+                if cfg["joint_limited_duration"]:                  # M194: never plan the move faster than its farthest joint can turn at the solver's speed limit
+                    try:
+                        st["travel"] = arm.joint_travel(data, st["target"], st["R"])
+                    except mink.NoSolutionFound:
+                        st["travel"] = 0.0                         # the move itself reports the failure, with its own message
+                    T = max(T, st["travel"] / arm.cfg["max_joint_speed"])
+                st.update(p0=p0, slerp=Slerp([0.0, 1.0], Rotation.from_matrix([R0, st["R"]])), T=T)
             elif st["kind"] == "joints":
                 st["q0"] = arm.q_cmd.copy()
                 st["T"] = max(cfg["min_move_s"], float(np.max(np.abs(home_q - st["q0"]))) / 0.3)

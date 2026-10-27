@@ -418,6 +418,7 @@ PICK_PLACE_CFG = {
     "setdown_gap_m": 0.002,                # the beaker's bottom is this far above the plate when the gripper opens [row M112 PENDING David: no decision recorded]
     "speed_m_s": 0.12, "slow_speed_m_s": 0.04,       # pad centre speed in transit, and for the descent, the move in and the set-down [row M112 PENDING David: no decision recorded]
     "turn_rad_s": 0.5,                     # orientation speed limit of a waypoint move [row M112 PENDING David: no decision recorded]
+    "joint_limited_duration": True,        # a waypoint move lasts at least (the farthest joint's travel from a dry-run IK at the start and end poses) / MINK_CFG["max_joint_speed"], so the reference never outruns the joints; False = the old distance / speed time only [row M194]
     "min_move_s": 1.0,  # s: the shortest duration of a waypoint move [row M112 PENDING David: no decision recorded]
     "tol_m": 0.003, "tol_rad": math.radians(2.0),    # a waypoint is reached within these (measured pad pose) and settled [row M112 PENDING David: no decision recorded]
     "settle_speed_rad_s": 0.02, "settle_dwell_s": 0.2,  # rad/s and s: a waypoint counts as settled when the arm's joints are slower than the speed for the dwell time [row M112 PENDING David: no decision recorded]

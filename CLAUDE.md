@@ -60,4 +60,7 @@ recordings, baselines), `docs/reports/` (dated reports).
 
 ## Git
 
-- Commits use the repo author David Siff. Push only when asked, only `git push origin main` to github.com/dasiff over HTTPS (never the gatech mirror). Never push WIP without asking.
+- Commits use the repo author David Siff. Push only with `git push origin main` to github.com/dasiff over HTTPS (never the gatech mirror).
+- **Push regularly (David, 2026-10-27):** after each completed step's commit, push (no need to ask), so the remote is never more than a step behind. Also push before starting a long run
+  and at the end of a task. Never push while the history to be pushed contains an unpushed "WIP:" commit without asking (WIP commits are fine locally; ask before pushing them).
+- Record the last push in `docs/progress.md` when it matters (e.g. "pushed through <hash>").

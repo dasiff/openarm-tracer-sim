@@ -81,6 +81,11 @@ class X264Writer:
             raise RuntimeError(f"ffmpeg exited with {rc}")
 
 
+def loop_cfg_for(args):
+    """The control loop's overrides: the command bridge ON unless --no-bridge (design plan section 1: ON for the scripted task)."""
+    return None if args.no_bridge else {"command_bridge": {"enabled": True}}
+
+
 def record_only(args):
     """Runs the episode as main() does and keeps the recording in args.record_only; no video. Returns 0 on SUCCESS."""
     out = Path(args.record_only)
@@ -89,7 +94,7 @@ def record_only(args):
     plan = make_llm_planner(caller.bind("plan", LLM_CFG["planner_prompt_version"]))(args.instruction)
     sim = load_task(MOVED, cameras=True)
     task = make_pipeline_task(plan, task_cfg=MOVED, stop_on_disagreement=True, checker="oracle", instruction=args.instruction)
-    s = run_episode(task, sim.model, sim.data, out_dir=out / "episode", record_dir=out / "recording")
+    s = run_episode(task, sim.model, sim.data, out_dir=out / "episode", record_dir=out / "recording", loop_cfg=loop_cfg_for(args))
     state = task["pipeline"]["orchestrator"]["state"]
     print(f"outcome {s['outcome']}; plan failure {state['failure']}; status {state['status']}", flush=True)
     return 0 if s["outcome"] == "SUCCESS" else 1
@@ -103,14 +108,14 @@ def main(args):
     vids = PROJECT_ROOT / "data" / "videos"
     work = vids / f"work_{stamp}"
     work.mkdir(parents=True, exist_ok=True)
-    facts = {"instruction": args.instruction, "layout": {"beaker_xy": MOVED["beaker_xy"], "hotplate_xy": MOVED["hotplate_xy"]}, "llm_mode": "cache_only", "checker": "oracle", "hz": args.hz, "model": LLM_CFG["model"]}
+    facts = {"instruction": args.instruction, "layout": {"beaker_xy": MOVED["beaker_xy"], "hotplate_xy": MOVED["hotplate_xy"]}, "llm_mode": "cache_only", "checker": "oracle", "hz": args.hz, "model": LLM_CFG["model"], "command_bridge": not args.no_bridge}
     caller = GeminiCaller(mode="cache_only")
     plan = make_llm_planner(caller.bind("plan", LLM_CFG["planner_prompt_version"]))(args.instruction)
     print("the plan:\n" + "\n".join(f"  {i}. [{s['type']}] {s['description']}" for i, s in enumerate(plan["segments"])), flush=True)
     sim = load_task(MOVED, cameras=True)
     task = make_pipeline_task(plan, task_cfg=MOVED, stop_on_disagreement=True, checker="oracle", instruction=args.instruction)
     t0 = time.perf_counter()
-    s = run_episode(task, sim.model, sim.data, out_dir=work / "episode", record_dir=work / "recording")
+    s = run_episode(task, sim.model, sim.data, out_dir=work / "episode", record_dir=work / "recording", loop_cfg=loop_cfg_for(args))
     state = task["pipeline"]["orchestrator"]["state"]
     ok_success, _ = task["check_success"](sim.model, sim.data)
     facts.update(outcome=s["outcome"], plan_failure=state["failure"], status=state["status"], beaker_on_hotplate=bool(ok_success), episode_wall_s=time.perf_counter() - t0)
@@ -150,5 +155,6 @@ if __name__ == "__main__":
     ap.add_argument("--instruction", default="put the beaker on the hotplate")
     ap.add_argument("--hz", type=int, default=30, help="video frames per simulated second (a whole divisor of the physics rate)")
     ap.add_argument("--name", default="demo_moved")
+    ap.add_argument("--no-bridge", action="store_true", help="run without the command bridge (the real arms' command limits, COMMAND_BRIDGE_CFG; ON by default here, as for D3)")
     ap.add_argument("--record-only", metavar="DIR", help="run the episode and keep its recording in DIR (data/demo_record/...); make no video, no files in data/videos (for measurements and panel screenshots)")
     sys.exit(main(ap.parse_args()))

@@ -33,6 +33,14 @@ function returning the rate of the commands it is giving now); without it the so
 than the tick rate gives them only on its due ticks (see src/sequential_policy.py). The pedestal is not interpolated (it
 ramps itself at its own speed limit), and obs["applied"] always holds the final target.
 
+The command bridge (cfg["command_bridge"], src/task_config.COMMAND_BRIDGE_CFG, design plan section 1, row M193), off by default: the real arms' command limits on the 14 arm joints. The arm
+targets that sources give are not applied directly: the bridge keeps the latest target per arm and, at its own rate (50 Hz: every 3rd tick), (1) suspends commands while any arm joint's
+command is more than max_tracking_error_rad from its measured position (the command stays where it is until the arm has caught up), (2) rejects a target as a whole if it is more
+than max_target_step_rad from the current command on any joint (the previous accepted target stays), (3) moves the command at most max_joint_velocity_rad_s / rate_hz toward the accepted
+target and applies it, ramped over the 3 ticks by the "interpolate" target mode. A command whose arm targets are outside the joint limits is rejected as a whole before that. Grippers and
+the pedestal are not touched. Every rejection and every suspension (and its end) is logged: {tick, time, status, kind, side, joint, value, limit} in the returned "bridge_log" and printed
+(the first 20 lines; the rest are counted in the final summary line).
+
 Controller mode (cfg["mode"], cfg["auto_source"]): "teleop" is the router exactly as configured (keyboard, webcam teleop, a policy on some
 fields: what the manual / teleop / policy launcher modes have always been). With cfg["auto_source"] naming a task-policy source there is
 also "auto": that one source owns every field and is stepped; while the mode is "teleop" it is not stepped (paused where it is). Switches:
@@ -91,9 +99,11 @@ from src.base_control import apply_base_velocity, base_yaw, find_base_dof, twist
 from src.cameras import CameraRig
 from src.commands import validate_command
 from src.run_record import RunRecorder
+from src.task_config import COMMAND_BRIDGE_CFG
 
 LOOP_CFG = {
     "source_hz": 150.0,            # command / viewer tick; the physics rate must be a whole multiple (5 steps at 750 Hz) [row M121 PENDING David: no decision recorded]
+    "command_bridge": None,        # None: no bridge. A dict overrides entries of task_config.COMMAND_BRIDGE_CFG ({"enabled": True} turns the real arms' command limits on, see "The command bridge" below) [row M193]
     "target_mode": "interpolate",  # arm and gripper targets between commands: "interpolate" (ramp over the source's period) or "hold" [row M121 PENDING David: no decision recorded]
     "camera_hz": None,             # None = robot_specs.CAMERA_HZ (30) [row M121 PENDING David: no decision recorded]
     "camera_roundrobin": True,     # one camera per render tick (a virtual-machine performance setting); False renders all each tick [row M121 PENDING David: no decision recorded]
@@ -257,6 +267,7 @@ def run_loop(model, data, sources, cfg, viewer=None, logger=None):
             "routes": the router table at the end of the run (dict of field to source name or tuple of names).
             "stopped_by": reason given to loop["stop"] by the hook or "aborted_by_operator", or None if the run ended otherwise (window
             closed, Esc, benchmark frames reached, replay finished).
+            "bridge_log": list of the command bridge's rejections and suspensions (empty if the bridge is off), each {"tick", "time", "status", "kind", "side", "joint", "value", "limit"}.
             "mode_log": list of mode switch records, each {"tick", "time", "from", "to", "cause", "reason", "stage"}.
 
     Raises:
@@ -560,6 +571,80 @@ def run_loop(model, data, sources, cfg, viewer=None, logger=None):
                 ramp_from[moved], ramp_k[moved], ramp_len[moved] = last_ctrl[moved], 0.0, cmd.get("period_steps", steps_per_frame)
             for s, F in cmd.get("gripper_force", {}).items():
                 grip_force[s] = ceiling if F is None else F
+
+    # --- The command bridge (row M193): the real arms' command limits between the sources and the arm targets ---
+    bcfg = {**COMMAND_BRIDGE_CFG, **(cfg.get("command_bridge") or {})}
+    bridge = {"on": bool(bcfg["enabled"]) and cfg["replay"] is None, "cmd": None, "target": {}, "accepted": {}, "suspended": False, "log": [], "printed": 0}
+    bridge_every = max(1, int(round(cfg["source_hz"] / bcfg["rate_hz"])))
+    bridge_step = bcfg["max_joint_velocity_rad_s"] / bcfg["rate_hz"]                      # rad: the most the command moves per update
+    arm_qadr = {s: [int(model.jnt_qposadr[model.actuator_trnid[a, 0]]) for a in arm_act[s]] for s in sides}
+
+    def bridge_note(frame_, side, joint, kind, value, limit):
+        """Logs a bridge rejection or suspension (the joint's number is 1 to 7) and prints the first 20."""
+        rec_ = {"tick": frame_, "time": float(data.time), "status": status, "kind": kind, "side": side, "joint": joint, "value": float(value), "limit": float(limit)}
+        bridge["log"].append(rec_)
+        if bridge["printed"] < 20:
+            bridge["printed"] += 1
+            print(f"[bridge] t={rec_['time']:.2f} s ({status}): {kind}: {side} joint {joint}, value {value:+.3f}, limit {limit:+.3f}")
+
+    def bridge_precheck(cmd, frame_):
+        """Takes an arms command's targets that lie outside the joint limits out of it (the whole arm targets are rejected and logged). Returns the command, or None if nothing is left.
+
+        Runs on the raw command, before validate_command clips out-of-range values.
+        """
+        if not bridge["on"] or not isinstance(cmd, dict) or cmd.get("mode") != "arms" or not isinstance(cmd.get("arm_targets"), dict):
+            return cmd
+        for s, q in cmd["arm_targets"].items():
+            lo, hi = limits["arm"][s]
+            q = np.asarray(q, float)
+            bad = np.nonzero((q < lo) | (q > hi))[0] if q.shape == lo.shape else []
+            if len(bad):
+                k = int(bad[0])
+                bridge_note(frame_, s, k + 1, "rejected: target outside the joint limits", q[k], lo[k] if q[k] < lo[k] else hi[k])
+                rest = {kk: v for kk, v in cmd.items() if kk != "arm_targets"}
+                return rest if any(kk in rest for kk in ("gripper", "gripper_force")) else None
+        return cmd
+
+    def bridge_take(cmd):
+        """Keeps the arm targets of an arms command as the bridge's latest targets and returns the command without them (None if nothing else is in it)."""
+        if not bridge["on"] or cmd["mode"] != "arms" or not cmd.get("arm_targets"):
+            return cmd
+        for s, q in cmd["arm_targets"].items():
+            bridge["target"][s] = np.array(q, float)
+        rest = {kk: v for kk, v in cmd.items() if kk != "arm_targets"}
+        return rest if any(kk in rest for kk in ("gripper", "gripper_force")) else None
+
+    def bridge_update(frame_):
+        """One update of the bridge (every `bridge_every` ticks): suspension check, rejection check, then the limited command is applied (ramped over the update period)."""
+        if not bridge["on"] or not bridge["target"] or frame_ % bridge_every:
+            return
+        if bridge["cmd"] is None:
+            bridge["cmd"] = {s: hold_qpos_targets[arm_act[s]].copy() for s in sides}
+        cmd_q = bridge["cmd"]
+        err = {s: cmd_q[s] - data.qpos[arm_qadr[s]] for s in sides}                      # the command's distance from the measured joint angles
+        worst = max(((float(np.max(np.abs(err[s]))), s) for s in sides))
+        if worst[0] > bcfg["max_tracking_error_rad"]:
+            if not bridge["suspended"]:
+                bridge["suspended"] = True
+                k = int(np.argmax(np.abs(err[worst[1]])))
+                bridge_note(frame_, worst[1], k + 1, "suspended: tracking error", err[worst[1]][k], bcfg["max_tracking_error_rad"])
+            return
+        if bridge["suspended"]:
+            bridge["suspended"] = False
+            bridge_note(frame_, worst[1], 0, "resumed: tracking error recovered", worst[0], bcfg["max_tracking_error_rad"])
+        out = {}
+        for s, tgt in bridge["target"].items():
+            d_ = tgt - cmd_q[s]
+            if float(np.max(np.abs(d_))) > bcfg["max_target_step_rad"]:
+                k = int(np.argmax(np.abs(d_)))
+                bridge_note(frame_, s, k + 1, "rejected: target step too large", d_[k], bcfg["max_target_step_rad"])
+                tgt = bridge["accepted"].get(s, cmd_q[s])                                      # the previous accepted target stays
+                d_ = tgt - cmd_q[s]
+            else:
+                bridge["accepted"][s] = tgt.copy()
+            cmd_q[s] = cmd_q[s] + np.clip(d_, -bridge_step, bridge_step)
+            out[s] = [float(v) for v in cmd_q[s]]
+        apply_cmd({"mode": "arms", "arm_targets": out, "period_steps": bridge_every * steps_per_frame})
 
     # --- Exclusivity and the hold rule ---
     def measure_still():
@@ -937,6 +1022,9 @@ def run_loop(model, data, sources, cfg, viewer=None, logger=None):
                     cmd = _filter_by_route(cmd, name, routes)       # a malformed command goes on to validate_command
                 if cmd is None:
                     continue
+                cmd = bridge_precheck(cmd, frame)
+                if cmd is None:
+                    continue
                 clean, notes = validate_command(cmd, limits)
                 for n in notes:
                     if (name, n) not in msgs_seen:
@@ -958,7 +1046,10 @@ def run_loop(model, data, sources, cfg, viewer=None, logger=None):
         if not cfg["exclusive"] and any(c["mode"] == "idle" for c in cmds):
             stop_base()
         for cmd in to_apply:
-            apply_cmd(cmd)
+            cmd = bridge_take(cmd)
+            if cmd is not None:
+                apply_cmd(cmd)
+        bridge_update(frame)
 
         # Project forward velocity into world frame using robot yaw
         base_vx, base_vy, base_wz = twist_to_world_velocity(base_yaw(data), *st["twist"])
@@ -1073,4 +1164,9 @@ def run_loop(model, data, sources, cfg, viewer=None, logger=None):
             except Exception:
                 pass
     print("Done.")
-    return {"frames": frame, "hold_log": ex["log"], "routes": routes, "stopped_by": stop_req[0], "mode_log": ctl["log"]}
+    if bridge["on"]:
+        kinds = {}
+        for e in bridge["log"]:
+            kinds[e["kind"]] = kinds.get(e["kind"], 0) + 1
+        print(f"[bridge] {len(bridge['log'])} events: {kinds}")
+    return {"frames": frame, "hold_log": ex["log"], "routes": routes, "stopped_by": stop_req[0], "mode_log": ctl["log"], "bridge_log": bridge["log"]}

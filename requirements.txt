@@ -9,3 +9,4 @@ qpsolvers==4.13.0
 daqp==0.10.3
 pydantic>=2.5
 google-genai==2.31.0
+imageio-ffmpeg==0.6.0

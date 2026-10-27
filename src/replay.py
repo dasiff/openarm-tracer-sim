@@ -178,7 +178,7 @@ class PngFrames:
 
 
 def replay_run(run_dir, out_dir=None, cameras=None, video="preview", hz=30.0, size=None, shadows="policy", codec="mp4v", quality=None,
-               verify=True, max_ticks=None, render_ticks=None, quiet=False, name="viewer", after_handoff_s=None, legend_extra=None, face=None, intro=None, still_ticks=None):
+               verify=True, max_ticks=None, render_ticks=None, quiet=False, name="viewer", after_handoff_s=None, legend_extra=None, face=None, intro=None, still_ticks=None, step_hook=None, render_at_ticks=None):
     """Replays a recorded run: verifies its states and optionally renders its cameras.
 
     The recording is rebuilt and re-simulated through src/control_loop.run_loop (see the module docstring for what is checked and
@@ -221,6 +221,9 @@ def replay_run(run_dir, out_dir=None, cameras=None, video="preview", hz=30.0, si
             the panel's "sim time" at that state; these frames are not sim time and have tick -1 in the frame table. None means no intro. Defaults to None.
         still_ticks (dict or None): "viewer" mode only: {label: control tick}; the first picture at or after each tick is saved as <out>/<name>_still_<label>.png
             (the whole picture) and <name>_panel_<label>.png (the status panel alone). Defaults to None.
+        render_at_ticks (set or None): "viewer" mode only: render a picture only at these control ticks (those that are also rendering ticks of `hz`), for stills without a
+            whole video. None renders every rendering tick. Defaults to None.
+        step_hook (callable or None): Called as step_hook(step_count, data) after every physics step (for measurements; it must only read `data`). Defaults to None.
 
     Returns:
         dict: The report, also written to out_dir/replay_report.json (out_dir/<name>_report.json in "viewer" mode) unless `video` is
@@ -425,7 +428,9 @@ def replay_run(run_dir, out_dir=None, cameras=None, video="preview", hz=30.0, si
             step_count (int): Number of physics steps taken so far in the run, including this one.
             data_ (mujoco.MjData): Data after this step.
         """
-        if composite is not None and step_count % every == 0 and (render_ticks is None or render_ticks[0] <= (step_count - 1) // spt <= render_ticks[1]):
+        if step_hook is not None:
+            step_hook(step_count, data_)
+        if composite is not None and step_count % every == 0 and (render_ticks is None or render_ticks[0] <= (step_count - 1) // spt <= render_ticks[1]) and (render_at_ticks is None or (step_count - 1) // spt in render_at_ticks):
             tick = (step_count - 1) // spt
             bgr = cv2.cvtColor(composite.render(data_, composite_info(tick, data_)), cv2.COLOR_RGB2BGR)
             writers["viewer"].write(bgr)

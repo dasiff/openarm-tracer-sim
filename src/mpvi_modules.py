@@ -292,14 +292,15 @@ def make_scripted_manipulation(model, data, world, side, home_q, task_cfg=TASK_C
                 if cfg["joint_limited_duration"]:                  # M194: never plan the move faster than its farthest joint can turn at the solver's speed limit
                     try:
                         st["travel"] = arm.joint_travel(data, st["target"], st["R"])
-                    except mink.NoSolutionFound:
+                    except mink.NoSolutionFound as e:
+                        print(f"[manipulation] {st['name']}: the dry run found no solution ({e})")
                         st["travel"] = 0.0                         # the move itself reports the failure, with its own message
                     T = max(T, st["travel"] / arm.cfg["max_joint_speed"])
                 st.update(p0=p0, slerp=Slerp([0.0, 1.0], Rotation.from_matrix([R0, st["R"]])), T=T)
             elif st["kind"] == "joints":
                 st["q0"] = arm.q_cmd.copy()
                 st["T"] = max(cfg["min_move_s"], float(np.max(np.abs(home_q - st["q0"]))) / 0.3)
-            print(f"[manipulation] {st['name']} ({st['kind']}) at t={t:.2f} s" + (f", {st['T']:.1f} s planned" if "T" in st else ""))
+            print(f"[manipulation] {st['name']} ({st['kind']}) at t={t:.2f} s" + (f", {st['T']:.1f} s planned" + (f" (farthest joint {st['travel']:.2f} rad)" if "travel" in st else "") if "T" in st else ""))
         el = t - S["t0"]
         kind = st["kind"]
         advance = False

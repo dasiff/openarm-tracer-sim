@@ -1,5 +1,6 @@
 # Progress log
 
+UPDATE: Part B built and run (bridge ON): NO EFFECT, planned times unchanged (travel/0.5 < old T everywhere; min-jerk peak is 1.875x average). Report docs/reports/20261027_1620_part_b_smoothing_no_effect.md. STOPPED, waiting for David (factor 1.875 / path sampling / accel limit). M194 row and full suite NOT done. Not pushed.
 UPDATE: step 1 code committed (WIP). RUN: tmux recs, demo_video.py --record-only data/demo_record/smooth_20261027_154222 (bridge ON), log data/logs/demo_record_smooth_20261027_154222.log, started 15:42:22. NEXT: measure + compare, report, M194, suite.
 UPDATE 2026-10-27 TASK (David) PART B motion smoothing: phase duration = max(joint travel from a dry-run IK at start/end poses / mink speed limit 0.5, old distance/speed time, min_move_s). Keep min-jerk, mink, sag, settling; NO filter, NO accel limit. Steps: 1 implement (src/mink_arm.py dry-run, src/mpvi_modules.py T) 2 run moved-layout episode, bridge ON + fix, record (data/demo_record/smooth_*), measure, compare to baseline_20261027_132008 3 report (a)-(e); if boundary jerk >100 report and STOP 4 row M194 5 full suite bridge ON (mpvi_text_test failure expected). Prior suite (bridge OFF) result: 45 pass, mpvi_text_test 6/11 (VLM cache miss), face_test alone 27/27 earlier. CURRENT STEP: 1.
 

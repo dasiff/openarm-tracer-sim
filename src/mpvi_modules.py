@@ -397,9 +397,10 @@ def make_scripted_manipulation(model, data, world, side, home_q, task_cfg=TASK_C
         return out
 
     def step(obs):
-        """One tick: step_inner, then the phase-start ramp (M195): in the first N ticks of every phase the commanded velocity of each arm joint may change by at most
-        phase_start_max_accel_rad_s2 * dt from the previous tick's, so the solver's first solution of a new phase cannot jump the command to a high velocity in one tick.
-        Not applied mid-phase; a cap that does not bind changes nothing, so it is simply left on for the N ticks. N = ceil(phase_start_ramp_s / dt); 0 s turns the ramp off."""
+        """One tick: step_inner, then the phase-start ramp (M195): in the first N ticks of every phase (and of a skill, from the last command, see start()) the speed of each arm joint is
+        capped by the minimum-jerk envelope max_joint_speed * min_jerk(t / phase_start_ramp_s), t = time since the phase start at the end of this tick, so the commanded velocity and
+        acceleration start from zero and the solver's first solution of a new phase cannot jump the command. Not applied mid-phase; a cap that does not bind changes nothing, so it is
+        simply left on for the N ticks. N = ceil(phase_start_ramp_s / dt); 0 s turns the ramp off."""
         dt = obs["timestep"] * obs["steps_per_frame"]
         q_before = arm.q_cmd.copy()
         if S.get("q_prev") is not None:                            # first tick after arm.reset at a skill start: the ramp runs from the last command, so the snap to the measured joints is spread over the ramp
@@ -412,8 +413,8 @@ def make_scripted_manipulation(model, data, world, side, home_q, task_cfg=TASK_C
         v = (arm.q_cmd - q_before) / dt
         n_ramp = math.ceil(round(cfg["phase_start_ramp_s"] / dt, 6))
         if S["ramp_k"] < n_ramp:
-            lim = cfg["phase_start_max_accel_rad_s2"] * dt
-            v_cap = np.clip(v, S["v_last"] - lim, S["v_last"] + lim)
+            env = MINK_CFG["max_joint_speed"] * min_jerk((S["ramp_k"] + 1) * dt / cfg["phase_start_ramp_s"])
+            v_cap = np.clip(v, -env, env)
             if np.any(v_cap != v):
                 arm.q_cmd = q_before + v_cap * dt
                 v = v_cap

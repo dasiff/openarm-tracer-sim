@@ -1,5 +1,7 @@
 # Progress log
 
+UPDATE: smooth episode measured (carry step 0.032 vs 0.532 rad/s, tilt 2.92 deg, dip 18.8 mm, place 0.65 mm, 92.6 s), report docs/reports/*_min_jerk_skill_start_ramp.md, M195 + design plan updated. RUN: full suite (bridge OFF, both ramps ON), tmux suite12, TAG 20261028_034644, SKIP=face_test then face_test alone, summary data/logs/suite_20261028_034644_summary.txt, face_test log data/logs/face_test_20261028_034644.log, about 4.5 h. DO NOT EDIT src/ or experiments/ UNTIL ALL_DONE. mpvi_text_test expected fail. NEXT: add suite results to the report. No push, no video.
+
 UPDATE: smooth (min-jerk 0.5625 s) episode smoothmj_20261028_031803 SUCCESS (13884 ticks, 92.6 s). RUN: tmux chain5 (scratchpad chain5.sh; fixed measure args): measures skillramp and smoothmj into data/arm_motion/<name>, carry npz data/arm_motion/carry_boundary/carry_{skillramp,smoothmj}.npz, logs data/logs/*_skillramp_*/ *_smoothmj_*, marker data/logs/chain5_*.done. NEXT: report a-f, M195, suite.
 
 UPDATE: plain skill-start episode skillramp_20261028_031343 SUCCESS (13800 ticks, 92.0 s). RUN: tmux chain4, script scratchpad chain4.sh: measure skillramp -> smooth episode data/demo_record/smoothmj_20261028_031803 (log data/logs/demo_record_smoothmj_20261028_031803.log) -> measure smoothmj; marker data/logs/chain4_20261028_031803.done; started 03:18. Measures in data/arm_motion/<name>, compare vs ramp_20261028_025303. NEXT: report (a-f), M195 text, suite.

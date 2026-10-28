@@ -101,7 +101,7 @@ def saturation(t, q, dt_each):
                 start = None
         if start is not None:
             iv.append((float(tm[start] - dt_each[start]), float(tm[-1])))
-        out[f"joint{j + 1}"] = {"peak_rad_s": float(np.abs(v[:, j]).max()), "at_limit_ticks": int(at.sum()), "at_limit_intervals_s": iv}
+        out[f"joint{j + 1}"] = {"peak_rad_s": float(np.abs(v[:, j]).max()), "peak_at_s": float(tm[int(np.abs(v[:, j]).argmax())]), "at_limit_ticks": int(at.sum()), "at_limit_intervals_s": iv}
     return out, v
 
 
@@ -203,16 +203,16 @@ def main(a):
     # the target: the pad pose reached (the move's waypoint within tolerance) at the end of the recording window
     T0, parts, dist, ang, arc = planned_T(arm, d, ps, Rs, p1, R1, PICK_PLACE_CFG["speed_m_s"], PICK_PLACE_CFG["turn_rad_s"])
     out["V0_planned"] = {"T_s": T0, "parts_s": parts, "distance_m": dist, "turn_deg": math.degrees(ang), "joint_arc_rad": arc.tolist()}
-    r0 = dry_run(model, d, arm, [(ps, Rs, p1, R1, T0)], "V0", q_prev=q[0])
+    r0 = dry_run(model, d, arm, [(ps, Rs, p1, R1, T0)], "V0")
     arm.reset(d)
     T1, parts1, *_ = planned_T(arm, d, ps, Rs, p1, R1, PICK_PLACE_CFG["speed_m_s"], 0.5 * PICK_PLACE_CFG["turn_rad_s"])
-    r1 = dry_run(model, d, arm, [(ps, Rs, p1, R1, T1)], "V1", q_prev=q[0])
+    r1 = dry_run(model, d, arm, [(ps, Rs, p1, R1, T1)], "V1")
     # V2: turn in place, then the straight move at the turned hand
     arm.reset(d)
     TA, partsA, _, angA, arcA = planned_T(arm, d, ps, Rs, ps, R1, PICK_PLACE_CFG["speed_m_s"], PICK_PLACE_CFG["turn_rad_s"])
     arm.reset(d)
     dA = mujoco.MjData(model)                                         # the second leg's planning starts from the first leg's end: take its joints
-    r2a = dry_run(model, d, arm, [(ps, Rs, ps, R1, TA)], "V2a", q_prev=q[0])
+    r2a = dry_run(model, d, arm, [(ps, Rs, ps, R1, TA)], "V2a")
     dA.qpos[:] = d.qpos
     dA.qpos[arm.qadr] = r2a["q"][r2a["seg_end_idx"][0]]
     mujoco.mj_forward(model, dA)
@@ -246,6 +246,11 @@ def main(a):
     n = int(round(1.5 / DT))
     n = min(n, len(q) - 1, len(sp))
     sl = Slerp([0.0, 1.0], Rotation.from_matrix([Rs, R1]))
+    mxv = np.abs((q[1:n + 1] - q[:n]) / dts[:n, None]).max(axis=1)
+    env_at = lambda k: LIMIT * min_jerk((k + 1) * DT / PICK_PLACE_CFG["phase_start_ramp_s"]) if 0 <= k < 85 else np.inf
+    delay = max(range(0, 9), key=lambda dl: sum(1 for k in range(min(n, 100)) if env_at(k - dl) < LIMIT and mxv[k] >= 0.97 * env_at(k - dl)))      # ticks between the skill's command and the actuator command (the command bridge takes a command every 3rd tick)
+    out["ramp_cap_alignment_delay_ticks"] = delay
+    cap = np.array([env_at(k - delay) for k in range(len(cap))])
     lines = ["tick,t_rel_s,u,at_limit_joints,at_ramp_cap_joints,cmd_v1,cmd_v2,cmd_v3,cmd_v4,cmd_v5,cmd_v6,cmd_v7,ramp_cap_rad_s,ref_trans_mm_s,ref_turn_deg_s,sag_pos_mm,sag_rot_deg,max_dv_rad_s,max_dv_joint,rebuilt_minus_recorded_max_rad"]
     for k in range(n):
         vk = (q[k + 1] - q[k]) / dts[k]

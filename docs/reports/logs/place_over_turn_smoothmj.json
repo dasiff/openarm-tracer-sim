@@ -18,36 +18,43 @@
   "joints": {
    "joint1": {
     "peak_rad_s": 0.22274303670864448,
+    "peak_at_s": 1.0200000000012466,
     "at_limit_ticks": 0,
     "at_limit_intervals_s": []
    },
    "joint2": {
     "peak_rad_s": 0.4052305940047131,
+    "peak_at_s": 0.8933333333344251,
     "at_limit_ticks": 0,
     "at_limit_intervals_s": []
    },
    "joint3": {
     "peak_rad_s": 0.3450838889939205,
+    "peak_at_s": 0.7800000000009533,
     "at_limit_ticks": 0,
     "at_limit_intervals_s": []
    },
    "joint4": {
     "peak_rad_s": 0.31487194329424084,
+    "peak_at_s": 0.3266666666670659,
     "at_limit_ticks": 0,
     "at_limit_intervals_s": []
    },
    "joint5": {
     "peak_rad_s": 0.18661556521067055,
+    "peak_at_s": 0.35333333333376515,
     "at_limit_ticks": 0,
     "at_limit_intervals_s": []
    },
    "joint6": {
     "peak_rad_s": 0.2108139317550217,
+    "peak_at_s": 0.9000000000010999,
     "at_limit_ticks": 0,
     "at_limit_intervals_s": []
    },
    "joint7": {
     "peak_rad_s": 0.3141924001475176,
+    "peak_at_s": 0.3400000000004155,
     "at_limit_ticks": 0,
     "at_limit_intervals_s": []
    }
@@ -75,44 +82,51 @@
    0.03970307214681451
   ]
  },
- "V0_vs_recorded_max_joint_diff_rad": 0.13857222126123958,
+ "V0_vs_recorded_max_joint_diff_rad": 0.13857222293020144,
  "variants": {
   "V0": {
    "T_s": 1.6786365113411084,
-   "peak_speed_rad_s": 0.494233602601235,
+   "peak_speed_rad_s": 0.33104244462052596,
    "saturation": {
     "joint1": {
-     "peak_rad_s": 0.4774131341064691,
+     "peak_rad_s": 0.17252789148724246,
+     "peak_at_s": 1.04,
      "at_limit_ticks": 0,
      "at_limit_intervals_s": []
     },
     "joint2": {
-     "peak_rad_s": 0.46375754265622343,
+     "peak_rad_s": 0.33104244462052596,
+     "peak_at_s": 0.9466666666666668,
      "at_limit_ticks": 0,
      "at_limit_intervals_s": []
     },
     "joint3": {
-     "peak_rad_s": 0.47326503484520493,
+     "peak_rad_s": 0.30052558815634317,
+     "peak_at_s": 0.8066666666666668,
      "at_limit_ticks": 0,
      "at_limit_intervals_s": []
     },
     "joint4": {
-     "peak_rad_s": 0.494233602601235,
+     "peak_rad_s": 0.2324595927639672,
+     "peak_at_s": 1.1400000000000001,
      "at_limit_ticks": 0,
      "at_limit_intervals_s": []
     },
     "joint5": {
-     "peak_rad_s": 0.46375754265622343,
+     "peak_rad_s": 0.1232161185462821,
+     "peak_at_s": 0.88,
      "at_limit_ticks": 0,
      "at_limit_intervals_s": []
     },
     "joint6": {
-     "peak_rad_s": 0.3990238894828392,
+     "peak_rad_s": 0.18436960139510353,
+     "peak_at_s": 0.9866666666666667,
      "at_limit_ticks": 0,
      "at_limit_intervals_s": []
     },
     "joint7": {
-     "peak_rad_s": 0.46375754265622343,
+     "peak_rad_s": 0.05242205168666525,
+     "peak_at_s": 1.1933333333333334,
      "at_limit_ticks": 0,
      "at_limit_intervals_s": []
     }
@@ -121,40 +135,47 @@
   },
   "V1": {
    "T_s": 1.7788699815619136,
-   "peak_speed_rad_s": 0.4923343184927486,
+   "peak_speed_rad_s": 0.3124816765401786,
    "saturation": {
     "joint1": {
-     "peak_rad_s": 0.4811623195216191,
+     "peak_rad_s": 0.1627784109194924,
+     "peak_at_s": 1.1,
      "at_limit_ticks": 0,
      "at_limit_intervals_s": []
     },
     "joint2": {
-     "peak_rad_s": 0.46375754265622343,
+     "peak_rad_s": 0.3124816765401786,
+     "peak_at_s": 1.0,
      "at_limit_ticks": 0,
      "at_limit_intervals_s": []
     },
     "joint3": {
-     "peak_rad_s": 0.47326503484520493,
+     "peak_rad_s": 0.2833573558300953,
+     "peak_at_s": 0.8600000000000001,
      "at_limit_ticks": 0,
      "at_limit_intervals_s": []
     },
     "joint4": {
-     "peak_rad_s": 0.4923343184927486,
+     "peak_rad_s": 0.21936434197485918,
+     "peak_at_s": 1.2066666666666668,
      "at_limit_ticks": 0,
      "at_limit_intervals_s": []
     },
     "joint5": {
-     "peak_rad_s": 0.4845190295819534,
+     "peak_rad_s": 0.11645418610487789,
+     "peak_at_s": 0.9266666666666667,
      "at_limit_ticks": 0,
      "at_limit_intervals_s": []
     },
     "joint6": {
-     "peak_rad_s": 0.390218189556369,
+     "peak_rad_s": 0.17405064033216713,
+     "peak_at_s": 1.04,
      "at_limit_ticks": 0,
      "at_limit_intervals_s": []
     },
     "joint7": {
-     "peak_rad_s": 0.46375754265622343,
+     "peak_rad_s": 0.04951896486128926,
+     "peak_at_s": 1.2666666666666668,
      "at_limit_ticks": 0,
      "at_limit_intervals_s": []
     }
@@ -175,96 +196,105 @@
     "turn_s": 0.8894349907809568,
     "joint_limit_s": 2.52860231911082
    },
-   "T_straight_s": 1.9374381771413418,
+   "T_straight_s": 1.937438177141349,
    "parts_straight_s": {
     "min_move_s": 1.0,
-    "distance_s": 1.6714415730751648,
-    "turn_s": 0.0028739519512025577,
-    "joint_limit_s": 1.9374381771413418
+    "distance_s": 1.6714415730751664,
+    "turn_s": 0.0028739519512028314,
+    "joint_limit_s": 1.937438177141349
    },
-   "T_total_s": 4.466040496252162,
+   "T_total_s": 4.466040496252169,
    "turn_deg": 25.480435561503054,
-   "straight_m": 0.20057298876901977,
+   "straight_m": 0.20057298876901997,
    "turn_leg": {
-    "peak_speed_rad_s": 0.49997888652700406,
+    "peak_speed_rad_s": 0.4733457849955796,
     "saturation": {
      "joint1": {
-      "peak_rad_s": 0.4874920441679031,
+      "peak_rad_s": 0.12009788923801056,
+      "peak_at_s": 1.6400000000000001,
       "at_limit_ticks": 0,
       "at_limit_intervals_s": []
      },
      "joint2": {
-      "peak_rad_s": 0.3909924259865971,
+      "peak_rad_s": 0.15451672626723423,
+      "peak_at_s": 1.1266666666666667,
       "at_limit_ticks": 0,
       "at_limit_intervals_s": []
      },
      "joint3": {
-      "peak_rad_s": 0.4923343184927528,
+      "peak_rad_s": 0.03746317605628699,
+      "peak_at_s": 0.16,
       "at_limit_ticks": 0,
       "at_limit_intervals_s": []
      },
      "joint4": {
-      "peak_rad_s": 0.4637575426562068,
+      "peak_rad_s": 0.2518230948339695,
+      "peak_at_s": 1.54,
       "at_limit_ticks": 0,
       "at_limit_intervals_s": []
      },
      "joint5": {
-      "peak_rad_s": 0.4399124934646919,
+      "peak_rad_s": 0.19946774863877637,
+      "peak_at_s": 1.0533333333333335,
       "at_limit_ticks": 0,
       "at_limit_intervals_s": []
      },
      "joint6": {
-      "peak_rad_s": 0.49997888652700406,
-      "at_limit_ticks": 8,
-      "at_limit_intervals_s": [
-       [
-        0.5,
-        0.5533333333333333
-       ]
-      ]
+      "peak_rad_s": 0.4733457849955796,
+      "peak_at_s": 1.3333333333333335,
+      "at_limit_ticks": 0,
+      "at_limit_intervals_s": []
      },
      "joint7": {
-      "peak_rad_s": 0.4811623195216191,
+      "peak_rad_s": 0.09392463672886348,
+      "peak_at_s": 1.36,
       "at_limit_ticks": 0,
       "at_limit_intervals_s": []
      }
     }
    },
    "straight_leg": {
-    "peak_speed_rad_s": 0.48142104303961203,
+    "peak_speed_rad_s": 0.48142104303980354,
     "saturation": {
      "joint1": {
-      "peak_rad_s": 0.10434102588186556,
+      "peak_rad_s": 0.10434102588214866,
+      "peak_at_s": 0.30000000000000004,
       "at_limit_ticks": 0,
       "at_limit_intervals_s": []
      },
      "joint2": {
-      "peak_rad_s": 0.48142104303961203,
+      "peak_rad_s": 0.48142104303980354,
+      "peak_at_s": 1.06,
       "at_limit_ticks": 0,
       "at_limit_intervals_s": []
      },
      "joint3": {
-      "peak_rad_s": 0.2832125555474768,
+      "peak_rad_s": 0.28321255554770164,
+      "peak_at_s": 1.0333333333333334,
       "at_limit_ticks": 0,
       "at_limit_intervals_s": []
      },
      "joint4": {
-      "peak_rad_s": 0.328066221061285,
+      "peak_rad_s": 0.3280662210647822,
+      "peak_at_s": 0.6466666666666667,
       "at_limit_ticks": 0,
       "at_limit_intervals_s": []
      },
      "joint5": {
-      "peak_rad_s": 0.3742836321711934,
+      "peak_rad_s": 0.3742836321712434,
+      "peak_at_s": 1.0866666666666667,
       "at_limit_ticks": 0,
       "at_limit_intervals_s": []
      },
      "joint6": {
-      "peak_rad_s": 0.46853127230560004,
+      "peak_rad_s": 0.4685312723053336,
+      "peak_at_s": 0.8600000000000001,
       "at_limit_ticks": 0,
       "at_limit_intervals_s": []
      },
      "joint7": {
-      "peak_rad_s": 0.1413202828453905,
+      "peak_rad_s": 0.14132028284617737,
+      "peak_at_s": 0.7266666666666667,
       "at_limit_ticks": 0,
       "at_limit_intervals_s": []
      }
@@ -273,5 +303,6 @@
   }
  },
  "closed_loop_vs_recorded_max_joint_diff_rad": 0.10532956255981013,
- "closed_loop_tick_shift": -1
+ "closed_loop_tick_shift": -1,
+ "ramp_cap_alignment_delay_ticks": 3
 }

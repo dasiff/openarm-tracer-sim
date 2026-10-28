@@ -37,6 +37,9 @@ Beaker base vs the hotplate centre (0.65, 0.66): smooth 0.65 mm (offset -0.23, +
 ## (f) Duration
 Whole episode 92.6 s (baseline 92.5, plain 92.0). PLACE OVER 2.30 s vs 2.16 s (+0.14 s); the other phases within 0.06 s. No phase longer by more than 0.14 s.
 
+## (g) Full test suite (bridge OFF, both ramps ON)
+TAG 20261028_034644, run 03:46 to 05:47 (summary data/logs/suite_20261028_034644_summary.txt, ALL_DONE). 46 tests ran with face_test skipped: 45 exit 0, 1 fail. face_test was run alone afterwards (log data/logs/face_test_20261028_034644.log): 27/27 checks, exit 0. Total 46 of 47 tests pass. The one failure is mpvi_text_test, 6/11 checks, the expected failure carried over from earlier suites. safety_filter_model_check passes (max FK difference 4.3e-11).
+
 ## Open points for David
 - The smooth ramp fixes the one-tick snap but does not improve tilt and dip in PLACE OVER; if the visible bump is the tilt itself (2.8 deg), it comes from the reference move (the hand turn), not the snap.
 - Linear plain skill-start ramp is not recommended (tilt doubled). The flag `skill_start_ramp` can turn the skill-start part off separately.

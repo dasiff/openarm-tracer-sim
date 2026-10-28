@@ -1,5 +1,7 @@
 # Progress log
 
+UPDATE: ramp episode measured (SUCCESS; in-skill boundaries limited to 0.033 rad/s per bridge step; skill-start boundaries (PICK start, PLACE start = the carry boundary) NOT changed: the jump is arm.reset to measured, 0.53 rad/s; tilt 2.82 deg, dip 17.6 mm, place 0.89 mm). M195 row + design plan marker written. RUN: full suite (ramp ON, bridge OFF default, SKIP=face_test, face_test alone after), tmux suite11, TAG 20261028_030910, summary data/logs/suite_20261028_030910_summary.txt, driver log data/logs/suite_20261028_030910_driver.log, started 03:09; about 4.5 h. DO NOT EDIT src/ or experiments/ UNTIL ALL_DONE. NEXT: face_test alone, report docs/reports/*_phase_start_ramp.md (interim written before the suite ends).
+
 UPDATE: ramp episode SUCCESS (data/demo_record/ramp_20261028_025303, 13868 ticks, 92.5 s). RUN (step 3): tmux meas3, /tmp/claude-1000/chain3.sh: left_arm_motion_measure -> data/arm_motion/ramp_20261028_025303, carry_boundary_replay -> data/arm_motion/carry_boundary/carry_ramp.npz, logs data/logs/{arm_measure_ramp,carry_ramp}_20261028_030644.log, marker data/logs/chain3_20261028_030644.done, started 03:06. NEXT: compare vs smooth2, report, M195 + suite.
 
 UPDATE: step 1 committed (WIP; M195 row/tests not done). RUN (step 2): tmux ramp, demo_video.py --record-only data/demo_record/ramp_20261028_025303 (bridge ON, fix ON, restart OFF, ramp ON), log data/logs/demo_record_ramp_20261028_025303.log, started 02:53. NEXT: measure chain (arm series, carry replay) vs smooth2_20261027_171036, report.

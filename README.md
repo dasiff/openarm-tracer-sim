@@ -7,7 +7,7 @@ Design and roadmap: see docs/design_plan.md (status of every planned item).
 
 ## Demo
 
-Click the image below to watch the robot simulation in action.  Staging is unscripted, manipulation is scripted (for now) while we complete RL training.
+Click the image below to watch the robot simulation in action.  Staging is unscripted, manipulation is scripted (for now) while we smooth out the manipulation and complete RL training.
 
 [![Watch the robot simulation demo](https://img.youtube.com/vi/y51XVGbWWc8/hqdefault.jpg)](https://youtu.be/y51XVGbWWc8)
 

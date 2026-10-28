@@ -154,6 +154,14 @@ def make_scripted_manipulation(model, data, world, side, home_q, task_cfg=TASK_C
         mujoco.mj_kinematics(model, d2)
         return arm.pad_pose(d2)
 
+    def commanded_pad_pose():
+        """The pad centre pose with the arm at its last commanded joints (arm.q_cmd), on a scratch copy of the state."""
+        d2 = mujoco.MjData(model)
+        d2.qpos[:] = data.qpos
+        d2.qpos[arm.qadr] = arm.q_cmd
+        mujoco.mj_kinematics(model, d2)
+        return arm.pad_pose(d2)
+
     def forward():
         """The robot's forward direction in the world (horizontal unit vector)."""
         f = data.xmat[base].reshape(3, 3)[:, 0].copy()
@@ -226,7 +234,10 @@ def make_scripted_manipulation(model, data, world, side, home_q, task_cfg=TASK_C
         S["ctx"]["obj"] = ids.get("manipulated")
         S["ctx"]["end_at_zombie"] = bool(segment.get("end_at_zombie"))
         S["ctx"]["place_theta"] = None if segment.get("place_theta_deg") is None else math.radians(float(segment["place_theta_deg"]))      # M184: no default angle (0 is the marginal angle); a place without one fails below
-        arm.reset(data)
+        if cfg["restart_from_commanded"]:                     # M195: the new skill continues from the ctrl that was applied on the previous tick, not from the measured joints (which lose the servo's holding offset under the beaker)
+            arm.q_cmd = np.asarray(data.ctrl[ids["act"]], float).copy()
+        else:
+            arm.reset(data)
         C["p"], C["r"] = np.zeros(3), np.zeros(3)
         try:
             if S["ctx"]["obj"] is None:
@@ -285,7 +296,12 @@ def make_scripted_manipulation(model, data, world, side, home_q, task_cfg=TASK_C
         if S["t0"] is None:
             S["t0"], S["still"] = t, None
             if st["kind"] == "move":
-                p0, R0 = arm.pad_pose(data)
+                if cfg["restart_from_commanded"]:                   # M195: the reference starts where the command is (its pad pose, less the sag correction that is added back to every target), not at the measured pad pose
+                    p0, R0 = commanded_pad_pose()
+                    p0 = p0 - C["p"]
+                    R0 = (Rotation.from_rotvec(C["r"]).inv() * Rotation.from_matrix(R0)).as_matrix()
+                else:
+                    p0, R0 = arm.pad_pose(data)
                 dist = float(np.linalg.norm(st["target"] - p0)) if st["kind"] == "move" else 0.0
                 ang = float(np.linalg.norm(Rotation.from_matrix(R0.T @ st["R"]).as_rotvec()))
                 T = max(cfg["min_move_s"], dist / st["speed"], ang / cfg["turn_rad_s"])

@@ -1,5 +1,7 @@
 # Progress log
 
+UPDATE 2026-10-28: carry boundary measurement DONE (a)-(f), report docs/reports/*_carry_boundary_up_to_place_over.md. No run in progress. Not pushed. WAITING for David.
+
 TASK 2026-10-28 (David): MEASUREMENT ONLY, UP -> PLACE OVER boundary bump in demo_moved_smooth2 video (a)-(f) + why the earlier table omitted it. No motion change, no push. Data: data/arm_motion/smooth2_20261027_171036 (same 13869-tick episode). Done: (a)-(d) from the stored series (experiments/carry_boundary_analysis.py). RUN: tmux carry, experiments/carry_boundary_replay.py data/demo_record/smooth2_20261027_171036/recording data/arm_motion/carry_boundary/carry.npz, log data/logs/carry_boundary_20261028_021020.log, started 02:10 (beaker + hand through the carry, for (e),(f)). NEXT: analysis of carry.npz, report docs/reports/<ts>_carry_boundary.md, commit.
 
 UPDATE 2026-10-28: Part C DONE: face_test 27/27, video data/videos/demo_moved_smooth2_20261027_230400.mp4 (SUCCESS, 97.9 s), report docs/reports/20261028_0200_part_c_video_face_test.md. No run in progress. Not pushed. WAITING for David (ARMS bridge slowdown, VLM refresh, push).

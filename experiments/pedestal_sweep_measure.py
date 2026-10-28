@@ -39,7 +39,8 @@ from src.mink_arm import MinkArm  # noqa: E402
 from src.robot_helpers import arm_ids  # noqa: E402
 from src.task_config import TASK_CFG  # noqa: E402
 
-PHASES = ("PICK: OVER", "PICK: DOWN", "PLACE: OVER", "PLACE: DOWN")
+PHASES = ("PICK: OVER", "PICK: DOWN", "PLACE: OVER", "PLACE: DOWN", "PICK: IN")      # the first four are the extended phases of the request; PICK: IN is measured to see why a height fails there
+REACH_PHASES = PHASES[:4]
 REACH_TOL_M = 0.002          # m: the lowest pad height counts as reached while the position error is below this
 
 
@@ -76,6 +77,8 @@ def replay_measure(rec_dir, windows):
                 Rp=np.column_stack([gf["closing_axis"], np.cross(gf["approach_axis"], gf["closing_axis"]), gf["approach_axis"]]),
                 elbow={s: [g for g in col if bname(g) == f"openarm_{s}_link4"] for s in ("left", "right")},
                 obst=[g for g in col if int(m.geom_bodyid[g]) not in robot_bodies and int(m.geom_bodyid[g]) != 0],
+                arm_geoms=[g for g in col if bname(g).startswith("openarm_left_") and not bname(g).endswith(("link0", "link1", "link2"))],
+                furniture=[g for g in col if bname(g) in ("bench", "task_hotplate")],
                 ids={s: arm_ids(m, s) for s in ("left", "right")},
                 ranges={s: m.jnt_range[arm_ids(m, s)["jnt"]] for s in ("left", "right")})
         if int(round(data.time * 750)) % 5:
@@ -93,6 +96,13 @@ def replay_measure(rec_dir, windows):
                         if dist < best[0]:
                             best = (dist, s, m.geom(g).name or f"geom{g}", f"{m.body(int(m.geom_bodyid[o])).name}/{m.geom(o).name or 'geom' + str(o)}")
             per[ph]["dist"].append((float(data.time), *best))
+            af = (1e9, None, None)
+            for g in ctx["arm_geoms"]:
+                for o in ctx["furniture"]:
+                    dist = mujoco.mj_geomDistance(m, data, g, o, 1.0, None)
+                    if dist < af[0]:
+                        af = (dist, m.geom(g).name or f"geom{g}", m.geom(o).name or f"geom{o}")
+            per[ph].setdefault("armfurn", []).append((float(data.time), *af))
             mg = {}
             for s in ("left", "right"):
                 q = data.qpos[ctx["ids"][s]["qadr"]]
@@ -100,6 +110,8 @@ def replay_measure(rec_dir, windows):
                 mg[s] = np.minimum(q - r[:, 0], r[:, 1] - q)
             per[ph]["margin"].append((float(data.time), mg["left"].copy(), mg["right"].copy()))
             R = data.xmat[ctx["tcp"]].reshape(3, 3)
+            if ph in REACH_PHASES:
+                pass
             ends[ph] = (data.xpos[ctx["tcp"]] + R @ ctx["pad"], R @ ctx["Rp"])
 
     MODEL = [None]
@@ -128,6 +140,13 @@ def summarize(per, ctx, model):
             mn = mg.min(axis=0)
             j = int(mn.argmin())
             res[f"{side}_joint_margin"] = {"closest_joint": j + 1, "margin_rad": float(mn[j]), "margin_deg": float(math.degrees(mn[j])), "per_joint_min_deg": [float(math.degrees(v)) for v in mn]}
+        last = d["dist"][-1]
+        res["at_window_end"] = {"elbow_mm": 1000 * last[1], "elbow_obstacle": last[4],
+                                "left_joint_margin_deg": [float(math.degrees(v)) for v in d["margin"][-1][1]],
+                                "right_joint_margin_deg": [float(math.degrees(v)) for v in d["margin"][-1][2]]}
+        af = d["armfurn"]
+        mn = min(af, key=lambda x: x[1])
+        res["left_arm_to_furniture_min_mm"] = {"mm": 1000 * mn[1], "arm_geom": mn[2], "furniture_geom": mn[3], "at_s": mn[0], "at_window_end_mm": 1000 * af[-1][1], "solver_min_distance_mm": 8.0}
         out[ph] = res
     return out
 
@@ -142,13 +161,15 @@ def reach(model, snap, targets):
     p_home, R_home = arm.pad_pose(d)
     frame = mink.FrameTask("openarm_left_hand_tcp", "body", position_cost=arm.cfg["position_cost"], orientation_cost=arm.cfg["orientation_cost"])
 
-    def solve(config, p, R, iters=300, tol=1e-4):
+    LIM = {"all": arm.pose_limits, "joints_only": [arm.pose_limits[0]]}      # the solver's limits (joint range with its 10 deg margin and collision avoidance), or the joint range only
+
+    def solve(config, p, R, iters=300, tol=1e-4, limits=None):
         R_tcp = np.asarray(R, float) @ arm.R_pad_in_tcp.T
         frame.set_target(mink.SE3.from_rotation_and_translation(mink.SO3.from_matrix(R_tcp), np.asarray(p, float) - R_tcp @ arm.pad_in_tcp))
         for _ in range(iters):
             if float(np.linalg.norm(frame.compute_error(config))) < tol:
                 break
-            v = mink.solve_ik(config, [frame, arm.posture], 0.05, arm.cfg["solver"], damping=arm.cfg["damping"], limits=arm.pose_limits, constraints=[arm.freeze])
+            v = mink.solve_ik(config, [frame, arm.posture], 0.05, arm.cfg["solver"], damping=arm.cfg["damping"], limits=limits or arm.pose_limits, constraints=[arm.freeze])
             config.integrate_inplace(v, 0.05)
 
     def pad_of(config):
@@ -167,6 +188,7 @@ def reach(model, snap, targets):
         return mink.Configuration(model, q=q)
 
     out = {"home_pad": p_home.tolist(), "targets": {}, "max_down": {}}
+    targets = {k: v for k, v in targets.items() if k in REACH_PHASES}
     for ph, (p, R) in targets.items():
         p, R = np.asarray(p, float), np.asarray(R, float)
         cfg = new_config()
@@ -179,41 +201,50 @@ def reach(model, snap, targets):
             status = f"no solution: {e}"
         e_mm, e_deg = err(cfg, p, R)
         out["targets"][ph] = {"target": p.tolist(), "pos_error_mm": 1000 * e_mm, "rot_error_deg": e_deg, "status": status, "q_left_deg": [float(math.degrees(v)) for v in cfg.q[arm.qadr]]}
-    for name, (over, down) in {"pick": ("PICK: OVER", "PICK: DOWN"), "place": ("PLACE: OVER", "PLACE: DOWN")}.items():
-        if over not in targets or down not in targets:
-            continue
-        po, Ro = (np.asarray(x, float) for x in targets[over])
-        pd, Rd = (np.asarray(x, float) for x in targets[down])
-        cfg = new_config()
-        sl = Slerp([0.0, 1.0], Rotation.from_matrix([R_home, Ro]))
+        cfg = new_config()                                       # the same path with the joint range only (no collision avoidance, no margin)
         try:
             for u in np.linspace(0.0, 1.0, 31):
-                solve(cfg, p_home + (po - p_home) * u, sl(u).as_matrix())
+                solve(cfg, p_home + (p - p_home) * u, sl(u).as_matrix(), limits=LIM["joints_only"])
         except mink.NoSolutionFound:
             pass
-        e0, _ = err(cfg, po, Ro)
-        lowest, z = None, float(po[2])
-        stop = "reached the target height"
-        if e0 > REACH_TOL_M:
-            stop = f"the OVER pose itself is {1000 * e0:.1f} mm short"
-        else:
-            lowest = z
-            while z > pd[2] - 0.10:
-                z -= 0.005
-                tgt = np.array([pd[0], pd[1], z])
-                try:
-                    solve(cfg, tgt, Rd)
-                except mink.NoSolutionFound:
-                    stop = "no solution (limits or collision)"
-                    break
-                e, _ = err(cfg, tgt, Rd)
-                if e > REACH_TOL_M:
-                    stop = f"error {1000 * e:.1f} mm at z={z:.3f}"
-                    break
-                lowest = z
+        out["targets"][ph]["pos_error_mm_joint_range_only"] = 1000 * err(cfg, p, R)[0]
+    for mode in ("all", "joints_only"):
+        lim = LIM[mode]
+        for name, (over, down) in {"pick": ("PICK: OVER", "PICK: DOWN"), "place": ("PLACE: OVER", "PLACE: DOWN")}.items():
+            if over not in targets or down not in targets:
+                continue
+            po, Ro = (np.asarray(x, float) for x in targets[over])
+            pd, Rd = (np.asarray(x, float) for x in targets[down])
+            cfg = new_config()
+            sl = Slerp([0.0, 1.0], Rotation.from_matrix([R_home, Ro]))
+            try:
+                for u in np.linspace(0.0, 1.0, 31):
+                    solve(cfg, p_home + (po - p_home) * u, sl(u).as_matrix(), limits=lim)
+            except mink.NoSolutionFound:
+                pass
+            e0, _ = err(cfg, po, Ro)
+            lowest, z = None, float(po[2])
+            stop = "reached 100 mm below the waypoint"
+            if e0 > REACH_TOL_M:
+                stop = f"the OVER pose itself is {1000 * e0:.1f} mm short"
             else:
-                stop = "reached 100 mm below the waypoint"
-        out["max_down"][name] = {"xy": [float(pd[0]), float(pd[1])], "needed_pad_z": float(pd[2]), "lowest_pad_z_reached": lowest, "lowest_minus_needed_mm": None if lowest is None else 1000 * (lowest - pd[2]), "stop": stop}
+                lowest = z
+                while z > pd[2] - 0.10:
+                    z -= 0.005
+                    tgt = np.array([pd[0], pd[1], z])
+                    try:
+                        solve(cfg, tgt, Rd, limits=lim)
+                    except mink.NoSolutionFound:
+                        stop = "no solution"
+                        break
+                    e, _ = err(cfg, tgt, Rd)
+                    if e > REACH_TOL_M:
+                        stop = f"error {1000 * e:.1f} mm at z={z:.3f}"
+                        break
+                    lowest = z
+                    last_q = cfg.q[arm.qadr].copy()
+            out["max_down"][f"{name}_{mode}"] = {"xy": [float(pd[0]), float(pd[1])], "needed_pad_z": float(pd[2]), "lowest_pad_z_reached": lowest,
+                                                  "lowest_minus_needed_mm": None if lowest is None else 1000 * (lowest - pd[2]), "stop": stop}
     return out
 
 

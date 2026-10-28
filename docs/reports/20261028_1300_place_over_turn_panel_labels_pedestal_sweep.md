@@ -23,7 +23,7 @@ Dry run = the skill's solver on a scratch arm from the joint state at the phase 
 ### (d) Turn first, then translate, from the IK dry run
 | leg | planned time | binding term | largest joint speed | any joint at the limit |
 |---|---|---|---|---|
-| turn in place (25.5 deg) | 2.53 s | joint arc (2.0 x arc / 0.5; the turn alone moves J6 about 0.63 rad) | 0.473 rad/s (J6) | no |
+| turn in place (25.5 deg) | 2.53 s | joint arc (2.0 x arc / 0.5; the turn alone needs a long joint arc: the same pad turn with no translation) | 0.473 rad/s (J6) | no |
 | straight move (201 mm) | 1.94 s | joint arc | 0.481 rad/s (J2) | no |
 | total | **4.47 s** (+2.8 s over 1.68 s; the settle dwell of each leg not counted) | | | |
 Neither leg reaches 0.495 rad/s, both come close (J6 0.473, J2 0.481). Doing the turn first is slower by 2.8 s and the joints are nearer the limit than in the combined move.
@@ -33,7 +33,7 @@ Neither leg reaches 0.495 rad/s, both come close (J6 0.473, J2 0.481). Doing the
 Reading it:
 - ticks 0 to 2: nothing (bridge delay, 3 ticks); ticks 3 to 21: all 7 joints at the cap (about +-0.0116 to 0.07 rad/s, all joints the same speed = the cap, the direction is the snap's, not the reference's); 21 to 51: the set falls to J1/J3/J4/J7, then J3/J7/J4; tick 51 (0.34 s): the cap lets go.
 - from tick 51 the velocities follow the reference (reference speeds grow from 0 to 224 mm/s at 0.84 s, back to 0 at 1.68 s). No joint at 0.5 rad/s after that.
-- Whether the solver switches solutions: the velocity direction changes sharply once, at the cap release (tick 51, "max dv" column 0.36 rad/s in one tick at tick 48 to 60); after that the largest tick-to-tick change is below 0.03 rad/s. No further switching in this window.
+- Whether the solver switches solutions: the velocity changes sharply three times, all at the end of the cap period: tick 39 (J1, 0.21 rad/s in one update), tick 42 (J4, 0.23), tick 51 (J3, **0.32**, the largest) and tick 54 (J7, 0.11); from tick 55 on the largest change in one update is 0.04 rad/s (at tick 57 and 60). No switching later in the 1.5 s.
 - The sag column is rebuilt (it is not recorded): it grows 0 to 26 mm during the first 1.3 s and is the integral of the measured pad pose error, so it is the same as the real run's up to the target tolerance. The rebuilt commands differ from the recorded ones by up to 0.105 rad (mostly an offset set in the first 0.3 s), so use the joint velocity columns (recorded), and the sag and reference columns as approximate.
 
 ### (f) Speed limit as one factor on the whole velocity (uniform scaling)

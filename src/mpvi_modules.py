@@ -238,6 +238,7 @@ def make_scripted_manipulation(model, data, world, side, home_q, task_cfg=TASK_C
         if cfg["restart_from_commanded"]:                     # M195: the new skill continues from the ctrl that was applied on the previous tick, not from the measured joints (which lose the servo's holding offset under the beaker)
             arm.q_cmd = np.asarray(data.ctrl[act_ids], float).copy()
         else:
+            S["q_prev"] = arm.q_cmd.copy() if cfg["skill_start_ramp"] else None      # M195: the command of the last tick, from which the ramp of the first tick of this skill starts
             arm.reset(data)
         C["p"], C["r"] = np.zeros(3), np.zeros(3)
         S["v_last"] = np.zeros(7)
@@ -401,6 +402,8 @@ def make_scripted_manipulation(model, data, world, side, home_q, task_cfg=TASK_C
         Not applied mid-phase; a cap that does not bind changes nothing, so it is simply left on for the N ticks. N = ceil(phase_start_ramp_s / dt); 0 s turns the ramp off."""
         dt = obs["timestep"] * obs["steps_per_frame"]
         q_before = arm.q_cmd.copy()
+        if S.get("q_prev") is not None:                            # first tick after arm.reset at a skill start: the ramp runs from the last command, so the snap to the measured joints is spread over the ramp
+            q_before, S["q_prev"] = S["q_prev"], None
         if S["started"] and S["error"] is None and S["i"] < len(S["steps"]) and S["t0"] is None:
             S["ramp_k"] = 0                                        # a new phase starts on this tick
         out = step_inner(obs)

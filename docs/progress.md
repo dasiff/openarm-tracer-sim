@@ -1,5 +1,7 @@
 # Progress log
 
+UPDATE: step 1 committed (WIP). RUN (step 2): tmux restart, demo_video.py --record-only data/demo_record/restart_20261028_022525 (bridge ON, fix ON, restart ON), log data/logs/demo_record_restart_20261028_022525.log, started 02:25. NEXT: measure vs smooth2_20261027_171036 (left_arm_motion_measure, carry_boundary_replay), report.
+
 TASK 2026-10-28 (David): phase/skill RESTART FROM THE COMMANDED POSE (new setting PICK_PLACE_CFG restart_from_commanded, M195). Steps: 1 implement in src/mpvi_modules.py (skill start: q_cmd from the applied ctrl instead of arm.reset(measured); move start p0/R0 from the pad pose at q_cmd minus the sag correction instead of the measured pad pose; nothing else) + config + commit, 2 run the moved episode (bridge ON, fix ON) with demo_video.py --record-only, 3 measure (arm series, carry replay, place accuracy) vs smooth2_20261027_171036, 4 report (a)-(f) in docs/reports; if it fails or the place is worse: report and STOP, no tuning; else M195 row + design plan marker + full suite (bridge OFF, fix ON, restart ON). No video re-render, no push. CURRENT STEP: 1.
 
 UPDATE 2026-10-28: carry boundary measurement DONE (a)-(f), report docs/reports/*_carry_boundary_up_to_place_over.md. No run in progress. Not pushed. WAITING for David.

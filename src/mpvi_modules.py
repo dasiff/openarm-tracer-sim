@@ -145,7 +145,7 @@ def make_scripted_manipulation(model, data, world, side, home_q, task_cfg=TASK_C
     base = model.body("base_link").id
     home_q = np.asarray(home_q, float)
     C = {"p": np.zeros(3), "r": np.zeros(3)}                 # the sag correction: an integral of the measured pad pose error, added to the waypoint path
-    S = {"steps": [], "i": 0, "t0": None, "error": None, "events": [], "started": False, "phase": "IDLE", "still": None, "grip": open_g, "ctx": {}}
+    S = {"steps": [], "i": 0, "t0": None, "error": None, "events": [], "started": False, "phase": "IDLE", "still": None, "grip": open_g, "ctx": {}, "ramp_k": 10 ** 9, "v_last": np.zeros(7)}
 
     def home_pad_pose():
         """The pad centre pose with the arm at its home joints (on a scratch copy of the state)."""
@@ -240,6 +240,7 @@ def make_scripted_manipulation(model, data, world, side, home_q, task_cfg=TASK_C
         else:
             arm.reset(data)
         C["p"], C["r"] = np.zeros(3), np.zeros(3)
+        S["v_last"] = np.zeros(7)
         try:
             if S["ctx"]["obj"] is None:
                 raise ValueError("the segment has no grounded object")
@@ -262,6 +263,7 @@ def make_scripted_manipulation(model, data, world, side, home_q, task_cfg=TASK_C
         S["ctx"]["primitive"] = "recover"
         arm.reset(data)
         C["p"], C["r"] = np.zeros(3), np.zeros(3)
+        S["v_last"] = np.zeros(7)
         p, R0 = arm.pad_pose(data)
         a = forward()
         R = pad_rotation(a, R0[:, 0])
@@ -287,8 +289,8 @@ def make_scripted_manipulation(model, data, world, side, home_q, task_cfg=TASK_C
         S["still"] = None
         return False
 
-    def step(obs):
-        """One tick of the current waypoint."""
+    def step_inner(obs):
+        """One tick of the current waypoint (before the phase-start velocity ramp of step())."""
         if not S["started"] or S["error"] or S["i"] >= len(S["steps"]):
             return None
         t = obs["time"]
@@ -391,6 +393,30 @@ def make_scripted_manipulation(model, data, world, side, home_q, task_cfg=TASK_C
             out = command()
         if advance:
             S["i"], S["t0"], S["still"] = S["i"] + 1, None, None
+        return out
+
+    def step(obs):
+        """One tick: step_inner, then the phase-start ramp (M195): in the first N ticks of every phase the commanded velocity of each arm joint may change by at most
+        phase_start_max_accel_rad_s2 * dt from the previous tick's, so the solver's first solution of a new phase cannot jump the command to a high velocity in one tick.
+        Not applied mid-phase; a cap that does not bind changes nothing, so it is simply left on for the N ticks. N = ceil(phase_start_ramp_s / dt); 0 s turns the ramp off."""
+        dt = obs["timestep"] * obs["steps_per_frame"]
+        q_before = arm.q_cmd.copy()
+        if S["started"] and S["error"] is None and S["i"] < len(S["steps"]) and S["t0"] is None:
+            S["ramp_k"] = 0                                        # a new phase starts on this tick
+        out = step_inner(obs)
+        if out is None:
+            return None
+        v = (arm.q_cmd - q_before) / dt
+        n_ramp = math.ceil(round(cfg["phase_start_ramp_s"] / dt, 6))
+        if S["ramp_k"] < n_ramp:
+            lim = cfg["phase_start_max_accel_rad_s2"] * dt
+            v_cap = np.clip(v, S["v_last"] - lim, S["v_last"] + lim)
+            if np.any(v_cap != v):
+                arm.q_cmd = q_before + v_cap * dt
+                v = v_cap
+                out = command()
+        S["ramp_k"] += 1
+        S["v_last"] = v
         return out
 
     def done():

@@ -512,7 +512,8 @@ def select_bench_stance(tagged, world, task_cfg, ctx, cfg=BENCH_STANCE_CFG, full
     if len(rep["runs"]) > 1 and any(tuple(np.round(r["stance"]["xy"], 3)) != tuple(np.round(first["stance"]["xy"], 3)) or abs(r["stance"]["q"] - first["stance"]["q"]) > 1e-9 for r in rep["runs"][1:]):
         rep["notes"].append("second stance not supported by the scripted staging: only the first run's stance is parked")
     st = first["stance"]
-    out["task_cfg"] = dict(task_cfg, staging_xy=(float(st["xy"][0]), float(st["xy"][1])), staging_yaw=yaw, pedestal_q=float(st["q"]))
+    ped = cfg["pedestal_override_m"] if cfg.get("pedestal_override_m") is not None else st["q"]       # M197: the staging's pedestal height (the selection's own when no override is set)
+    out["task_cfg"] = dict(task_cfg, staging_xy=(float(st["xy"][0]), float(st["xy"][1])), staging_yaw=yaw, pedestal_q=float(ped))
     plan2 = copy.deepcopy(tagged)
     moving_nav = {n for r in rep["runs"] for n in r["nav"]}
     for j, seg in enumerate(plan2["segments"]):                       # M074: a pick returns to the zombie pose unless the next navigation step is null

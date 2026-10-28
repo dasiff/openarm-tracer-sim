@@ -365,8 +365,9 @@ def run_loop(model, data, sources, cfg, viewer=None, logger=None):
     vadr = lambda a: int(model.jnt_dofadr[model.actuator_trnid[a, 0]])
     arm_vadr = {s: [vadr(a) for a in arm_act[s]] for s in sides}
     fing_vadr = [vadr(a) for s in sides for a in fing_act[s]]
-    from src.gravity_ff import ArmGravityFeedforward
+    from src.gravity_ff import ArmGravityFeedforward, clear_held_mass, held_mass, set_held_mass
     gff = ArmGravityFeedforward(model, arm_act, fing_act, sides)          # M185: the arm's gravity torque as a feedforward on the targets
+    clear_held_mass(model)                                                # M196: no held-object compensation left over from an earlier run
     ped_aid = aid(robot_specs.PEDESTAL_SPECS["actuator_name"])
     ped_lo, ped_hi = model.actuator_ctrlrange[ped_aid]
     ped_vadr = vadr(ped_aid)
@@ -956,6 +957,9 @@ def run_loop(model, data, sources, cfg, viewer=None, logger=None):
             blk = np.asarray(replay["ctrl"][frame])
             if replay.get("gripforce") is not None:
                 set_grip_force(replay["gripforce"][frame])
+            if replay.get("heldmass") is not None:                          # M196: the held-object compensation of the recorded tick (older recordings: none)
+                for k, s_ in enumerate(sides):
+                    set_held_mass(model, s_, float(replay["heldmass"][frame][k]))
             advance(*replay["basevel"][frame], np.broadcast_to(blk, (steps_per_frame, model.nu)) if blk.ndim == 1 else blk)
             replay["on_tick_end"](frame, data)
             frame += 1
@@ -1069,7 +1073,7 @@ def run_loop(model, data, sources, cfg, viewer=None, logger=None):
         block = ctrl_block()
         set_grip_force([grip_force[s] for s in sides])
         if recorder is not None:
-            recorder.tick(frame, block, (base_vx, base_vy, base_wz), [grip_force[s] for s in sides])
+            recorder.tick(frame, block, (base_vx, base_vy, base_wz), [grip_force[s] for s in sides], [held_mass(model, s) for s in sides])
             recorder.label(frame, status.split("  (")[0] if isinstance(status, str) else status)
         advance(base_vx, base_vy, base_wz, block)
         if recorder is not None:

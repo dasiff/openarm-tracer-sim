@@ -12,6 +12,8 @@ How a held object's weight stays out
   * Each body's own mass and its own centre of mass are used (mj_jacBodyCom: the body's centre of mass, not the subtree's), and `model.body_subtreemass` and the subtree centres are never read, so
     a body that is attached below (the beaker is a free body of the world, not a child of the hand) cannot enter through a parent.
   * The mass of any other body (the beaker, the plate, the battery, the base) is never read; the experiments/gravity_ff_test.py checks that the torque is unchanged when the beaker's mass changes.
+  * Since M196 one thing besides the arm's own bodies can enter: the held object's MEASURED mass (HELD_MASS, set only from the handoff weight reading, src/weight_estimate.py), as a straight-down
+    weight at the pad centre. The true mass of any body is still never read.
 The pose comes from `data.qpos` (the measured joints and the base's pose, so a tilted base is included), copied to a private MjData: the simulation's own state is not touched.
 """
 
@@ -19,6 +21,33 @@ import mujoco
 import numpy as np
 
 from src import robot_specs
+from src.gripper_geometry import gripper_frame
+
+G = 9.81
+
+# The held-object compensation (decisions-log M196): {id(model): {side: measured mass in kg}}. The manipulation module sets it after the handoff weight reading (src/weight_estimate.py)
+# and clears it after the gripper opens; the loop's gravity feedforward reads it every tick, and the run recorder stores it per tick so a replay applies the same torque.
+# The mass in it is always a MEASURED one (the reading's), never the object's true mass.
+HELD_MASS = {}
+
+
+def set_held_mass(model, side, mass_kg):
+    """Starts (mass_kg > 0) or ends (None or 0) the held-object compensation of one arm."""
+    d = HELD_MASS.setdefault(id(model), {})
+    if mass_kg:
+        d[side] = float(mass_kg)
+    else:
+        d.pop(side, None)
+
+
+def held_mass(model, side):
+    """The measured mass (kg) being compensated at the hand of `side`, 0.0 if none."""
+    return HELD_MASS.get(id(model), {}).get(side, 0.0)
+
+
+def clear_held_mass(model):
+    """Ends the compensation of both arms."""
+    HELD_MASS.pop(id(model), None)
 
 
 class ArmGravityFeedforward:
@@ -33,6 +62,10 @@ class ArmGravityFeedforward:
             sides (tuple): The arms. Defaults to both.
         """
         self.model = model
+        self.sides = tuple(sides)
+        self.pads = {}                                      # side -> (tool point body id, pad centre in the tool point frame): where the held object's weight acts (M196)
+        for s in sides:
+            self.pads[s] = (int(model.body(f"openarm_{s}_hand_tcp").id), np.asarray(gripper_frame(model, s)["pad_center_in_tcp"], float))
         self.scratch = mujoco.MjData(model)
         self.g = np.asarray(model.opt.gravity, float)
         self.bodies = []                                    # (body id, mass) of the arms' own links, hands and fingers only
@@ -77,6 +110,12 @@ class ArmGravityFeedforward:
             mujoco.mj_jacBodyCom(m, d, self.jac, None, b)
             W += mass * self.jac
         t = -(self.g @ W)                                   # generalized gravity force is m J^T g; the holding torque is its negative
+        for s, m_held in HELD_MASS.get(id(m), {}).items():  # M196: the held object's MEASURED weight, straight down at the pad centre: the holding torque is m g J_z of the pad centre
+            if s in self.pads:
+                tcp, pad = self.pads[s]
+                point = d.xpos[tcp] + d.xmat[tcp].reshape(3, 3) @ pad
+                mujoco.mj_jac(m, d, self.jac, None, point, tcp)
+                t = t + m_held * G * self.jac[2]
         self.tau = np.array([t[ds].sum() for ds in self.dofs])
         return self.tau
 

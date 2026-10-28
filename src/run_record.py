@@ -16,7 +16,7 @@ every `checkpoint_every` ticks (to say what differs when a hash does not match).
     run_dir/
         meta.json              recipe to rebuild the model, loop config, camera specs, rates, spawn, git commit, MuJoCo version, labels
         initial_state.npy      the state after the settle (the replay compares its own settle against it)
-        chunks/chunk_00000.npz ... ticks [start, start + n): start, ctrl[n, steps, nu], basevel[n, 3], gripforce[n, 2] (not a number
+        chunks/chunk_00000.npz ... ticks [start, start + n): start, ctrl[n, steps, nu], basevel[n, 3], gripforce[n, 2], heldmass[n, 2] (the measured mass in kg compensated at each hand, 0 = none; M196; absent in older recordings), gripforce (not a number
                                where no force limit was given), hashes[n] (unsigned 64-bit integers), checkpoint ticks and states
 
 Here "meta.json" is a JavaScript Object Notation (JSON) file, and the ".npy" / ".npz" files are NumPy array files (one array, and
@@ -241,6 +241,7 @@ class RunRecorder:
         basevel (list[numpy.ndarray]): The (vx, vy, wz) world-frame base velocities of those ticks.
         hashes (list[int]): The state hashes after those ticks.
         gripforce (list[numpy.ndarray]): The (left, right) gripper force limits of those ticks, in newtons per finger.
+        heldmass (list[numpy.ndarray]): The (left, right) measured held mass (kg) compensated in those ticks (M196).
         ck_ticks (list[int]): The tick numbers of the checkpoints not yet written.
         ck_states (list[numpy.ndarray]): The checkpoint state vectors not yet written.
         start_tick (int): The tick number of the first tick of the chunk being collected.
@@ -276,7 +277,7 @@ class RunRecorder:
         self.model, self.data = model, data
         self.chunk_ticks, self.checkpoint_every = chunk_ticks, checkpoint_every
         self.buf = new_state_buffer(model)
-        self.ctrl, self.basevel, self.hashes, self.gripforce = [], [], [], []
+        self.ctrl, self.basevel, self.hashes, self.gripforce, self.heldmass = [], [], [], [], []
         self.ck_ticks, self.ck_states = [], []
         self.start_tick, self.n_chunks, self.n_ticks = 0, 0, 0
         self.labels = []
@@ -295,7 +296,7 @@ class RunRecorder:
         """Writes meta.json from self.meta plus the current labels and tick count."""
         (self.dir / "meta.json").write_text(json.dumps({**self.meta, "labels": self.labels, "n_ticks": self.n_ticks}, indent=1))
 
-    def tick(self, frame, ctrl, basevel, gripforce=None):
+    def tick(self, frame, ctrl, basevel, gripforce=None, heldmass=None):
         """Records the inputs of one tick, before the tick's physics steps.
 
         Args:
@@ -305,7 +306,9 @@ class RunRecorder:
                 second and radians per second; copied.
             gripforce (list[float] or None): The force limit of the (left, right) gripper in newtons per finger. Defaults to
                 None, which is stored as not-a-number for both.
+            heldmass (list[float] or None): The measured mass in kilograms compensated at the (left, right) hand (M196). Defaults to None, stored as 0 (none).
         """
+        self.heldmass.append(np.array(heldmass if heldmass is not None else [0.0, 0.0], dtype=np.float64))
         self.gripforce.append(np.array(gripforce if gripforce is not None else [np.nan, np.nan], dtype=np.float64))
         self.ctrl.append(np.array(ctrl, dtype=np.float64))
         self.basevel.append(np.array(basevel, dtype=np.float64))
@@ -351,11 +354,11 @@ class RunRecorder:
             return
         n = len(self.hashes)                        # a tick whose physics did not finish has inputs but no hash: dropped
         np.savez(self.dir / "chunks" / f"chunk_{self.n_chunks:05d}.npz", start=self.start_tick, ctrl=np.array(self.ctrl[:n]),
-                 basevel=np.array(self.basevel[:n]), gripforce=np.array(self.gripforce[:n]), hashes=np.array(self.hashes, dtype=np.uint64), ck_ticks=np.array(self.ck_ticks, dtype=np.int64),
+                 basevel=np.array(self.basevel[:n]), gripforce=np.array(self.gripforce[:n]), heldmass=np.array(self.heldmass[:n]), hashes=np.array(self.hashes, dtype=np.uint64), ck_ticks=np.array(self.ck_ticks, dtype=np.int64),
                  ck_states=np.array(self.ck_states).reshape(len(self.ck_states), -1))
         self.start_tick += n
         self.n_chunks += 1
-        self.ctrl, self.basevel, self.hashes, self.gripforce, self.ck_ticks, self.ck_states = [], [], [], [], [], []
+        self.ctrl, self.basevel, self.hashes, self.gripforce, self.heldmass, self.ck_ticks, self.ck_states = [], [], [], [], [], [], []
         self._write_meta()
 
     def close(self, extra=None):
@@ -387,6 +390,7 @@ def load_recording(run_dir):
             "basevel" (numpy.ndarray): shape [T, 3], the world-frame base velocity (vx, vy, wz) of every tick.
             "gripforce" (numpy.ndarray or None): shape [T, 2], the (left, right) gripper force limits in newtons per finger;
                 None for older recordings made before this was recorded (the force ceiling throughout).
+            "heldmass" (numpy.ndarray or None): shape [T, 2], the (left, right) measured held mass in kilograms compensated at each hand (M196); None for older recordings (none).
             "hashes" (numpy.ndarray): shape [T], the state hash after every tick, unsigned 64-bit integers.
             "checkpoints" (dict[int, numpy.ndarray]): tick number -> full state vector.
 
@@ -402,11 +406,12 @@ def load_recording(run_dir):
     ctrl = np.concatenate([p["ctrl"] for p in parts])
     basevel = np.concatenate([p["basevel"] for p in parts])
     gripforce = np.concatenate([p["gripforce"] for p in parts]) if all("gripforce" in p.files for p in parts) else None    # older recordings: the ceiling throughout
+    heldmass = np.concatenate([p["heldmass"] for p in parts]) if all("heldmass" in p.files for p in parts) else None    # older recordings: no held-object compensation
     hashes = np.concatenate([p["hashes"] for p in parts])
     ck = {int(t): s for p in parts for t, s in zip(p["ck_ticks"], p["ck_states"])}
     if int(parts[0]["start"]) != 0:
         raise ValueError(f"{run_dir}: the first chunk does not start at tick 0")
     if not meta.get("complete"):
         print(f"WARNING: {run_dir} was not closed cleanly (crash?); using the {len(ctrl)} ticks that were written")
-    return {"meta": meta, "initial_state": np.load(run_dir / "initial_state.npy"), "ctrl": ctrl, "basevel": basevel, "gripforce": gripforce,
+    return {"meta": meta, "initial_state": np.load(run_dir / "initial_state.npy"), "ctrl": ctrl, "basevel": basevel, "gripforce": gripforce, "heldmass": heldmass,
             "hashes": hashes, "checkpoints": ck}

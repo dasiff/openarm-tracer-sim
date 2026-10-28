@@ -183,7 +183,7 @@ def text_bitmap(rows, w, label_w, keys=(), scale=1.0, block=(), block_label_w=No
 # What the robot is physically doing in each phase of the status text "<NAV|PICK|PLACE>: <phase> [<status>]" (David 2026-10-28): the panel shows this as the main text and the internal code small
 # under it. A phase that appears for both a pick and a place has one entry per kind; HOME is both the move to the home pad pose and the final joint move.
 PHASE_ACTIONS = {
-    ("NAV", "ARMS"): "Stowing arms", ("NAV", "PEDESTAL"): "Setting torso height", ("NAV", "CREEP_IN"): "Creeping into position", ("NAV", "DONE"): "Stopped at the bench",
+    ("NAV", "ARMS"): "Stowing arms", ("NAV", "PEDESTAL"): "Adjusting pedestal height", ("NAV", "CREEP_IN"): "Creeping into position", ("NAV", "DONE"): "Stopped at the bench",
     ("PICK", "OVER"): "Move over beaker", ("PICK", "DOWN"): "Lower to beaker", ("PICK", "IN"): "Close on beaker", ("PICK", "CLOSE"): "Grip beaker",
     ("PICK", "UP"): "Lift beaker", ("PICK", "CHECK"): "Check the beaker is held",
     ("PLACE", "OVER"): "Move over hotplate", ("PLACE", "DOWN"): "Lower to hotplate", ("PLACE", "OPEN"): "Release beaker", ("PLACE", "BACK"): "Back away",
@@ -240,7 +240,7 @@ def panel_from_status(static, status):
     Returns:
         dict or None: "instruction", "steps", "index" (0-based index of the current step; the step count once the plan is done), "phase"
         (the status text without the step counter: the internal phase code, shown small), "action" (str or None: the plain description of what the robot is doing, shown
-        as the main text, see phase_action()), "now" (str or None: replaces the step text in the NOW row, only while the arms are stowed before a drive), or None when
+        as the main text, see phase_action()), "now" (str or None: replaces the step text in the NOW row, only while the arms are stowed or the pedestal is adjusted before a drive), or None when
         `static` is None.
     """
     if not static:
@@ -256,7 +256,7 @@ def panel_from_status(static, status):
         index, phase = 0, text
     step_text = steps[index] if index < len(steps) else None
     action = phase_action(phase, step_text)
-    now = action if action and (phase or "").startswith("NAV: ARMS") else None      # the plan step says "Navigate to the beaker" while the arms are still being stowed: show what the robot does
+    now = action if action and (phase or "").startswith(("NAV: ARMS", "NAV: PEDESTAL")) else None      # the plan step says "Navigate to the beaker" while the arms are still being stowed or the pedestal adjusted: show what the robot does
     return {"instruction": static.get("instruction"), "steps": steps, "index": index, "phase": phase or None, "action": action, "now": now}
 
 

@@ -93,7 +93,7 @@ class MinkArm:
         rng = model.jnt_range[ids["jnt"]]
         joint_limit.lower[self.qadr] = rng[:, 0] + cfg["joint_margin_rad"]
         joint_limit.upper[self.qadr] = rng[:, 1] - cfg["joint_margin_rad"]
-        limits = [joint_limit, mink.VelocityLimit(model, {n: cfg["max_joint_speed"] for n in names})]
+        limits = [joint_limit] if cfg.get("uniform_speed_scaling") else [joint_limit, mink.VelocityLimit(model, {n: cfg["max_joint_speed"] for n in names})]      # uniform_speed_scaling: the speed limit is applied to the whole velocity after the solve (step())
         collisions = self._collision_limits(model, side, cfg)
         self.limits = limits + collisions
         self.pose_limits = [joint_limit] + collisions        # the same limits without the speed limit: for the dry run of joint_travel()
@@ -196,5 +196,8 @@ class MinkArm:
         p_tcp = np.asarray(position, float) - R_tcp @ self.pad_in_tcp
         self.frame.set_target(mink.SE3.from_rotation_and_translation(mink.SO3.from_matrix(R_tcp), p_tcp))
         v = mink.solve_ik(self.config, [self.frame, self.posture], self.dt, self.cfg["solver"], damping=self.cfg["damping"], limits=self.limits, constraints=[self.freeze])
-        self.q_cmd = self.q_cmd + v[self.vadr] * self.dt
+        va = v[self.vadr]
+        if self.cfg.get("uniform_speed_scaling"):
+            va = va * min(1.0, self.cfg["max_joint_speed"] / max(float(np.max(np.abs(va))), 1e-12))      # all joints scaled by one factor: the fastest at most at the limit, the direction kept
+        self.q_cmd = self.q_cmd + va * self.dt
         return self.q_cmd.copy()

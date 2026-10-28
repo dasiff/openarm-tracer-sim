@@ -404,6 +404,7 @@ MINK_CFG = {
     "posture_cost": 0.01,                  # toward the home pose, on the arm's 7 joints only (it picks the elbow, the 7th degree of freedom) [row M088]
     "joint_margin_rad": math.radians(10.0),          # stay this far from every joint limit (the map's rule) [row M088]
     "max_joint_speed": 0.5,                # rad/s, the real bridge's joint speed limit (the bridge itself is LATER); the plan's speeds stay below it [row M111 PENDING David: no decision recorded]
+    "uniform_speed_scaling": False,        # False (default, as before): the speed limit is mink's per-joint velocity constraint, so a joint that reaches max_joint_speed is held there while the others go on (the direction of the joint velocity changes). True (David 2026-10-28, a measurement, item 1(f)): no per-joint constraint in the solver; after it returns, the whole 7-joint velocity is multiplied by min(1, max_joint_speed / its largest joint speed), so the fastest joint is at most at the limit and the direction is kept (the phase-start cap of the pick and place skills is scaled the same way); no decisions-log row yet
     "collision_gain": 0.85, "detect_distance": 0.05,  # dimensionless gain (0 to 1) of mink's collision-avoidance constraint; and m: the distance at which a pair of geoms starts to be considered [row M088] [row M111 PENDING David: no decision recorded]
     "min_distance": {"furniture": 0.008, "right_arm": 0.040},   # m: the left arm's links 3 to 7, hand and fingers against the bench and hotplate, and against the right arm [row M088]
 }

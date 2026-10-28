@@ -414,7 +414,7 @@ def make_scripted_manipulation(model, data, world, side, home_q, task_cfg=TASK_C
         n_ramp = math.ceil(round(cfg["phase_start_ramp_s"] / dt, 6))
         if S["ramp_k"] < n_ramp:
             env = MINK_CFG["max_joint_speed"] * min_jerk((S["ramp_k"] + 1) * dt / cfg["phase_start_ramp_s"])
-            v_cap = np.clip(v, -env, env)
+            v_cap = v * min(1.0, env / max(float(np.max(np.abs(v))), 1e-12)) if mink_cfg.get("uniform_speed_scaling") else np.clip(v, -env, env)       # uniform_speed_scaling: one factor for all joints (the direction is kept)
             if np.any(v_cap != v):
                 arm.q_cmd = q_before + v_cap * dt
                 v = v_cap

@@ -75,8 +75,12 @@ def replay_capture(recording, t0, t1):
 
 
 def ticks(rows):
-    """One row per control tick: the rows where the command changes (the command is constant within a tick), t, q (7), pad p (3), pad R (3x3)."""
-    keep = [0] + [i for i in range(1, len(rows)) if np.any(rows[i, 1:8] != rows[i - 1, 1:8])]
+    """One row per control tick: t, q (7), pad p (3), pad R (3x3). The loop ramps the actuator command linearly across the 5 physics steps of a tick (control_loop ramp_from), so the command
+    changes at every physics step; the tick boundaries are the rows where its slope changes, found as the offset (0..4) whose rows have the largest second differences."""
+    q = rows[:, 1:8]
+    d2 = np.abs(q[2:] - 2 * q[1:-1] + q[:-2]).sum(axis=1)             # row i + 1
+    off = int(np.argmax([d2[(np.arange(len(d2)) + 1) % 5 == r].sum() for r in range(5)]))
+    keep = np.arange(off, len(rows), 5)
     r = rows[keep]
     return r[:, 0], r[:, 1:8], r[:, 8:11], r[:, 11:20].reshape(-1, 3, 3)
 
@@ -101,19 +105,20 @@ def saturation(t, q, dt_each):
     return out, v
 
 
-def dry_run(model, d, arm, segments, label):
+def dry_run(model, d, arm, segments, label, q_prev=None):
     """segments: list of (p0, R0, p1, R1, T). Each starts from rest with the phase-start cap. Returns the per-tick command and the report."""
     arm.reset(d)
-    q = [arm.q_cmd.copy()]
+    q = [arm.q_cmd.copy() if q_prev is None else np.asarray(q_prev, float).copy()]      # a skill start: the first step runs from the last command
     seg_end = []
     n_ramp = math.ceil(round(PICK_PLACE_CFG["phase_start_ramp_s"] / DT, 6))
-    for (p0, R0, p1, R1, T) in segments:
+    for seg in segments:
+        p0, R0, p1, R1, T = seg
         sl = Slerp([0.0, 1.0], Rotation.from_matrix([R0, R1]))
         n = int(math.ceil(T / DT)) + int(round(0.3 / DT))                 # the move, then 0.3 s of hold (the settle dwell's start)
         for k in range(n):
             el = k * DT
             s = min_jerk(min(el / T, 1.0))
-            before = arm.q_cmd.copy()
+            before = arm.q_cmd.copy() if (k > 0 or q_prev is None or segments[0] is not seg) else q_prev      # a skill start: the ramp runs from the last command (the snap to the measured joints goes through it)
             arm.step(d, p0 + (p1 - p0) * s, sl(s).as_matrix())
             if k < n_ramp:
                 env = LIMIT * min_jerk((k + 1) * DT / PICK_PLACE_CFG["phase_start_ramp_s"])
@@ -127,7 +132,7 @@ def dry_run(model, d, arm, segments, label):
     return {"label": label, "q": q, "seg_end_idx": seg_end, "saturation": sat, "peak_speed_rad_s": float(np.abs(v).max())}
 
 
-def closed_loop(arm, d, pp, pR, p0, R0, p1, R1, T, shift):
+def closed_loop(arm, d, pp, pR, p0, R0, p1, R1, T, shift, q_prev):
     """V0 with the skill's sag integral, the measured pad pose of each tick taken from the recording. Returns q (n+1, 7), the sag position and rotation corrections (n, 3), (n, 3), the cap (n,)."""
     cfg = PICK_PLACE_CFG
     arm.reset(d)
@@ -143,7 +148,7 @@ def closed_loop(arm, d, pp, pR, p0, R0, p1, R1, T, shift):
         p_now, R_now = pp[i], pR[i]
         Cp = _clip_norm(Cp + cfg["sag_gain_per_s"] * (p_ref - p_now) * DT, cfg["sag_max_m"])
         Cr = _clip_norm(Cr + cfg["sag_gain_per_s"] * Rotation.from_matrix(R_ref @ R_now.T).as_rotvec() * DT, cfg["sag_max_rad"])
-        before = arm.q_cmd.copy()
+        before = arm.q_cmd.copy() if k > 0 else q_prev
         arm.step(d, p_ref + Cp, (Rotation.from_rotvec(Cr) * Rotation.from_matrix(R_ref)).as_matrix())
         env = LIMIT * min_jerk((k + 1) * DT / cfg["phase_start_ramp_s"]) if k < n_ramp else np.inf
         if k < n_ramp:
@@ -198,14 +203,16 @@ def main(a):
     # the target: the pad pose reached (the move's waypoint within tolerance) at the end of the recording window
     T0, parts, dist, ang, arc = planned_T(arm, d, ps, Rs, p1, R1, PICK_PLACE_CFG["speed_m_s"], PICK_PLACE_CFG["turn_rad_s"])
     out["V0_planned"] = {"T_s": T0, "parts_s": parts, "distance_m": dist, "turn_deg": math.degrees(ang), "joint_arc_rad": arc.tolist()}
-    r0 = dry_run(model, d, arm, [(ps, Rs, p1, R1, T0)], "V0")
+    r0 = dry_run(model, d, arm, [(ps, Rs, p1, R1, T0)], "V0", q_prev=q[0])
+    arm.reset(d)
     T1, parts1, *_ = planned_T(arm, d, ps, Rs, p1, R1, PICK_PLACE_CFG["speed_m_s"], 0.5 * PICK_PLACE_CFG["turn_rad_s"])
-    r1 = dry_run(model, d, arm, [(ps, Rs, p1, R1, T1)], "V1")
+    r1 = dry_run(model, d, arm, [(ps, Rs, p1, R1, T1)], "V1", q_prev=q[0])
     # V2: turn in place, then the straight move at the turned hand
+    arm.reset(d)
     TA, partsA, _, angA, arcA = planned_T(arm, d, ps, Rs, ps, R1, PICK_PLACE_CFG["speed_m_s"], PICK_PLACE_CFG["turn_rad_s"])
     arm.reset(d)
     dA = mujoco.MjData(model)                                         # the second leg's planning starts from the first leg's end: take its joints
-    r2a = dry_run(model, d, arm, [(ps, Rs, ps, R1, TA)], "V2a")
+    r2a = dry_run(model, d, arm, [(ps, Rs, ps, R1, TA)], "V2a", q_prev=q[0])
     dA.qpos[:] = d.qpos
     dA.qpos[arm.qadr] = r2a["q"][r2a["seg_end_idx"][0]]
     mujoco.mj_forward(model, dA)
@@ -229,7 +236,7 @@ def main(a):
     # --- (e) the per-tick table ---
     best = None
     for shift in (-1, 0, 1):
-        qc, sp, sr, cap = closed_loop(arm, d, pp, pR, ps, Rs, p1, R1, T0, shift)
+        qc, sp, sr, cap = closed_loop(arm, d, pp, pR, ps, Rs, p1, R1, T0, shift, q[0])
         m = min(len(qc), len(q))
         err = float(np.abs(qc[:m] - q[:m]).max())
         if best is None or err < best[0]:
@@ -239,16 +246,17 @@ def main(a):
     n = int(round(1.5 / DT))
     n = min(n, len(q) - 1, len(sp))
     sl = Slerp([0.0, 1.0], Rotation.from_matrix([Rs, R1]))
-    lines = ["tick,t_rel_s,u,at_limit_joints,cmd_v1,cmd_v2,cmd_v3,cmd_v4,cmd_v5,cmd_v6,cmd_v7,ramp_cap_rad_s,ref_trans_mm_s,ref_turn_deg_s,sag_pos_mm,sag_rot_deg,max_dv_rad_s,max_dv_joint,rebuilt_minus_recorded_max_rad"]
+    lines = ["tick,t_rel_s,u,at_limit_joints,at_ramp_cap_joints,cmd_v1,cmd_v2,cmd_v3,cmd_v4,cmd_v5,cmd_v6,cmd_v7,ramp_cap_rad_s,ref_trans_mm_s,ref_turn_deg_s,sag_pos_mm,sag_rot_deg,max_dv_rad_s,max_dv_joint,rebuilt_minus_recorded_max_rad"]
     for k in range(n):
         vk = (q[k + 1] - q[k]) / dts[k]
         u = min(k * DT / T0, 1.0)
         ds = (30 * u ** 2 - 60 * u ** 3 + 30 * u ** 4) / T0                  # d(min_jerk)/dt, 1/s
         ref_tr = 1000 * dist * ds
         ref_turn = math.degrees(ang) * ds
+        capk = ",".join(f"J{j + 1}" for j in range(7) if np.isfinite(cap[k]) and abs(vk[j]) >= 0.97 * cap[k] and cap[k] < LIMIT) or "-"
         lim = ",".join(f"J{j + 1}" for j in range(7) if abs(vk[j]) >= AT_LIMIT) or "-"
         dv = np.abs(vk - (q[k] - q[k - 1]) / dts[k - 1]) if k > 0 else np.zeros(7)
-        lines.append(",".join([str(k), f"{k * DT:.4f}", f"{u:.4f}", lim.replace(",", "+")] + [f"{x:.4f}" for x in vk] +
+        lines.append(",".join([str(k), f"{k * DT:.4f}", f"{u:.4f}", lim.replace(",", "+"), capk.replace(",", "+")] + [f"{x:.4f}" for x in vk] +
                               [f"{cap[k]:.4f}" if np.isfinite(cap[k]) else "-", f"{ref_tr:.2f}", f"{ref_turn:.3f}", f"{1000 * np.linalg.norm(sp[k]):.3f}",
                                f"{math.degrees(np.linalg.norm(sr[k])):.4f}", f"{dv.max():.4f}", f"J{int(dv.argmax()) + 1}", f"{np.abs(qc[k + 1] - q[k + 1]).max():.5f}"]))
     csv_tmp = PROJECT_ROOT / "docs" / "reports" / "logs" / f"place_over_turn_ticks_{a.name}.csv.tmp"

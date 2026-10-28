@@ -180,6 +180,52 @@ def text_bitmap(rows, w, label_w, keys=(), scale=1.0, block=(), block_label_w=No
     return bmp
 
 
+# What the robot is physically doing in each phase of the status text "<NAV|PICK|PLACE>: <phase> [<status>]" (David 2026-10-28): the panel shows this as the main text and the internal code small
+# under it. A phase that appears for both a pick and a place has one entry per kind; HOME is both the move to the home pad pose and the final joint move.
+PHASE_ACTIONS = {
+    ("NAV", "ARMS"): "Stowing arms", ("NAV", "PEDESTAL"): "Setting torso height", ("NAV", "CREEP_IN"): "Creeping into position", ("NAV", "DONE"): "Stopped at the bench",
+    ("PICK", "OVER"): "Move over beaker", ("PICK", "DOWN"): "Lower to beaker", ("PICK", "IN"): "Close on beaker", ("PICK", "CLOSE"): "Grip beaker",
+    ("PICK", "UP"): "Lift beaker", ("PICK", "CHECK"): "Check the beaker is held",
+    ("PLACE", "OVER"): "Move over hotplate", ("PLACE", "DOWN"): "Lower to hotplate", ("PLACE", "OPEN"): "Release beaker", ("PLACE", "BACK"): "Back away",
+    ("PLACE", "HOME"): "Return to home pose",
+}
+PHASE_ACTIONS.update({("PICK", "BACK"): "Back away", ("PICK", "HOME"): "Return to home pose", ("PICK", "OPEN"): "Release beaker", ("PLACE", "CLOSE"): "Grip beaker",
+                      ("PLACE", "CHECK"): "Check the beaker is held"})
+
+
+def phase_action(phase, step_text=None):
+    """The plain description of what the robot is physically doing, from the status text without its step counter.
+
+    Args:
+        phase (str or None): The status text after "<k>/<N> ", e.g. "PICK: OVER [running]", "NAV: DRIVE [running]", "PLAN DONE".
+        step_text (str or None): The current plan step's description ("Navigate to the beaker"); its target names the destination of a drive.
+
+    Returns:
+        str or None: The description, or None for a status text this table does not know (the panel then shows the code alone).
+    """
+    text = (phase or "").strip()
+    if text.startswith("PLAN DONE"):
+        return "All steps done"
+    m = re.match(r"(NAV|PICK|PLACE|STEP):\s*(.*?)\s*(?:\[(\w+)\])?$", text)
+    if not m:
+        return None
+    kind, what, status = m.groups()
+    if status == "checking":
+        return "Checking the result"
+    if what.startswith("GROUNDING"):
+        return "Finding the object"
+    if what.startswith("ASK OPERATOR"):
+        return "Waiting for the operator to choose"
+    if what.startswith("RETRY"):
+        return "Retrying: arm to the home pose"
+    if what == "starting":
+        return "Holding still, next step starting"
+    if kind == "NAV" and what == "DRIVE":
+        m2 = re.match(r"(?i)\s*(?:navigate|go|move|drive)\s+to\s+(.+?)\s*$", step_text or "")
+        return f"Driving to {m2.group(1)}" if m2 else "Driving to the next position"
+    return PHASE_ACTIONS.get((kind, what))
+
+
 def panel_from_status(static, status):
     """Works out what the plan block shows from the episode status text, for the live window and the video alike.
 
@@ -193,7 +239,9 @@ def panel_from_status(static, status):
 
     Returns:
         dict or None: "instruction", "steps", "index" (0-based index of the current step; the step count once the plan is done), "phase"
-        (the status text without the step counter: the internal phase code, shown small), or None when `static` is None.
+        (the status text without the step counter: the internal phase code, shown small), "action" (str or None: the plain description of what the robot is doing, shown
+        as the main text, see phase_action()), "now" (str or None: replaces the step text in the NOW row, only while the arms are stowed before a drive), or None when
+        `static` is None.
     """
     if not static:
         return None
@@ -206,7 +254,10 @@ def panel_from_status(static, status):
         index, phase = len(steps), text
     else:
         index, phase = 0, text
-    return {"instruction": static.get("instruction"), "steps": steps, "index": index, "phase": phase or None}
+    step_text = steps[index] if index < len(steps) else None
+    action = phase_action(phase, step_text)
+    now = action if action and (phase or "").startswith("NAV: ARMS") else None      # the plan step says "Navigate to the beaker" while the arms are still being stowed: show what the robot does
+    return {"instruction": static.get("instruction"), "steps": steps, "index": index, "phase": phase or None, "action": action, "now": now}
 
 
 def panel_block(panel):
@@ -216,7 +267,7 @@ def panel_block(panel):
         panel (dict or None): From panel_from_status(), or built by hand for the phases before the robot moves; keys "instruction" (str or
             None: shown in quotes, two lines at most), "note" (str or None: a message such as "Planning...", shown in its own row), "steps"
             (list of str or None: no plan rows when empty), "index" (int, as in panel_from_status), "phase" (str or None: the internal
-            phase code, small).
+            phase code, small), "action" (str or None: what the robot is physically doing, plain words, the main text above the code), "now" (str or None: shown in the NOW row instead of the step).
 
     Returns:
         list[tuple[str, str, str, int]]: Rows (label, value, style key of ROW_STYLES, most lines); empty if `panel` is None.
@@ -234,8 +285,10 @@ def panel_block(panel):
         done = i >= n
         out.append(("step", f"{n} of {n} (all done)" if done else f"{i + 1} of {n}", "normal", 1))
         out.append(("previous", steps[i - 1] if i >= 1 else "-", "dim", 2))
-        out.append(("NOW", "all steps done" if done else steps[i], "current", 2))
+        out.append(("NOW", panel.get("now") or ("all steps done" if done else steps[i]), "current", 2))
         out.append(("next", steps[i + 1] if i + 1 < n else "-", "dim", 2))
+    if panel.get("action"):
+        out.append(("doing", panel["action"], "normal", 2))
     if panel.get("phase"):
         out.append(("code", panel["phase"], "small", 3))
     return out

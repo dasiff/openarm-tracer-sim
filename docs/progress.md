@@ -1,5 +1,7 @@
 # Progress log
 
+UPDATE: restart_from_commanded measured: SUCCESS, place accuracy same (0.9 vs 0.6 mm) but the carry-boundary step stays (0.51 vs 0.55 rad/s, six joints saturated) and PLACE OVER swings (hand +140 mm, beaker tilt 21.5 deg, peak speed 0.81 rad/s). Report docs/reports/20261028_0237_restart_from_commanded.md. Default set to False; M195 row + suite NOT done, waiting for David. No run in progress. Not pushed.
+
 UPDATE: restart episode SUCCESS (data/demo_record/restart_20261028_022906, 13944 ticks, 93.0 s). RUN (step 3): tmux meas2, chain /tmp/claude-1000/chain2.sh: left_arm_motion_measure -> data/arm_motion/restart_20261028_022906, carry_boundary_replay (restart and baseline, t to 100 s) -> data/arm_motion/carry_boundary/carry_restart.npz, carry_base_full.npz; logs data/logs/{arm_measure_restart,carry_restart,carry_base}_20261028_023250.log, done marker data/logs/chain2_20261028_023250.done, started 02:32. NEXT: compare, report, then (if OK) M195 + suite.
 
 UPDATE: first restart run ABORTED at 66.5 s: my bug (KeyError 'act', local ids shadowed in start()), before any pick motion; fixed (act_ids), rerun. RUN: tmux restart, demo_video.py --record-only data/demo_record/restart_20261028_022906, log data/logs/demo_record_restart_20261028_022906.log, started 02:29. First log: data/logs/demo_record_restart_20261028_022525.log (ignore).

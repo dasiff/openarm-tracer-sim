@@ -77,3 +77,52 @@ Summary: the carry boundary jerk halves (79 against 178), PICK OVER mid-phase je
 | PLAN DONE | All steps done |
 Checked on the status texts of the episode and on a rendered panel (ARMS, DRIVE, PLACE OVER). Not changed: the NOW row during NAV: PEDESTAL still shows "Navigate to the beaker" (you asked for ARMS only; the same fix would be one more entry).
 
+
+## Item 3: pedestal height sweep (0.10, 0.15, 0.20 m), moved layout, measurement only
+
+Method. Same stance in all three (the selection's base position, heading and place hand turn; it chose pedestal 0.10); only `task_cfg["pedestal_q"]` of its result is replaced (`experiments/pedestal_episode.py`). 0.10 is the existing episode `smoothmj_20261028_031803` (same code, bridge ON); 0.15 and 0.20 are `data/demo_record/ped015_20261028_125039` and `ped020_...`. Nothing was tuned. Each recording is replayed bit-identically (`experiments/pedestal_sweep_measure.py`); the phase windows come from the episode log (10 Hz). The default pedestal height is unchanged (0.10).
+"Elbow" = the collision geoms of `openarm_<side>_link4` (the body of joint 4), distance by `mj_geomDistance` to every non-robot collision geom (bench, hotplate, beaker), at every control tick of the window, both arms. Raw numbers: `docs/reports/logs/pedestal_sweep_{010,015,020}.json`.
+
+### (a) Does the episode succeed?
+| pedestal | result |
+|---|---|
+| 0.10 m | SUCCESS (92.6 s) |
+| 0.15 m | SUCCESS, 4 of 4 steps |
+| 0.20 m | **PLAN_FAILED** at step 2 (pick), phase IN: "not reached after 15.7 s: 18.9 mm and 0.0 deg from the waypoint"; the retry (arm home, step again) failed the same way, 18.9 mm. The place was never reached. |
+Why 0.20 fails: at the end of IN the left arm's joint 4 (the elbow joint) is at **10.0 deg (0.174 rad) from its limit, exactly the solver's joint margin (MINK_CFG joint_margin_rad = 10 deg)**; the solver holds the joint there, so the pad stops 18.9 mm short of the beaker centre with the orientation right. At 0.10 and 0.15 the IN waypoint keeps joint 4 at 56.9 and 33.9 deg from its limit (joint 2 is the closest, 25.6 and 22.1 deg).
+
+### (b) Closest elbow to an obstacle (mm), in the extended phases
+| phase | 0.10 m | 0.15 m | 0.20 m |
+|---|---|---|---|
+| PICK OVER | 276 | 304 | 326 |
+| PICK DOWN | 278 | 293 | 286 |
+| PLACE OVER | 155 | 180 | not reached |
+| PLACE DOWN | 153 | 176 | not reached |
+(PICK IN, for reference: 177, 184, 204.) The nearest obstacle is **always the bench top (bench/bench_top, its surface under the elbow), always the left elbow** (the right arm stays at home, its elbow is never nearer); never an edge, the hotplate or the beaker. The place is the tightest (the arm reaches farthest out over the bench there): 153 mm at 0.10 m, 176 mm at 0.15 m, so +5 cm of pedestal gives +23 to +28 mm of elbow clearance (about half the lift). For the hand: the fingers are 34 mm above the bench top at PICK DOWN and 20 to 22 mm at IN (the solver keeps 8 mm) at every height, and 26 to 27 mm above the hotplate at PLACE DOWN (0.10 and 0.15).
+
+### (c) Joints closest to their limits (left arm; the solver's own margin is 10 deg = 0.175 rad)
+Closest during the phase (minimum over the window) and at the waypoint at the end of the phase:
+| phase | 0.10 m during | 0.10 m at waypoint | 0.15 m during | 0.15 m at waypoint | 0.20 m during | 0.20 m at waypoint |
+|---|---|---|---|---|---|---|
+| PICK OVER | J4 0.213 rad, 12.2 deg | J4 0.279, 16.0 | J4 0.242, 13.9 | J4 0.425, 24.4 | J4 0.243, 13.9 | J2 0.596, 34.1 |
+| PICK DOWN | J4 0.279, 16.0 | J2 0.550, 31.5 | J4 0.425, 24.3 | J2 0.496, 28.4 | J2 0.434, 24.9 | J2 0.434, 24.9 |
+| PLACE OVER | J2 0.244, 14.0 | J2 0.248, 14.2 | J2 0.224, 12.9 | J2 0.229, 13.1 | not reached | |
+| PLACE DOWN | J2 0.237, 13.6 | J2 0.237, 13.6 | J2 0.209, 12.0 | J2 0.209, 12.0 | not reached | |
+(PICK IN: J2 0.446 rad 25.5 deg; J2 0.386 rad 22.1 deg; J4 0.166 rad 9.5 deg at 0.20 m.) The "during PICK OVER" values are mostly the home pose (J4 13.9 deg from its limit at home) and the first part of the move. The place is nearest to the joint-2 limit (shoulder), and a higher pedestal brings it nearer (14.2 to 13.1 to ... deg at the place OVER; 13.6 to 12.0 at DOWN), the pick is nearest to the joint-4 limit (elbow) and a higher pedestal first helps (J4 at the OVER waypoint 16.0 to 24.4 deg) and then, at IN and 0.20 m, hits the margin. The right arm stays 13.9 deg (J4, home pose) from its limit throughout.
+
+### (d) Can the hand still reach the beaker and the hotplate surface?
+- 0.15 m: yes, in the episode (success), and in the IK dry run (below).
+- 0.20 m: the pick fails at IN, 18.9 mm short (above). IK dry run (the left arm from home to each recorded waypoint of the 0.10 episode along a straight pad path, the skill's solver with its limits, from the joint state at the start of PICK OVER of each episode): pose error at the end, mm: PICK OVER 0.5 / 0.4 / 0.5, PICK DOWN 0.6 / 1.0 / 1.9, PLACE OVER 1.0 / 1.3 / **2.0**, PLACE DOWN 1.2 / 1.7 / **3.1** for 0.10 / 0.15 / 0.20 m. The skill accepts a waypoint within 3 mm, so at 0.20 m the place set-down is at the edge (3.1 mm short) and the OVER stop is 2.0 mm short; these are the dry run's numbers, the episode never got to the place. The IN waypoint is not in the dry run: the episode itself shows the shortfall (18.9 mm). The joint-range-only dry run (no collision avoidance) gives the same errors, so the shortfall is the joint limits (with their 10 deg margin), not the bench.
+
+### (e) Maximum downward reach
+Lowest pad-centre height reached (m above the floor, from the OVER pose lowered in 5 mm steps at the pick's standoff position and at the place position, each step solved to convergence, stop when the error exceeds 2 mm), against the height the skill needs (pick DOWN 1.013 m, place DOWN 1.090 m; bench top 0.96 m):
+| | 0.10 m | 0.15 m | 0.20 m |
+|---|---|---|---|
+| pick, solver limits (joints with margin, bench and hand collision avoidance) | 0.984 (28 mm below needed) | 0.979 (33 mm) | 1.009 (**3 mm** below needed) |
+| pick, joint range only (no collision avoidance) | 0.909 (search stopped at 100 mm below) | 0.959 (53 mm) | 1.009 (3 mm) |
+| place, solver limits | 1.066 (24 mm below needed) | 1.076 (14 mm) | the OVER pose is already 2.0 mm short |
+| place, joint range only | 1.026 | 1.076 | the OVER pose is 2.0 mm short |
+So at 0.10 m the arm could reach well below the grasp height (the limit there is the bench top: the fingers would touch it, 0.984 m is 24 mm above the top); at 0.15 m the margin below the needed pick height is still 33 mm (joint range only 53 mm) and 14 mm at the place; at 0.20 m the margin at the pick is 3 mm: the reach limit is the arm's, and the real IN move, which goes farther out, fails.
+
+### Reading
+Raising the pedestal from 0.10 to 0.15 m gives about 25 mm more elbow clearance over the bench at every extended phase and keeps the episode successful with the same stance; the shoulder (joint 2) margin at the place shrinks from 13.6 to 12.0 deg and the margin below the place height from 24 to 14 mm. At 0.20 m the pick fails at IN because the elbow joint reaches its margin. Caveats: one episode per height (a single stance chosen for 0.10 m; the stance finder was not rerun for the other heights, so a stance better suited to them might do better, this was not tried); the 0.20 m place phases were not measured in an episode; the dry-run reach uses straight pad paths from home and no beaker.

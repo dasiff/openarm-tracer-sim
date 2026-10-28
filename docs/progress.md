@@ -1,5 +1,7 @@
 # Progress log
 
+UPDATE: smooth (min-jerk 0.5625 s) episode smoothmj_20261028_031803 SUCCESS (13884 ticks, 92.6 s). RUN: tmux chain5 (scratchpad chain5.sh; fixed measure args): measures skillramp and smoothmj into data/arm_motion/<name>, carry npz data/arm_motion/carry_boundary/carry_{skillramp,smoothmj}.npz, logs data/logs/*_skillramp_*/ *_smoothmj_*, marker data/logs/chain5_*.done. NEXT: report a-f, M195, suite.
+
 UPDATE: plain skill-start episode skillramp_20261028_031343 SUCCESS (13800 ticks, 92.0 s). RUN: tmux chain4, script scratchpad chain4.sh: measure skillramp -> smooth episode data/demo_record/smoothmj_20261028_031803 (log data/logs/demo_record_smoothmj_20261028_031803.log) -> measure smoothmj; marker data/logs/chain4_20261028_031803.done; started 03:18. Measures in data/arm_motion/<name>, compare vs ramp_20261028_025303. NEXT: report (a-f), M195 text, suite.
 
 UPDATE (David, corrected message): the ramp shape is now MINIMUM-JERK: speed cap = max_joint_speed*min_jerk(t/0.5625 s), both for in-skill phase starts and skill starts (code done in src, WIP commit). Plain-ramp+skill-start episode (tmux skill_ramp, skillramp_20261028_031343) is still running = comparison baseline. NEXT: when it finishes, measure it; then run the smooth episode (name smoothramp_*), measure (a-f), M195 update, full suite (bridge OFF). No video, no push.

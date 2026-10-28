@@ -136,6 +136,7 @@ def make_scripted_manipulation(model, data, world, side, home_q, task_cfg=TASK_C
         dict: The module (see the module docstring), plus "pad_pose"() -> (position, rotation) of the pad centre from the measured joints and "arm" (the MinkArm).
     """
     ids = arm_ids(model, side)
+    act_ids = ids["act"]                                     # the arm's 7 position actuators (start() has its own local "ids")
     arm = MinkArm(model, data, side, home_q, mink_cfg)
     open_g = task_cfg.get("finger_open", 0.044)
     force = GRIP_FORCE_TABLE["glass_beaker"] if force is None else force
@@ -235,7 +236,7 @@ def make_scripted_manipulation(model, data, world, side, home_q, task_cfg=TASK_C
         S["ctx"]["end_at_zombie"] = bool(segment.get("end_at_zombie"))
         S["ctx"]["place_theta"] = None if segment.get("place_theta_deg") is None else math.radians(float(segment["place_theta_deg"]))      # M184: no default angle (0 is the marginal angle); a place without one fails below
         if cfg["restart_from_commanded"]:                     # M195: the new skill continues from the ctrl that was applied on the previous tick, not from the measured joints (which lose the servo's holding offset under the beaker)
-            arm.q_cmd = np.asarray(data.ctrl[ids["act"]], float).copy()
+            arm.q_cmd = np.asarray(data.ctrl[act_ids], float).copy()
         else:
             arm.reset(data)
         C["p"], C["r"] = np.zeros(3), np.zeros(3)

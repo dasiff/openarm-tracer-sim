@@ -1,5 +1,7 @@
 # Progress log
 
+TASK 2026-10-28 (David): MEASUREMENT ONLY, UP -> PLACE OVER boundary bump in demo_moved_smooth2 video (a)-(f) + why the earlier table omitted it. No motion change, no push. Data: data/arm_motion/smooth2_20261027_171036 (same 13869-tick episode). Done: (a)-(d) from the stored series (experiments/carry_boundary_analysis.py). RUN: tmux carry, experiments/carry_boundary_replay.py data/demo_record/smooth2_20261027_171036/recording data/arm_motion/carry_boundary/carry.npz, log data/logs/carry_boundary_20261028_021020.log, started 02:10 (beaker + hand through the carry, for (e),(f)). NEXT: analysis of carry.npz, report docs/reports/<ts>_carry_boundary.md, commit.
+
 UPDATE 2026-10-28: Part C DONE: face_test 27/27, video data/videos/demo_moved_smooth2_20261027_230400.mp4 (SUCCESS, 97.9 s), report docs/reports/20261028_0200_part_c_video_face_test.md. No run in progress. Not pushed. WAITING for David (ARMS bridge slowdown, VLM refresh, push).
 
 UPDATE 22:59 (David: start face_test and Part C): Parts A/B report committed (docs/reports/20261027_2310_part_a_b_report.md); suite 45 pass, mpvi_text_test 6/11 expected. RUN: tmux final, chain script /tmp/claude-1000/chain.sh: face_test alone (log data/logs/face_test_20261027_225906.log) then Part C demo_video.py --name demo_moved_smooth2 (bridge ON, factor 2.0; log data/logs/demo_video_final_20261027_225906.log; video data/videos/), done marker data/logs/chain_20261027_225906.done, started 22:59. NEXT: frame checks of the video, one report. Not pushed (earlier task said do not push; ask David).

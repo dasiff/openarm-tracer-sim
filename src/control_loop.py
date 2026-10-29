@@ -33,7 +33,7 @@ function returning the rate of the commands it is giving now); without it the so
 than the tick rate gives them only on its due ticks (see src/sequential_policy.py). The pedestal is not interpolated (it
 ramps itself at its own speed limit), and obs["applied"] always holds the final target.
 
-The command bridge (cfg["command_bridge"], src/task_config.COMMAND_BRIDGE_CFG, design plan section 1, row M193), off by default: the real arms' command limits on the 14 arm joints. The arm
+The command bridge (cfg["command_bridge"], src/task_config.COMMAND_BRIDGE_CFG, design plan section 1, row M193), on by default: the real arms' command limits on the 14 arm joints. The arm
 targets that sources give are not applied directly: the bridge keeps the latest target per arm and, at its own rate (50 Hz: every 3rd tick), (1) suspends commands while any arm joint's
 command is more than max_tracking_error_rad from its measured position (the command stays where it is until the arm has caught up), (2) rejects a target as a whole if it is more
 than max_target_step_rad from the current command on any joint (the previous accepted target stays), (3) moves the command at most max_joint_velocity_rad_s / rate_hz toward the accepted

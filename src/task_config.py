@@ -453,7 +453,7 @@ PICK_PLACE_CFG = {
 # turns the bridge on with cfg["command_bridge"] = {"enabled": True} (entries of this block can be overridden the same way); the default is OFF, so the keyboard, teleop and staging runs
 # and the baselines are unchanged. It is meant to be ON for the scripted task (D3) and for anything that records training data or runs a policy.
 COMMAND_BRIDGE_CFG = {
-    "enabled": False,                      # True: the arm targets of every source go through the bridge; False: they go straight to the arm targets as before [row M193]
+    "enabled": True,                       # True: the arm targets of every source go through the bridge; False: they go straight to the arm targets as before. Default on from David's request, 2026-10-29 [row M193]
     "rate_hz": 50.0,                       # Hz: how often the bridge takes a command (every 3rd tick of the 150 Hz loop); between two updates the loop's "interpolate" target mode ramps the arm targets, as the real controller's interpolation does [row M193]
     "max_joint_velocity_rad_s": 0.5,       # rad/s: the bridge moves the command at most this fast toward the target, i.e. at most 0.5 / 50 = 0.01 rad per update [row M193]
     "max_target_step_rad": 0.25,           # rad: a target more than this from the current command (on any joint) is rejected as a whole and ignored; so is a target outside a joint's limits [row M193]

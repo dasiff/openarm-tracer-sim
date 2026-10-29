@@ -9,15 +9,19 @@ state at the start of every control tick through the replay's step hook. Writes 
 Columns (both arms, the 7 arm joints of each: L1..L7 / R1..R7):
   q        measured joint angle at the tick's start (rad)
   qd       measured joint velocity at the tick's start (rad/s)
-  ctrl     actuator target the tick applied (the recording's ctrl, mean over the tick's 5 physics steps): q_cmd + ff/kp
-  ff       feedforward offset total: the torque tau_ff at the tick's start, from src/gravity_ff (the arm's own gravity + the held term)
-  ff_grav  the arm's own gravity part of tau_ff (N m)
-  ff_held  the held-object part of tau_ff (N m): m_meas g J_z of the pad centre, m_meas from the recording's heldmass
-  qcmd     ctrl - ff/kp: the skill's own command (rad), i.e. the command before the feedforward
-  force    applied actuator force, mean over the tick's 5 steps (N m); the servo's own torque
+  tgt      the skill's own target (rad): the recording's ctrl (mean over the tick's 5 physics steps). The loop adds the feedforward to it
+  ff       feedforward torque at the tick's start, from src/gravity_ff (the arm's own gravity + the held term), N m
+  ff_grav  the arm's own gravity part of ff (N m)
+  ff_held  the held-object part of ff (N m): m_meas g J_z of the pad centre, m_meas from the recording's heldmass
+  act      the target the servo really gets = tgt + ff/kp (rad). Checked against the recorded force (see below)
+  force    applied actuator force, mean over the tick's 5 steps (N m); the servo's own torque, kp (act - q) - kv qd
+  (The force identity was checked on this run: without ff/kp the residual is about 8 N m on L1, with it the residual is the sampling
+  error of start-of-tick velocity, under 0.2 N m. The loop, not the recording, adds ff/kp.)
 Beaker (task_beaker, world frame at the tick's start): bx, by, bz (m); tilt (deg from vertical); bvx..bvz (m/s); bwx..bwz (rad/s, body
 angular velocity), brx, bry, brz (beaker centre relative to the left pad centre, in the left hand's frame, m), n_bc (contacts of the beaker),
-f_bc (sum of normal contact force on the beaker, N).
+f_bc (sum of normal contact force on the beaker, N). tilt is the beaker's axis from vertical (deg); htilt the left hand's
+tool axis from vertical (deg); rtilt the angle between the beaker's and the hand's axes (deg: a slip or twist in the grip); padz the pad
+centre's height (m).
 Gripper (left): fl1, fl2 (finger joints, m), gl (gripper ctrl), gf_l (recorded grip force), hm_l, hm_r (recorded held mass, kg).
 Phase: the label of the last recorded label at or before the tick (the run's own labels, from the recording meta).
 """
@@ -70,8 +74,8 @@ def main(rec_dir, out_csv):
     for s in SIDES:
         tag = "L" if s == "left" else "R"
         for i in JOINTS:
-            cols += [f"{tag}{i}_{k}" for k in ("q", "qd", "ctrl", "ff", "ff_grav", "ff_held", "qcmd", "force")]
-    cols += ["bx", "by", "bz", "tilt", "bvx", "bvy", "bvz", "bwx", "bwy", "bwz", "brx", "bry", "brz", "n_bc", "f_bc"]
+            cols += [f"{tag}{i}_{k}" for k in ("q", "qd", "tgt", "ff", "ff_grav", "ff_held", "act", "force")]
+    cols += ["bx", "by", "bz", "tilt", "bvx", "bvy", "bvz", "bwx", "bwy", "bwz", "brx", "bry", "brz", "n_bc", "f_bc", "htilt", "rtilt", "padz"]
     cols += ["fl1", "fl2", "gl", "gf_l", "hm_l", "hm_r"]
 
     rows = {}
@@ -105,11 +109,11 @@ def main(rec_dir, out_csv):
                 ffv = tot[a]
                 row[f"{tag}{i}_q"] = f"{q:.6f}"
                 row[f"{tag}{i}_qd"] = f"{qd:.6f}"
-                row[f"{tag}{i}_ctrl"] = f"{c:.6f}"
+                row[f"{tag}{i}_tgt"] = f"{c:.6f}"
                 row[f"{tag}{i}_ff"] = f"{ffv:.4f}"
                 row[f"{tag}{i}_ff_grav"] = f"{grv[a]:.4f}"
                 row[f"{tag}{i}_ff_held"] = f"{ffv - grv[a]:.4f}"
-                row[f"{tag}{i}_qcmd"] = f"{c - ffv / kp[(s, i)]:.6f}"
+                row[f"{tag}{i}_act"] = f"{c + ffv / kp[(s, i)]:.6f}"
         # beaker
         R = d.xmat[beaker].reshape(3, 3)
         row["bx"], row["by"], row["bz"] = (f"{v:.6f}" for v in d.xpos[beaker])
@@ -119,6 +123,9 @@ def main(rec_dir, out_csv):
         row["bvx"], row["bvy"], row["bvz"] = (f"{v:.6f}" for v in res6[3:])
         Rt = d.xmat[hand_tcp].reshape(3, 3)
         pad = d.xpos[hand_tcp] + Rt @ pad_local
+        row["htilt"] = f"{np.degrees(np.arccos(np.clip(Rt[2, 2], -1, 1))):.4f}"
+        row["rtilt"] = f"{np.degrees(np.arccos(np.clip(R[:, 2] @ Rt[:, 2], -1, 1))):.4f}"
+        row["padz"] = f"{pad[2]:.6f}"
         rel = Rt.T @ (d.xpos[beaker] - pad)
         row["brx"], row["bry"], row["brz"] = (f"{v:.6f}" for v in rel)
         n, fsum = 0, 0.0

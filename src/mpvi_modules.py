@@ -328,6 +328,8 @@ def make_scripted_manipulation(model, data, world, side, home_q, task_cfg=TASK_C
                         st["arc"] = st["end"] = 0.0                # the move itself reports the failure, with its own message
                     T = max(T, cfg["min_jerk_peak_factor"] * st["arc"] / arm.cfg["max_joint_speed"])
                 st.update(p0=p0, slerp=Slerp([0.0, 1.0], Rotation.from_matrix([R0, st["R"]])), T=T)
+                if S.get("blend_v") is not None:                   # M200: a blended handover: the position starts at the pad's speed from the last move
+                    st["v0"], S["blend_v"] = S["blend_v"], None
             elif st["kind"] == "joints":
                 st["q0"] = arm.q_cmd.copy()
                 st["T"] = max(cfg["min_move_s"], float(np.max(np.abs(home_q - st["q0"]))) / 0.3)
@@ -338,7 +340,11 @@ def make_scripted_manipulation(model, data, world, side, home_q, task_cfg=TASK_C
         if kind == "move":
             u = min(el / st["T"], 1.0)
             s = min_jerk(u)
-            p_ref, R_ref = st["p0"] + (st["target"] - st["p0"]) * s, st["slerp"](s).as_matrix()
+            if "v0" in st:                                             # M200: a blended handover: the position is a cubic from the pad's speed at the handover to rest at the waypoint
+                p_ref = st["p0"] + st["v0"] * st["T"] * (u - 2 * u * u + u ** 3) + (st["target"] - st["p0"]) * (3 * u * u - 2 * u ** 3)
+            else:
+                p_ref = st["p0"] + (st["target"] - st["p0"]) * s
+            R_ref = st["slerp"](s).as_matrix()
             p_now, R_now = arm.pad_pose(data)                          # the measured pad pose: what the arm really does under the beaker's weight
             dt = obs["timestep"] * obs["steps_per_frame"]
             C["p"] = _clip_norm(C["p"] + cfg["sag_gain_per_s"] * (p_ref - p_now) * dt, cfg["sag_max_m"])
@@ -351,7 +357,14 @@ def make_scripted_manipulation(model, data, world, side, home_q, task_cfg=TASK_C
             p, R = arm.pad_pose(data)
             err = float(np.linalg.norm(p - st["target"]))
             ang = float(np.linalg.norm(Rotation.from_matrix(R.T @ st["R"]).as_rotvec()))
-            if u >= 1.0 and err < cfg["tol_m"] and ang < cfg["tol_rad"] and settled(t, cfg["settle_dwell_s"]):
+            prev = S.get("pad_prev")
+            v_pad = (p - prev[1]) / (t - prev[0]) if prev is not None and t > prev[0] else np.zeros(3)      # M200: the pad's speed now (m/s)
+            S["pad_prev"] = (t, p.copy())
+            nxt = S["steps"][S["i"] + 1] if S["i"] + 1 < len(S["steps"]) else None
+            if u >= 1.0 and cfg["blend_radius_m"] > 0 and err < cfg["blend_radius_m"] and nxt is not None and nxt["kind"] == "move":
+                advance = True                                         # M200: within the blend radius the next move starts now, at the current pad speed (no stop, no ramp)
+                S["blend_v"], S["blend_handover"] = v_pad, True
+            elif u >= 1.0 and err < cfg["tol_m"] and ang < cfg["tol_rad"] and settled(t, cfg["settle_dwell_s"]):
                 advance = True
             elif el > cfg["timeout_factor"] * st["T"] + cfg["timeout_extra_s"]:
                 fail(f"{st['name']}: not reached after {el:.1f} s: {1000 * err:.1f} mm and {math.degrees(ang):.1f} deg from the waypoint")
@@ -437,7 +450,7 @@ def make_scripted_manipulation(model, data, world, side, home_q, task_cfg=TASK_C
         if S.get("q_prev") is not None:                            # first tick after arm.reset at a skill start: the ramp runs from the last command, so the snap to the measured joints is spread over the ramp
             q_before, S["q_prev"] = S["q_prev"], None
         if S["started"] and S["error"] is None and S["i"] < len(S["steps"]) and S["t0"] is None:
-            S["ramp_k"] = 0                                        # a new phase starts on this tick
+            S["ramp_k"] = math.ceil(round(cfg["phase_start_ramp_s"] / dt, 6)) if S.pop("blend_handover", False) else 0      # a new phase starts on this tick; M200: a blended handover starts at the current speed, so no ramp
         out = step_inner(obs)
         if out is None:
             return None

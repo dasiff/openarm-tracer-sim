@@ -76,7 +76,21 @@ UPDATE: first restart run ABORTED at 66.5 s: my bug (KeyError 'act', local ids s
 - Held-object mass (HELD_MASS dict) accessible and logged
 - CSV column list finalized: 99 columns per tick, output to logging_ticks.csv
 
-**NEXT SESSION (Session 2):** Modify src/control_loop.py to expose servo command signals (tau_cmd, tau_ff per joint). Hooks will write to a per-tick diagnostic dict that Session 1's extraction script reads (design: TBD whether through module-level dict or direct bench_log export). Target: accessible tau values for all 14 joints + gravity offset tau values.
+**SESSION 2 COMPLETE (22:15):** Servo control logging added to src/control_loop.py:
+- SERVO_LOG dict: captures tau_cmd (raw joint targets) and tau_ff (gravity offset per tick)
+- Logging hooks: after ctrl_block() and in advance() physics loop
+- Extraction: read via module import in run_logging_extract.py
+- Commit 55725db
+
+**SESSION 3 COMPLETE (22:20):** Gravity feedforward logging added to src/gravity_ff.py:
+- GRAVITY_LOG dict: captures raw gravity torques tau_gravity_L, tau_gravity_R (7 joints each)
+- Logging hook: in torques() method after computation, before return
+- Extraction: read GRAVITY_LOG, values available for CSV (not yet added to columns)
+- Commit 1a1f41e
+
+**NEXT SESSION (Session 4-5):** Closure extraction (C, S state) + run post-baseline + verify reproducibility + report.
+- Session 4: Verify closure extraction in run_logging_extract.py works correctly
+- Session 5: Run post-baseline with all logging, verify reproducibility, write report
 
 UPDATE: step 1 committed (WIP). RUN (step 2): tmux restart, demo_video.py --record-only data/demo_record/restart_20261028_022525 (bridge ON, fix ON, restart ON), log data/logs/demo_record_restart_20261028_022525.log, started 02:25. NEXT: measure vs smooth2_20261027_171036 (left_arm_motion_measure, carry_boundary_replay), report.
 

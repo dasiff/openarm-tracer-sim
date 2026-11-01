@@ -49,6 +49,28 @@ UPDATE: restart episode SUCCESS (data/demo_record/restart_20261028_022906, 13944
 
 UPDATE: first restart run ABORTED at 66.5 s: my bug (KeyError 'act', local ids shadowed in start()), before any pick motion; fixed (act_ids), rerun. RUN: tmux restart, demo_video.py --record-only data/demo_record/restart_20261028_022906, log data/logs/demo_record_restart_20261028_022906.log, started 02:29. First log: data/logs/demo_record_restart_20261028_022525.log (ignore).
 
+---
+
+# Session 2026-11-01 21:45+ — Task 3: Logging Infrastructure (Multi-Session Plan)
+
+**TASK:** Add diagnostic logging infrastructure to capture servo control, gravity feedforward, and sag correction data during baseline runs (LOGGING-ONLY constraint). Verify reproducibility, write report for ticks 11,596–11,640. Deliverables: `data/diag/logging_20261101/pre/` (baseline before logging), `post/` (baseline with logging), `docs/reports/logging_20261101.md`.
+
+**PLAN:** Multi-session approach (saved to memory: logging-task-plan.md):
+- **Session 1 (CURRENT):** Verify baseline reproducibility, document logging architecture
+- Session 2: Add servo signal logging to control_loop.py
+- Session 3: Add gravity feedforward logging to gravity_ff.py
+- Session 4: Extract closure values (C["p"], S["ramp_k"]) via injection script
+- Session 5: Run post-baseline, verify reproducibility, write report
+
+**SESSION 1 PROGRESS:**
+- 21:45 Baseline pre-run (attempted with wrong demo_video args) — FAILED early, log empty
+- 21:47 Checked output: data/diag/logging_20261101/pre/baseline/ HAS content (episode dir, recording dir, episode_log.csv with 908 rows, sim time 1.4–92.1 s)
+- 21:50 Examined episodes: nosag reference has diagnostic-level CSV (nosag_ticks.csv, 139 columns, 13,612 rows). Regular demo_video.py generates low-res episode_log.csv (51 columns) — diagnostic columns missing
+- **FINDING:** Diagnostic columns (servo tau, gravity offset, sag correction, IK solver state) are ONLY captured via injection pattern like run_nosag_inject.py. Cannot use regular demo_video output.
+- **NEXT (Session 1, FINAL):** Create logging baseline extraction script modeled on run_measstart_inject.py; use it for both pre/ (baseline) and post/ (with logging) runs to generate diagnostic CSVs with all 8 columns (a–h) from original task spec.
+
+**STATUS:** Session 1 in progress, awaiting decision: build extraction script now or wait for next session? Recommend: finish Session 1 by creating the base extraction template (non-blocking for Sessions 2–4 code changes).
+
 UPDATE: step 1 committed (WIP). RUN (step 2): tmux restart, demo_video.py --record-only data/demo_record/restart_20261028_022525 (bridge ON, fix ON, restart ON), log data/logs/demo_record_restart_20261028_022525.log, started 02:25. NEXT: measure vs smooth2_20261027_171036 (left_arm_motion_measure, carry_boundary_replay), report.
 
 TASK 2026-10-28 (David): phase/skill RESTART FROM THE COMMANDED POSE (new setting PICK_PLACE_CFG restart_from_commanded, M195). Steps: 1 implement in src/mpvi_modules.py (skill start: q_cmd from the applied ctrl instead of arm.reset(measured); move start p0/R0 from the pad pose at q_cmd minus the sag correction instead of the measured pad pose; nothing else) + config + commit, 2 run the moved episode (bridge ON, fix ON) with demo_video.py --record-only, 3 measure (arm series, carry replay, place accuracy) vs smooth2_20261027_171036, 4 report (a)-(f) in docs/reports; if it fails or the place is worse: report and STOP, no tuning; else M195 row + design plan marker + full suite (bridge OFF, fix ON, restart ON). No video re-render, no push. CURRENT STEP: 1.

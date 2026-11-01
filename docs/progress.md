@@ -69,7 +69,14 @@ UPDATE: first restart run ABORTED at 66.5 s: my bug (KeyError 'act', local ids s
 - **FINDING:** Diagnostic columns (servo tau, gravity offset, sag correction, IK solver state) are ONLY captured via injection pattern like run_nosag_inject.py. Cannot use regular demo_video output.
 - **NEXT (Session 1, FINAL):** Create logging baseline extraction script modeled on run_measstart_inject.py; use it for both pre/ (baseline) and post/ (with logging) runs to generate diagnostic CSVs with all 8 columns (a–h) from original task spec.
 
-**STATUS:** Session 1 in progress, awaiting decision: build extraction script now or wait for next session? Recommend: finish Session 1 by creating the base extraction template (non-blocking for Sessions 2–4 code changes).
+**STATUS:** Session 1 COMPLETE (22:00). Extraction script template created at data/diag/logging_20261101/run_logging_extract.py. Architecture documented:
+- Hooks for servo control signals (tau_cmd_L/R, tau_ff_L/R) placed in template, to be filled by Session 2 (control_loop.py) and Session 3 (gravity_ff.py)
+- Closure extraction for C["p"], C["r"], S["ramp_k"], S["blend_v"] implemented via gc.get_objects() + closure() helper (Session 4 will integrate)
+- IK solver logging (velocity, slack, collision count) via mink.solve_ik wrap (already in template)
+- Held-object mass (HELD_MASS dict) accessible and logged
+- CSV column list finalized: 99 columns per tick, output to logging_ticks.csv
+
+**NEXT SESSION (Session 2):** Modify src/control_loop.py to expose servo command signals (tau_cmd, tau_ff per joint). Hooks will write to a per-tick diagnostic dict that Session 1's extraction script reads (design: TBD whether through module-level dict or direct bench_log export). Target: accessible tau values for all 14 joints + gravity offset tau values.
 
 UPDATE: step 1 committed (WIP). RUN (step 2): tmux restart, demo_video.py --record-only data/demo_record/restart_20261028_022525 (bridge ON, fix ON, restart ON), log data/logs/demo_record_restart_20261028_022525.log, started 02:25. NEXT: measure vs smooth2_20261027_171036 (left_arm_motion_measure, carry_boundary_replay), report.
 

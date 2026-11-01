@@ -61,10 +61,10 @@ recordings, baselines), `docs/reports/` (dated reports).
 ## Git
 
 - Commits use the repo author David Siff. Push only with `git push origin main` to github.com/dasiff over HTTPS (never the gatech mirror).
-- **Push at major steps (David, 2026-11-01; replaces the 2026-10-27 per-step rule, which over-pushed):**
-  - Push when a major step is finished: a decided feature or fix is complete and its baselines checked, a measurement or experiment has its report committed, or a task is done.
+- **Push only when a feature or fix is complete (David, 2026-11-01; replaces the 2026-10-27 per-step rule, which over-pushed):**
+  - Push when a decided feature or fix is complete and its baselines are checked. Do not push for reports, experiments, measurements or the end of a task.
   - Do not push after every step's commit, and do not push WIP commits on their own. Local commits already survive a VM crash, so the push is only the off-machine copy.
-  - Push without asking when a major step finishes. Ask first only if the push would include something not yet reviewed by David.
+  - Push without asking when a feature or fix completes. Ask first only if the push would include something not yet reviewed by David.
   - Keep the local commit rule (commit after each step, per the crash rules above). Commits are not pushes.
   - Record the last push in `docs/progress.md` when it matters (e.g. "pushed through <hash>").
 - Record the last push in `docs/progress.md` when it matters (e.g. "pushed through <hash>").

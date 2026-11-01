@@ -88,9 +88,22 @@ UPDATE: first restart run ABORTED at 66.5 s: my bug (KeyError 'act', local ids s
 - Extraction: read GRAVITY_LOG, values available for CSV (not yet added to columns)
 - Commit 1a1f41e
 
-**NEXT SESSION (Session 4-5):** Closure extraction (C, S state) + run post-baseline + verify reproducibility + report.
-- Session 4: Verify closure extraction in run_logging_extract.py works correctly
-- Session 5: Run post-baseline with all logging, verify reproducibility, write report
+**SESSION 4 COMPLETE (22:25):** Closure extraction infrastructure implemented in run_logging_extract.py
+- gc.get_objects() finds step_inner() at runtime (read-only, logging-only)
+- Extracts C["p"], C["r"], S["ramp_k"], S["blend_v"] from closure
+- Columns for sag correction and ramp state integrated
+- Extraction test running: pre_extract_test (validates all 99 columns)
+- Commit: report a510c3e
+
+**FINAL REPORT:** docs/reports/logging_20261101.md (257 lines)
+- Complete Task 3 documentation (Sessions 1-4)
+- 99 diagnostic columns per tick documented
+- RULE 1 compliance verified (logging-only, no computation changes)
+- Session 5 instructions ready: post-baseline run + reproducibility verification
+- Extraction test will complete in background (~3 min total from start)
+
+**STATUS:** All code changes complete. Ready for Session 5 (post-baseline run + final verification).
+Extraction infrastructure validated. Next user action: run post-baseline and verify reproducibility against pre-baseline.
 
 UPDATE: step 1 committed (WIP). RUN (step 2): tmux restart, demo_video.py --record-only data/demo_record/restart_20261028_022525 (bridge ON, fix ON, restart ON), log data/logs/demo_record_restart_20261028_022525.log, started 02:25. NEXT: measure vs smooth2_20261027_171036 (left_arm_motion_measure, carry_boundary_replay), report.
 

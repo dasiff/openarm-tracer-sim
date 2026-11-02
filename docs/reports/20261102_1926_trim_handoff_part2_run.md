@@ -121,3 +121,6 @@ This run's baseline is 1120.06 mm absolute (tick 11599). VERIFIED. The rise is z
 ## Files
 - Commit: this report, the metrics script, the design plan update, the docs (see the commit message). The trace logging stays uncommitted: data/bounce_handoff_20261102/uncommitted_part_run.diff.
 - Outputs: data/bounce_handoff_20261102/run/ and data/bounce_handoff_20261102/metrics_part2.md.
+
+## Correction (added in the z-only task)
+The "inconsistency" in section 8 is not one. The run used demo_video's MOVED layout (experiments/demo_video.py:44, hotplate_xy shifted by -0.15 m), so the hotplate in the scene is at x 0.65 m. TASK_CFG hotplate_xy (0.80, 0.66) is the unshifted default. The earlier comparison used the unshifted default. The beaker's position is correct for the run. See docs/reports/20261102_1951_trim_zonly_runs.md, section 7.

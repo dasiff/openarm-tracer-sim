@@ -66,6 +66,18 @@ def _clip_norm(v, limit):
 # ----------------------------------------------------------------------------------------------------------
 # World model
 # ----------------------------------------------------------------------------------------------------------
+def _sag_trim_step(C, cfg, model, side, t, p_err, r_err, dt):
+    """One integral step of the sag correction C (position "p", rotation "r"): the one line that integrates it (M225, M226).
+
+    p_err (m) and r_err (rad, a rotation vector) are the reference minus the measured pad pose. While the held load is changing (the ramp module decides),
+    the step is skipped: the correction keeps its value, and it still acts through the command.
+    """
+    if hmr.is_load_changing(model, side, t):
+        return
+    C["p"] = _clip_norm(C["p"] + cfg["sag_gain_per_s"] * p_err * dt, cfg["sag_max_m"])
+    C["r"] = _clip_norm(C["r"] + cfg["sag_gain_per_s"] * r_err * dt, cfg["sag_max_rad"])
+
+
 def make_sim_world_model(model, data, task_cfg=TASK_CFG, beaker_cfg=BEAKER_CFG):
     """Builds the world model (the knowledge base) filled from the simulator's true state.
 
@@ -246,7 +258,9 @@ def make_scripted_manipulation(model, data, world, side, home_q, task_cfg=TASK_C
         else:
             S["q_prev"] = arm.q_cmd.copy() if cfg["skill_start_ramp"] else None      # M195: the command of the last tick, from which the ramp of the first tick of this skill starts
             arm.reset(data)
-        C["p"], C["r"] = np.zeros(3), np.zeros(3)
+        if cfg["sag_reset_at_skill_start"]:                  # M227: the correction is zeroed at a skill start only when this key is on (off: it carries over from the previous skill)
+            C["p"], C["r"] = np.zeros(3), np.zeros(3)
+            hmr.end_load_change(model, side)                 # a reset also clears the freeze (M226)
         S["v_last"] = np.zeros(7)
         if prim == "pick":                                    # M222: a pick starts with nothing in the hand: the mass ramps to 0 through the ramp module, no abrupt clear
             hmr.set_target(model, side, 0.0, data.time, S.get("tick", -1))
@@ -272,6 +286,7 @@ def make_scripted_manipulation(model, data, world, side, home_q, task_cfg=TASK_C
         S["ctx"]["primitive"] = "recover"
         arm.reset(data)
         C["p"], C["r"] = np.zeros(3), np.zeros(3)
+        hmr.end_load_change(model, side)                     # a reset also clears the freeze (M226)
         S["v_last"] = np.zeros(7)
         p, R0 = arm.pad_pose(data)
         a = forward()
@@ -307,6 +322,8 @@ def make_scripted_manipulation(model, data, world, side, home_q, task_cfg=TASK_C
         S["phase"] = st["name"]
         if S["t0"] is None:
             S["t0"], S["still"] = t, None
+            if st["kind"] == "close":
+                hmr.begin_load_change(model, side, t)        # M226 a: the freeze starts when the CLOSE step starts, before the beaker's weight is known
             if st["kind"] == "move":
                 if cfg["restart_from_commanded"]:                   # M195: the reference starts where the command is (its pad pose, less the sag correction that is added back to every target), not at the measured pad pose
                     p0, R0 = commanded_pad_pose()
@@ -347,8 +364,7 @@ def make_scripted_manipulation(model, data, world, side, home_q, task_cfg=TASK_C
             R_ref = st["slerp"](s).as_matrix()
             p_now, R_now = arm.pad_pose(data)                          # the measured pad pose: what the arm really does under the beaker's weight
             dt = obs["timestep"] * obs["steps_per_frame"]
-            C["p"] = _clip_norm(C["p"] + cfg["sag_gain_per_s"] * (p_ref - p_now) * dt, cfg["sag_max_m"])
-            C["r"] = _clip_norm(C["r"] + cfg["sag_gain_per_s"] * Rotation.from_matrix(R_ref @ R_now.T).as_rotvec() * dt, cfg["sag_max_rad"])
+            _sag_trim_step(C, cfg, model, side, t, p_ref - p_now, Rotation.from_matrix(R_ref @ R_now.T).as_rotvec(), dt)
             try:
                 arm.step(data, p_ref + C["p"], (Rotation.from_rotvec(C["r"]) * Rotation.from_matrix(R_ref)).as_matrix())
             except mink.NoSolutionFound:
@@ -407,6 +423,7 @@ def make_scripted_manipulation(model, data, world, side, home_q, task_cfg=TASK_C
                 S["events"].append("gripper_closed" if closing else "gripper_opened")
                 if not closing:
                     C["p"], C["r"] = np.zeros(3), np.zeros(3)      # the beaker's weight is off the arm
+                    hmr.end_load_change(model, side)               # a reset also clears the freeze (M226)
                 advance = True
             elif el > (cfg["close_timeout_s"] if closing else cfg["open_timeout_s"]):
                 fail(f"{st['name']}: the gripper did not stop within {el:.1f} s")

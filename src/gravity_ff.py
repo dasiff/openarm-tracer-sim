@@ -147,3 +147,21 @@ def for_tests(model):
     """For tests and scripts that write data.ctrl themselves (not through src/control_loop.py): an object whose `apply(ctrl, data)` adds the feedforward to the arm and gripper targets in `ctrl`
     (call it after writing the targets, before every mj_step)."""
     return ArmGravityFeedforward.from_model(model)
+
+
+def held_pad_z_per_kg(model, data, side):
+    """Pad z movement (m) per kilogram of held mass at the current pose (M236).
+
+    The held joint torque for 1 kg (G times the pad's vertical Jacobian per joint, the feedforward's own formula), divided joint by joint by the kp array the
+    feedforward uses (ArmGravityFeedforward.kp), and mapped through the same vertical Jacobian: the sum of Jz_j times (G Jz_j / kp_j) over the seven joints.
+    """
+    ff = ArmGravityFeedforward.from_model(model, sides=(side,))
+    tcp, pad = ff.pads[side]
+    point = data.xpos[tcp] + data.xmat[tcp].reshape(3, 3) @ pad
+    jac = np.zeros((3, model.nv))
+    mujoco.mj_jac(model, data, jac, None, point, tcp)
+    total = 0.0
+    for k in range(7):
+        jz = jac[2, ff.dofs[k][0]]
+        total += jz * (G * jz / ff.kp[k])
+    return float(total)

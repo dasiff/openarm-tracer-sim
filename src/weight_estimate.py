@@ -113,3 +113,22 @@ def hand_load_with_balance_point(model, qpos, applied7, arm, gff):
     return {"weight_n": W, "mass_kg": W / G, "offset_world_xy_m": [ax, ay], "offset_pad_frame_m": [float(v) for v in R.T @ a_world], "a_z": None,
             "unexplained": float(np.linalg.norm(extra - A @ x) / n), "unexplained_down_only": float(np.linalg.norm(extra - W1 * jz) / n), "mass_down_only_kg": W1 / G,
             "extra_nm": extra, "pad_rot": R, "pad_point": point}
+
+
+def liftoff_check(state, rise_m, threshold_m, hold_ticks):
+    """Lift-off detection (M235): True once the pad has risen at or above threshold_m (m) above its baseline on hold_ticks ticks in a row.
+
+    state is a flat dict {"n": the consecutive ticks at or above the threshold}; the caller keeps one dict per weighing and resets nothing else.
+    """
+    state["n"] = state["n"] + 1 if rise_m >= threshold_m else 0
+    return state["n"] >= hold_ticks
+
+
+def liftoff_estimate(mass_at_detection_kg, rise_m, hand_m_per_kg):
+    """Mass at lift-off (M236): the mass at the detection tick minus the pad's rise divided by the hand height per kilogram (held_pad_z_per_kg).
+
+    Raises ValueError when hand_m_per_kg is not positive (the estimate needs the hand to move up with the mass).
+    """
+    if not hand_m_per_kg > 0.0:
+        raise ValueError(f"lift-off estimate: the hand height per kilogram must be positive, got {hand_m_per_kg!r}")
+    return float(mass_at_detection_kg - rise_m / hand_m_per_kg)

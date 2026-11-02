@@ -67,36 +67,41 @@ def _clip_norm(v, limit):
 # World model
 # ----------------------------------------------------------------------------------------------------------
 def _trim_handoff_clear(H):
-    """Clears the handoff record of one side (ref and full). Every reset of the sag correction calls it (M231)."""
+    """Clears the handoff record of one side (ref and full, the z values). Every reset of the sag correction calls it (M231)."""
     H["ref"], H["full"] = None, None
 
 
 def _sag_trim_step(C, H, cfg, model, side, t, p_err, r_err, dt):
-    """One step of the sag correction C (position "p", rotation "r") and its handoff record H ("ref", "full"): the one line where it is integrated or blended (M225, M226, M231).
+    """One step of the sag correction C (position "p", rotation "r") and its handoff record H ("ref" and "full": the z values only): the one line where it is integrated (M225, M226, M230 to M233).
 
-    p_err (m) and r_err (rad, a rotation vector) are the reference minus the measured pad pose. During a ramp-in of the held mass the correction is blended from
-    "full" (its value on the first tick of the ramp) to "ref" (its value at the grasp event), in step with the ramp's progress, and it does not integrate. With no
-    "ref" it only freezes. When the ramp-in is over the correction equals "ref" and "full" is cleared. While a load change is frozen (a ramp out, until the load
-    change ends) it keeps its value. At all other times it integrates.
+    p_err (m) and r_err (rad, a rotation vector) are the reference minus the measured pad pose. Every component integrates as usual unless it is held. During a
+    ramp-in of the held mass only z is held: it is blended from "full" (z on the first tick of the ramp) to "ref" (z at the grasp event) in step with the ramp's
+    progress; with no "ref" z only freezes. When the ramp-in is over z equals "ref" and "full" is cleared. A ramp out of the held mass holds every component until
+    the load change ends. With cfg["trim_blend_enabled"] False nothing is held during a ramp-in.
     """
     d = hmr.ramp_direction(model, side, t)
-    if d > 0:
+    blend = cfg["trim_blend_enabled"]
+    held_z = None                                   # the z value set on this tick (the blend or the reference)
+    freeze_z = False                                # z held at its value (no reference to blend to)
+    if d > 0 and blend:
         if H["full"] is None:
-            H["full"] = (C["p"].copy(), C["r"].copy())
-        if H["ref"] is not None:
-            k = hmr.ramp_progress(model, side, t)
-            C["p"] = H["full"][0] - k * (H["full"][0] - H["ref"][0])
-            C["r"] = H["full"][1] - k * (H["full"][1] - H["ref"][1])
-        return
-    if H["full"] is not None:
-        if d == 0 and H["ref"] is not None:
-            C["p"], C["r"] = H["ref"][0].copy(), H["ref"][1].copy()
-        H["full"] = None
-        if d == 0:
+            H["full"] = float(C["p"][2])
+        if H["ref"] is None:
+            freeze_z = True
+        else:
+            held_z = H["full"] - hmr.ramp_progress(model, side, t) * (H["full"] - H["ref"])
+    else:
+        if H["full"] is not None:
+            if d == 0 and H["ref"] is not None:
+                held_z = H["ref"]
+            H["full"] = None
+        if d <= 0 and hmr.is_load_changing(model, side, t):
             return
-    if hmr.is_load_changing(model, side, t):
-        return
-    C["p"] = _clip_norm(C["p"] + cfg["sag_gain_per_s"] * p_err * dt, cfg["sag_max_m"])
+    z_hold = held_z if held_z is not None else (float(C["p"][2]) if freeze_z else None)
+    mask = np.array([1.0, 1.0, 0.0 if z_hold is not None else 1.0])
+    C["p"] = _clip_norm(C["p"] + mask * cfg["sag_gain_per_s"] * p_err * dt, cfg["sag_max_m"])
+    if z_hold is not None:
+        C["p"][2] = z_hold                          # the norm clip never changes a held z
     C["r"] = _clip_norm(C["r"] + cfg["sag_gain_per_s"] * r_err * dt, cfg["sag_max_rad"])
 
 
@@ -188,7 +193,7 @@ def make_scripted_manipulation(model, data, world, side, home_q, task_cfg=TASK_C
     TRIM = {side: {"ref": None, "full": None}}               # the handoff record of this arm side (M231): ref = the correction at the grasp event, full = the correction on the first tick of a ramp-in
     def mark_trim_reference(side):
         """Saves the sag correction as the handoff reference (M231). Called once, at the grasp event."""
-        TRIM[side]["ref"] = (C["p"].copy(), C["r"].copy())
+        TRIM[side]["ref"] = float(C["p"][2])
         TRIM[side]["full"] = None
 
     S = {"steps": [], "i": 0, "t0": None, "error": None, "events": [], "started": False, "phase": "IDLE", "still": None, "grip": open_g, "ctx": {}, "ramp_k": 10 ** 9, "v_last": np.zeros(7)}

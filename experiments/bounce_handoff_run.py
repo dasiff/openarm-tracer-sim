@@ -1,8 +1,9 @@
 """Trim handoff experiment, part 2: one bounce run with per-tick logging (branch held-weight-ramp-sag-off; decisions-log M230 to M232).
 
-    MUJOCO_GL=egl python experiments/bounce_handoff_run.py <out_dir>
+    MUJOCO_GL=egl python experiments/bounce_handoff_run.py <out_dir> [off]
 
-The build as committed; the config as committed (sag_reset_at_skill_start False). The scenario is the one of experiments/bounce_ramp_run.py.
+The build as committed; the config as committed except: with the argument "off", trim_blend_enabled is set to False in this process (run 2 of the
+z-only handoff; the config key, no code change). The scenario is the one of experiments/bounce_ramp_run.py.
 The launcher wraps the gravity feedforward once per tick and reads the trace that src/mpvi_modules.py keeps for the arm side (logging only).
 
 Per tick, for the left arm, it writes <out_dir>/bounce_ticks.csv (temporary file, then renamed):
@@ -14,8 +15,8 @@ Per tick, for the left arm, it writes <out_dir>/bounce_ticks.csv (temporary file
   rot_err_deg                               rotation error of the pad to the reference (deg, a move only)
   label                                     active skill and step (for example "pick: IN")
   C_p_x..z, C_r_x..z                        sag correction at the start of the tick (m, rotation vector rad)
-  H_ref_p_x..z, H_ref_r_x..z                saved reference (ref, M231); blank when none
-  H_full_p_x..z, H_full_r_x..z              latched full value (full, M231); blank when none
+  H_ref_z                                   saved reference z (ref, M231, z only); blank when none
+  H_full_z                                  latched full z (full, M231, z only); blank when none
   dir                                       ramp direction (+1 ramp-in, -1 ramp-out, 0 none)
   prog                                      ramp progress (minimum jerk, 0 to 1; 1 when no ramp)
   frozen                                    1 when the load change is frozen (M226), else 0
@@ -38,7 +39,12 @@ import src.episode_runner as er                 # noqa: E402
 import src.gravity_ff as gff                    # noqa: E402
 import src.held_mass_ramp as hmr                # noqa: E402
 import src.mpvi_modules as mpm                  # noqa: E402
+from src.task_config import PICK_PLACE_CFG      # noqa: E402
 import demo_video as dv                         # noqa: E402
+
+if len(sys.argv) > 2 and sys.argv[2] == "off":
+    PICK_PLACE_CFG["trim_blend_enabled"] = False
+print(f"[bounce_handoff_run] trim_blend_enabled = {PICK_PLACE_CFG['trim_blend_enabled']}", flush=True)
 
 G = 9.81
 out = Path(sys.argv[1])
@@ -48,10 +54,6 @@ rows = []
 trace_miss = {"n": 0}
 
 orig_torques = gff.ArmGravityFeedforward.torques
-
-
-def _xyz(v, k):
-    return "" if v is None else float(v[k])
 
 
 def torques_logged(self, data):
@@ -84,11 +86,9 @@ def torques_logged(self, data):
     for ax, k in zip("xyz", range(3)):
         row[f"C_p_{ax}"] = float(tr["C_p"][k]) if ok else ""
         row[f"C_r_{ax}"] = float(tr["C_r"][k]) if ok else ""
-    for name, key in (("H_ref", "H_ref"), ("H_full", "H_full")):
-        pair = g(key)
-        for ax, k in zip("xyz", range(3)):
-            row[f"{name}_p_{ax}"] = _xyz(pair[0], k) if pair is not None else ""
-            row[f"{name}_r_{ax}"] = _xyz(pair[1], k) if pair is not None else ""
+    for name in ("H_ref", "H_full"):
+        val = g(name)
+        row[f"{name}_z"] = float(val) if val is not None else ""
     row["dir"] = g("dir") if g("dir") is not None else ""
     row["prog"] = g("prog") if g("prog") is not None else ""
     row["frozen"] = int(tr["frozen"]) if ok else ""
@@ -121,8 +121,7 @@ rc = dv.record_only(args)
 cols = (["tick", "t_sim", "pad_x_m", "pad_y_m", "pad_z_m", "mass_kg", "target_kg"] + [f"held_tau_L{k}" for k in range(1, 8)]
         + ["ref_x_m", "ref_y_m", "ref_z_m", "err_m", "rot_err_deg", "label"]
         + [f"C_p_{a}" for a in "xyz"] + [f"C_r_{a}" for a in "xyz"]
-        + [f"H_ref_p_{a}" for a in "xyz"] + [f"H_ref_r_{a}" for a in "xyz"]
-        + [f"H_full_p_{a}" for a in "xyz"] + [f"H_full_r_{a}" for a in "xyz"]
+        + ["H_ref_z", "H_full_z"]
         + ["dir", "prog", "frozen", "trace_ok"])
 tmp = out / "bounce_ticks.csv.tmp"
 with open(tmp, "w", newline="") as fh:

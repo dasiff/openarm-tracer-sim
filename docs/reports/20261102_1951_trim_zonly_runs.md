@@ -136,7 +136,7 @@ No definition and no call remain in src/ or in the tests. The historical reports
 ## Limits and NOT BUILT, needs decision
 1. The x and y trim integrate onto a mass the feedforward does not carry, and they wind up during the ramp (x to -15.3 mm). Options: (a) hold x and y during the ramp as well (this is the rule David did not choose); (b) learn x and y as a separate share in the feedforward; (c) leave as is. Not decided.
 2. The trace's `frozen` column is the ramp-state flag (true during any ramp), so during a ramp-in it reads 1 in both runs even though in Run 2 nothing is held. Read the change columns, not the flag, to see what was held.
-3. The place's extra pad error (OVER 6.4 to 6.7 mm) is not separated between the handoff and the OVER move's lag. Not tested (no run without the handoff at this scene in this part).
+3. The place's extra pad error at the end of OVER is 6.4 mm with the handoff on (Run 1) and 6.7 mm with it off (Run 2). Run 2 is the no-handoff run at this scene, so the handoff does not account for that error (VERIFIED, both runs). What remains is the OVER move's own lag (INFERRED).
 4. NAV completion is not logged.
 5. The control run uses the config switch by launcher argument (set in the process, not in the file); the file's default stays True.
 

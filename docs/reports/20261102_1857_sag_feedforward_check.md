@@ -69,3 +69,10 @@ VERIFIED (values). INFERRED: the trim is still rising in a straight line at abou
 - Only the existing sag-on run's extract is used. Its exact recording (ticks 11560 to 11800) is the one in data/diag/height_20261101; its geometry is taken from data/closed_loop/on_20261029_1453, which the metrics script already uses as the same scenario (INFERRED that they are the same scene: they share the held tick 11599).
 - Rotation of the trim is not in the file (NOT AVAILABLE).
 - Item 1 is the change over the last 39 ticks, not the change since close (NOT AVAILABLE for the close tick).
+
+## Correction (added after the item R check of the handoff build)
+The close tick IS in the files: data/closed_loop/on_20261029_1453/instr_ticks.csv has the trim (sag_p, sag_r) on every tick. The first CLOSE tick is 10999 (VERIFIED). This file's first held-mass tick is 11600 (held_left), so the tick before is 11599 (VERIFIED).
+- Trim at the close tick (10999): x -2.081, y -2.660, z -1.308 mm; rotation -0.5693, -0.1571, -0.7863 degrees (VERIFIED).
+- Trim at tick 11599: x +3.049, y -3.058, z +17.538 mm; rotation -3.2010, +0.4973, +0.5485 degrees (VERIFIED).
+- Change between them: x +5.130, y -0.398, z +18.846 mm (VERIFIED arithmetic).
+- What this changes: the 0.32 mm z change above was the change over the last 39 ticks in the extract, not the change since the close. The change since the close is 18.85 mm in z, which is within 0.3 mm of the feedforward estimate of 19.15 mm (0.205 kg) and 18.69 mm (0.200 kg). INFERRED: the trim learned almost exactly the mass share during the lift. In x the change is 5.13 mm against the feedforward's 2.40 mm, and in y it is -0.40 mm against 0.21 mm (INFERRED: the x and y parts come from posture and solver offsets, not from the mass).

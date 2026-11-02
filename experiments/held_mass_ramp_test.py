@@ -79,7 +79,7 @@ check("7. reset clears every ramp of the model", hmr.mass_at(m, "left", 5.0) == 
 
 # --- the freeze of the sag correction (M226) and the trim step (M225): stand-ins only, no simulation ---
 import numpy as np                                    # noqa: E402
-from src.mpvi_modules import _sag_trim_step           # noqa: E402
+from src.mpvi_modules import _sag_trim_step, _trim_handoff_clear   # noqa: E402
 
 quiet = io.StringIO()
 m2 = Model()
@@ -126,6 +126,7 @@ hmr.end_load_change(m5, "left")
 check("11b. end_load_change clears the flag", not hmr.is_load_changing(m5, "left", 0.5))
 
 C = {"p": np.zeros(3), "r": np.zeros(3)}
+H6 = {"ref": None, "full": None}
 cfg = PICK_PLACE_CFG
 p_err = np.array([0.002, 0.0, -0.001])
 r_err = np.array([0.0, 0.01, 0.0])
@@ -133,12 +134,61 @@ m6 = Model()
 hmr.reset(m6)
 hmr.begin_load_change(m6, "left", 0.0)
 before = {k: v.copy() for k, v in C.items()}
-_sag_trim_step(C, cfg, m6, "left", 0.5, p_err, r_err, 0.01)
+_sag_trim_step(C, H6, cfg, m6, "left", 0.5, p_err, r_err, 0.01)
 check("13a. frozen step: the trim value is unchanged", all(np.array_equal(C[k], before[k]) for k in C), f"{C}")
 hmr.end_load_change(m6, "left")
-_sag_trim_step(C, cfg, m6, "left", 0.5, p_err, r_err, 0.01)
+_sag_trim_step(C, H6, cfg, m6, "left", 0.5, p_err, r_err, 0.01)
 check("13b. unfrozen step: the trim integrates (gain times error times step)",
       np.allclose(C["p"], cfg["sag_gain_per_s"] * p_err * 0.01) and np.allclose(C["r"], cfg["sag_gain_per_s"] * r_err * 0.01), f"{C}")
+
+# --- the handoff blend of a ramp-in (M231): the trim moves from "full" to "ref" with the ramp, and does not integrate meanwhile ---
+F_p, F_r = np.array([0.010, -0.004, 0.020]), np.array([0.002, 0.001, -0.003])
+R_p, R_r = np.array([-0.002, -0.003, -0.001]), np.array([-0.009, -0.002, -0.013])
+share_p, share_r = F_p - R_p, F_r - R_r
+GRID = [DUR * k / 100.0 for k in range(0, 101)]
+
+m9 = Model()
+hmr.reset(m9)
+C9 = {"p": F_p.copy(), "r": F_r.copy()}
+H9 = {"ref": (R_p.copy(), R_r.copy()), "full": None}
+with contextlib.redirect_stdout(quiet):
+    hmr.set_target(m9, "left", 0.2, 0.0, 90)                # ramp in from 0 kg
+check("14a. ramp-in direction is +1 while it runs, 0 after it", hmr.ramp_direction(m9, "left", 0.5 * DUR) == 1 and hmr.ramp_direction(m9, "left", DUR + 0.1) == 0)
+worst_p = worst_r = 0.0
+for t in GRID[:-1]:
+    _sag_trim_step(C9, H9, cfg, m9, "left", t, np.zeros(3), np.zeros(3), 0.01)
+    k = hmr.ramp_progress(m9, "left", t)
+    worst_p = max(worst_p, float(np.abs(C9["p"] + k * share_p - F_p).max()))
+    worst_r = max(worst_r, float(np.abs(C9["r"] + k * share_r - F_r).max()))
+check("14b. ramp in: trim + progress times (full minus ref) stays at full within 1e-9 (position and rotation)", worst_p < 1e-9 and worst_r < 1e-9, f"{worst_p} {worst_r}")
+m9b = Model()
+hmr.reset(m9b)
+C9b = {"p": F_p.copy(), "r": F_r.copy()}
+H9b = {"ref": (R_p.copy(), R_r.copy()), "full": None}
+with contextlib.redirect_stdout(quiet):
+    hmr.set_target(m9b, "left", 0.2, 0.0, 91)
+_sag_trim_step(C9b, H9b, cfg, m9b, "left", 0.0, np.array([0.001, 0, 0]), np.zeros(3), 0.01)
+check("14c. progress 0: the trim equals full", np.allclose(C9b["p"], F_p) and np.allclose(C9b["r"], F_r), f"{C9b}")
+_sag_trim_step(C9b, H9b, cfg, m9b, "left", DUR, np.array([0.001, 0, 0]), np.zeros(3), 0.01)
+check("14d. ramp end: the trim equals ref and full is cleared", np.allclose(C9b["p"], R_p) and np.allclose(C9b["r"], R_r) and H9b["full"] is None, f"{C9b} {H9b}")
+_sag_trim_step(C9b, H9b, cfg, m9b, "left", DUR + 1.0, np.array([0.001, 0, 0]), np.zeros(3), 0.01)
+check("14e. after the ramp in the trim integrates again", not np.allclose(C9b["p"], R_p))
+
+m10 = Model()
+hmr.reset(m10)
+C10 = {"p": F_p.copy(), "r": F_r.copy()}
+H10 = {"ref": None, "full": None}
+with contextlib.redirect_stdout(quiet):
+    hmr.set_target(m10, "left", 0.2, 0.0, 92)
+frozen_ok = True
+for t in GRID[:-1]:
+    _sag_trim_step(C10, H10, cfg, m10, "left", t, np.array([0.001, 0, 0]), np.zeros(3), 0.01)
+    frozen_ok = frozen_ok and np.array_equal(C10["p"], F_p) and np.array_equal(C10["r"], F_r)
+check("14f. no ramp reference: the trim only freezes during the ramp in", frozen_ok)
+
+H11 = {"ref": (R_p.copy(), R_r.copy()), "full": (F_p.copy(), F_r.copy())}
+_trim_handoff_clear(H11)
+check("14g. a reset clears ref and full", H11["ref"] is None and H11["full"] is None)
 
 print("\nRESULT:", "PASS" if not fails else f"FAIL ({len(fails)}: {fails})")
 sys.exit(1 if fails else 0)

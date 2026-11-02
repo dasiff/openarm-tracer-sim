@@ -91,6 +91,22 @@ def end_load_change(model, side):
         rec["changing"] = False
 
 
+def ramp_direction(model, side, t):
+    """+1 while a ramp toward a larger mass runs on one side at time t (s) (the ramp-in), -1 while a ramp toward a smaller one runs (the ramp-out), 0 when none runs (M231)."""
+    rec = _record(model, side)
+    if rec is None or finished(model, side, t):
+        return 0
+    return 1 if rec["target"] > rec["start"] else -1
+
+
+def ramp_progress(model, side, t):
+    """Minimum-jerk progress (0 to 1) of the running ramp of one side at time t (s); 1.0 when no ramp runs (M231)."""
+    rec = _record(model, side)
+    if rec is None:
+        return 1.0
+    return float(min_jerk(min(max((t - rec["t0"]) / rec["dur"], 0.0), 1.0)))
+
+
 def reset(model):
     """Ends every ramp of the model and clears every freeze (the run-start reset, M217, M226)."""
     RAMP.pop(id(model), None)

@@ -20,7 +20,7 @@ import pandas as pd
 sys.path.insert(0, "/home/vboxuser/projects/openarm-tracer-sim")
 from src.run_record import load_recording  # noqa: E402
 from src.replay import build_model  # noqa: E402
-from src.task_config import PICK_PLACE_CFG, TASK_CFG  # noqa: E402
+from src.task_config import PICK_PLACE_CFG, TASK_CFG, SUCCESS_CFG  # noqa: E402
 
 TICK_HZ = 150.0
 RAMP_TICKS = int(round(PICK_PLACE_CFG["held_mass_ramp_s"] * TICK_HZ))
@@ -80,12 +80,14 @@ def parse_log(path):
 
 def main():
     run_dir, log_path, out_path = sys.argv[1], sys.argv[2], sys.argv[3]
+    deg = np.degrees
     df = pd.read_csv(f"{run_dir}/bounce_ticks.csv", index_col="tick")
     df["label"] = df["label"].fillna("").astype(str)
     for c in ["dir", "prog", "frozen", "trace_ok", "err_m", "rot_err_deg", "ref_x_m", "ref_y_m", "ref_z_m"]:
         df[c] = num(df[c])
     tr = df[df["trace_ok"] == 1]
     md = []
+    blend_on = "trim_blend_enabled = False" not in open(log_path, encoding="utf-8", errors="replace").read()
 
     # ---- key ticks ----
     t_set = int(df.index[df["target_kg"] > 0][0])                  # the ramp-in target is set (the weighing)
@@ -130,36 +132,42 @@ def main():
 
     # ---- item 2: handoff timing ----
     fwd = tr[(tr.index >= t_set) & (tr["dir"] == 1)]
-    first_blend = int(fwd.index[0]) if len(fwd) else None
-    full_latched = int(tr[(tr.index > t_set) & tr["H_full_p_x"].notna() & (tr["H_full_p_x"] != "")].index[0]) if (tr["H_full_p_x"].notna()).any() else None
+    first_blend = int(fwd.index[0]) if len(fwd) and blend_on else None
+    _fl = tr[(tr.index > t_set) & tr["H_full_z"].notna()]
+    full_latched = int(_fl.index[0]) if len(_fl) else None           # None when no blend ran (the control run)
     md.append("")
     md.append("## 2. Handoff timing (VERIFIED from the trace)")
     md.append(f"- Ramp-in target set at tick {t_set} ({t_sim(t_set):.4f} s).")
-    md.append(f"- First blended trim update (first move tick with dir +1): tick {first_blend} ({t_sim(first_blend):.4f} s); ticks between the target and that update: {first_blend - t_set}.")
-    md.append(f"- Ramp progress on that tick: {float(df.loc[first_blend, 'prog']):.6g} (minimum jerk, 0 to 1).")
-    md.append(f"- The first traced tick that shows the latched full value: tick {full_latched} (the trace logs the value before the trim update of its own tick).")
+    if first_blend is None:
+        md.append("- No blended trim update in this run (trim_blend_enabled is False: the control run).")
+    else:
+        md.append(f"- First blended trim update (first move tick with dir +1): tick {first_blend} ({t_sim(first_blend):.4f} s); ticks between the target and that update: {first_blend - t_set}.")
+        md.append(f"- Ramp progress on that tick: {float(df.loc[first_blend, 'prog']):.6g} (minimum jerk, 0 to 1).")
+        md.append(f"- The first traced tick that shows the latched full value: tick {full_latched} (the trace logs the value before the trim update of its own tick).")
     md.append("- The held step (CHECK) and the tick after the weighing have no trim update: no move is running, so the blend starts on the first move tick.")
 
-    # ---- item 3: handoff values ----
+    # ---- item 3: handoff values (z only, M231 amended) ----
     ref_t = segments(df, "pick: CLOSE")[0][0] + 1
-    ref = (vec3(tr, "H_ref_p", ref_t), vec3(tr, "H_ref_r", ref_t))
-    full = (vec3(tr, "H_full_p", full_latched), vec3(tr, "H_full_r", full_latched))
-    after = tr[(tr.index > t_ramp_end - 1) & (tr["dir"] == 0) & (tr["H_full_p_x"].isna())]
-    t_done = int(after.index[0])
-    end_c = (vec3(tr, "C_p", t_done), vec3(tr, "C_r", t_done))
+    ref_z = float(tr.loc[ref_t, "H_ref_z"])
+    full_z = float(tr.loc[full_latched, "H_full_z"]) if full_latched is not None else float("nan")
+    t_done = t_ramp_end + 1
+    cp_at = lambda k: np.array([float(df.loc[k, "C_p_x"]), float(df.loc[k, "C_p_y"]), float(df.loc[k, "C_p_z"]),
+                                float(df.loc[k, "C_r_x"]), float(df.loc[k, "C_r_y"]), float(df.loc[k, "C_r_z"])])
+    c_ref, c_start, c_end = cp_at(ref_t), cp_at(t_set), cp_at(t_done)
     md.append("")
-    md.append("## 3. Handoff values (VERIFIED from the trace; positions in mm, rotations in degrees, the trim stored in metres and radians)")
-    md.append("| quantity | x (mm) | y (mm) | z (mm) | rotation x, y, z (deg) |")
+    md.append("## 3. Handoff values (VERIFIED from the trace; positions in mm, rotations in degrees)")
+    md.append(f"- Saved reference z (H_ref_z, tick {ref_t}): {1000*ref_z:+.4f} mm. Latched full z (H_full_z, tick {full_latched}): "
+              f"{'NOT AVAILABLE (no blend ran in this run)' if full_latched is None else f'{1000*full_z:+.4f} mm'}. Full minus reference (z): {'NOT AVAILABLE' if full_latched is None else f'{1000*(full_z-ref_z):+.4f} mm'}.")
+    md.append(f"- Trim z at the end of the ramp-in (tick {t_done}) minus reference z: {1000*(c_end[2]-ref_z):+.6f} mm (the brief asks 1e-6 m or less).")
+    md.append("")
+    md.append("| trim component | at the saved reference (tick %d) | at ramp-in start (tick %d) | at ramp-in end (tick %d) | change over the ramp |" % (ref_t, t_set, t_done))
     md.append("|---|---|---|---|---|")
-    deg = np.degrees
-    md.append(f"| trim at the saved reference (tick {ref_t}) | {1000*ref[0][0]:+.4f} | {1000*ref[0][1]:+.4f} | {1000*ref[0][2]:+.4f} | {deg(ref[1][0]):+.4f}, {deg(ref[1][1]):+.4f}, {deg(ref[1][2]):+.4f} |")
-    md.append(f"| trim latched as full (tick {full_latched}) | {1000*full[0][0]:+.4f} | {1000*full[0][1]:+.4f} | {1000*full[0][2]:+.4f} | {deg(full[1][0]):+.4f}, {deg(full[1][1]):+.4f}, {deg(full[1][2]):+.4f} |")
-    d_p = full[0] - ref[0]
-    d_r = full[1] - ref[1]
-    md.append(f"| full minus reference | {1000*d_p[0]:+.4f} | {1000*d_p[1]:+.4f} | {1000*d_p[2]:+.4f} | {deg(d_r[0]):+.4f}, {deg(d_r[1]):+.4f}, {deg(d_r[2]):+.4f} |")
-    md.append(f"| trim at the end of the ramp-in (tick {t_done}, the first tick after the blend ended) minus reference | {1000*(end_c[0][0]-ref[0][0]):+.6f} | {1000*(end_c[0][1]-ref[0][1]):+.6f} | {1000*(end_c[0][2]-ref[0][2]):+.6f} | {deg(end_c[1][0]-ref[1][0]):+.6f}, {deg(end_c[1][1]-ref[1][1]):+.6f}, {deg(end_c[1][2]-ref[1][2]):+.6f} |")
-    max_end_diff = float(max(np.abs(end_c[0] - ref[0]).max(), np.abs(end_c[1] - ref[1]).max()))
-    md.append(f"- Largest difference between the trim at the ramp-in end and the reference: {max_end_diff:.3e} (SI units; the brief asks for 1e-6 or less).")
+    labels = ["x (mm)", "y (mm)", "z (mm)", "rotation x (deg)", "rotation y (deg)", "rotation z (deg)"]
+    scale = [1000, 1000, 1000, np.degrees(1), np.degrees(1), np.degrees(1)]
+    for k, lab in enumerate(labels):
+        md.append(f"| {lab} | {scale[k]*c_ref[k]:+.4f} | {scale[k]*c_start[k]:+.4f} | {scale[k]*c_end[k]:+.4f} | {scale[k]*(c_end[k]-c_start[k]):+.4f} |")
+    trim_change = c_end - c_start
+    ref_end = cp_at(t_done)
 
     # ---- item 4: pad error to the reference around the ramp ----
     moves = tr.index[tr["ref_x_m"].notna()]
@@ -196,47 +204,47 @@ def main():
         return float(s.iloc[np.argmax(np.abs(s.values))])
     md.append(f"- Largest excursion from ramp start to 3 s after the ramp end (signed value of largest magnitude; move ticks only): x {big(ex):+.3f} mm, y {big(ey):+.3f} mm, z {big(ez):+.3f} mm, rotation {big(er):+.3f} deg.")
 
-    # ---- item 5: feedforward estimate at that pose ----
+    # ---- item 5 and 6: feedforward estimate at the tick before the held mass, with the actual base pose from the episode log ----
     rec = load_recording(f"{run_dir}/recording")
     model, _d, _r = build_model(rec["meta"])
-    cp_t = (t_set // 150) * 150                                       # the checkpoint before the ramp-in
-    st = rec["checkpoints"][cp_t]
-    qpos = st[1:1 + model.nq]
+    ep = pd.read_csv(f"{run_dir}/episode/episode_log.csv")
+    row = ep.iloc[int((ep["sim_time"] - t_sim(t_base)).abs().values.argmin())]
+    cpk6 = (t_base // 150) * 150                                     # the checkpoint before the tick (the full state: the actual base and joints)
     data = mujoco.MjData(model)
-    data.qpos[:] = qpos
+    data.qpos[:] = rec["checkpoints"][cpk6][1:1 + model.nq]
+    qa = lambda name: int(model.jnt_qposadr[mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_JOINT, name)])
+    ib = qa("base_float")
     mujoco.mj_forward(model, data)
     tcp = model.body("openarm_left_hand_tcp").id
     from src.gravity_ff import ArmGravityFeedforward  # noqa: E402
     ff = ArmGravityFeedforward.from_model(model, sides=("left",))
     pad_local = np.asarray(ff.pads["left"][1], float)
     point = data.xpos[tcp] + data.xmat[tcp].reshape(3, 3) @ pad_local
-    chk = np.array([df.loc[cp_t, "pad_x_m"], df.loc[cp_t, "pad_y_m"], df.loc[cp_t, "pad_z_m"]])
-    md.append("")
-    md.append(f"## 5. Feedforward estimate at the pose of checkpoint {cp_t} (the 150-tick checkpoint before the ramp-in; VERIFIED method, INFERRED pose)")
-    md.append(f"- Check: pad centre from the checkpoint joints (x, y, z, m) {np.round(point, 4).tolist()} vs the logged pad at tick {cp_t} {np.round(chk, 4).tolist()}.")
+    logged = np.array([float(df.loc[cpk6, "pad_x_m"]), float(df.loc[cpk6, "pad_y_m"]), float(df.loc[cpk6, "pad_z_m"])])
     jl = np.zeros((3, model.nv))
     jr = np.zeros((3, model.nv))
     mujoco.mj_jac(model, data, jl, None, point, tcp)
     mujoco.mj_jac(model, data, None, jr, point, tcp)
     kp, dof = {}, {}
-    for j in range(1, 8):
-        a = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_ACTUATOR, f"left_joint{j}_ctrl")
-        kp[j] = float(model.actuator_gainprm[a, 0])
-        dof[j] = int(model.jnt_dofadr[model.actuator_trnid[a, 0]])
-    m_est = float(df.loc[t_set, "target_kg"])                       # the weighed reading (the ramp target)
-    res = {}
-    for m_, lab in ((m_est, "estimated"), (0.200, "true")):
+    for j_ in range(1, 8):
+        a = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_ACTUATOR, f"left_joint{j_}_ctrl")
+        kp[j_] = float(model.actuator_gainprm[a, 0])
+        dof[j_] = int(model.jnt_dofadr[model.actuator_trnid[a, 0]])
+    md.append("")
+    md.append(f"## 5 and 6. Corrected feedforward at the tick before the held mass (tick {t_base}, {t_sim(t_base):.4f} s)")
+    yaw_ck = float(np.degrees(2 * np.arctan2(data.qpos[ib + 3 + 3], data.qpos[ib + 3])))
+    md.append(f"- Base pose used: the checkpoint state at tick {cpk6} (the run's full state, {t_base - cpk6} ticks before tick {t_base}): base x {data.qpos[ib]:.4f} m, base y {data.qpos[ib+1]:.4f} m, base z {data.qpos[ib+2]:.4f} m, yaw {yaw_ck:.3f} deg about the world z axis; pedestal {data.qpos[qa('pedestal_joint')]:.4f} m. "
+              f"Cross-check, episode log row at {float(row['sim_time']):.4f} s: base x {float(row['base_x']):.4f}, y {float(row['base_y']):.4f}, yaw {float(row['base_yaw_deg']):.3f} deg. Frame: world (x, y, z in metres; rotations in degrees, about the world axes).")
+    md.append(f"- Check: pad centre from these joints {np.round(point, 4).tolist()} vs the logged pad at tick {cpk6} {np.round(logged, 4).tolist()} (difference {1000*np.abs(point-logged).max():.3f} mm).")
+    for m_, lab in ((float(df.loc[t_set, "target_kg"]), "0.205 kg (the weighed reading)"), (0.200, "0.200 kg (the true mass)")):
         dp = np.zeros(3)
         dr = np.zeros(3)
-        for j in range(1, 8):
-            off = m_ * 9.81 * jl[2, dof[j]] / kp[j]
-            dp += jl[:, dof[j]] * off
-            dr += jr[:, dof[j]] * off
-        res[lab] = (dp, dr)
-        md.append(f"- Feedforward estimate at the {lab} mass {m_:.3f} kg: x {1000*dp[0]:+.3f} mm, y {1000*dp[1]:+.3f} mm, z {1000*dp[2]:+.3f} mm, rotation {deg(dr[0]):+.3f}, {deg(dr[1]):+.3f}, {deg(dr[2]):+.3f} deg.")
-    dp, dr = res["estimated"]
-    md.append(f"- Full minus reference (from section 3): x {1000*d_p[0]:+.3f} mm, y {1000*d_p[1]:+.3f} mm, z {1000*d_p[2]:+.3f} mm, rotation {deg(d_r[0]):+.3f}, {deg(d_r[1]):+.3f}, {deg(d_r[2]):+.3f} deg.")
-    md.append(f"- Difference (full minus reference, minus the feedforward): x {1000*(d_p[0]-dp[0]):+.3f} mm, y {1000*(d_p[1]-dp[1]):+.3f} mm, z {1000*(d_p[2]-dp[2]):+.3f} mm, rotation {deg(d_r[0]-dr[0]):+.3f}, {deg(d_r[1]-dr[1]):+.3f}, {deg(d_r[2]-dr[2]):+.3f} deg.")
+        for j_ in range(1, 8):
+            off = m_ * 9.81 * jl[2, dof[j_]] / kp[j_]
+            dp += jl[:, dof[j_]] * off
+            dr += jr[:, dof[j_]] * off
+        md.append(f"- Feedforward removes at {lab}: x {1000*dp[0]:+.3f} mm, y {1000*dp[1]:+.3f} mm, z {1000*dp[2]:+.3f} mm; rotation {deg(dr[0]):+.3f}, {deg(dr[1]):+.3f}, {deg(dr[2]):+.3f} deg.")
+    md.append(f"- Trim change over the ramp (item 5, mm and deg): x {1000*trim_change[0]:+.3f}, y {1000*trim_change[1]:+.3f}, z {1000*trim_change[2]:+.3f}; rotation {deg(trim_change[3]):+.3f}, {deg(trim_change[4]):+.3f}, {deg(trim_change[5]):+.3f}.")
 
     # ---- item 6: metric 1 and metric 2 ----
     md.append("")
@@ -310,8 +318,15 @@ def main():
     place_s = float(back.iloc[0] - over.iloc[0]) if len(over) and len(back) else float("nan")
     last = ep.iloc[-1]
     bx, by, bz = float(last["beaker_x"]), float(last["beaker_y"]), float(last["beaker_z"])
-    hx, hy = TASK_CFG["hotplate_xy"]
-    md.append(f"- Beaker at the end of the episode: x {bx:.4f}, y {by:.4f}, z {bz:.4f} m; hotplate centre (task_config TASK_CFG hotplate_xy) 0.80, 0.66 m: "
+    cpk = max(rec["checkpoints"])
+    dsite = mujoco.MjData(model)
+    dsite.qpos[:] = rec["checkpoints"][cpk][1:1 + model.nq]
+    mujoco.mj_forward(model, dsite)
+    sid = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_SITE, SUCCESS_CFG["hotplate_site"])
+    hx, hy = float(dsite.site_xpos[sid][0]), float(dsite.site_xpos[sid][1])
+    md.append(f"- Hotplate top site in the scene at tick {cpk}: x {hx:.4f}, y {hy:.4f}, z {float(dsite.site_xpos[sid][2]):.4f} m (the run's layout; "
+              f"TASK_CFG hotplate_xy is {TASK_CFG['hotplate_xy']} m, the unshifted default: the run used demo_video's MOVED layout, shift -0.15 m).")
+    md.append(f"- Beaker at the end of the episode: x {bx:.4f}, y {by:.4f}, z {bz:.4f} m; hotplate top site (scene): "
               f"horizontal distance {1000*np.hypot(bx-hx, by-hy):.1f} mm.")
     md.append(f"- Outcome line: {outcome[0] if outcome else NA}. The SUCCESS line is the plan's own success check; whether the beaker rests on the hotplate is INFERRED from it "
               f"and from the position above (the hotplate top height is not read here).")
@@ -320,7 +335,7 @@ def main():
     # ---- item 9: callers ----
     md.append("")
     md.append("## 9. Callers (grep at the commit; VERIFIED in the working tree before the run)")
-    md.append("- begin_load_change: no caller in src/ or in the launchers; it is kept in src/held_mass_ramp.py (only the unit tests call it).")
+    md.append("- begin_load_change: removed (M234): no definition and no caller remain in src/, experiments/ or the unit tests.")
     md.append("- end_load_change: three call sites in src/mpvi_modules.py: the skill-start reset (only when sag_reset_at_skill_start is on), the recovery start, and the gripper-open reset (the freeze end for the ramp-out).")
 
     text = "\n".join(md)

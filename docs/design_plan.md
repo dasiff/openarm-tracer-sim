@@ -562,3 +562,31 @@ The policy is trained on simulated eagle images, so the real robot must reproduc
 1. **The real camera and mount:** the real camera's field of view, resolution and rate, its fixed mount position and angle on the torso, and its mass; then `CAMERA_SPECS` is edited to match and the data is regenerated (§11).
 2. **The same view rule:** the "inside the fixed view" test of 14.1 with the same 10 % margin and occlusion limits, re-checked with the real camera for the stance and home pose requirements.
 3. **Teleop recorded with the camera fixed:** real demonstrations (§7.1, OpenArm leader to follower) are recorded with the real fixed camera at the same pedestal height rule, so the eagle images of the real data come from the same viewpoint as the simulated ones; there is no neck to log or to move.
+
+## 15. Held-object handoffs and carry transitions [DECIDED 2026-11-01, David]
+
+Work order: (1) read-only verification (check code against rows); (2) bounce fix under M202 (option 2 weight ownership); (3) VLA handoff test (M206); (4) distance experiment with carry.
+
+### Held-object handoffs (VLA ↔ controller, skill ↔ skill)
+
+| Item | Decisions-log row | Description |
+|---|---|---|
+| a. Compensation estimate and ownership | M201 | Held-weight compensation is always present in the shared bottom layer, mass 0 when empty. The mass is estimated every tick from the servo's measured joint torque minus the arm's own gravity, solved directly for mass; updates are gated to a nearly still arm with the gripper closed on an object; the estimate is filtered, then slew-limited (item l, M212). The sag correction's stored aim-high is released by the same amount each step so the hand does not move; at release the mass is slewed back to 0 before the gripper opens. No skill boundary or VLA handoff changes it, and the estimator works the same under controller or VLA. Replaces the one-tick switch-on after the CHECK weighing. Gate thresholds and filter time constant: PENDING David. |
+| b. Weight ownership (option 2) | M202 | The held-weight feedforward carries the beaker weight; the sag correction becomes a small, rate-limited trim for residual error only. Exact cap and rate: PENDING David. |
+| c. Command-angle restart | M203 | A controller taking over starts from the last COMMANDED joint angles, not measured. Plans its first move from the hand pose those angles give. Must be retested (restart-from-commanded was reverted Oct 28 because the old sag correction fought it; cf. M185 revert note). |
+| d. Handoff at pause | M204 | Handoffs happen at a pause: outgoing controller ends, settling check passes, incoming controller starts. |
+| e. VLA training action | M205 | The action recorded for VLA training is the command BEFORE gravity feedforward is added, so actions do not depend on beaker weight. |
+| f. Handoff test (150/200/250 g) | M206 | Scripted stand-in for the VLA hands off to the controller at different moments: 150, 200, 250 g. Metrics: rise, drop, swing. Pass criterion: each under 3 mm. |
+| l. Held-weight slew limit | M212 | The held-weight term has its own slew limit at the source and can never step. It is not routed through the command bridge, so the recorded VLA action stays free of weight compensation. The ramp is 1.0 s in and out, with a minimum-jerk shape (same s(u) as M198); it was a 0.5 s guess. Check the 1.0 s ramp against the 0.58 s ringing period once built. |
+| m. Bridge log fallback (deviation) | M213 | BRIDGE_ACCEPTED_LOG uses a conditional None fallback (key absent at tick 0) instead of direct indexing. Logging only. |
+| n. Continuous-weighing cost | M214 | Continuous weighing is conditional on not slowing the sim noticeably: time per tick is measured before and after it is built. Fallback to test against: a controller-owned pause after the grasp (small lift, pause, one reading). Until the estimate has updated, the sag trim covers the weight, as today. Gate thresholds and filter time constant: PENDING David. |
+
+### Carry between stations (pick → drive → place)
+
+| Item | Decisions-log row | Description |
+|---|---|---|
+| g. Exclusive hold | M207 | Arm holds still while the base drives. No simultaneous arm and base motion while holding. |
+| h. Carry position (zombie pose) | M208 | Carry position is the zombie pose: arm pulls the beaker back from over the table into the zombie pose before driving. Requirements before a pick is committed: retreat path to zombie pose checked with the beaker included (links to open item "safe return to zombie pose"); zombie pose with beaker inside the carry check swept area; beaker upright. |
+| i. Sag correction held | M209 | Sag correction is HELD (not reset, not active) during driving and any pedestal change; resumes after arrival and settling. |
+| j. Slip-test base limits | M210 | Separate, lower base acceleration, braking and turn rate limits while holding. Values from a slip test (150/200/250 g, step up until beaker slips in grip, back off by a margin; margin PENDING David). |
+| k. Pedestal changes with cost | M211 | Pedestal changes while holding are allowed when necessary, at a reduced speed taken from the same slip test. Stance selection treats a pedestal change while holding as a cost, preferring stances that avoid it. |

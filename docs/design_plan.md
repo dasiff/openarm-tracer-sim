@@ -591,11 +591,11 @@ Work order: (1) read-only verification (check code against rows); (2) bounce fix
 | j. Slip-test base limits | M210 | Separate, lower base acceleration, braking and turn rate limits while holding. Values from a slip test (150/200/250 g, step up until beaker slips in grip, back off by a margin; margin PENDING David). |
 | k. Pedestal changes with cost | M211 | Pedestal changes while holding are allowed when necessary, at a reduced speed taken from the same slip test. Stance selection treats a pedestal change while holding as a cost, preferring stances that avoid it. |
 
-### Held-weight ramp and sag off (bounce branch) [DECIDED 2026-11-02, David; BUILT 2026-11-02 on branch held-weight-ramp-sag-off, rows M215 to M222; run and table: data/bounce_ramp_20261102]
+### Held-weight ramp and sag off (bounce branch) [DECIDED 2026-11-02, David; BUILT 2026-11-02 on branch held-weight-ramp-sag-off, rows M215 to M222 (M215 superseded by M225); run and table: data/bounce_ramp_20261102; sag back on with a freeze, rows M225 to M228, DECIDED 2026-11-02, built in part 1, not yet run]
 
 | Item | Decisions-log row | Description |
 |---|---|---|
-| o. Sag correction off | M215 | Sag correction off everywhere: its one gain `sag_gain_per_s` is set to 0 through config. It feeds both the position and rotation correction. The code stays. |
+| o. Sag correction off (SUPERSEDED) | M215 | Superseded by y (M225): sag back on at gain 3.0. Was: sag correction off everywhere, gain 0 through config. |
 | p. Held-weight term always on | M216 | The held-weight term stays always on in the shared bottom layer; mass 0 when the hand is empty. |
 | q. Ramp module | M217 | A small separate module owns the held-mass ramp: flat dict (start value, target value, start time, duration), no class; set the target, read the current mass, ask whether finished. The feedforward reads the current mass every tick; skills only set the target; the module advances from simulation time; the run-start reset clears it. |
 | r. Ramp shape and duration | M218 | Minimum jerk (`src/rate_limit.min_jerk`), duration 1.0 s, in config. |
@@ -604,3 +604,8 @@ Work order: (1) read-only verification (check code against rows); (2) bounce fix
 | u. Ramp out | M221 | At the end of the place DOWN phase the target is 0; OPEN waits until the ramp reports finished (at once if the mass is already 0). Replaces the clear one tick after the gripper opens (M196). |
 | v. Pick start | M222 | A pick start sets the target to 0 through the same module; no abrupt clear. |
 | w. Limits of this test | M223 | The mass comes from scripted weighing only (not a policy); sag off may shift final heights and placement; one weighing per pick (a second one while compensation is partly on would be wrong). |
+| x. Pick IN miss (PENDING) | M224 | The solver's posture pull leaves a fixed miss of about 3.4 mm at the end of the pick's IN move. Options (lower the posture weight, re-anchor the posture target at skill start, nullspace priority) not decided. The servo part (about 3.2 mm) is an unexplained item. |
+| y. Sag correction back on (DECIDED) | M225 | Gain `sag_gain_per_s` 3.0 per second (the original value), position and rotation. Replaces o. |
+| z. Freeze (DECIDED) | M226 | The integral does not learn while the held load changes: from the pick's CLOSE step start to the end of the ramp-in; during any held-mass ramp; from the place's ramp-out to the gripper-open event. The frozen value is kept and still added to the pad command. Any reset clears the freeze, and a reset wins. |
+| aa. Skill start reset (DECIDED) | M227 | Skill start zeroes the correction only when `sag_reset_at_skill_start` is true (default false, so it carries across skills). |
+| bb. Limits of the freeze build (DECIDED) | M228 | Scripted skills only; the steady offset is learned in the empty hand approach; one weighing per pick; Run A changes two things at once (Run B separates them). |

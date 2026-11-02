@@ -45,7 +45,8 @@ from scipy.spatial.transform import Rotation, Slerp
 
 import mink
 
-from src.gravity_ff import ArmGravityFeedforward, set_held_mass
+from src import held_mass_ramp as hmr
+from src.gravity_ff import ArmGravityFeedforward
 from src.mink_arm import MinkArm, pad_rotation
 from src.rate_limit import min_jerk
 from src.robot_helpers import arm_ids
@@ -148,7 +149,7 @@ def make_scripted_manipulation(model, data, world, side, home_q, task_cfg=TASK_C
     base = model.body("base_link").id
     home_q = np.asarray(home_q, float)
     gff_arm = ArmGravityFeedforward.from_model(model, sides=(side,))    # the arm's own gravity torque, for the handoff weight reading (M196)
-    W = {"qd": None, "q": None, "tau": None, "clear": False}    # the still-window buffers of the weight reading, and the clear request for the next tick (M196)
+    W = {"qd": None, "q": None, "tau": None}                 # the still-window buffers of the weight reading (M196)
     C = {"p": np.zeros(3), "r": np.zeros(3)}                 # the sag correction: an integral of the measured pad pose error, added to the waypoint path
     S = {"steps": [], "i": 0, "t0": None, "error": None, "events": [], "started": False, "phase": "IDLE", "still": None, "grip": open_g, "ctx": {}, "ramp_k": 10 ** 9, "v_last": np.zeros(7)}
 
@@ -247,9 +248,8 @@ def make_scripted_manipulation(model, data, world, side, home_q, task_cfg=TASK_C
             arm.reset(data)
         C["p"], C["r"] = np.zeros(3), np.zeros(3)
         S["v_last"] = np.zeros(7)
-        if prim == "pick":                                    # M196: a pick starts with nothing in the hand
-            set_held_mass(model, side, None)
-            W["clear"] = False
+        if prim == "pick":                                    # M222: a pick starts with nothing in the hand: the mass ramps to 0 through the ramp module, no abrupt clear
+            hmr.set_target(model, side, 0.0, data.time, S.get("tick", -1))
         try:
             if S["ctx"]["obj"] is None:
                 raise ValueError("the segment has no grounded object")
@@ -382,6 +382,10 @@ def make_scripted_manipulation(model, data, world, side, home_q, task_cfg=TASK_C
             out = command()
         elif kind in ("close", "open"):
             closing = kind == "close"
+            if not closing:                                  # M221: the open waits until the held mass has ramped to 0 (at once if it is 0 already); the recovery's open does the same (M217)
+                hmr.set_target(model, side, 0.0, t, obs["tick"])
+                if not hmr.finished(model, side, t):
+                    return command()                         # the grip stays closed until the ramp is finished
             S["grip"] = {"position": 0.0, "max_force": float(force)} if closing else open_g
             out = command()
             travel, speed = float(data.qpos[fq]), abs(float(data.qvel[fv]))
@@ -403,7 +407,6 @@ def make_scripted_manipulation(model, data, world, side, home_q, task_cfg=TASK_C
                 S["events"].append("gripper_closed" if closing else "gripper_opened")
                 if not closing:
                     C["p"], C["r"] = np.zeros(3), np.zeros(3)      # the beaker's weight is off the arm
-                    W["clear"] = True                              # M196: the held-object compensation ends on the next tick
                 advance = True
             elif el > (cfg["close_timeout_s"] if closing else cfg["open_timeout_s"]):
                 fail(f"{st['name']}: the gripper did not stop within {el:.1f} s")
@@ -421,13 +424,14 @@ def make_scripted_manipulation(model, data, world, side, home_q, task_cfg=TASK_C
                 if status == "take":
                     res = hand_load(model, np.mean(W["q"], axis=0), np.mean(W["tau"], axis=0), arm, gff_arm)
                     S["ctx"]["held_mass_kg"] = res["mass_kg"]
-                    if res["mass_kg"] > 0.0:
-                        set_held_mass(model, side, res["mass_kg"])  # set on this tick, before this tick's physics: the module is not stepped between the pick and the next skill, so a "next tick" setting would wait for the place to start
-                    print(f"[manipulation] handoff weight reading: {1000 * res['mass_kg']:.0f} g (unexplained torque share {res['unexplained_down']:.2f}): compensated from this tick on")
+                    hmr.set_target(model, side, res["mass_kg"], t, obs["tick"])     # M220: the ramp in to the reading, from this tick on (M217)
+                    print(f"[manipulation] handoff weight reading: {1000 * res['mass_kg']:.0f} g (unexplained torque share {res['unexplained_down']:.2f}): the held-mass ramp starts from this tick")
                 elif cfg["held_gravity_comp"]:
                     print("[manipulation] handoff weight reading: no reading (the arm was not still in time): no compensation")
                 advance = True
         if advance:
+            if kind == "move" and st["name"] == "DOWN" and S["ctx"].get("primitive") == "place":
+                hmr.set_target(model, side, 0.0, t, obs["tick"])     # M221: the held mass ramps out at the end of the place's DOWN
             S["i"], S["t0"], S["still"] = S["i"] + 1, None, None
         return out
 
@@ -443,9 +447,7 @@ def make_scripted_manipulation(model, data, world, side, home_q, task_cfg=TASK_C
         W["qd"].append(float(np.max(np.abs(data.qvel[arm.vadr]))))                  # M196: this tick's measured joint speed, joints and applied torque, for the weight reading
         W["q"].append(data.qpos.copy())
         W["tau"].append(data.actuator_force[act_ids].copy())
-        if W["clear"]:                                                              # M196: the compensation ends on the first tick after the gripper has opened
-            set_held_mass(model, side, None)
-            W["clear"] = False
+        S["tick"] = obs["tick"]                                                     # the tick number, for the ramp's messages (M219)
         q_before = arm.q_cmd.copy()
         if S.get("q_prev") is not None:                            # first tick after arm.reset at a skill start: the ramp runs from the last command, so the snap to the measured joints is spread over the ramp
             q_before, S["q_prev"] = S["q_prev"], None

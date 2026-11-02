@@ -20,7 +20,7 @@ The pose comes from `data.qpos` (the measured joints and the base's pose, so a t
 import mujoco
 import numpy as np
 
-from src import robot_specs
+from src import held_mass_ramp, robot_specs
 from src.gripper_geometry import gripper_frame
 
 G = 9.81
@@ -46,13 +46,15 @@ def set_held_mass(model, side, mass_kg):
 
 
 def held_mass(model, side):
-    """The measured mass (kg) being compensated at the hand of `side`, 0.0 if none."""
-    return HELD_MASS.get(id(model), {}).get(side, 0.0)
+    """The mass (kg) being compensated at the hand of `side` at the last read of the ramp (M217), 0.0 if none. The recorder reads it."""
+    rec = held_mass_ramp.RAMP.get(id(model), {}).get(side)
+    return rec["now"] if rec else 0.0
 
 
 def clear_held_mass(model):
-    """Ends the compensation of both arms."""
+    """Ends the compensation of both arms, and the ramp (M217: the run-start reset)."""
     HELD_MASS.pop(id(model), None)
+    held_mass_ramp.reset(model)
 
 
 class ArmGravityFeedforward:
@@ -115,8 +117,9 @@ class ArmGravityFeedforward:
             mujoco.mj_jacBodyCom(m, d, self.jac, None, b)
             W += mass * self.jac
         t = -(self.g @ W)                                   # generalized gravity force is m J^T g; the holding torque is its negative
-        for s, m_held in HELD_MASS.get(id(m), {}).items():  # M196: the held object's MEASURED weight, straight down at the pad centre: the holding torque is m g J_z of the pad centre
-            if s in self.pads:
+        for s in self.pads:                                 # M196: the held object's weight, straight down at the pad centre: the holding torque is m g J_z of the pad centre (M217: m is the ramp's mass at this tick, 0 when empty)
+            m_held = held_mass_ramp.mass_at(m, s, data.time)
+            if m_held:
                 tcp, pad = self.pads[s]
                 point = d.xpos[tcp] + d.xmat[tcp].reshape(3, 3) @ pad
                 mujoco.mj_jac(m, d, self.jac, None, point, tcp)

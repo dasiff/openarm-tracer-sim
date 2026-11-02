@@ -591,7 +591,7 @@ Work order: (1) read-only verification (check code against rows); (2) bounce fix
 | j. Slip-test base limits | M210 | Separate, lower base acceleration, braking and turn rate limits while holding. Values from a slip test (150/200/250 g, step up until beaker slips in grip, back off by a margin; margin PENDING David). |
 | k. Pedestal changes with cost | M211 | Pedestal changes while holding are allowed when necessary, at a reduced speed taken from the same slip test. Stance selection treats a pedestal change while holding as a cost, preferring stances that avoid it. |
 
-### Held-weight ramp and sag off (bounce branch) [DECIDED 2026-11-02, David]
+### Held-weight ramp and sag off (bounce branch) [DECIDED 2026-11-02, David; BUILT 2026-11-02 on branch held-weight-ramp-sag-off, rows M215 to M222; run and table: data/bounce_ramp_20261102]
 
 | Item | Decisions-log row | Description |
 |---|---|---|

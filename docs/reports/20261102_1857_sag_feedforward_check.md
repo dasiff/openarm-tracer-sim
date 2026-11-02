@@ -76,3 +76,9 @@ The close tick IS in the files: data/closed_loop/on_20261029_1453/instr_ticks.cs
 - Trim at tick 11599: x +3.049, y -3.058, z +17.538 mm; rotation -3.2010, +0.4973, +0.5485 degrees (VERIFIED).
 - Change between them: x +5.130, y -0.398, z +18.846 mm (VERIFIED arithmetic).
 - What this changes: the 0.32 mm z change above was the change over the last 39 ticks in the extract, not the change since the close. The change since the close is 18.85 mm in z, which is within 0.3 mm of the feedforward estimate of 19.15 mm (0.205 kg) and 18.69 mm (0.200 kg). INFERRED: the trim learned almost exactly the mass share during the lift. In x the change is 5.13 mm against the feedforward's 2.40 mm, and in y it is -0.40 mm against 0.21 mm (INFERRED: the x and y parts come from posture and solver offsets, not from the mass).
+
+## Second correction (added after the handoff run, which checked the pad position)
+The feedforward values in items 2 and 3 and in the first correction note above used joint angles with the base at its default yaw: the script set only the arm joints. The base is turned about -90 degrees in this scene, so the x and y components (and the rotation) were in the wrong frame. The z component is unaffected by the base yaw, so the z results stand.
+- Corrected feedforward at 0.205 kg (full state, base included; INFERRED pose from checkpoint 11550, method unchanged): x +0.199 mm, y -2.401 mm, z +19.150 mm; rotation -3.715, -0.067, -0.020 degrees. At 0.200 kg: x +0.195, y -2.343, z +18.687 mm.
+- The full state reproduces the logged pad position at tick 11550 to 0.1 mm (VERIFIED), which the earlier script did not check.
+- Trim change since the close (first correction note): x +5.130, y -0.398, z +18.846 mm. Corrected difference (trim change minus feedforward): x +4.93 mm, y +2.00 mm, z -0.30 mm. The z agreement stands; the x and y mismatch is larger than the first note said in y and differs in sign there.

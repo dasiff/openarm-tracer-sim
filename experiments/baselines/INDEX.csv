@@ -1,0 +1,7 @@
+scenario,file,date,commit,status,reason,sha256,clean_code
+manual,retired/manual_reference.csv,2026-10-22,4540b51,RETIRED,retired Nov 3 2026 by David,a2323325656c3d4106de8eaed52600962dc2bbae4cc1ae1ebade1fa44f65f5f3,unknown
+teleop,retired/teleop_reference.csv,2026-10-22,ac64f22,RETIRED,retired Nov 3 2026 by David,5e54bd3015b1afb691218091e22c94102da201aa434737c85df6622b4006610b,unknown
+policy,retired/policy_reference.csv,2026-10-22,ac64f22,RETIRED,retired Nov 3 2026 by David,aba570c962109744f474c86b62ba020e6f3b0220be4cec152974be1432f2a6d4,unknown
+manual,manual_reference_20261103.csv,2026-11-03,e127479,CURRENT,made from clean commit e127479 (committed in 8f10aac),3060ae41cc8518e65cad011c6f48e25c273d8a105609c63e5c41a42f6c4c9b82,yes
+teleop,,,,NO_CURRENT,all old baselines retired Nov 3 2026; no regenerated baseline yet,,
+policy,,,,NO_CURRENT,all old baselines retired Nov 3 2026; no regenerated baseline yet,,

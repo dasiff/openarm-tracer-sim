@@ -1,0 +1,51 @@
+diff --git a/src/mpvi_modules.py b/src/mpvi_modules.py
+index 4028bbf..cfc4d41 100644
+--- a/src/mpvi_modules.py
++++ b/src/mpvi_modules.py
+@@ -36,6 +36,7 @@ failure ends the plan with the reason.
+ """
+ 
+ import math
++import os
+ from collections import deque
+ 
+ import mujoco
+@@ -55,6 +56,15 @@ from src.task_config import BEAKER_CFG, GRIP_FORCE_TABLE, MINK_CFG, PICK_PLACE_C
+ from src.weight_estimate import G, hand_load, liftoff_check, liftoff_estimate, reading_status
+ from src.world_model import SimGroundTruthSource, WorldModel
+ 
++# TEST ONLY (bounce tests 2, 2026-11-03; not a design setting; off by default): OPENARM_TEST_FREEZE_TRIM_Z_DOWN=1 holds ONLY the vertical (z) part of the
++# sag trim during the place DOWN step (it does not integrate and is not zeroed or reset); the x, y and rotation parts keep integrating. It resumes after DOWN.
++# The real robot never sets this.
++TEST_FREEZE_TRIM_Z_DOWN = os.environ.get("OPENARM_TEST_FREEZE_TRIM_Z_DOWN", "0") == "1"
++# TEST ONLY (bounce tests 2, 2026-11-03; not a design setting; off by default): OPENARM_TEST_DOWN_SPEED_SCALE=0.5 divides the PLANNED DURATION of the place
++# DOWN move by this number (0.5 gives twice the time, so half the speed). Only the place DOWN move is changed. 1.0 (the default) changes nothing.
++# The real robot never sets this.
++DOWN_SPEED_SCALE = float(os.environ.get("OPENARM_TEST_DOWN_SPEED_SCALE", "1.0"))
++
+ 
+ TRACE = {}                                              # logging only (freeze experiment part 2): per arm side, the last tick's label, reference pad position (before the trim), pad error, correction and freeze flag
+ 
+@@ -352,6 +362,8 @@ def make_scripted_manipulation(model, data, world, side, home_q, task_cfg=TASK_C
+                         print(f"[manipulation] {st['name']}: the dry run found no solution ({e})")
+                         st["arc"] = st["end"] = 0.0                # the move itself reports the failure, with its own message
+                     T = max(T, cfg["min_jerk_peak_factor"] * st["arc"] / arm.cfg["max_joint_speed"])
++                if S["ctx"].get("primitive") == "place" and st["name"] == "DOWN" and DOWN_SPEED_SCALE != 1.0:   # TEST ONLY (OPENARM_TEST_DOWN_SPEED_SCALE): the place DOWN move's planned duration is divided by the scale (0.5: twice as long)
++                    T = T / DOWN_SPEED_SCALE
+                 st.update(p0=p0, slerp=Slerp([0.0, 1.0], Rotation.from_matrix([R0, st["R"]])), T=T)
+                 if S.get("blend_v") is not None:                   # M200: a blended handover: the position starts at the pad's speed from the last move
+                     st["v0"], S["blend_v"] = S["blend_v"], None
+@@ -373,7 +385,12 @@ def make_scripted_manipulation(model, data, world, side, home_q, task_cfg=TASK_C
+             TRACE[side]["ref"] = p_ref.copy()
+             p_now, R_now = arm.pad_pose(data)                          # the measured pad pose: what the arm really does under the beaker's weight
+             dt = obs["timestep"] * obs["steps_per_frame"]
+-            _sag_trim_step(C, cfg, model, side, t, p_ref - p_now, Rotation.from_matrix(R_ref @ R_now.T).as_rotvec(), dt)
++            if TEST_FREEZE_TRIM_Z_DOWN and S["ctx"].get("primitive") == "place" and st["name"] == "DOWN":   # TEST ONLY (OPENARM_TEST_FREEZE_TRIM_Z_DOWN): the trim integrates as usual, then its z part is put back to the value it had before this tick (x, y, rotation are not touched)
++                z_held = C["p"][2]
++                _sag_trim_step(C, cfg, model, side, t, p_ref - p_now, Rotation.from_matrix(R_ref @ R_now.T).as_rotvec(), dt)
++                C["p"][2] = z_held
++            else:
++                _sag_trim_step(C, cfg, model, side, t, p_ref - p_now, Rotation.from_matrix(R_ref @ R_now.T).as_rotvec(), dt)
+             TRACE[side]["meas"] = p_now.copy()
+             TRACE[side]["rot_err_deg"] = float(np.degrees(np.linalg.norm(Rotation.from_matrix(R_ref @ R_now.T).as_rotvec())))
+             try:

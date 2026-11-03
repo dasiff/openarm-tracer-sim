@@ -593,6 +593,8 @@ Work order: (1) read-only verification (check code against rows); (2) bounce fix
 
 ### Held-weight ramp and sag off (bounce branch) [DECIDED 2026-11-02, David; BUILT 2026-11-02 on branch held-weight-ramp-sag-off, rows M215 to M222 (M215 superseded by M225); run and table: data/bounce_ramp_20261102; sag back on with a freeze, rows M225 to M228, DECIDED 2026-11-02, built in part 1, not yet run]
 
+**Status 2026-11-03 (M244, bounce close-out): built, with known limits.** Lift rise above the 3 mm line at 150 g (+4.1 mm) and 200 g (+4.0 mm); place DOWN swing above it at all three masses (9.0, 9.4 and 9.1 mm). Stopped by David's rule (no further diagnostic rounds). The open decisions are listed in M244 and are not decided. The item markers below are unchanged.
+
 | Item | Decisions-log row | Description |
 |---|---|---|
 | o. Sag correction off (SUPERSEDED) | M215 | Superseded by y (M225): sag back on at gain 3.0. Was: sag correction off everywhere, gain 0 through config. |

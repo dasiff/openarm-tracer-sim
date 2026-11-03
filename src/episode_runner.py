@@ -58,6 +58,7 @@ from src import robot_specs
 from src.control_loop import run_loop
 from src.keyboard_source import DRIVE_CFG, make_keyboard_source
 from src.robot_helpers import arm_ids, make_contact_monitor
+from src import signal_trace                    # diagnostic logging only, off unless OPENARM_SIGNAL_TRACE=1
 
 TICK_HZ = 150           # the command tick: physics_hz / TICK_HZ = 5 physics steps (the window is redrawn every 5th tick, 30 Hz) [row M127 PENDING David: no decision recorded]
 
@@ -174,6 +175,8 @@ def run_episode(task, model, data, mode="auto", viewer=None, out_dir=None, hando
                          + ["cmd_twist_lin", "cmd_twist_ang", "cmd_pedestal"]
                          + [c for s in sides for c in [f"cmd_{s}_joint{i}" for i in range(1, 8)] + [f"cmd_{s}_gripper"]]
                          + [c for s in sides for c in (f"cmd_{s}_grip_max_force_N", f"{s}_finger_force_N")])
+    # diagnostic logging only (OPENARM_SIGNAL_TRACE=1): one row per control tick in signal_trace.csv; reads the simulation, never writes to it
+    sig_trace = signal_trace.SignalTrace(out_dir, model) if out_dir is not None and signal_trace.enabled() else None
 
     def on_tick(obs, loop):
         """Judges one tick: handoff, contacts, the log row, success, timeouts and failure; returns the status text for the viewer.
@@ -212,6 +215,8 @@ def run_episode(task, model, data, mode="auto", viewer=None, out_dir=None, hando
                              + [v for s in sides for v in [f"{v:.9f}" for v in ap["arm_targets"][s]] + [f"{ap['gripper'][s]:.9f}"]]
                              + [v for s in sides for v in (f"{ap['gripper_force'][s]:.9f}",
                                                            f"{abs(float(data.actuator_force[arm_act[s]['gripper']])) / robot_specs.ARM_ACTUATOR_SPECS['fingers']['fingers_per_actuator']:.9f}")])
+        if sig_trace is not None:                                  # diagnostic logging only: reads, never writes
+            sig_trace.write(obs, phase, data)
         # end conditions
         auto_t, op_t = R["auto_ticks"] * tick_dt, R["operator_ticks"] * tick_dt
         if ps is not None and ps.get("error"):
@@ -260,6 +265,8 @@ def run_episode(task, model, data, mode="auto", viewer=None, out_dir=None, hando
     result = run_loop(model, data, sources, cfg, viewer=viewer)
     if log_file is not None:
         log_file.close()
+    if sig_trace is not None:
+        sig_trace.close()
     if R["outcome"] is None:
         R["outcome"], R["t_end"] = ("ABORTED" if result["stopped_by"] is None else result["stopped_by"].upper()), data.time
     elif R["t_end"] is None:                                  # a success whose lingering time was cut short (the window was closed)

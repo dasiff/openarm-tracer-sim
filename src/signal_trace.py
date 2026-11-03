@@ -1,0 +1,123 @@
+"""DIAGNOSTIC LOGGING ONLY: raw signals for the holding and stillness work (stage 1, decisions M246 and its addenda).
+
+Turned on by the environment variable OPENARM_SIGNAL_TRACE=1 (off by default). Then one row is written at every control tick to
+<out_dir>/signal_trace.csv. The module only READS simulation values and writes them to that file. It writes nothing back into the
+simulation, calls no function that changes state, and changes no command, setting or number. No verdict (holding, still) is computed here.
+
+Units: metres (m), radians (rad), radians per second (rad/s), newtons (N), kilograms (kg), seconds (s).
+Terms: "finger1" and "finger2" are the two finger joint positions (qpos); 0 is shut and about 0.044 is open. "actuator force" is what
+MuJoCo's position actuator for the gripper is pushing with, signed, from the simulated servo model. "grip force cmd" is the
+commanded force cap per finger (the controller's command, not a measurement). "held mass" is the held-mass value the feedforward
+uses at this tick, recomputed here with the same formula as src/held_mass_ramp.mass_at, without writing its record.
+Names starting with sim_only_ are SIMULATOR-ONLY diagnostics: a real robot may not have them, and the holding rule must not use them.
+"""
+
+import csv
+import os
+from pathlib import Path
+
+import mujoco
+import numpy as np
+
+from src import held_mass_ramp as hmr
+from src.gripper_geometry import gripper_frame
+from src.rate_limit import min_jerk
+from src.robot_helpers import arm_ids
+
+ENV = "OPENARM_SIGNAL_TRACE"
+SIDES = ("left", "right")
+FILE_NAME = "signal_trace.csv"
+
+
+def enabled():
+    """True only when the environment variable OPENARM_SIGNAL_TRACE is exactly "1"."""
+    return os.environ.get(ENV) == "1"
+
+
+def columns():
+    cols = ["tick", "sim_time_s", "step_label"]
+    for s in SIDES:
+        cols += [f"{s}_finger1_m", f"{s}_finger2_m", f"{s}_gripper_actuator_force_N", f"{s}_grip_force_cmd_N", f"{s}_gripper_target_m",
+                 f"{s}_pad_x_m", f"{s}_pad_y_m", f"{s}_pad_z_m"]
+        cols += [f"{s}_q{k}_rad" for k in range(1, 8)] + [f"{s}_qd{k}_rad_s" for k in range(1, 8)]
+        cols += [f"{s}_held_mass_kg"]
+    for s in SIDES:
+        cols += [f"sim_only_{s}_pad_contact_z_N"]
+    cols += ["sim_only_beaker_bench_contacts"]
+    return cols
+
+
+def _held_mass(model, side, t):
+    """The same formula as held_mass_ramp.mass_at, read-only (no write to the record's `now`)."""
+    rec = hmr._record(model, side)
+    if rec is None:
+        return 0.0
+    if rec.get("rate") is not None:
+        return float(rec["start"] + rec["rate"] * (t - rec["t0"]))
+    u = (t - rec["t0"]) / rec["dur"]
+    return float(rec["start"] + (rec["target"] - rec["start"]) * min_jerk(u))
+
+
+class SignalTrace:
+    """Opens <out_dir>/signal_trace.csv and writes one row per control tick. Diagnostic logging only."""
+
+    def __init__(self, out_dir, model):
+        self.model = model
+        self.arm = {s: arm_ids(model, s) for s in SIDES}
+        self.tcp = {s: int(model.body(f"openarm_{s}_hand_tcp").id) for s in SIDES}
+        self.pad = {s: np.asarray(gripper_frame(model, s)["pad_center_in_tcp"], float) for s in SIDES}
+        self.beaker = int(model.body("task_beaker").id)
+        self.finger_side = {int(model.body(f"openarm_{s}_{k}_finger").id): s for s in SIDES for k in ("left", "right")}
+        self.bench = {g for g in range(model.ngeom)
+                      if (mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_BODY, int(model.geom_bodyid[g])) or "").startswith("bench")}
+        self.f6 = np.zeros(6)
+        self.file = open(Path(out_dir) / FILE_NAME, "w", newline="")
+        self.writer = csv.writer(self.file)
+        self.writer.writerow(columns())
+
+    def _pad_contacts(self, data):
+        """SIM ONLY. Vertical contact force (N, up positive) on the beaker from each hand's finger bodies, and the count of beaker-bench contacts."""
+        z = {s: 0.0 for s in SIDES}
+        bench = 0
+        m = self.model
+        for i in range(data.ncon):
+            c = data.contact[i]
+            b1, b2 = int(m.geom_bodyid[c.geom1]), int(m.geom_bodyid[c.geom2])
+            if self.beaker not in (b1, b2):
+                continue
+            other_geom, other_body = (c.geom1, b1) if b2 == self.beaker else (c.geom2, b2)
+            if other_geom in self.bench:
+                bench += 1
+                continue
+            side = self.finger_side.get(other_body)
+            if side is None:
+                continue
+            mujoco.mj_contactForce(m, data, i, self.f6)
+            f_world = c.frame.reshape(3, 3).T @ self.f6[:3]
+            z[side] += (1.0 if b2 == self.beaker else -1.0) * float(f_world[2])
+        return z, bench
+
+    def write(self, obs, phase, data):
+        """One row for this tick. Reads only."""
+        m = self.model
+        t = float(obs["time"])
+        ap = obs["applied"]
+        row = [int(obs["tick"]), f"{t:.6f}", phase]
+        for s in SIDES:
+            a = self.arm[s]
+            qadr, vadr = a["qadr"], a["vadr"]
+            fq = [int(m.jnt_qposadr[j]) for j in a["finger_jnt"]]
+            tcp = self.tcp[s]
+            pad_w = data.xpos[tcp] + data.xmat[tcp].reshape(3, 3) @ self.pad[s]
+            row += [f"{data.qpos[fq[0]]:.9f}", f"{data.qpos[fq[1]]:.9f}",
+                    f"{float(data.actuator_force[a['gripper']]):.9f}",
+                    f"{float(ap['gripper_force'][s]):.9f}", f"{float(ap['gripper'][s]):.9f}",
+                    f"{pad_w[0]:.9f}", f"{pad_w[1]:.9f}", f"{pad_w[2]:.9f}"]
+            row += [f"{data.qpos[q]:.9f}" for q in qadr] + [f"{data.qvel[v]:.9f}" for v in vadr]
+            row += [f"{_held_mass(m, s, t):.9f}"]
+        z, bench = self._pad_contacts(data)
+        row += [f"{z[s]:.9f}" for s in SIDES] + [bench]
+        self.writer.writerow(row)
+
+    def close(self):
+        self.file.close()

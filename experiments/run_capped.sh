@@ -6,7 +6,7 @@ source .venv/bin/activate
 export MUJOCO_GL=egl
 LOG=$1; shift
 { echo "=== free -h before ($(date +%T))"; free -h; echo "=== command: $*"; } > "$LOG"
-systemd-run --user --scope -q -p MemoryMax=6G /usr/bin/time -v "$@" >> "$LOG" 2>&1
+systemd-run --user --scope -q -p MemoryMax=6G -p ManagedOOMPreference=omit /usr/bin/time -v "$@" >> "$LOG" 2>&1
 echo "=== exit $? at $(date +%T)" >> "$LOG"
 echo "=== free -h after"  >> "$LOG"; free -h >> "$LOG"
 echo JOB_DONE >> "$LOG"

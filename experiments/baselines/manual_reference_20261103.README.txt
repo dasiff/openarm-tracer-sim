@@ -1,0 +1,37 @@
+Manual bench scenario baseline, made 2026-11-03
+================================================
+
+File: manual_reference_20261103.csv
+Made from: git commit e127479 (clean checkout of that commit, in a separate worktree)
+Date: 2026-11-03 (runs at 14:52 local time)
+
+Command (the same job as experiments/cc_bench_scenarios.sh manual):
+  bash experiments/run_capped.sh <log> env CC_HEADLESS=1 bash experiments/cc_bench_scenarios.sh manual <out.csv>
+  run under flock on data/locks/mujoco.lock, one run at a time, 6 GB memory cap.
+
+Settings (from experiments/cc_bench_scenarios.sh, manual case; no environment overrides):
+  CC_BENCH_FRAMES=1248
+  CC_BENCH_KEYS=12-108:UP,108-228:SPACE,240-336:LEFT,336-456:SPACE,480-624:PAGE_DOWN,648-792:PAGE_UP,816-888:3,936-1008:E,1032-1128:A,1152-1188:8,1200-1248:I
+  CC_INSETS=0, CC_HUD=0, CC_HEADLESS=1 (offscreen rendering, no window)
+  Program run: experiments/combined_controller.py (default settings, so the gravity feedforward and the command bridge are both ON)
+
+Checks:
+  Two runs from the same commit were byte-identical (SHA-256 of both: 3060ae41cc8518e65cad011c6f48e25c273d8a105609c63e5c41a42f6c4c9b82).
+  Size: 85 rows (one header and 84 data rows), 23 columns, 23930 bytes.
+  The output is byte-identical to the output of commit 1056ab6 in the earlier drift check.
+
+Why it was made:
+  The old baseline experiments/baselines/manual_reference.csv (made from commit 4540b51, Oct 22) no longer matches the code. Two intended changes explain the difference:
+  - M185: the arms' gravity compensation is now a calculated feedforward (commit 5b7349e, 2026-10-26).
+  - M241: the command bridge is on by default (commit 6d9b542, 2026-10-29).
+  David confirmed both changes and approved making a new baseline.
+
+Relation to the old file:
+  The new file replaces the old one in purpose (it is the reference for the current code). It does not replace it in place: manual_reference.csv is unchanged, and it is still there. Which file the tests and scripts read is a separate decision that has not been made yet.
+
+Expected change:
+  More pipeline changes are in progress. This baseline is expected to be regenerated again later, deliberately, each time an intended change moves the output. Each regeneration gets its own dated file and a note like this one.
+
+Notes:
+  The robot's mesh files are read from the project's deps folder (the same submodule commits as in the main repo). The run was made in a worktree with that folder linked in.
+  Records: docs/progress.md (entry of 2026-11-03), docs/reports/baseline_regen_20261103.md.

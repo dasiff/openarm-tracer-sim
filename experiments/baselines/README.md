@@ -2,6 +2,10 @@
 
 This folder holds the reference outputs of the control-loop bench scenarios (`manual`, `teleop`, `policy`). A reference is the CSV that a scenario run must match byte for byte when the code has not intentionally changed.
 
+## Held pick-and-place baseline (200 g), not a bench scenario
+
+`held_200g_20261103/` holds the two output files (`liftoff_ticks.csv`, `episode_log.csv`) of one held pick-and-place run with a 200 g beaker, registered on Nov 3, 2026. It is listed in `INDEX.csv` as scenario `held_pick_place_200g`. The bench tools (`cc_bench_compare.py`, `cc_bench_regen.sh`) do not use it: they accept only `manual`, `teleop` and `policy`. What it can and cannot see, and how it was made, is in `held_200g_20261103/README.txt`.
+
 ## INDEX.csv
 
 `INDEX.csv` says which file is the reference for each scenario. One line per file, with these columns:

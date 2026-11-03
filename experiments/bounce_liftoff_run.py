@@ -68,6 +68,7 @@ def _ids(model):
         extra["bench_ids"] = {g for g in range(model.ngeom) if (mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_BODY, int(model.geom_bodyid[g])) or "").startswith("bench")}
         extra["beaker_body"] = model.body("task_beaker").id
         extra["grip_act"] = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_ACTUATOR, "left_gripper_ctrl")
+        extra["finger_bodies"] = {model.body("openarm_left_left_finger").id, model.body("openarm_left_right_finger").id}
 
 
 def _contacts(model, data):
@@ -81,6 +82,33 @@ def _contacts(model, data):
         if (b1 == beaker and g2 in extra["bench_ids"]) or (b2 == beaker and g1 in extra["bench_ids"]):
             n += 1
     return n
+
+
+def _beaker_forces(model, data):
+    """Preload logging (read only). Returns (table normal N, pad vertical N, pad contacts): forces on the beaker, world z, positive = up.
+
+    mj_contactForce gives the force in the contact frame (row 0 = normal). The force on the beaker is +frame^T f when the beaker is geom2 and -frame^T f when it is geom1.
+    """
+    _ids(model)
+    beaker = extra["beaker_body"]
+    tbl, pad, n_pad = 0.0, 0.0, 0
+    f6 = np.zeros(6)
+    for i in range(data.ncon):
+        c = data.contact[i]
+        g1, g2 = int(c.geom1), int(c.geom2)
+        b1, b2 = int(model.geom_bodyid[g1]), int(model.geom_bodyid[g2])
+        if beaker not in (b1, b2):
+            continue
+        other_geom, other_body = (g1, b1) if b2 == beaker else (g2, b2)
+        mujoco.mj_contactForce(model, data, i, f6)
+        f_world = c.frame.reshape(3, 3).T @ f6[:3]
+        f_on_beaker_z = (1.0 if b2 == beaker else -1.0) * f_world[2]
+        if other_geom in extra["bench_ids"]:
+            tbl += f_on_beaker_z
+        elif other_body in extra["finger_bodies"]:
+            pad += f_on_beaker_z
+            n_pad += 1
+    return tbl, pad, n_pad
 
 
 orig_torques = gff.ArmGravityFeedforward.torques
@@ -106,6 +134,19 @@ def torques_logged(self, data):
            "grip_applied_m": float(data.ctrl[extra["grip_act"]])}
     for k in range(7):
         row[f"held_tau_L{k + 1}"] = float(held[self.dofs[k][0]])
+    tbl_n, pad_n, n_pad = _beaker_forces(m, data)
+    row["tbl_N"], row["pad_N"], row["pad_contacts"] = tbl_n, pad_n, n_pad
+    row["beaker_wt_N"] = float(m.body_mass[extra["beaker_body"]]) * G
+    act = np.array([float(data.actuator_force[mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_ACTUATOR, f"left_joint{k + 1}_ctrl")]) for k in range(7)])
+    bias = np.array([float(data.qfrc_bias[self.dofs[k][0]]) for k in range(7)])
+    jp_full = np.zeros((3, m.nv))
+    mujoco.mj_jac(m, d, jp_full, None, point, tcp)
+    jp_arm = np.stack([jp_full[:, self.dofs[k][0]] for k in range(7)], axis=1)
+    f_arm = np.linalg.lstsq(jp_arm.T, act - bias, rcond=None)[0]
+    row["arm_pad_Fz_N"] = float(f_arm[2])
+    for k in range(7):
+        row[f"act_L{k + 1}"] = float(act[k])
+        row[f"bias_L{k + 1}"] = float(bias[k])
     tr = mpm.TRACE.get("left")
     ok = tr is not None and tr["tick"] == cur["tick"]
     g = (lambda key: tr.get(key)) if ok else (lambda key: None)
@@ -167,7 +208,8 @@ rc = dv.record_only(args)
 cols = (["tick", "t_sim", "pad_x_m", "pad_y_m", "pad_z_m", "mass_kg", "target_kg", "pad_force_N"] + [f"held_tau_L{k}" for k in range(1, 8)]
         + ["beaker_z_m", "beaker_bench_contacts", "grip_cmd_m", "grip_applied_m", "ramp_mode", "ramp_rate_kg_s", "ramp_start_kg", "ramp_target_kg",
            "weigh_state", "weigh_base_m", "weigh_rise_m", "weigh_hold", "ref_z_m", "err_m", "rot_err_deg", "label"]
-        + [f"C_p_{a}" for a in "xyz"] + [f"C_r_{a}" for a in "xyz"] + ["frozen", "trace_ok"])
+        + [f"C_p_{a}" for a in "xyz"] + [f"C_r_{a}" for a in "xyz"] + ["frozen", "trace_ok"]
+        + ["tbl_N", "pad_N", "pad_contacts", "beaker_wt_N", "arm_pad_Fz_N"] + [f"act_L{k}" for k in range(1, 8)] + [f"bias_L{k}" for k in range(1, 8)])
 tmp = out / "liftoff_ticks.csv.tmp"
 with open(tmp, "w", newline="") as fh:
     w = csv.writer(fh)

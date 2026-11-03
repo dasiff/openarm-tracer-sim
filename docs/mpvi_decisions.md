@@ -371,6 +371,10 @@ Sources: docs/reports/20261103_1640_bounce_check.md (rise, drop, swing, over-rea
 **Decided by David, Nov 3, 2026:** items 1 to 3 below. **Under discussion:** item 4. Nothing in code, config or settings was changed by this entry.
 
 1. **Holding (DECIDED).** The gripper counts as holding only when finger closure is inside the grasp range AND finger squeeze is above a threshold, held for a short confirming time. Plain on/off value (not a smooth 0-to-1 value). It turns off when the squeeze drops.
+   - **ADDENDUM 2026-11-03 (squeeze signal; decided by David, Nov 3, 2026):** The finger squeeze signal for the holding rule is the gripper's own command or effort force: the actuator output force in the simulator, standing in for a real gripper's motor current or effort reading. It is NOT pad contact force, because a real robot may not have contact pads. Pad contact forces stay simulator-only diagnostics; the holding rule must not depend on them.
+     - **Known** (from the three bounce runs, `left_finger_force_N` in `episode_log.csv`): it sits at the 8 N cap through the whole hold and does not change with the beaker's mass.
+     - **Not yet known:** what it reads with the gripper open around the beaker, or when closing on nothing. To be logged in the first staged step. Which signal the real OpenArm gripper reports: unknown.
+     - **Still NOT decided:** the closure range, the squeeze threshold, the confirming time, the stillness limits, and whether the staged approach (item 4) is confirmed.
 2. **Weighing (DECIDED).** The beaker is weighed at lift-off and re-weighed whenever the arm is still (skill boundaries, and before place DOWN). Not continuous. This supersedes the Nov 2 preference for weighing every tick (M201, M214; notes added there).
    - **OPEN IDEA:** weighing during steady horizontal base cruise. Reason as given by David: steady motion adds little sideways force; the arm's own gravity model still has about 15% unexplained torque (M192).
 3. **Stillness (DECIDED).** "Still enough" is judged from the arm's own hand speed and acceleration staying below limits for a short time. It does not rely on any signal from the scripted skills.

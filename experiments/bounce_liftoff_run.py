@@ -1,3 +1,4 @@
+# Reads the WEIGH step removed in M258: needs the code from commit a560eb6 or earlier.
 """Lift-off weighing run (branch held-weight-ramp-sag-off; decisions-log M235 to M239): one run of the full plan, or a pick-only run for the sweep.
 
     MUJOCO_GL=egl python experiments/bounce_liftoff_run.py <out_dir> [--rate N_PER_S] [--thr MM] [--pick-only]

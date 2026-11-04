@@ -1,3 +1,4 @@
+# Reads the WEIGH step removed in M258: needs the code from commit a560eb6 or earlier.
 """Read-only analysis of one lift-off run's saved files (no simulation). Part A items 3 (extra fields), 4 (gripper gate), 5 (z excursion), Part B (breakaway curve).
 
     python experiments/liftoff_breakaway_gripper.py <run_dir> <out.md>

@@ -1,3 +1,4 @@
+# Reads the WEIGH step removed in M258: needs the code from commit a560eb6 or earlier.
 """Analysis of one lift-off weighing run (decisions-log M235 to M240). Read only: no simulation is stepped.
 
     python experiments/bounce_liftoff_metrics.py <run_dir> <run_log> <out.md>

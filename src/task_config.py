@@ -645,7 +645,8 @@ BENCH_STANCE_CFG = {
 HOLD_STILL_CFG = {
     # PROVISIONAL, SIM-ONLY PLACEHOLDER. Chosen arbitrarily on Nov 3, 2026, not from data. Recalibrate on hardware. [row M248]
     # Squeeze threshold, newtons. This is the TOTAL gripper force: the gripper has one actuator for both fingers, so 2 N total is 1 N per finger.
-    # The test uses the ABSOLUTE value of the signed actuator force (the signed force is negative when squeezing). Seen in the sim: holding -16 N, open about +0.04 N.
+    # Squeeze means the CLOSING force only (decision M251, Nov 4): a closing grip is negative in this sim, and an OPENING push (positive force) does not count.
+    # The test is: force at or below -2 N. Seen in the sim: holding -16 N, open about +0.04 N, opening push at release up to +3.8 N (not a squeeze).
     "squeeze_threshold_N": 2.0,
     # PROVISIONAL, SIM-ONLY PLACEHOLDER. Chosen arbitrarily on Nov 3, 2026, not from data. Recalibrate on hardware. [row M248]
     # Grasp range for the finger position (finger1 joint, metres). The fingers run from 0 m (fully closed) to 0.044 m (fully open).

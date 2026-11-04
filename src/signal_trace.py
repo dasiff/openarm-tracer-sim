@@ -116,14 +116,17 @@ class SignalTrace:
         Hand speed (m/s) = |pad_w(now) - pad_w(previous tick)| / dt, with dt = t(now) - t(previous tick) (about 1/150 s).
         Hand acceleration (m/s^2, signed, positive = speeding up) = (speed(now) - speed(previous tick)) / dt.
         Both are "nan" where there is no earlier tick to use (the first tick; acceleration also on the second tick).
-        Squeeze: |actuator force| >= squeeze_threshold_N (total force, N). Closure: grasp_closure_min_m <= finger1 <= grasp_closure_max_m.
+        Squeeze (decision M251): the closing force only, actuator force <= -squeeze_threshold_N (total force, N; closing is negative).
+        An opening push does not count. Closure: grasp_closure_min_m <= finger1 <= grasp_closure_max_m.
         Holding verdict (decision M250): ON only while both tests pass; turns ON after both have held for holding_confirm_ticks ticks in a
         row; turns OFF at once when either test fails (no confirming delay on the way off).
         Still verdict: ON after the speed has stayed below still_speed_limit_m_s for still_confirm_ticks ticks in a row; OFF as soon as it
         goes above the limit. Acceleration has no limit yet (not decided), so it forms no verdict.
         """
         cfg = HOLD_STILL_CFG
-        squeeze_ok = abs(force) >= cfg["squeeze_threshold_N"]
+        # Decision M251 (Nov 4): squeeze is the CLOSING force only. Closing is negative in this sim, so the test is
+        # force <= -squeeze_threshold_N. An opening push (positive force) does not count as squeeze.
+        squeeze_ok = force <= -cfg["squeeze_threshold_N"]
         closure_ok = cfg["grasp_closure_min_m"] <= finger1 <= cfg["grasp_closure_max_m"]
         both = squeeze_ok and closure_ok
         self.hold_count[s] = self.hold_count[s] + 1 if both else 0

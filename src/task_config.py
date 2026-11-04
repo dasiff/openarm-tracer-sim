@@ -638,3 +638,28 @@ BENCH_STANCE_CFG = {
     "carry_slice_margin_m": 0.120,              # m [row M180: David 2026-10-25]
 }
 
+# Holding and stillness verdicts, LOG ONLY (stage 1b, decision M248). Nothing in the control code reads this dict; only the
+# signal trace (src/signal_trace.py, written when OPENARM_SIGNAL_TRACE=1) reads it. Every value below is PROVISIONAL and SIM-ONLY:
+# a placeholder, chosen arbitrarily on Nov 3, 2026, not from data (David). It depends on what a real gripper reports and must be
+# recalibrated on hardware before any use. Sign convention for forces: negative = pushing the fingers toward closed.
+HOLD_STILL_CFG = {
+    # PROVISIONAL, SIM-ONLY PLACEHOLDER. Chosen arbitrarily on Nov 3, 2026, not from data. Recalibrate on hardware. [row M248]
+    # Squeeze threshold, newtons. This is the TOTAL gripper force: the gripper has one actuator for both fingers, so 2 N total is 1 N per finger.
+    # The test uses the ABSOLUTE value of the signed actuator force (the signed force is negative when squeezing). Seen in the sim: holding -16 N, open about +0.04 N.
+    "squeeze_threshold_N": 2.0,
+    # PROVISIONAL, SIM-ONLY PLACEHOLDER. Chosen arbitrarily on Nov 3, 2026, not from data. Recalibrate on hardware. [row M248]
+    # Grasp range for the finger position (finger1 joint, metres). The fingers run from 0 m (fully closed) to 0.044 m (fully open).
+    # The margin at each end is 2 mm: the 0.002 m at the closed end is a GUESS, because where the pads stop is unknown. Seen in the sim: holding 0.0375 m, open 0.0439 m.
+    "grasp_closure_min_m": 0.002,
+    "grasp_closure_max_m": 0.042,
+    # PROVISIONAL, SIM-ONLY PLACEHOLDER. Chosen arbitrarily on Nov 3, 2026, not from data. Recalibrate on hardware. [row M248]
+    # Confirming time for holding, in control ticks: 15 ticks = 0.1 s at 150 Hz. Both conditions must hold this many ticks in a row before holding turns on.
+    "holding_confirm_ticks": 15,
+    # PROVISIONAL, SIM-ONLY PLACEHOLDER. Chosen arbitrarily on Nov 3, 2026, not from data. Recalibrate on hardware. [row M248]
+    # "Still" hand-speed limit, metres per second: the hand (pad centre) speed must stay below this. Seen in the sim: at rest 0.0004 to 0.0012 m/s; approach median about 0.04 m/s.
+    "still_speed_limit_m_s": 0.005,
+    # PROVISIONAL, SIM-ONLY PLACEHOLDER. Chosen arbitrarily on Nov 3, 2026, not from data. Recalibrate on hardware. [row M248]
+    # Confirming time for still, in control ticks: 75 ticks = 0.5 s at 150 Hz. The speed must stay below the limit this many ticks in a row.
+    "still_confirm_ticks": 75,
+}
+

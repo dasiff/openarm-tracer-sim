@@ -688,3 +688,12 @@ CHUNK_CFG = {
     # Policy rate of a chunk, commands per second. 30 per second at 150 Hz means one command every 5 control ticks. [row M253]
     "rate_hz": 30,
 }
+
+# Beaker gravity compensation (David, Nov 4, 2026; decision row M254). It turns off ONLY the held-mass part of the arm's gravity
+# feedforward (src/gravity_ff.py, torques, the held-object term). The arm's own gravity compensation always stays on.
+BEAKER_GRAVITY_CFG = {
+    # On/off switch, plain yes or no (no unit). True (default) = the beaker's weight is compensated exactly as before. False = the held
+    # beaker's weight is NOT compensated (an experiment: a "bare VLA" condition), so the hand is expected to sag a little when carrying.
+    # Weighing and the held-mass ramp state keep running either way. [row M254]
+    "enabled": True,
+}

@@ -1,6 +1,6 @@
 """Synthetic tests for the open catch, the source gate and the chunk player (decision M253) and the beaker gravity setting (M254).
 No simulation is stepped: the tests drive the same objects the control loop uses (src/open_catch.py, src/chunk_player.py, src/holding.py,
-with made-up data.
+src/gravity_ff.py) with made-up data, except case (h), which reads torques from the robot model at its home pose.
 
     python experiments/open_catch_test.py      (exit code 0 when every case passes)
 """
@@ -13,10 +13,12 @@ import numpy as np
 REPO = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
 sys.path.insert(0, REPO)
 
-from src import held_mass_ramp as hmr  # noqa: E402
+import mujoco  # noqa: E402
+
+from src import gravity_ff, held_mass_ramp as hmr  # noqa: E402
 from src.holding import HoldDetector  # noqa: E402
 from src.open_catch import OpenCatch, SourceGate  # noqa: E402
-from src.task_config import CHUNK_CFG, HOLD_STILL_CFG, OPEN_CATCH_CFG  # noqa: E402
+from src.task_config import BEAKER_GRAVITY_CFG, CHUNK_CFG, HOLD_STILL_CFG, OPEN_CATCH_CFG  # noqa: E402
 
 DT = 1.0 / 150.0
 OPEN_VALUE = 0.044
@@ -215,6 +217,28 @@ def case_g():
                  f"single kept {kept1 == [single]}, list kept {kept2 == lst}, chunks {len(gate.chunk_of)}, paused {len(gate.paused_by)}")
 
 
+def case_h():
+    model = mujoco.MjModel.from_xml_path(os.path.join(REPO, "models", "robot", "combined_robot.xml"))
+    ff = gravity_ff.ArmGravityFeedforward.from_model(model)
+    data = mujoco.MjData(model)
+    data.qpos[:] = model.qpos0
+    mujoco.mj_forward(model, data)
+    hmr.reset(model)
+    arm_only = np.array(ff.torques(data), copy=True)                    # no held mass
+    hmr.set_target(model, "left", 0.2, -1.0, 0)                          # 0.2 kg held from time 0
+    BEAKER_GRAVITY_CFG["enabled"] = True
+    on = np.array(ff.torques(data), copy=True)
+    BEAKER_GRAVITY_CFG["enabled"] = False
+    off = np.array(ff.torques(data), copy=True)
+    BEAKER_GRAVITY_CFG["enabled"] = True
+    hmr.reset(model)
+    off_is_arm_only = np.allclose(off, arm_only, atol=1e-12)            # OFF removes only the held term
+    held_term = float(np.max(np.abs(on - off)))
+    ok = off_is_arm_only and held_term > 1e-7
+    return check("(h) beaker setting ON includes the held term; OFF removes only it; arm gravity unchanged", ok,
+                 f"OFF equals arm-only torques: {off_is_arm_only}; max |ON - OFF| {held_term:.4g} N m with 0.2 kg held")
+
+
 def case_config():
     ok = OPEN_CATCH_CFG["open_command_min_m"] == 0.02 and CHUNK_CFG["play_count"] == 10 and HOLD_STILL_CFG["squeeze_threshold_N"] == 2.0
     return check("config: open threshold, chunk play count, squeeze threshold have their decided or placeholder values", ok,
@@ -222,6 +246,6 @@ def case_config():
 
 
 if __name__ == "__main__":
-    results = [case_a(), case_b(), case_c(), case_d(), case_e(), case_f(), case_g(), case_config()]
+    results = [case_a(), case_b(), case_c(), case_d(), case_e(), case_f(), case_g(), case_h(), case_config()]
     print(f"{sum(results)} of {len(results)} passed")
     sys.exit(0 if all(results) else 1)

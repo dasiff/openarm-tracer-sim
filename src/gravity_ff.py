@@ -20,6 +20,7 @@ import mujoco
 import numpy as np
 
 from src import held_mass_ramp, robot_specs
+from src.task_config import BEAKER_GRAVITY_CFG
 from src.gripper_geometry import gripper_frame
 
 G = 9.81
@@ -117,7 +118,7 @@ class ArmGravityFeedforward:
         t = -(self.g @ W)                                   # generalized gravity force is m J^T g; the holding torque is its negative
         for s in self.pads:                                 # M196: the held object's weight, straight down at the pad centre: the holding torque is m g J_z of the pad centre (M217: m is the ramp's mass at this tick, 0 when empty)
             m_held = held_mass_ramp.mass_at(m, s, data.time)
-            if m_held:
+            if m_held and BEAKER_GRAVITY_CFG["enabled"]:       # M254: the beaker setting (src/task_config.py): OFF leaves the held term out; the mass record above still runs
                 tcp, pad = self.pads[s]
                 point = d.xpos[tcp] + d.xmat[tcp].reshape(3, 3) @ pad
                 mujoco.mj_jac(m, d, self.jac, None, point, tcp)

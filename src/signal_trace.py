@@ -25,8 +25,7 @@ from src import held_mass_ramp as hmr
 from src.gripper_geometry import gripper_frame
 from src.rate_limit import min_jerk
 from src.robot_helpers import arm_ids
-from src.holding import HoldDetector
-from src.task_config import HOLD_STILL_CFG
+from src.holding import HoldDetector, StillDetector
 
 ENV = "OPENARM_SIGNAL_TRACE"
 SIDES = ("left", "right")
@@ -80,10 +79,9 @@ class SignalTrace:
         self.f6 = np.zeros(6)
         # stage 1b state for the log-only verdicts: values from earlier ticks only
         self.prev_t = None
-        self.prev_pad = {s: None for s in SIDES}
         self.prev_speed = {s: None for s in SIDES}
         self.hold = {s: HoldDetector() for s in SIDES}
-        self.still_count = {s: 0 for s in SIDES}
+        self.still = {s: StillDetector() for s in SIDES}      # M258: the still verdict is the one in src/holding.py (the weighing helper uses it too)
         self.file = open(Path(out_dir) / FILE_NAME, "w", newline="")
         self.writer = csv.writer(self.file)
         self.writer.writerow(columns())
@@ -123,21 +121,13 @@ class SignalTrace:
         Still verdict: ON after the speed has stayed below still_speed_limit_m_s for still_confirm_ticks ticks in a row; OFF as soon as it
         goes above the limit. Acceleration has no limit yet (not decided), so it forms no verdict.
         """
-        cfg = HOLD_STILL_CFG
         # The holding rule (decisions M250, M251: closing force only, both tests, confirming time, immediate off) is in src/holding.py.
         squeeze_ok, closure_ok, holding = self.hold[s].update(force, finger1)
-        if self.prev_pad[s] is None or dt is None or dt <= 0.0:
-            speed = float("nan")
-        else:
-            speed = float(np.linalg.norm(pad_w - self.prev_pad[s]) / dt)
+        speed, below, still = self.still[s].update(pad_w, t)        # the hand speed and the still verdict are in src/holding.py (M258)
         if self.prev_speed[s] is None or dt is None or dt <= 0.0 or np.isnan(speed) or np.isnan(self.prev_speed[s]):
             accel = float("nan")
         else:
             accel = float((speed - self.prev_speed[s]) / dt)
-        below = (not np.isnan(speed)) and speed < cfg["still_speed_limit_m_s"]
-        self.still_count[s] = self.still_count[s] + 1 if below else 0
-        still = self.still_count[s] >= cfg["still_confirm_ticks"]
-        self.prev_pad[s] = pad_w
         self.prev_speed[s] = speed
         return [f"{int(squeeze_ok)}", f"{int(closure_ok)}", f"{int(holding)}", f"{speed:.9f}", f"{accel:.9f}",
                 f"{int(below)}", f"{int(still)}"]

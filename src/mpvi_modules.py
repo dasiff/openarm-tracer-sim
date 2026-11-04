@@ -45,7 +45,7 @@ from scipy.spatial.transform import Rotation, Slerp
 import mink
 
 from src import held_mass_ramp as hmr
-from src.gravity_ff import ArmGravityFeedforward, held_pad_z_per_kg
+from src.gravity_ff import ArmGravityFeedforward
 from src.mink_arm import MinkArm, pad_rotation
 from src.rate_limit import min_jerk
 from src.robot_helpers import arm_ids
@@ -53,7 +53,8 @@ from src.staging_source import make_staging_source
 from src.task_beaker_hotplate import bench_top_z, check_success
 from src.open_catch import stall_done
 from src.task_config import BEAKER_CFG, GRIP_FORCE_TABLE, MINK_CFG, PICK_PLACE_CFG, STAGING_CFG, SUCCESS_CFG, TASK_CFG, WEIGHT_READING_CFG
-from src.weight_estimate import G, hand_load, liftoff_check, liftoff_estimate, reading_status
+from src.weight_estimate import hand_load, reading_status
+from src.weigh_helper import settle_check
 from src.world_model import SimGroundTruthSource, WorldModel
 
 
@@ -166,7 +167,6 @@ def make_scripted_manipulation(model, data, world, side, home_q, task_cfg=TASK_C
     gff_arm = ArmGravityFeedforward.from_model(model, sides=(side,))    # the arm's own gravity torque, for the handoff weight reading (M196)
     W = {"qd": None, "q": None, "tau": None}                 # the still-window buffers of the weight reading (M196)
     C = {"p": np.zeros(3), "r": np.zeros(3)}
-    ZH = []                                                 # the pad height (m) of each tick, the newest last (the lift-off baseline reads it, M235)                 # the sag correction: an integral of the measured pad pose error, added to the waypoint path
 
     S = {"steps": [], "i": 0, "t0": None, "error": None, "events": [], "started": False, "phase": "IDLE", "still": None, "grip": open_g, "ctx": {}, "ramp_k": 10 ** 9, "v_last": np.zeros(7)}
 
@@ -214,8 +214,7 @@ def make_scripted_manipulation(model, data, world, side, home_q, task_cfg=TASK_C
         stand = b[:2] - a[:2] * cfg["standoff_m"]
         S["ctx"]["z_rise_ref"] = float(b[2])
         steps = [move("OVER", [*stand, z_clear], cfg["speed_m_s"], R), move("DOWN", [*stand, hg], cfg["slow_speed_m_s"], R),
-                 move("IN", [b[0], b[1], hg], cfg["slow_speed_m_s"], R), {"kind": "close", "name": "CLOSE"},
-                 {"kind": "weigh", "name": "WEIGH"}, move("UP", [b[0], b[1], z_carry], cfg["slow_speed_m_s"], R)]
+                 move("IN", [b[0], b[1], hg], cfg["slow_speed_m_s"], R), {"kind": "close", "name": "CLOSE"}, move("UP", [b[0], b[1], z_carry], cfg["slow_speed_m_s"], R)]
         if S["ctx"].get("end_at_zombie"):                    # M074 (bench rectangle selection): the next step is a navigation step that moves, so the arm goes home holding the beaker, as the recovery does
             back = np.array([b[0], b[1], z_carry])
             back[:2] -= a[:2] * cfg["retreat_m"]
@@ -310,13 +309,9 @@ def make_scripted_manipulation(model, data, world, side, home_q, task_cfg=TASK_C
         return {"mode": "arms", "arm_targets": {side: [float(v) for v in arm.q_cmd]}, "gripper": {side: g}}
 
     def settled(t, dwell):
-        """True once the arm's joints have been slower than the settle speed for `dwell` seconds."""
-        if float(np.max(np.abs(data.qvel[arm.vadr]))) < cfg["settle_speed_rad_s"]:
-            if S["still"] is None:
-                S["still"] = t
-            return t - S["still"] >= dwell
-        S["still"] = None
-        return False
+        """True once the arm's joints have been slower than the settle speed for `dwell` seconds (the shared test, M258)."""
+        done, S["still"] = settle_check(float(np.max(np.abs(data.qvel[arm.vadr]))), t, S["still"], cfg["settle_speed_rad_s"], dwell)
+        return done
 
     def step_inner(obs):
         """One tick of the current waypoint (before the phase-start velocity ramp of step())."""
@@ -325,14 +320,10 @@ def make_scripted_manipulation(model, data, world, side, home_q, task_cfg=TASK_C
         t = obs["time"]
         st = S["steps"][S["i"]]
         S["phase"] = st["name"]
-        ZH.append(float(arm.pad_pose(data)[0][2]))
-        del ZH[:-200]
         TRACE[side] = {"tick": obs["tick"], "label": f"{S['ctx'].get('primitive')}: {st['name']}", "ref": None, "err": None, "C_p": C["p"].copy(), "C_r": C["r"].copy(), "frozen": hmr.is_load_changing(model, side, t),
-                       "ramp": (None if hmr.RAMP.get(id(model), {}).get(side) is None else dict(hmr.RAMP[id(model)][side])), "grip": S.get("grip"), "weigh": dict(S.get("weigh", {})), "meas": None, "rot_err_deg": None}
+                       "ramp": (None if hmr.RAMP.get(id(model), {}).get(side) is None else dict(hmr.RAMP[id(model)][side])), "grip": S.get("grip"), "meas": None, "rot_err_deg": None}
         if S["t0"] is None:
             S["t0"], S["still"] = t, None
-            if st["kind"] == "weigh":
-                S["weigh"] = {"state": "still"}
             if st["kind"] == "move":
                 if cfg["restart_from_commanded"]:                   # M195: the reference starts where the command is (its pad pose, less the sag correction that is added back to every target), not at the measured pad pose
                     p0, R0 = commanded_pad_pose()
@@ -435,34 +426,6 @@ def make_scripted_manipulation(model, data, world, side, home_q, task_cfg=TASK_C
             elif el > (cfg["close_timeout_s"] if closing else cfg["open_timeout_s"]):
                 fail(f"{st['name']}: the gripper did not stop within {el:.1f} s")
                 return None
-        elif kind == "weigh":                                      # M235, M236: the held mass rises at a set rate until the pad rises at lift-off (or the cap); then the mass is set to the estimate
-            out = command()
-            W2 = S["weigh"]
-            z_pad = float(arm.pad_pose(data)[0][2])
-            if W2["state"] == "still":
-                if settled(t, cfg["settle_dwell_s"]):              # the arm is still (the same check as the waypoints: settle_speed_rad_s, settle_dwell_s)
-                    W2.update(state="lift", base=float(np.mean(ZH[-cfg["liftoff_baseline_ticks"] - 1:-1])), n=0, t_start=t, tick_start=obs["tick"])
-                    hmr.start_rate(model, side, cfg["liftoff_rate_n_per_s"] / G, t, obs["tick"])
-            elif W2["state"] == "lift":
-                m_now = hmr.mass_at(model, side, t)
-                rise = z_pad - W2["base"]
-                W2["rise"] = rise
-                if liftoff_check(W2, rise, cfg["liftoff_rise_mm"] / 1000.0, cfg["liftoff_hold_ticks"]):
-                    hpz = held_pad_z_per_kg(model, data, side)
-                    est = liftoff_estimate(m_now, rise, hpz)
-                    hmr.stop_rate(model, side, t)
-                    hmr.set_target(model, side, est, t, obs["tick"])
-                    W2.update(state="detected", m_det=m_now, rise=rise, hpz=hpz, est=est, t_det=t)
-                    S["ctx"]["held_mass_kg"] = est
-                    print(f"[manipulation] lift-off at tick {obs['tick']}: the pad rose {1000 * rise:.2f} mm at {m_now:.4f} kg (raw); estimate {est:.4f} kg "
-                          f"(hand height per kg {hpz:.5f} m)", flush=True)
-                    advance = True
-                elif m_now >= cfg["liftoff_max_mass_kg"]:
-                    hmr.stop_rate(model, side, t)
-                    hmr.set_target(model, side, 0.0, t, obs["tick"])
-                    W2.update(state="cap", m_det=m_now, t_det=t)
-                    print(f"[manipulation] no lift-off up to the cap {cfg['liftoff_max_mass_kg']:.2f} kg: the held mass is set to 0 and the step advances", flush=True)
-                    advance = True
         elif kind == "held":
             rise = float(world.object_pose(S["ctx"]["obj"])["position"][2]) - S["ctx"]["z_rise_ref"]        # a LOGGED measurement of the lift (sim ground truth): it no longer decides, the drop monitor does
             S["ctx"]["lift_rise_m"] = rise                                                                  # (src/mpvi_monitors.py, decisions-log M044)

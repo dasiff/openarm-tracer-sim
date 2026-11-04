@@ -101,6 +101,8 @@ from src.run_record import RunRecorder
 from src.task_config import COMMAND_BRIDGE_CFG
 from src.holding import HoldDetector                          # M253: the holding verdict, the same rule as the signal trace
 from src.open_catch import OpenCatch, SourceGate                # M253: catches an open while holding; gates the sources (always on)
+from src.weigh_helper import WeighHelper                         # M258: weighs each grasp once, pausing its source (always on)
+from src.task_config import PICK_PLACE_CFG                       # M258: the weighing's values (liftoff_*, settle_*)
 from src.task_config import CHUNK_CFG
 
 # Servo control signal logging for diagnostic extraction (Task 3): stores per-tick tau_cmd and tau_ff
@@ -374,7 +376,7 @@ def run_loop(model, data, sources, cfg, viewer=None, logger=None):
     vadr = lambda a: int(model.jnt_dofadr[model.actuator_trnid[a, 0]])
     arm_vadr = {s: [vadr(a) for a in arm_act[s]] for s in sides}
     fing_vadr = [vadr(a) for s in sides for a in fing_act[s]]
-    from src.gravity_ff import ArmGravityFeedforward, clear_held_mass, held_mass, set_held_mass
+    from src.gravity_ff import ArmGravityFeedforward, clear_held_mass, held_mass, held_pad_z_per_kg, set_held_mass
     gff = ArmGravityFeedforward(model, arm_act, fing_act, sides)          # M185: the arm's gravity torque as a feedforward on the targets
     clear_held_mass(model)                                                # M196: no held-object compensation left over from an earlier run
     ped_aid = aid(robot_specs.PEDESTAL_SPECS["actuator_name"])
@@ -595,6 +597,11 @@ def run_loop(model, data, sources, cfg, viewer=None, logger=None):
     catch = {s: OpenCatch(model, s, fq_adr[s], fv_adr[s]) for s in sides}
     gate = SourceGate(max(1, int(round(cfg["source_hz"] / CHUNK_CFG["rate_hz"]))))   # chunks play every 5 ticks at 150 Hz and 30 per second
     open_catch_log = []                                        # entries {"tick", "side", "kind", ...} (caught, repeat_ignored, released, failed_hold, opened, ...)
+    # --- M258: the weighing helper (one per hand, always on): the pad centre is the robot's own kinematics (the same point as the script's pad) ---
+    def pad_point(s):
+        tcp, pad = gff.pads[s]
+        return lambda data: data.xpos[tcp] + data.xmat[tcp].reshape(3, 3) @ pad
+    weigh = {s: WeighHelper(model, s, pad_point(s), lambda data, s=s: held_pad_z_per_kg(model, data, s), arm_vadr[s], PICK_PLACE_CFG) for s in sides}
 
     def release_cap(f):
         """M255: the force cap (N per finger) of a released open: the caught command's own max_force, clipped to the hardware ceiling as
@@ -1044,6 +1051,12 @@ def run_loop(model, data, sources, cfg, viewer=None, logger=None):
         # --- Commands: every source steps; each keeps what the router gives it ---
         for s in sides:                                     # M253: the holding verdict of each hand, every tick, before the open check
             hold_det[s].update(float(data.actuator_force[fing_act[s][0]]), float(data.qpos[fq_adr[s]]))
+        for s in sides:                                     # M258: the weighing of each hand: a grasp that holds and is not weighed pauses its source until it is weighed
+            act = weigh[s].step(data, t, frame, hold_det[s].holding)
+            if act == "pause":
+                gate.hold_source(s, "weigh")                # no source has commanded this hand yet: nothing to pause (the weighing still runs; NEEDS DECISION)
+            elif act == "resume":
+                gate.release_source(s, "weigh")
         cmds = []
         request = None
         for name, src in sources.items():
@@ -1218,4 +1231,4 @@ def run_loop(model, data, sources, cfg, viewer=None, logger=None):
         for e in bridge["log"]:
             kinds[e["kind"]] = kinds.get(e["kind"], 0) + e["count"]
         print(f"[bridge] {len(bridge['log'])} log entries, {sum(kinds.values())} events: {kinds}")
-    return {"frames": frame, "open_catch_log": open_catch_log, "hold_log": ex["log"], "routes": routes, "stopped_by": stop_req[0], "mode_log": ctl["log"], "bridge_log": bridge["log"]}
+    return {"frames": frame, "open_catch_log": open_catch_log, "weigh_log": {s: weigh[s].log for s in sides}, "hold_log": ex["log"], "routes": routes, "stopped_by": stop_req[0], "mode_log": ctl["log"], "bridge_log": bridge["log"]}

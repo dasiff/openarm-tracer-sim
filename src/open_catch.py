@@ -117,8 +117,30 @@ class SourceGate:
     def __init__(self, chunk_period):
         self.period = chunk_period
         self.chunk_of = {}          # source name -> the chunk being played
-        self.paused_by = {}         # source name -> True while an open is caught for it (not asked)
-        self.caught_by = {}         # side -> the source whose open was caught
+        self.paused_by = {}         # source name -> the set of reasons it is held for ("open": an open is caught; "weigh": a grasp is weighed); not asked while non-empty
+        self.held_src = {}          # (side, reason) -> the source held for that reason
+        self.owner = {}             # side -> the source that last sent a command for that hand (the weigh pauses it)
+
+    def hold_source(self, side, reason):
+        """Holds the source that owns `side` for `reason` (M258): it is not asked, and its chunk is discarded. Returns False when no source
+        has sent a command for that hand yet (nothing to hold)."""
+        name = self.owner.get(side)
+        if name is None:
+            return False
+        self.held_src[(side, reason)] = name
+        self.paused_by.setdefault(name, set()).add(reason)
+        self.chunk_of.pop(name, None)
+        return True
+
+    def release_source(self, side, reason):
+        """Ends one hold of `side` for `reason`; the source is asked again once no reason holds it."""
+        name = self.held_src.pop((side, reason), None)
+        if name is None:
+            return
+        reasons = self.paused_by.get(name, set())
+        reasons.discard(reason)
+        if not reasons:
+            self.paused_by.pop(name, None)
 
     def output(self, name, ask, frame):
         """What this source gives this tick. `ask()` asks the source (its step). Returns None while paused, one command of a chunk
@@ -139,12 +161,13 @@ class SourceGate:
         paused, the rest of its chunk is discarded, and the commands after the open in this output are dropped. Returns the kept commands."""
         kept = []
         for cmd in cmds:
+            if isinstance(cmd, dict) and cmd.get("mode") == "arms":
+                for s in list(cmd.get("arm_targets", {})) + list(cmd.get("gripper", {})):
+                    self.owner[s] = name                      # M258: the source that commands this hand (the weigh pauses it)
             if isinstance(cmd, dict) and cmd.get("mode") == "arms" and cmd.get("gripper"):
                 for s, v in cmd["gripper"].items():
                     if catch[s].is_open(v) and catch[s].on_open(v, hold[s].holding, t, frame):
-                        self.caught_by[s] = name
-                        self.paused_by[name] = True
-                        self.chunk_of.pop(name, None)
+                        self.hold_source(s, "open")
                         log.append({"tick": frame, "side": s, "kind": catch[s].log[-1]["kind"], "source": name})
                         return kept
             kept.append(cmd)
@@ -159,7 +182,5 @@ class SourceGate:
                 apply(s, catch[s].value, catch[s].force)
                 log.append({"tick": frame, "side": s, "kind": "open_released", "value": catch[s].value, "force": catch[s].force})
             elif st == "resume":
-                nm = self.caught_by.pop(s, None)
-                if nm is not None:
-                    self.paused_by[nm] = False
+                self.release_source(s, "open")
                 log.append({"tick": frame, "side": s, "kind": catch[s].log[-1]["kind"]})

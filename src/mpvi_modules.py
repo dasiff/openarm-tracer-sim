@@ -51,7 +51,8 @@ from src.rate_limit import min_jerk
 from src.robot_helpers import arm_ids
 from src.staging_source import make_staging_source
 from src.task_beaker_hotplate import bench_top_z, check_success
-from src.task_config import BEAKER_CFG, GRIP_FORCE_TABLE, MINK_CFG, PICK_PLACE_CFG, STAGING_CFG, SUCCESS_CFG, TASK_CFG, WEIGHT_READING_CFG
+from src.open_catch import OpenCatch
+from src.task_config import BEAKER_CFG, GRIP_FORCE_TABLE, MINK_CFG, OPEN_CATCH_CFG, PICK_PLACE_CFG, STAGING_CFG, SUCCESS_CFG, TASK_CFG, WEIGHT_READING_CFG
 from src.weight_estimate import G, hand_load, liftoff_check, liftoff_estimate, reading_status
 from src.world_model import SimGroundTruthSource, WorldModel
 
@@ -250,7 +251,7 @@ def make_scripted_manipulation(model, data, world, side, home_q, task_cfg=TASK_C
     def start(segment):
         """Plans the segment's primitive from the world as it is now."""
         prim = segment["primitive"]
-        S.update(i=0, t0=None, error=None, events=[], started=True, still=None)
+        S.update(i=0, t0=None, error=None, events=[], started=True, still=None, catch_i=None)
         S["ctx"]["primitive"] = prim
         S["ctx"]["task_text"] = {"group_description": segment.get("group_description"), "group_completion_criteria": segment.get("group_completion_criteria")}
         ids = segment.get("grounded") or {}
@@ -286,7 +287,7 @@ def make_scripted_manipulation(model, data, world, side, home_q, task_cfg=TASK_C
         The fingers are opened first when the world model says this hand holds nothing (a hand that holds something keeps its grip); then the pad centre backs off along the robot's forward
         direction by the retreat distance, goes to the zombie pose's pad centre, and the joints go to the zombie pose.
         """
-        S.update(i=0, t0=None, error=None, events=[], started=True, still=None)
+        S.update(i=0, t0=None, error=None, events=[], started=True, still=None, catch_i=None)
         S["ctx"]["primitive"] = "recover"
         arm.reset(data)
         C["p"], C["r"] = np.zeros(3), np.zeros(3)
@@ -411,9 +412,17 @@ def make_scripted_manipulation(model, data, world, side, home_q, task_cfg=TASK_C
         elif kind in ("close", "open"):
             closing = kind == "close"
             if not closing:                                  # M221: the open waits until the held mass has ramped to 0 (at once if it is 0 already); the recovery's open does the same (M217)
-                hmr.set_target(model, side, 0.0, t, obs["tick"])
-                if not hmr.finished(model, side, t):
-                    return command()                         # the grip stays closed until the ramp is finished
+                if OPEN_CATCH_CFG["enabled"]:                # M252 (switch, default OFF): the open is a request; the stream is held until the ramp has run (src/open_catch.py)
+                    if S.get("catch_i") != S["i"]:           # one request per open step: a repeat during the hold does not restart the ramp
+                        S["catch"] = OpenCatch(lambda tt, tk: hmr.set_target(model, side, 0.0, tt, tk), lambda tt: hmr.finished(model, side, tt))
+                        S["catch"].request(t, obs["tick"])
+                        S["catch_i"] = S["i"]
+                    if not S["catch"].ramp_finished(t):
+                        return command()                     # the grip stays closed and the arm targets are held until the ramp is finished
+                else:
+                    hmr.set_target(model, side, 0.0, t, obs["tick"])
+                    if not hmr.finished(model, side, t):
+                        return command()                     # the grip stays closed until the ramp is finished
             S["grip"] = {"position": 0.0, "max_force": float(force)} if closing else open_g
             out = command()
             travel, speed = float(data.qpos[fq]), abs(float(data.qvel[fv]))

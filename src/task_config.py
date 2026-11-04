@@ -668,3 +668,14 @@ HOLD_STILL_CFG = {
     "still_confirm_ticks": 75,
 }
 
+# Catch the open command (David's decisions of Nov 4, 2026; decision row M252). Used by src/open_catch.py and the OPEN step in
+# src/mpvi_modules.py. What it does when ON: an open command does not reach the gripper; the whole arm and gripper command stream is
+# held; the same held-mass ramp-out runs (its 1.0 s is PICK_PLACE_CFG["held_mass_ramp_s"], reused, not repeated here) with the same
+# sag-trim freeze; the open is released after the ramp; the commands after it in the chunk play in order afterwards.
+# What it does when OFF: nothing changes; the OPEN step runs exactly as before.
+OPEN_CATCH_CFG = {
+    # On/off switch, plain yes or no (no unit). False = the OPEN step behaves as it did before M252. True = the OPEN step takes the
+    # open as a request and holds the stream until the ramp has finished. Default False. [row M252]
+    "enabled": False,
+}
+

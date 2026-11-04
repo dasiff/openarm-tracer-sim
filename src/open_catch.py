@@ -44,6 +44,7 @@ class OpenCatch:
         self.open_g = TASK_CFG.get("finger_open", 0.044) if open_g is None else open_g
         self.state = "pass"
         self.value = None          # the open command kept (its gripper target)
+        self.force = None          # the kept command's own max_force (N), None if the command had none (M255)
         self.still = None          # stop-test state of the opening
         self.log = []              # entries {"tick", "kind", ...} for the report
 
@@ -53,6 +54,13 @@ class OpenCatch:
         if isinstance(value, dict):
             value = value.get("position")
         return None if value is None else float(value)
+
+    @staticmethod
+    def max_force(value):
+        """The max_force (N) of a gripper command given as {"position": .., "max_force": ..}; None for a plain number or a dict without it (M255)."""
+        if isinstance(value, dict) and value.get("max_force") is not None:
+            return float(value["max_force"])
+        return None
 
     def is_open(self, value):
         """True if a gripper command is an open command (its position at or above OPEN_CATCH_CFG["open_command_min_m"])."""
@@ -67,8 +75,12 @@ class OpenCatch:
             self.log.append({"tick": tick, "kind": "repeat_ignored" if same else "different_ignored", "value": p})
             return True
         if not holding:
+            # M255 (David, option c): the open passes at once; if held mass is still on, the existing ramp-out to 0 starts now, in this tick.
+            if hmr.mass_at(self.model, self.side, t) > 0.0:
+                hmr.set_target(self.model, self.side, 0.0, t, tick)
+                self.log.append({"tick": tick, "kind": "ramp_no_hold", "value": p})
             return False
-        self.state, self.value = "ramp", p
+        self.state, self.value, self.force = "ramp", p, self.max_force(value)
         hmr.set_target(self.model, self.side, 0.0, t, tick)
         self.log.append({"tick": tick, "kind": "caught", "value": p})
         return True
@@ -139,13 +151,13 @@ class SourceGate:
         return kept
 
     def hold_steps(self, catch, hold, data, t, frame, apply, log):
-        """Each tick, for each hand: release the open once the ramp has finished (apply(side, value) sends the gripper open), and resume the
-        source once the gripper has opened."""
+        """Each tick, for each hand: release the open once the ramp has finished (apply(side, value, force) sends the gripper open, with the
+        caught command's own max_force, None if it had none), and resume the source once the gripper has opened."""
         for s in catch:
             st = catch[s].step(data, t, frame, hold[s].holding)
             if st == "release":
-                apply(s, catch[s].value)
-                log.append({"tick": frame, "side": s, "kind": "open_released", "value": catch[s].value})
+                apply(s, catch[s].value, catch[s].force)
+                log.append({"tick": frame, "side": s, "kind": "open_released", "value": catch[s].value, "force": catch[s].force})
             elif st == "resume":
                 nm = self.caught_by.pop(s, None)
                 if nm is not None:

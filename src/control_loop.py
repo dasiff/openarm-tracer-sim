@@ -596,6 +596,13 @@ def run_loop(model, data, sources, cfg, viewer=None, logger=None):
     gate = SourceGate(max(1, int(round(cfg["source_hz"] / CHUNK_CFG["rate_hz"]))))   # chunks play every 5 ticks at 150 Hz and 30 per second
     open_catch_log = []                                        # entries {"tick", "side", "kind", ...} (caught, repeat_ignored, released, failed_hold, opened, ...)
 
+    def release_cap(f):
+        """M255: the force cap (N per finger) of a released open: the caught command's own max_force, clipped to the hardware ceiling as
+        src/commands.py clips a requested max_force. A caught command with NO max_force gets the ceiling (the rule commands.py uses for an
+        omitted max_force). NEEDS DECISION (David): that case is not yet decided."""
+        ceiling = limits["gripper_force_ceiling"]
+        return ceiling if f is None else min(f, ceiling)
+
     def bridge_note(frame_, side, joint, kind, value, limit):
         """Logs a bridge rejection or suspension (the joint's number is 1 to 7) and prints the first 20 distinct ones.
 
@@ -1070,7 +1077,7 @@ def run_loop(model, data, sources, cfg, viewer=None, logger=None):
                     clean["period_steps"] = command_steps(src)
                     cmds.append(clean)
         gate.hold_steps(catch, hold_det, data, t, frame,
-                        lambda s_, v_: apply_cmd({"mode": "arms", "gripper": {s_: v_}, "gripper_force": {s_: limits["gripper_force_ceiling"]}}),   # M253: the release is a plain open: the force cap is the ceiling, as commands.py gives an omitted max_force
+                        lambda s_, v_, f_: apply_cmd({"mode": "arms", "gripper": {s_: v_}, "gripper_force": {s_: release_cap(f_)}}),   # M253/M255: the release carries the caught command's own force cap
                         open_catch_log)   # M253: release the open after the ramp; resume the source after the opening
         if request is not None:
             cmds = []

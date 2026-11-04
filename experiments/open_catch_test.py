@@ -42,8 +42,10 @@ def arm_cmd(tag):
     return {"mode": "arms", "arm_targets": {"left": [float(tag)] * 7}, "gripper": {"left": CLOSE}}
 
 
-def open_cmd(value=OPEN_VALUE):
-    return {"mode": "arms", "arm_targets": {}, "gripper": {"left": value}}
+def open_cmd(value=OPEN_VALUE, max_force=None):
+    """An open command: a plain number, or {"position", "max_force"} when a force cap is given (M255)."""
+    g = value if max_force is None else {"position": value, "max_force": max_force}
+    return {"mode": "arms", "arm_targets": {}, "gripper": {"left": g}}
 
 
 def check(name, ok, detail=""):
@@ -55,21 +57,22 @@ class Harness:
     """One hand, driven the way the control loop drives it each tick: holding update, source gate, open filter, hold steps.
     force -16 N and finger 0.0375 m are a real hold; the holding detector is primed to ON before the first tick."""
 
-    def __init__(self, items, force=-16.0, finger=0.0375):
+    def __init__(self, items, force=-16.0, finger=0.0375, held_kg=HELD_KG):
         self.model = FakeModel()
+        hmr.reset(self.model)                                    # a fresh model id: no record left from an earlier case
         self.data = FakeData()
         self.hold = {"left": HoldDetector()}
         self.catch = {"left": OpenCatch(self.model, "left", 0, 1)}
         self.gate = SourceGate(max(1, int(round(150 / CHUNK_CFG["rate_hz"]))))
         self.log = []
         self.played = []          # (frame, command) of every command that reached the arm and gripper
-        self.releases = []        # (frame, value) of each gripper open the hold sends
+        self.releases = []        # (frame, value, force) of each gripper open the hold sends
         self.ask_frames = []
         self.frame = 0
         self.items = items
         self.force = force
         self.finger = finger
-        hmr.set_target(self.model, "left", HELD_KG, -1.0, 0)     # the held mass is HELD_KG from time 0 on (ramp finished)
+        hmr.set_target(self.model, "left", held_kg, -1.0, 0)     # the held mass is held_kg from time 0 on (ramp finished)
         for _ in range(HOLD_STILL_CFG["holding_confirm_ticks"] + 1):
             self.hold["left"].update(self.force, self.finger)
 
@@ -94,9 +97,9 @@ class Harness:
         self.gate.hold_steps(self.catch, self.hold, d, d.time, self.frame, self.send_open, self.log)
         self.frame += 1
 
-    def send_open(self, side, value):
+    def send_open(self, side, value, force):
         """What the loop does on release: the gripper opens, the squeeze drops and the fingers open (as in the sim)."""
-        self.releases.append((self.frame, value))
+        self.releases.append((self.frame, value, force))
         self.force = 0.04
         self.finger = OPEN_VALUE
 
@@ -181,6 +184,41 @@ def case_e():
                  f"kept value {h.catch['left'].value}, different logged {len(diff)}")
 
 
+def case_i():
+    """M255 change 1: an open while NOT holding, held mass above zero: the open passes in the same tick and the ramp to 0 starts then."""
+    h = Harness([open_cmd()], force=0.0, held_kg=HELD_KG)
+    h.run(1)   # one tick: the one-command chunk is used up on tick 0, so the source would be asked again
+    rec = hmr._record(h.model, "left")
+    ok = (h.open_frames() == [0] and rec["target"] == 0.0 and rec["t0"] == 0.0 and not h.releases
+          and h.catch["left"].state == "pass" and not h.log and [e["kind"] for e in h.catch["left"].log] == ["ramp_no_hold"])
+    return check("(i) open while NOT holding, held mass above zero: the open passes in the same tick; the ramp to 0 starts in that tick", ok,
+                 f"open at frame {h.open_frames()}, ramp target {rec['target']} from t0 {rec['t0']} s, releases {h.releases}, "
+                 f"catch log {[e['kind'] for e in h.catch['left'].log]}")
+
+
+def case_ii():
+    """M255 change 1: an open while NOT holding, held mass already zero: the open passes and no ramp starts."""
+    h = Harness([open_cmd()], force=0.0, held_kg=0.0)
+    h.run(1)   # one tick: the one-command chunk is used up on tick 0, so the source would be asked again
+    rec = hmr._record(h.model, "left")
+    ok = h.open_frames() == [0] and rec["t0"] == -1.0 and rec["target"] == 0.0 and not h.releases and not h.catch["left"].log
+    return check("(ii) open while NOT holding, held mass zero: the open passes; no ramp starts", ok,
+                 f"open at frame {h.open_frames()}, record t0 {rec['t0']} (unchanged from setup), catch log {h.catch['left'].log}")
+
+
+def case_iii():
+    """M255 change 2: a caught open's release carries the caught command's own max_force (and None when it had none)."""
+    h = Harness([arm_cmd(0), open_cmd(max_force=3.0)] + [arm_cmd(k) for k in range(2, 50)])
+    h.run(300)
+    own = h.releases[0][2] if h.releases else None
+    h2 = Harness([arm_cmd(0), open_cmd()] + [arm_cmd(k) for k in range(2, 50)])
+    h2.run(300)
+    plain = h2.releases[0][2] if h2.releases else "no release"
+    ok = len(h.releases) == 1 and own == 3.0 and plain is None
+    return check("(iii) a caught open's release carries the caught command's own max_force; None when the command had none", ok,
+                 f"release force with max_force 3.0: {own} N; plain open (no max_force): {plain}")
+
+
 def case_f():
     items = [arm_cmd(k) for k in range(50)]
     asks = {"n": 0}
@@ -246,6 +284,6 @@ def case_config():
 
 
 if __name__ == "__main__":
-    results = [case_a(), case_b(), case_c(), case_d(), case_e(), case_f(), case_g(), case_h(), case_config()]
+    results = [case_a(), case_b(), case_c(), case_d(), case_e(), case_f(), case_g(), case_h(), case_i(), case_ii(), case_iii(), case_config()]
     print(f"{sum(results)} of {len(results)} passed")
     sys.exit(0 if all(results) else 1)

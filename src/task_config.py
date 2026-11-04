@@ -649,8 +649,11 @@ HOLD_STILL_CFG = {
     "squeeze_threshold_N": 2.0,
     # PROVISIONAL, SIM-ONLY PLACEHOLDER. Chosen arbitrarily on Nov 3, 2026, not from data. Recalibrate on hardware. [row M248]
     # Grasp range for the finger position (finger1 joint, metres). The fingers run from 0 m (fully closed) to 0.044 m (fully open).
-    # The margin at each end is 2 mm: the 0.002 m at the closed end is a GUESS, because where the pads stop is unknown. Seen in the sim: holding 0.0375 m, open 0.0439 m.
-    "grasp_closure_min_m": 0.002,
+    # Lower edge 0.005 m (decision M249, Nov 4, 2026). In the sim the two finger pads touch each other at about 2.75 mm of finger travel.
+    # That 2.75 mm is a MEASUREMENT from the sim (robot-only model, no beaker, mesh contacts scanned in 0.05 mm steps), not from hardware.
+    # 2.75 mm plus the 2 mm margin is 4.75 mm, rounded to 5 mm. Below this edge, fingers that have closed on nothing would count as "in range".
+    # Upper edge 0.042 m: 2 mm below fully open. Seen in the sim: holding 0.0375 m, open 0.0439 m.
+    "grasp_closure_min_m": 0.005,
     "grasp_closure_max_m": 0.042,
     # PROVISIONAL, SIM-ONLY PLACEHOLDER. Chosen arbitrarily on Nov 3, 2026, not from data. Recalibrate on hardware. [row M248]
     # Confirming time for holding, in control ticks: 15 ticks = 0.1 s at 150 Hz. Both conditions must hold this many ticks in a row before holding turns on.

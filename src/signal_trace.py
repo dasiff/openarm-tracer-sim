@@ -25,6 +25,7 @@ from src import held_mass_ramp as hmr
 from src.gripper_geometry import gripper_frame
 from src.rate_limit import min_jerk
 from src.robot_helpers import arm_ids
+from src.holding import HoldDetector
 from src.task_config import HOLD_STILL_CFG
 
 ENV = "OPENARM_SIGNAL_TRACE"
@@ -81,8 +82,7 @@ class SignalTrace:
         self.prev_t = None
         self.prev_pad = {s: None for s in SIDES}
         self.prev_speed = {s: None for s in SIDES}
-        self.hold_count = {s: 0 for s in SIDES}
-        self.holding = {s: False for s in SIDES}
+        self.hold = {s: HoldDetector() for s in SIDES}
         self.still_count = {s: 0 for s in SIDES}
         self.file = open(Path(out_dir) / FILE_NAME, "w", newline="")
         self.writer = csv.writer(self.file)
@@ -124,15 +124,8 @@ class SignalTrace:
         goes above the limit. Acceleration has no limit yet (not decided), so it forms no verdict.
         """
         cfg = HOLD_STILL_CFG
-        # Decision M251 (Nov 4): squeeze is the CLOSING force only. Closing is negative in this sim, so the test is
-        # force <= -squeeze_threshold_N. An opening push (positive force) does not count as squeeze.
-        squeeze_ok = force <= -cfg["squeeze_threshold_N"]
-        closure_ok = cfg["grasp_closure_min_m"] <= finger1 <= cfg["grasp_closure_max_m"]
-        both = squeeze_ok and closure_ok
-        self.hold_count[s] = self.hold_count[s] + 1 if both else 0
-        # Decision M250 (Nov 4): holding is on only while BOTH tests pass. It turns on after both have held for the confirming
-        # time, and turns off at once (no delay) when either test fails.
-        self.holding[s] = both and (self.holding[s] or self.hold_count[s] >= cfg["holding_confirm_ticks"])
+        # The holding rule (decisions M250, M251: closing force only, both tests, confirming time, immediate off) is in src/holding.py.
+        squeeze_ok, closure_ok, holding = self.hold[s].update(force, finger1)
         if self.prev_pad[s] is None or dt is None or dt <= 0.0:
             speed = float("nan")
         else:
@@ -146,7 +139,7 @@ class SignalTrace:
         still = self.still_count[s] >= cfg["still_confirm_ticks"]
         self.prev_pad[s] = pad_w
         self.prev_speed[s] = speed
-        return [f"{int(squeeze_ok)}", f"{int(closure_ok)}", f"{int(self.holding[s])}", f"{speed:.9f}", f"{accel:.9f}",
+        return [f"{int(squeeze_ok)}", f"{int(closure_ok)}", f"{int(holding)}", f"{speed:.9f}", f"{accel:.9f}",
                 f"{int(below)}", f"{int(still)}"]
 
     def write(self, obs, phase, data):

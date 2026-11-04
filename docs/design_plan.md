@@ -217,7 +217,7 @@ Second hollow beaker (which of the two starts with the liquid stand-in is random
 - Robot adapter: Inputs/Outputs transforms modeled on openpi's ALOHA and UR5 examples. State built with the controller's actuator lookup. Each hand's fingers collapsed to one 0-1 gripper value, direction following openpi's ALOHA convention. Every gripper command the adapter sends carries max force from the grip force table. Absolute joint position actions.
 - Policy server on PACE; openpi client as a command source in the control loop; SSH tunnel if PACE requires it.
 - Pause physics while the policy thinks: a setting, default on.
-- Chunk execution: a setting, default about 10 of 50 steps.
+- Chunk execution: a setting, default about 10 of 50 steps. [BUILT 2026-11-04, M253: src/chunk_player.py plays play_count = 10 commands at 30 per second, then asks again; 10 is PROVISIONAL, recalibrate on the VLA]
 - The VLA is arm-only: it outputs arm and gripper targets, never base commands; the base is driven by the staging (and later the navigation of §13). [DECIDED] Letting it make small base adjustments is a LATER option (§10).
 
 ## 8. Planner: MPVI as in the paper [DECIDED]

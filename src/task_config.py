@@ -668,14 +668,23 @@ HOLD_STILL_CFG = {
     "still_confirm_ticks": 75,
 }
 
-# Catch the open command (David's decisions of Nov 4, 2026; decision row M252). Used by src/open_catch.py and the OPEN step in
-# src/mpvi_modules.py. What it does when ON: an open command does not reach the gripper; the whole arm and gripper command stream is
-# held; the same held-mass ramp-out runs (its 1.0 s is PICK_PLACE_CFG["held_mass_ramp_s"], reused, not repeated here) with the same
-# sag-trim freeze; the open is released after the ramp; the commands after it in the chunk play in order afterwards.
-# What it does when OFF: nothing changes; the OPEN step runs exactly as before.
+# Catch the open command (David, Nov 4, 2026; decision row M253 supersedes the M252 structure). Used by src/open_catch.py, which runs
+# in the control loop (src/control_loop.py) for every hand. Always on: there is no switch. The 1.0 s held-mass ramp-out is
+# PICK_PLACE_CFG["held_mass_ramp_s"] (reused, not repeated here); the stop test uses PICK_PLACE_CFG stall_speed_m_s, stall_dwell_s and
+# open_reached_margin_m (reused).
 OPEN_CATCH_CFG = {
-    # On/off switch, plain yes or no (no unit). False = the OPEN step behaves as it did before M252. True = the OPEN step takes the
-    # open as a request and holds the stream until the ramp has finished. Default False. [row M252]
-    "enabled": False,
+    # PROVISIONAL, SIM-ONLY PLACEHOLDER. Chosen arbitrarily on Nov 4, 2026, not from data. Recalibrate on hardware. [row M253]
+    # Open command threshold, metres: a gripper target at or above this is an "open" command. The open position is 0.044 m (TASK_CFG
+    # finger_open), and a close is 0.0 m. 0.02 m sits between them. Units: metres of finger travel.
+    "open_command_min_m": 0.02,
 }
 
+# Chunk player (David, Nov 4, 2026; decision row M253). A source may return a chunk of future commands; the loop plays the first
+# play_count of them at rate_hz, then asks the source again (src/chunk_player.py). A source that returns one command per tick is unaffected.
+CHUNK_CFG = {
+    # PROVISIONAL, SIM-ONLY PLACEHOLDER. Chosen arbitrarily on Nov 4, 2026, from the design plan section 7.3 default of about 10. Recalibrate on hardware. [row M253]
+    # Commands played from each chunk before the source is asked again. Unit: commands (a count). A VLA returns 50 and the harness plays 10.
+    "play_count": 10,
+    # Policy rate of a chunk, commands per second. 30 per second at 150 Hz means one command every 5 control ticks. [row M253]
+    "rate_hz": 30,
+}

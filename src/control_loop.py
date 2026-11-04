@@ -99,6 +99,9 @@ from src.cameras import CameraRig
 from src.commands import validate_command
 from src.run_record import RunRecorder
 from src.task_config import COMMAND_BRIDGE_CFG
+from src.holding import HoldDetector                          # M253: the holding verdict, the same rule as the signal trace
+from src.open_catch import OpenCatch, SourceGate                # M253: catches an open while holding; gates the sources (always on)
+from src.task_config import CHUNK_CFG
 
 # Servo control signal logging for diagnostic extraction (Task 3): stores per-tick tau_cmd and tau_ff
 # Populated during run, read by extraction script via module introspection
@@ -585,6 +588,13 @@ def run_loop(model, data, sources, cfg, viewer=None, logger=None):
     bridge_every = max(1, int(round(cfg["source_hz"] / bcfg["rate_hz"])))
     bridge_step = bcfg["max_joint_velocity_rad_s"] / bcfg["rate_hz"]                      # rad: the most the command moves per update
     arm_qadr = {s: [int(model.jnt_qposadr[model.actuator_trnid[a, 0]]) for a in arm_act[s]] for s in sides}
+    # --- M253: the open catch (one per hand, always on) and the chunk player ---
+    fq_adr = {s: int(model.jnt_qposadr[model.joint(f"openarm_{s}_finger_joint1").id]) for s in sides}
+    fv_adr = {s: int(model.jnt_dofadr[model.joint(f"openarm_{s}_finger_joint1").id]) for s in sides}
+    hold_det = {s: HoldDetector() for s in sides}
+    catch = {s: OpenCatch(model, s, fq_adr[s], fv_adr[s]) for s in sides}
+    gate = SourceGate(max(1, int(round(cfg["source_hz"] / CHUNK_CFG["rate_hz"]))))   # chunks play every 5 ticks at 150 Hz and 30 per second
+    open_catch_log = []                                        # entries {"tick", "side", "kind", ...} (caught, repeat_ignored, released, failed_hold, opened, ...)
 
     def bridge_note(frame_, side, joint, kind, value, limit):
         """Logs a bridge rejection or suspension (the joint's number is 1 to 7) and prints the first 20 distinct ones.
@@ -1025,15 +1035,17 @@ def run_loop(model, data, sources, cfg, viewer=None, logger=None):
             prev_abort = cur
 
         # --- Commands: every source steps; each keeps what the router gives it ---
+        for s in sides:                                     # M253: the holding verdict of each hand, every tick, before the open check
+            hold_det[s].update(float(data.actuator_force[fing_act[s][0]]), float(data.qpos[fq_adr[s]]))
         cmds = []
         request = None
         for name, src in sources.items():
             if name == auto_src and ctl["mode"] == "teleop":
                 continue                                    # the auto source is paused while the operator is in charge
-            out = src["step"](obs)
+            out = gate.output(name, lambda: src["step"](obs), frame)      # M253: a chunk plays at the policy rate; a paused source is not asked
             if out is None:
                 continue
-            for cmd in ([out] if isinstance(out, dict) else out):
+            for cmd in gate.filter(name, [out] if isinstance(out, dict) else out, catch, hold_det, t, frame, open_catch_log):   # M253: an open is caught while the hand holds
                 if isinstance(cmd, dict) and cmd.get("mode") == "request_teleop":
                     clean, _ = validate_command(cmd, limits)
                     if name == auto_src and ctl["mode"] == "auto":
@@ -1057,6 +1069,9 @@ def run_loop(model, data, sources, cfg, viewer=None, logger=None):
                 if clean is not None:
                     clean["period_steps"] = command_steps(src)
                     cmds.append(clean)
+        gate.hold_steps(catch, hold_det, data, t, frame,
+                        lambda s_, v_: apply_cmd({"mode": "arms", "gripper": {s_: v_}, "gripper_force": {s_: limits["gripper_force_ceiling"]}}),   # M253: the release is a plain open: the force cap is the ceiling, as commands.py gives an omitted max_force
+                        open_catch_log)   # M253: release the open after the ramp; resume the source after the opening
         if request is not None:
             cmds = []
             switch_mode("teleop", "policy_request", request)
@@ -1196,4 +1211,4 @@ def run_loop(model, data, sources, cfg, viewer=None, logger=None):
         for e in bridge["log"]:
             kinds[e["kind"]] = kinds.get(e["kind"], 0) + e["count"]
         print(f"[bridge] {len(bridge['log'])} log entries, {sum(kinds.values())} events: {kinds}")
-    return {"frames": frame, "hold_log": ex["log"], "routes": routes, "stopped_by": stop_req[0], "mode_log": ctl["log"], "bridge_log": bridge["log"]}
+    return {"frames": frame, "open_catch_log": open_catch_log, "hold_log": ex["log"], "routes": routes, "stopped_by": stop_req[0], "mode_log": ctl["log"], "bridge_log": bridge["log"]}

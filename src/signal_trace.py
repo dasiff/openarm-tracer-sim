@@ -117,8 +117,8 @@ class SignalTrace:
         Hand acceleration (m/s^2, signed, positive = speeding up) = (speed(now) - speed(previous tick)) / dt.
         Both are "nan" where there is no earlier tick to use (the first tick; acceleration also on the second tick).
         Squeeze: |actuator force| >= squeeze_threshold_N (total force, N). Closure: grasp_closure_min_m <= finger1 <= grasp_closure_max_m.
-        Holding verdict: turns ON after both conditions have held for holding_confirm_ticks ticks in a row; turns OFF when the squeeze
-        condition fails. What happens when the closure leaves the range while the squeeze stays high is NOT decided: the verdict stays as it was.
+        Holding verdict (decision M250): ON only while both tests pass; turns ON after both have held for holding_confirm_ticks ticks in a
+        row; turns OFF at once when either test fails (no confirming delay on the way off).
         Still verdict: ON after the speed has stayed below still_speed_limit_m_s for still_confirm_ticks ticks in a row; OFF as soon as it
         goes above the limit. Acceleration has no limit yet (not decided), so it forms no verdict.
         """
@@ -127,10 +127,9 @@ class SignalTrace:
         closure_ok = cfg["grasp_closure_min_m"] <= finger1 <= cfg["grasp_closure_max_m"]
         both = squeeze_ok and closure_ok
         self.hold_count[s] = self.hold_count[s] + 1 if both else 0
-        if not squeeze_ok:
-            self.holding[s] = False
-        elif self.hold_count[s] >= cfg["holding_confirm_ticks"]:
-            self.holding[s] = True
+        # Decision M250 (Nov 4): holding is on only while BOTH tests pass. It turns on after both have held for the confirming
+        # time, and turns off at once (no delay) when either test fails.
+        self.holding[s] = both and (self.holding[s] or self.hold_count[s] >= cfg["holding_confirm_ticks"])
         if self.prev_pad[s] is None or dt is None or dt <= 0.0:
             speed = float("nan")
         else:

@@ -656,7 +656,8 @@ HOLD_STILL_CFG = {
     "grasp_closure_min_m": 0.005,
     "grasp_closure_max_m": 0.042,
     # PROVISIONAL, SIM-ONLY PLACEHOLDER. Chosen arbitrarily on Nov 3, 2026, not from data. Recalibrate on hardware. [row M248]
-    # Confirming time for holding, in control ticks: 15 ticks = 0.1 s at 150 Hz. Both conditions must hold this many ticks in a row before holding turns on.
+    # Confirming time for holding, in control ticks: 15 ticks = 0.1 s at 150 Hz. Both tests must pass this many ticks in a row before holding turns ON.
+    # Turning OFF has no delay (decision M250, Nov 4): holding goes off the moment EITHER test fails (squeeze too low, or finger position out of range).
     "holding_confirm_ticks": 15,
     # PROVISIONAL, SIM-ONLY PLACEHOLDER. Chosen arbitrarily on Nov 3, 2026, not from data. Recalibrate on hardware. [row M248]
     # "Still" hand-speed limit, metres per second: the hand (pad centre) speed must stay below this. Seen in the sim: at rest 0.0004 to 0.0012 m/s; approach median about 0.04 m/s.

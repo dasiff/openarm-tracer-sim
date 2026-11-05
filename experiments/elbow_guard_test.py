@@ -1,4 +1,4 @@
-"""Test of the elbow height guard (src/elbow_guard.py, decision M265). Exit 0 on pass.
+"""Test of the elbow height guard (src/elbow_guard.py, decision M269). Exit 0 on pass.
 
 Checks, on the scene model at the settled base height:
   1. the minimum is 1.1048 m (bench top 0.960 + housing 0.1188 + allowance 0.012 + margin 0.014);

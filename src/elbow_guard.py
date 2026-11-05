@@ -1,4 +1,4 @@
-"""The elbow height guard (decision M265): keeps each arm's elbow joint centre above a minimum world z.
+"""The elbow height guard (decision M269): keeps each arm's elbow joint centre above a minimum world z.
 
 The guard checks the elbow joint centre (the origin of openarm_<side>_link4). The housing below the joint is inside the minimum (see
 ELBOW_GUARD_CFG). A target whose elbow joint centre would be below the minimum is clamped: the arm moves from its measured joint angles toward

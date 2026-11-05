@@ -583,7 +583,7 @@ BENCH_STANCE_CFG = {
     # Plain words: with navigation ON the robot may be driven to the stance the algorithm chooses (the first navigation step moves it, later ones are null when the next objects are served from the same stance);
     # with navigation OFF it stays at TASK_CFG's stance and a plan that stance does not serve stops with "needs navigation on".
     "navigation": True,                         # [row M182: ON by default (David, Oct 25); False is kept for tests (stance_select_test section 6, the held-beaker script's --at-reference-stance); row M175: what navigation on and off mean in stance selection]
-    "pedestal_override_m": 0.16,                 # m of pedestal command: the staging parks the pedestal here instead of the height the stance selection chose (it chose 0.10 in the moved layout). Now 0.16 m (David 2026-11-05, row M266): the elbow guard (M265) leaves 0.4 mm at 0.15 m and 10.4 mm at 0.16 m. Before: 0.15 m (David 2026-10-28, row M197: 0.15 m gives about 25 mm more elbow clearance over the bench at every extended phase, the episode still succeeds, 0.20 fails at the pick). None: the selection's own height. The selection and its full check still ran at their own height [rows M197, M266]
+    "pedestal_override_m": 0.16,                 # m of pedestal command: the staging parks the pedestal here instead of the height the stance selection chose (it chose 0.10 in the moved layout). Now 0.16 m (David 2026-11-05, row M270): the elbow guard (M269) leaves 0.4 mm at 0.15 m and 10.4 mm at 0.16 m. Before: 0.15 m (David 2026-10-28, row M197: 0.15 m gives about 25 mm more elbow clearance over the bench at every extended phase, the episode still succeeds, 0.20 fails at the pick). None: the selection's own height. The selection and its full check still ran at their own height [rows M197, M270]
     "max_run_steps": 4,                         # count: the most manipulation steps in one run (the longest-run search starts at min(this, the steps left)) [row M175: David]
     "full_check_fallbacks": 3,                  # count: when the full check fails the best stance of a run, this many of the next ranked stances are tried [row M175: David]
     # Plain words: every one of the 12 approach bins of the reach maps is a level side grasp (the hand's approach axis and finger axis within 5 degrees of horizontal), so none is "from above or below". What
@@ -723,19 +723,19 @@ SAG_LAYER_CFG = {
 }
 
 # ----------------------------------------------------------------------------------------------------------
-# Elbow height guard (M265, David, Nov 5, 2026): the elbow joint centre of each arm must stay above a minimum world z. src/elbow_guard.py clamps
+# Elbow height guard (M269, David, Nov 5, 2026): the elbow joint centre of each arm must stay above a minimum world z. src/elbow_guard.py clamps
 # the arm targets in the control loop when a target would put it lower. The minimum is the bench top plus the housing below the joint plus two
 # allowances: 0.960 + 0.1188 + 0.012 + 0.014 = 1.1048 m.
 # ----------------------------------------------------------------------------------------------------------
 ELBOW_GUARD_CFG = {
-    # Plain on/off switch, no unit. True (default): the clamp runs on every arm target of every source. False: no clamp (experiment only). [row M265]
+    # Plain on/off switch, no unit. True (default): the clamp runs on every arm target of every source. False: no clamp (experiment only). [row M269]
     "enabled": True,
     # The minimum world z of the elbow joint centre (the origin of openarm_<side>_link4), metres. Built from the parts below (the sum is
     # exact). The housing below the joint (0.1188 m, the elbow link's true lowest point, report 20261105_1647) is inside this number, so the
-    # guard checks the joint centre only. [row M265]
+    # guard checks the joint centre only. [row M269]
     "min_joint_z_m": round(0.960 + 0.1188 + 0.012 + 0.014, 4),
-    "table_top_z_m": 0.960,         # metres, world z of the bench top the elbow must clear (the bench top's surface, task_config.py scene). [row M265]
-    "housing_m": 0.1188,            # metres, the elbow link's lowest point below the joint centre (sphere bound, report 20261105_1647). [row M265]
-    "allowance_m": 0.012,           # metres, for 1 degree of base tilt and 5 mm of sag together (the assumed values; not measured, report 20261105_1700). [row M265]
-    "margin_m": 0.014,              # metres, the safety margin David set on Nov 5, 2026 (the one judgement number of the rule). [row M265]
+    "table_top_z_m": 0.960,         # metres, world z of the bench top the elbow must clear (the bench top's surface, task_config.py scene). [row M269]
+    "housing_m": 0.1188,            # metres, the elbow link's lowest point below the joint centre (sphere bound, report 20261105_1647). [row M269]
+    "allowance_m": 0.012,           # metres, for 1 degree of base tilt and 5 mm of sag together (the assumed values; not measured, report 20261105_1700). [row M269]
+    "margin_m": 0.014,              # metres, the safety margin David set on Nov 5, 2026 (the one judgement number of the rule). [row M269]
 }

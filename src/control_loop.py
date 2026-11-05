@@ -649,17 +649,13 @@ def run_loop(model, data, sources, cfg, viewer=None, logger=None):
         return cmd
 
     def sag_correct(cmd):
-        """M262: the sag trim layer for one command. The arm targets of an arms command are corrected per arm (src/sag_layer.py); a gripper open
-        command starts that arm's open watch (the trim is reset when the fingers come to rest open)."""
+        """M262: the sag trim layer for one command. The arm targets of an arms command are corrected per arm (src/sag_layer.py)."""
         if cmd.get("mode") != "arms":
             return cmd
         nominal = cmd.get("period_steps", steps_per_frame) * model.opt.timestep
         if cmd.get("arm_targets"):
             cmd = {**cmd, "arm_targets": {s_: [float(v) for v in sag[s_].correct(np.array(q_, float), data, t, nominal)]
                                           for s_, q_ in cmd["arm_targets"].items()}}
-        for s_, g_ in (cmd.get("gripper") or {}).items():
-            if catch[s_].is_open(g_):
-                sag[s_].start_open(t)
         return cmd
 
     def bridge_take(cmd):
@@ -1071,7 +1067,7 @@ def run_loop(model, data, sources, cfg, viewer=None, logger=None):
         # --- Commands: every source steps; each keeps what the router gives it ---
         for s in sides:                                     # M253: the holding verdict of each hand, every tick, before the open check
             hold_det[s].update(float(data.actuator_force[fing_act[s][0]]), float(data.qpos[fq_adr[s]]))
-        for s in sides:                                     # M262: the gripper-open reset of the sag trim, watched every tick (the script's OPEN completion)
+        for s in sides:                                     # M263: the sag reset after a caught open's release, watched every tick (the release arms it; see src/sag_layer.py)
             sag[s].track_open(data, t)
         for s in sides:                                     # M258: the weighing of each hand: a grasp that holds and is not weighed pauses its source until it is weighed
             act = weigh[s].step(data, t, frame, hold_det[s].holding)
@@ -1112,7 +1108,7 @@ def run_loop(model, data, sources, cfg, viewer=None, logger=None):
                     clean["period_steps"] = command_steps(src)
                     cmds.append(clean)
         gate.hold_steps(catch, hold_det, data, t, frame,
-                        lambda s_, v_, f_: (sag[s_].start_open(t), apply_cmd({"mode": "arms", "gripper": {s_: v_}, "gripper_force": {s_: release_cap(f_)}})),   # M253/M255: the release carries the caught command's own force cap; M262: it starts the open watch
+                        lambda s_, v_, f_: (sag[s_].release_open(t), apply_cmd({"mode": "arms", "gripper": {s_: v_}, "gripper_force": {s_: release_cap(f_)}})),   # M253/M255: the release carries the caught command's own force cap; M263: it arms the sag reset (the only arming)
                         open_catch_log)   # M253: release the open after the ramp; resume the source after the opening
         if request is not None:
             cmds = []

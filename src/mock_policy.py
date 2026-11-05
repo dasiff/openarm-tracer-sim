@@ -35,6 +35,7 @@ import numpy as np
 from scipy.spatial.transform import Rotation, Slerp
 
 from src import held_mass_ramp as hmr
+from src import sag_layer as sagl              # logging only: the waypoint label and the planned pose of this tick (PLAN_TRACE, M263)
 from src.mink_arm import MinkArm
 from src.mpvi_modules import joints_duration, move_duration
 from src.rate_limit import min_jerk
@@ -147,6 +148,7 @@ class MockPolicy:
         rows[:, 8:16] = state[8:16]                              # the other arm and its gripper: held at the sensed values
         q0 = state[0:7].copy()
         step = self.plan[self.i]
+        sagl.PLAN_TRACE[self.side] = {"label": step["name"], "p": None, "R": None}      # logging only (M263): the waypoint's name; the planned pose below
         if step["kind"] == "move":
             p_now, R_now = self._set_pose(other, q0)
             if self.path is None:                                # once, when the waypoint starts: the scripted move duration from the pose now
@@ -167,6 +169,8 @@ class MockPolicy:
                     self.arm.step(self.scratch, P["p0"] + (P["target"] - P["p0"]) * s, P["sl"](s).as_matrix())
                 rows[k, 0:7] = self.arm.q_cmd
             rows[:, 7] = self.grip_target
+            s0 = min_jerk(min((tau + 1.0 / TICK_HZ) / P["T"], 1.0))                       # logging only: the planned pose of the first row
+            sagl.PLAN_TRACE[self.side].update(p=P["p0"] + (P["target"] - P["p0"]) * s0, R=P["sl"](min(max(s0, 0.0), 1.0)).as_matrix())
         elif step["kind"] == "joints":                           # the HOME joints: the scripted rule, once; progress from the sensed joints
             if self.path is None:
                 T = joints_duration(q0, self.home_q, self.cfg)

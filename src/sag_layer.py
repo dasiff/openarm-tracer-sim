@@ -86,6 +86,8 @@ class SagLayer:
             return np.asarray(q_src, float).copy()
         q_src = np.asarray(q_src, float)
         dt = nominal_dt if self.t_last is None else min(t - self.t_last, nominal_dt)     # after a pause only one nominal period is integrated
+        if dt <= 0.0:                                                                        # a second command in the same tick: nothing new to integrate (a zero step would divide by zero in the solver)
+            return q_src.copy() if self.q_cmd is None else self.q_cmd.copy()
         self.t_last = t
         p_ref, R_ref = self._pose(data.qpos, q_src)                                          # the reference: the hand pose the targets imply
         p_now, R_now = self.arm.pad_pose(data)                                               # the measured hand pose

@@ -177,9 +177,21 @@ def case_e(model, data):
                  f"kept without an open event {no_reset_without_open}")
 
 
+def case_f(model, data):
+    """Two commands for the same arm in one tick: the second does not integrate or divide by zero; the outputs stay finite and the state is kept."""
+    layer = SagLayer(model, data, "left", HOME)
+    q = source_targets(data, [0.02, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
+    first = layer.correct(q, data, 0.0, NOMINAL)
+    again = layer.correct(q, data, 0.0, NOMINAL)
+    nxt = layer.correct(q, data, NOMINAL, NOMINAL)
+    ok = bool(np.all(np.isfinite(again)) and np.array_equal(again, first) and np.all(np.isfinite(nxt)))
+    return check("(f) two commands in one tick: no integration on the second, outputs stay finite", ok,
+                 f"second command equals the first: {np.array_equal(again, first)}; later output finite: {bool(np.all(np.isfinite(nxt)))}")
+
+
 def main():
     model, data = robot()
-    results = [case_a(model, data), case_b(model, data), case_c(model, data), case_d(model, data), case_e(model, data)]
+    results = [case_a(model, data), case_b(model, data), case_c(model, data), case_d(model, data), case_e(model, data), case_f(model, data)]
     print(f"{sum(results)} of {len(results)} passed")
     return 0 if all(results) else 1
 

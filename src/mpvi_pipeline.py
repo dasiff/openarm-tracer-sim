@@ -28,7 +28,7 @@ from src.task_config import EPISODE_CFG, PICK_PLACE_CFG, SUCCESS_CFG, STAGING_CF
 
 
 def make_pipeline_task(plan=BEAKER_ON_HOTPLATE_PLAN, task_cfg=TASK_CFG, staging_cfg=STAGING_CFG, episode_cfg=EPISODE_CFG, success_cfg=SUCCESS_CFG, arm="left",
-                       operator=None, search=None, stop_on_disagreement=False, checker="oracle", vlm_caller=None, drop_monitor=True, orch_cfg=None, grip_force=None, module_hook=None, instruction=None, manipulation="scripted"):
+                       operator=None, search=None, stop_on_disagreement=False, checker="oracle", vlm_caller=None, drop_monitor=True, orch_cfg=None, grip_force=None, module_hook=None, instruction=None, manipulation="scripted", mock_stats_path=None):
     """Packages the pipeline as a task for the generic episode runner.
 
     Args:
@@ -49,6 +49,7 @@ def make_pipeline_task(plan=BEAKER_ON_HOTPLATE_PLAN, task_cfg=TASK_CFG, staging_
         instruction (str or None): The typed instruction the plan was made from; shown in the viewer's status panel and the demo video (task["meta"]["panel"]). Defaults to None (not shown).
         manipulation (str): "scripted" (the scripted pick and place drive the arm, as before) or "mock" (the mock policy of src/mock_policy.py drives the arm and gripper
             as a chunk source named "vla", routed for the left arm and gripper; the scripted module still plans). Defaults to "scripted".
+        mock_stats_path (str or Path or None): where the mock writes one row per query (M261). None writes nothing. Defaults to None.
         module_hook (callable or None): A test seam: module_hook(modules, model, data) -> modules, called on the module dictionary before the orchestrator is built (a test wraps a module to inject a failure).
 
     Returns:
@@ -84,7 +85,7 @@ def make_pipeline_task(plan=BEAKER_ON_HOTPLATE_PLAN, task_cfg=TASK_CFG, staging_
         if manipulation == "mock":                          # M260: the mock stands where the openpi client will sit (a chunk source; the planner is the scripted module)
             mock = MockPolicy(model, data, arm, task_cfg[f"home_q_{arm}"], force=grip_force)
             modules["manipulation"] = make_mock_manipulation(manip, mock, world, data)
-            mock_box["source"] = make_mock_source(model, data, mock, world)
+            mock_box["source"] = make_mock_source(model, data, mock, world, stats_path=mock_stats_path)
         if module_hook is not None:
             modules = module_hook(modules, model, data)
         orch = make_orchestrator(tagged, modules, orch_cfg)

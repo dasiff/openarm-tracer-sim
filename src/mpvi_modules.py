@@ -136,6 +136,40 @@ def make_scripted_navigation(model, data, world, task_cfg=TASK_CFG, staging_cfg=
 # ----------------------------------------------------------------------------------------------------------
 # Manipulation: scripted pick and place with mink
 # ----------------------------------------------------------------------------------------------------------
+def move_duration(arm, data, p0, R0, target, R, speed, cfg, name="move"):
+    """The duration of one waypoint move (the scripted rule, M112, M194, M200's limit; shared with the mock policy, M261).
+
+    The longest of the distance at the move's speed, the turn at the turn speed, and the minimum move time. With joint_limited_duration, at
+    least min_jerk_peak_factor times the arc of the farthest-travelling joint at the solver's speed limit, from a dry run (arm.joint_arc; it
+    changes no state). Args: arm (MinkArm), data (the state for the dry run), p0 and R0 (the pad pose at the start), target and R (the goal),
+    speed (m/s), cfg (PICK_PLACE_CFG), name (for the message of a dry run without a solution).
+
+    Returns:
+        tuple: (T, dry): the duration in seconds; dry is (arc, end) when the dry run ran (arc: the largest joint arc, end: the largest joint
+        change from the command now, radians), else None. A dry run with no solution gives (0, 0) and prints why.
+    """
+    dist = float(np.linalg.norm(target - p0))
+    ang = float(np.linalg.norm(Rotation.from_matrix(R0.T @ R).as_rotvec()))
+    T = max(cfg["min_move_s"], dist / speed, ang / cfg["turn_rad_s"])
+    if not cfg["joint_limited_duration"]:
+        return T, None
+    us = np.linspace(0.0, 1.0, cfg["arc_points"] + 1)
+    sl = Slerp([0.0, 1.0], Rotation.from_matrix([R0, R]))
+    try:
+        arc, end = arm.joint_arc(data, p0 + np.outer(us, target - p0), sl(us).as_matrix())
+        dry = (float(arc.max()), float(end.max()))
+    except mink.NoSolutionFound as e:
+        print(f"[manipulation] {name}: the dry run found no solution ({e})")
+        dry = (0.0, 0.0)                                   # the move itself reports the failure, with its own message
+    T = max(T, cfg["min_jerk_peak_factor"] * dry[0] / arm.cfg["max_joint_speed"])
+    return T, dry
+
+
+def joints_duration(q0, home_q, cfg):
+    """The duration of the move to the HOME joints: the largest joint move at 0.3 rad/s, at least the minimum move time (shared with the mock policy, M261)."""
+    return max(cfg["min_move_s"], float(np.max(np.abs(home_q - q0))) / 0.3)
+
+
 def make_scripted_manipulation(model, data, world, side, home_q, task_cfg=TASK_CFG, cfg=PICK_PLACE_CFG, mink_cfg=MINK_CFG, force=None, carry_ref="hotplate"):
     """Builds the manipulation module: the pick and place primitives of one arm.
 
@@ -331,25 +365,15 @@ def make_scripted_manipulation(model, data, world, side, home_q, task_cfg=TASK_C
                     R0 = (Rotation.from_rotvec(C["r"]).inv() * Rotation.from_matrix(R0)).as_matrix()
                 else:
                     p0, R0 = arm.pad_pose(data)
-                dist = float(np.linalg.norm(st["target"] - p0)) if st["kind"] == "move" else 0.0
-                ang = float(np.linalg.norm(Rotation.from_matrix(R0.T @ st["R"]).as_rotvec()))
-                T = max(cfg["min_move_s"], dist / st["speed"], ang / cfg["turn_rad_s"])
-                if cfg["joint_limited_duration"]:                  # M194: never plan the move faster than its farthest-travelling joint can follow at the solver's speed limit
-                    us = np.linspace(0.0, 1.0, cfg["arc_points"] + 1)
-                    sl = Slerp([0.0, 1.0], Rotation.from_matrix([R0, st["R"]]))
-                    try:
-                        arc, end = arm.joint_arc(data, p0 + np.outer(us, st["target"] - p0), sl(us).as_matrix())
-                        st["arc"], st["end"] = float(arc.max()), float(end.max())
-                    except mink.NoSolutionFound as e:
-                        print(f"[manipulation] {st['name']}: the dry run found no solution ({e})")
-                        st["arc"] = st["end"] = 0.0                # the move itself reports the failure, with its own message
-                    T = max(T, cfg["min_jerk_peak_factor"] * st["arc"] / arm.cfg["max_joint_speed"])
+                T, dry = move_duration(arm, data, p0, R0, st["target"], st["R"], st["speed"], cfg, st["name"])
+                if dry is not None:
+                    st["arc"], st["end"] = dry
                 st.update(p0=p0, slerp=Slerp([0.0, 1.0], Rotation.from_matrix([R0, st["R"]])), T=T)
                 if S.get("blend_v") is not None:                   # M200: a blended handover: the position starts at the pad's speed from the last move
                     st["v0"], S["blend_v"] = S["blend_v"], None
             elif st["kind"] == "joints":
                 st["q0"] = arm.q_cmd.copy()
-                st["T"] = max(cfg["min_move_s"], float(np.max(np.abs(home_q - st["q0"]))) / 0.3)
+                st["T"] = joints_duration(st["q0"], home_q, cfg)
             print(f"[manipulation] {st['name']} ({st['kind']}) at t={t:.2f} s" + (f", {st['T']:.1f} s planned" + (f" (joint arc {st['arc']:.2f} rad, endpoint {st['end']:.2f} rad)" if "arc" in st else "") if "T" in st else ""))
         el = t - S["t0"]
         kind = st["kind"]

@@ -94,7 +94,8 @@ def record_only(args):
     plan = make_llm_planner(caller.bind("plan", LLM_CFG["planner_prompt_version"]))(args.instruction)
     sim = load_task(MOVED, cameras=True)
     manip = getattr(args, "manipulation", "scripted")                 # M260: "mock" makes the mock policy the arm and gripper source
-    task = make_pipeline_task(plan, task_cfg=MOVED, stop_on_disagreement=True, checker="oracle", instruction=args.instruction, manipulation=manip)
+    task = make_pipeline_task(plan, task_cfg=MOVED, stop_on_disagreement=True, checker="oracle", instruction=args.instruction, manipulation=manip,
+                              mock_stats_path=out / "mock_queries.csv")
     loop = {**(task.get("loop_cfg") or {}), **(loop_cfg_for(args) or {})}
     s = run_episode(task, sim.model, sim.data, out_dir=out / "episode", record_dir=out / "recording", loop_cfg=loop, extra_sources=task.get("extra_sources"))
     state = task["pipeline"]["orchestrator"]["state"]

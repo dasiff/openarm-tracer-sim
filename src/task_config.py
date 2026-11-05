@@ -709,4 +709,7 @@ MOCK_POLICY_CFG = {
     # PROVISIONAL, SIM-ONLY PLACEHOLDER. The gripper value of fully open on the 0 to 1 scale the policy uses (the adapter maps the value to
     # finger travel by this many metres). 1 = open, 0 = closed, is an assumption; the direction convention is NEEDS DECISION (David).
     "gripper_open_value": 1.0,
+    # Grid points searched along a waypoint's path to find the arm's sensed progress (M261). An implementation resolution, not a tuned value:
+    # 401 points over a 1 s move is 2.5 ms of path per point. The progress is the path time of the nearest point.
+    "progress_points": 401,
 }

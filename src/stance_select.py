@@ -55,6 +55,7 @@ class StanceContext:
         extra (callable): bench_stance.make_extra_blocked of the scene: the furniture footprint, the arms-at-home clearance and the creep-in path.
         bench (dict): {"yaw", "open"}.
         bench_top (float): The bench top's height above the floor.
+        world (WorldModel): The scene's objects read from the simulator (SimGroundTruthSource); the selection and the home clearance use it.
         near (float): The bench's near edge along the facing direction (the object's depth is its position along it minus this).
     """
 
@@ -72,7 +73,10 @@ class StanceContext:
         self.maps = {k: v for k, v in maps.items() if k[0] == cfg["arm"]}
         furn = FurnitureMap.from_model(model, mujoco.MjData(model), exclude_bodies=("task_beaker",))
         self.furniture = furn
-        hcm = HomeClearanceMap(model, data, self.chk, np.array(task_cfg["beaker_xy"], float), robot_geometry=self.rg, slack=0.0)
+        from src.world_model import SimGroundTruthSource, WorldModel
+        self.world = WorldModel([SimGroundTruthSource(model, data, task_cfg)])      # the object positions of this scene, read from the simulator (M266)
+        self.world.refresh(data.time)
+        hcm = HomeClearanceMap(model, data, self.chk, np.array(self.world.object_pose("beaker")["position"][:2], float), robot_geometry=self.rg, slack=0.0)
         self.home_clear = hcm.clear_mask
         self.hcm, self._extra_held = hcm, {}
         self.extra = bs.make_extra_blocked(furn, self.rg, self.yaw, hcm.clear_mask, creep_back_m=task_cfg.get("staging_approach_back_m"))
@@ -567,14 +571,11 @@ def apply_stance_selection(tagged, task_cfg, maps_dir="data/reach_map", cfg=BENC
     """
     import gc
     from src.full_check import FullCheck
-    from src.world_model import StaticTaskSource, WorldModel
     maps = bs.load_maps(maps_dir, sides=(cfg["arm"],))
     fc = FullCheck(maps={**bs.load_maps(maps_dir)}, task_cfg=task_cfg)
     ctx = make_context(fc.model, fc.scene_data, maps, task_cfg, cfg, chk=fc.chk, say=say)
-    world = WorldModel([StaticTaskSource(task_cfg)])
-    world.refresh(0.0)
     try:
-        return select_bench_stance(tagged, world, task_cfg, ctx, cfg, full_check=fc, say=say)
+        return select_bench_stance(tagged, ctx.world, task_cfg, ctx, cfg, full_check=fc, say=say)
     finally:
         del fc, ctx
         gc.collect()

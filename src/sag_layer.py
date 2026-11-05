@@ -36,6 +36,8 @@ from src.task_config import MINK_CFG, PICK_PLACE_CFG, SAG_LAYER_CFG, TASK_CFG
 TASK_OPEN = TASK_CFG.get("finger_open", 0.044)     # the open travel, as the scripted module reads it
 
 SAG_TRACE = {}                    # logging only: side -> the correction dict {"p", "r"} of that side (read by the run recorder's C_p and C_r columns)
+MANIPULATION_SOURCES = ("vla",)   # M264: the sources that are the manipulation source by name (the mock policy, src/mpvi_pipeline.py). The scripted manipulation
+                                  # module is the "policy" source while its current segment is a manipulation segment (orchestrator status "module")
 SAG_LAYERS = {}                   # logging only: side -> the SagLayer of that side (read by the signal trace, see trace_values)
 PLAN_TRACE = {}                   # logging only: side -> {"label", "p", "R"}: the source's own step or waypoint label this tick and its planned pad pose
                                   # (None where there is none); the scripted module and the mock set it, the layer never reads it for control
@@ -77,6 +79,7 @@ class SagLayer:
         self.guard_count = 0          # logging only: how often the zero-time-step guard fired (a second command in the same tick)
         self.diag = None              # logging only: the reference (forward kinematics of the targets) of the last command: {"t", "fk_p", "fk_R"}
         self.reset_at = None          # logging only: the last reset: (t, cause)
+        self.manip_active = False     # M264: the manipulation source has the arm (its last command for this arm was a manipulation command)
         self.q_cmd = None             # the solver's joint command (warm start), from the measured joints at the first command
         self.t_last = None            # the time of the last correction (a pause is not counted)
         self.open_t = None            # the time the open that is being watched started
@@ -117,6 +120,19 @@ class SagLayer:
             return q_src.copy()
         self.q_cmd = self.arm.q_cmd.copy()
         return self.q_cmd.copy()
+
+    def manipulation(self, is_manip, t):
+        """M264: whether this arm command is corrected. Only the manipulation source's commands are (David). The first manipulation command after
+        a command from any other source zeroes the trim (the takeover, as the old trim at a skill start); a command from another source ends the
+        takeover and passes through unchanged."""
+        if not is_manip:
+            self.manip_active = False
+            return False
+        if not self.manip_active:
+            self.C["p"], self.C["r"] = np.zeros(3), np.zeros(3)
+            self.log.append({"t": t, "kind": "takeover"})
+            self.manip_active = True
+        return True
 
     def release_open(self, t):
         """The open-catch helper released a caught open (M263): the only call that arms the watch. An ordinary gripper-open command does not call it."""
@@ -161,4 +177,20 @@ class SagLayer:
         reset = self.reset_at[1] if self.reset_at is not None and t - window <= self.reset_at[0] < t else ""
         return ([plan.get("label", "")] + plan_cells + fk_cells + cells(d_p) + cells(d_r) + cells(self.C["p"]) + cells(self.C["r"])
                 + [reset, str(self.guard_count)])
+
+
+def correct_command(layers, cmd, data, t, nominal_dt):
+    """M264: the sag layer for one command from the loop (the same for every source). An arms command's targets are corrected per arm only when the
+    command comes from the manipulation source (its "manip" tag, set by the control loop); other commands pass through unchanged and integrate
+    nothing. layers: side -> SagLayer. nominal_dt: the command's period (s)."""
+    if cmd.get("mode") != "arms" or not cmd.get("arm_targets"):
+        return cmd
+    is_manip = bool(cmd.get("manip"))
+    out = {}
+    for s, q in cmd["arm_targets"].items():
+        if layers[s].manipulation(is_manip, t):
+            out[s] = [float(v) for v in layers[s].correct(np.array(q, float), data, t, nominal_dt)]
+        else:
+            out[s] = [float(v) for v in q]
+    return {**cmd, "arm_targets": out}
 

@@ -392,8 +392,15 @@ def make_orchestrator(plan, modules, cfg=None):
             return f"{i + 1}/{n} {label}: RETRY {S['attempt'][i]}: arm to the zombie pose [{st}]"
         return f"{i + 1}/{n} {label}: {module_of(seg)['phase']()} [{st}]" if st != "pending" else f"{i + 1}/{n} {label}: starting"        # the reason is in the console, the report and the policy's error
 
+    def module_now():
+        """The module that drives the current segment: "navigation" (the scripted staging) or "manipulation"; None when the plan is done (M264: the
+        sag layer reads it to tell the manipulation source's commands from the staging's)."""
+        if S["finished"] or S["index"] >= len(steps):
+            return None
+        return "navigation" if steps[S["index"]]["type"] == "navigation" else "manipulation"
+
     def status():
-        out = {"stage": "ORCHESTRATOR", "phase": phase_text(), "handoff": S["handoff"], "error": S["failure"]}
+        out = {"stage": "ORCHESTRATOR", "phase": phase_text(), "handoff": S["handoff"], "error": S["failure"], "module": module_now()}
         if S["failure"]:
             out["failure_outcome"] = "PIPELINE_PROBLEM" if S.get("pipeline_stop") else "PLAN_FAILED"
         return out

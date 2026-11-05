@@ -614,3 +614,8 @@ NOTE (Nov 5, 2026, 23:50): the pedestal change to 0.16 m (M266, 7155e41) costs o
 NOT PUSHED: origin/main (c71d633) has diverged; it has its own M265 to M268 rows, which clash with the branch's M265 (elbow guard) and M266 (pedestal). Push needs a decision on renumbering or merge.
 RENUMBER (Nov 5, 2026, after the rebase onto origin/main, which has M265 to M268): the elbow guard is now M269 and the pedestal override is now M270. Earlier progress entries that say M265 (guard) and M266 (pedestal) refer to these rows.
 - 23:51 PUSHED 20 commits to origin/main (c71d633..c50ba8d) by David's approval; remote HEAD verified equal to local HEAD.
+
+TASK 2026-11-05 OVERNIGHT (pasted brief from user; 4 steps: 1 reach maps at 0.16 m + full suite; 2 Stage 3 stance passes behind stance_check_mode, default "current", suite must match step 1; 3 diagnose the 10 failing tests, doc only; 4 regenerate held 200 g baseline at 0.16 m). Push after each green step, stop and report at decisions.
+Planned steps: (1a) build maps into data/reach_map_ped016 with experiments/reach_map_build.py unmodified, then swap dirs (old kept as data/reach_map_pre_ped016); (1b) commit build summary + record (maps are git-ignored BY DESIGN, task_config says "Map files are not committed"); (1c) full suite TAG 20261105_maps016, compare with ped016 run (suite_20261105_ped016_summary.txt, same code except renumber); (2) wire passes; (3) diagnose; (4) held 200 g.
+Baseline for regressions: data/logs/suite_20261105_ped016_summary.txt (10 failing: gripper_force, target_mode, command_bridge, cc_mode, nav_pipeline_follow, stance_select, stance_select_pipeline, stance_select_moved, mpvi_pipeline, mpvi_text).
+CURRENT STEP: 1a, reach map build (see RUN below).

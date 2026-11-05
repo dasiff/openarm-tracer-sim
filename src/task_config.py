@@ -434,7 +434,6 @@ PICK_PLACE_CFG = {
     "tol_m": 0.003, "tol_rad": math.radians(2.0),    # a waypoint is reached within these (measured pad pose) and settled [row M112 PENDING David: no decision recorded]
     "settle_speed_rad_s": 0.02, "settle_dwell_s": 0.2,  # rad/s and s: a waypoint counts as settled when the arm's joints are slower than the speed for the dwell time [row M112 PENDING David: no decision recorded]
     "sag_gain_per_s": 3.0, "sag_max_m": 0.04, "sag_max_rad": 0.1,   # the simple sag correction: integral gain on the measured pad pose error (1/s; 3.0 is the original value of the existing sag on run, back on by row M225; it replaces M215's 0; 0 would be off) and its limits in m and rad (0.04 m, 0.1 rad) [row M112 PENDING David: no decision recorded for the limits]
-    "sag_reset_at_skill_start": False,   # plain on/off switch, no unit: True zeroes the sag correction at each skill start; False (default, decided) lets it carry over from the previous skill [row M227]
     "liftoff_rate_n_per_s": 0.5,           # N/s: the held mass rises at this force rate (kg/s = this divided by g) while the weighing helper (src/weigh_helper.py, M258) looks for lift-off; a slow rate so the lift-off shows on the pad before the mass is far too large [row M236]
     "liftoff_baseline_ticks": 10,          # ticks: the pad height baseline for lift-off is the mean of this many ticks before the rate ramp starts (about 67 ms at 150 Hz) [row M235]
     "liftoff_rise_mm": 0.3,                # mm: the pad must rise this far above its baseline to count as lift-off (the same mm as the trace) [row M235]
@@ -712,4 +711,12 @@ MOCK_POLICY_CFG = {
     # Grid points searched along a waypoint's path to find the arm's sensed progress (M261). An implementation resolution, not a tuned value:
     # 401 points over a 1 s move is 2.5 ms of path per point. The progress is the path time of the nearest point.
     "progress_points": 401,
+}
+
+# The sag trim as a control-loop layer (M262, David, Nov 5, 2026). The trim's gains and limits are sag_gain_per_s, sag_max_m, sag_max_rad (PICK_PLACE_CFG,
+# unchanged). The layer sits between the command source and the command bridge (src/sag_layer.py).
+SAG_LAYER_CFG = {
+    # Plain on/off switch, no unit. True (default): the sag trim runs as a layer for every arm command of every source. False (experiment only):
+    # the layer passes the source's joint targets through unchanged, so the arm gets no sag correction. [row M262]
+    "enabled": True,
 }

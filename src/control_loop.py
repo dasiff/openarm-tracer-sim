@@ -102,6 +102,7 @@ from src.task_config import COMMAND_BRIDGE_CFG
 from src.holding import HoldDetector                          # M253: the holding verdict, the same rule as the signal trace
 from src.open_catch import OpenCatch, SourceGate                # M253: catches an open while holding; gates the sources (always on)
 from src.weigh_helper import WeighHelper                         # M258: weighs each grasp once, pausing its source (always on)
+from src.sag_layer import SAG_TRACE, SagLayer                    # M262: the sag trim, a layer between the source and the bridge (always on)
 from src.task_config import PICK_PLACE_CFG                       # M258: the weighing's values (liftoff_*, settle_*)
 from src.task_config import CHUNK_CFG
 
@@ -597,6 +598,9 @@ def run_loop(model, data, sources, cfg, viewer=None, logger=None):
     catch = {s: OpenCatch(model, s, fq_adr[s], fv_adr[s]) for s in sides}
     gate = SourceGate(max(1, int(round(cfg["source_hz"] / CHUNK_CFG["rate_hz"]))))   # chunks play every 5 ticks at 150 Hz and 30 per second
     open_catch_log = []                                        # entries {"tick", "side", "kind", ...} (caught, repeat_ignored, released, failed_hold, opened, ...)
+    # --- M262: the sag trim, one layer per arm (always on). Its posture target is cfg["sag_home_q"] (side -> 7 radians), else the joints at the start ---
+    sag_home = cfg.get("sag_home_q") or {}
+    sag = {s: SagLayer(model, data, s, sag_home[s] if s in sag_home else data.qpos[arm_qadr[s]].copy()) for s in sides}
     # --- M258: the weighing helper (one per hand, always on): the pad centre is the robot's own kinematics (the same point as the script's pad) ---
     def pad_point(s):
         tcp, pad = gff.pads[s]
@@ -642,6 +646,20 @@ def run_loop(model, data, sources, cfg, viewer=None, logger=None):
                 bridge_note(frame_, s, k + 1, "rejected: target outside the joint limits", q[k], lo[k] if q[k] < lo[k] else hi[k])
                 rest = {kk: v for kk, v in cmd.items() if kk != "arm_targets"}
                 return rest if any(kk in rest for kk in ("gripper", "gripper_force")) else None
+        return cmd
+
+    def sag_correct(cmd):
+        """M262: the sag trim layer for one command. The arm targets of an arms command are corrected per arm (src/sag_layer.py); a gripper open
+        command starts that arm's open watch (the trim is reset when the fingers come to rest open)."""
+        if cmd.get("mode") != "arms":
+            return cmd
+        nominal = cmd.get("period_steps", steps_per_frame) * model.opt.timestep
+        if cmd.get("arm_targets"):
+            cmd = {**cmd, "arm_targets": {s_: [float(v) for v in sag[s_].correct(np.array(q_, float), data, t, nominal)]
+                                          for s_, q_ in cmd["arm_targets"].items()}}
+        for s_, g_ in (cmd.get("gripper") or {}).items():
+            if catch[s_].is_open(g_):
+                sag[s_].start_open(t)
         return cmd
 
     def bridge_take(cmd):
@@ -1053,6 +1071,8 @@ def run_loop(model, data, sources, cfg, viewer=None, logger=None):
         # --- Commands: every source steps; each keeps what the router gives it ---
         for s in sides:                                     # M253: the holding verdict of each hand, every tick, before the open check
             hold_det[s].update(float(data.actuator_force[fing_act[s][0]]), float(data.qpos[fq_adr[s]]))
+        for s in sides:                                     # M262: the gripper-open reset of the sag trim, watched every tick (the script's OPEN completion)
+            sag[s].track_open(data, t)
         for s in sides:                                     # M258: the weighing of each hand: a grasp that holds and is not weighed pauses its source until it is weighed
             act = weigh[s].step(data, t, frame, hold_det[s].holding)
             if act == "pause":
@@ -1092,7 +1112,7 @@ def run_loop(model, data, sources, cfg, viewer=None, logger=None):
                     clean["period_steps"] = command_steps(src)
                     cmds.append(clean)
         gate.hold_steps(catch, hold_det, data, t, frame,
-                        lambda s_, v_, f_: apply_cmd({"mode": "arms", "gripper": {s_: v_}, "gripper_force": {s_: release_cap(f_)}}),   # M253/M255: the release carries the caught command's own force cap
+                        lambda s_, v_, f_: (sag[s_].start_open(t), apply_cmd({"mode": "arms", "gripper": {s_: v_}, "gripper_force": {s_: release_cap(f_)}})),   # M253/M255: the release carries the caught command's own force cap; M262: it starts the open watch
                         open_catch_log)   # M253: release the open after the ramp; resume the source after the opening
         if request is not None:
             cmds = []
@@ -1107,6 +1127,7 @@ def run_loop(model, data, sources, cfg, viewer=None, logger=None):
         if not cfg["exclusive"] and any(c["mode"] == "idle" for c in cmds):
             stop_base()
         for cmd in to_apply:
+            cmd = sag_correct(cmd)                          # M262: the sag trim sits between the source and the bridge (every source; the same code)
             cmd = bridge_take(cmd)
             if cmd is not None:
                 apply_cmd(cmd)
@@ -1233,4 +1254,4 @@ def run_loop(model, data, sources, cfg, viewer=None, logger=None):
         for e in bridge["log"]:
             kinds[e["kind"]] = kinds.get(e["kind"], 0) + e["count"]
         print(f"[bridge] {len(bridge['log'])} log entries, {sum(kinds.values())} events: {kinds}")
-    return {"frames": frame, "open_catch_log": open_catch_log, "weigh_log": {s: weigh[s].log for s in sides}, "hold_log": ex["log"], "routes": routes, "stopped_by": stop_req[0], "mode_log": ctl["log"], "bridge_log": bridge["log"]}
+    return {"frames": frame, "open_catch_log": open_catch_log, "sag_log": {s: sag[s].log for s in sides}, "weigh_log": {s: weigh[s].log for s in sides}, "hold_log": ex["log"], "routes": routes, "stopped_by": stop_req[0], "mode_log": ctl["log"], "bridge_log": bridge["log"]}

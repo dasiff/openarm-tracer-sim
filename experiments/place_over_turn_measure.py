@@ -34,7 +34,7 @@ from scipy.spatial.transform import Rotation, Slerp  # noqa: E402
 import src.replay as replay_mod  # noqa: E402
 from src.gripper_geometry import gripper_frame  # noqa: E402
 from src.mink_arm import MinkArm  # noqa: E402
-from src.mpvi_modules import _clip_norm  # noqa: E402
+from src.sag_layer import _clip_norm  # noqa: E402  (M262: the trim helpers moved to src/sag_layer.py)
 from src.rate_limit import min_jerk  # noqa: E402
 from src.robot_helpers import arm_ids  # noqa: E402
 from src.task_config import MINK_CFG, PICK_PLACE_CFG, TASK_CFG  # noqa: E402

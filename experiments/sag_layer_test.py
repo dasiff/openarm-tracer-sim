@@ -19,7 +19,7 @@ import mujoco  # noqa: E402
 from src import held_mass_ramp as hmr  # noqa: E402
 from src import sag_layer  # noqa: E402
 from src.robot_helpers import arm_ids  # noqa: E402
-from src.sag_layer import SagLayer  # noqa: E402
+from src.sag_layer import SagLayer, correct_command  # noqa: E402
 import src.sag_layer as sag_layer  # noqa: E402
 from src.task_config import PICK_PLACE_CFG, SAG_LAYER_CFG, TASK_CFG  # noqa: E402
 
@@ -277,9 +277,77 @@ def case_c_periodic(model, data):
                  f"resets {0 if layer.reset_at is None else 1}; peak |C| {1000 * peak:.2f} mm, final {1000 * float(np.linalg.norm(layer.C['p'])):.2f} mm")
 
 
+def _arm_cmd(q, manip):
+    """A command as the loop builds it (an arms command with the source's manipulation tag)."""
+    return {"mode": "arms", "arm_targets": {"left": [float(v) for v in q]}, "gripper": {"left": 0.044}, "manip": manip, "period_steps": 3}
+
+
+def case_m264_a(model, data):
+    """M264 (a): a staging command passes through unchanged and the trim does not integrate (no call to the trim step, C stays zero), also after
+    a long run of staging commands."""
+    layer = SagLayer(model, data, "left", HOME)
+    layers = {"left": layer, "right": SagLayer(model, data, "right", np.asarray(TASK_CFG["home_q_right"], float))}
+    real = sag_layer._sag_trim_step
+    calls = []
+
+    def spy(*a, **k):
+        calls.append(1)
+        return real(*a, **k)
+    sag_layer._sag_trim_step = spy
+    try:
+        same = True
+        for k in range(300):
+            q = source_targets(data, [0.03 * np.sin(0.01 * k), 0.02, 0.01, 0, 0, 0, 0])
+            out = correct_command(layers, _arm_cmd(q, False), data, k * NOMINAL, NOMINAL)
+            same = same and np.array_equal(np.array(out["arm_targets"]["left"]), q)
+    finally:
+        sag_layer._sag_trim_step = real
+    ok = same and not calls and not np.any(layer.C["p"]) and not np.any(layer.C["r"])
+    return check("M264 (a) a staging command passes through unchanged; the trim does not integrate (300 staging commands)", ok,
+                 f"targets unchanged {same}; trim steps {len(calls)}; C zero {not np.any(layer.C['p'])}")
+
+
+def case_m264_b(model, data):
+    """M264 (b): a manipulation command integrates and is corrected exactly as the layer's own correct() does."""
+    a = SagLayer(model, data, "left", HOME)
+    ref = SagLayer(model, data, "left", HOME)
+    layers = {"left": a, "right": SagLayer(model, data, "right", np.asarray(TASK_CFG["home_q_right"], float))}
+    same, changed = True, False
+    for k in range(120):
+        q = source_targets(data, [0.03, 0.0, 0.01, 0, 0, 0, 0])
+        out = np.array(correct_command(layers, _arm_cmd(q, True), data, k * NOMINAL, NOMINAL)["arm_targets"]["left"])
+        exp = ref.correct(q, data, k * NOMINAL, NOMINAL)
+        same = same and np.allclose(out, exp, atol=1e-12)
+        changed = changed or not np.allclose(out, q)
+    ok = same and changed and np.any(a.C["p"])
+    return check("M264 (b) a manipulation command integrates and is corrected as the layer's own correction (120 commands)", ok,
+                 f"same as the layer's correction {same}; changed from the source {changed}; |C| {1000 * float(np.linalg.norm(a.C['p'])):.2f} mm")
+
+
+def case_m264_c(model, data):
+    """M264 (c): the trim is zero at the first manipulation command after a long run of staging commands: the first manipulation command gives
+    exactly the correction a fresh layer gives for that command (the takeover zeroes the trim the first time)."""
+    a = SagLayer(model, data, "left", HOME)
+    layers = {"left": a, "right": SagLayer(model, data, "right", np.asarray(TASK_CFG["home_q_right"], float))}
+    for k in range(60):                                  # a manipulation run that builds a large trim
+        correct_command(layers, _arm_cmd(source_targets(data, [0.04, 0.0, 0.0, 0, 0, 0, 0]), True), data, k * NOMINAL, NOMINAL)
+    built = 1000 * float(np.linalg.norm(a.C["p"]))
+    for k in range(60, 60 + 400):                        # a long run of staging commands
+        correct_command(layers, _arm_cmd(source_targets(data, [0.0, 0.0, 0.0, 0, 0, 0, 0]), False), data, k * NOMINAL, NOMINAL)
+    t0 = 460 * NOMINAL
+    q = source_targets(data, [0.01, 0.0, 0.0, 0, 0, 0, 0])
+    correct_command(layers, _arm_cmd(q, True), data, t0, NOMINAL)
+    fresh = SagLayer(model, data, "left", HOME)
+    fresh.correct(q, data, t0, NOMINAL)                  # the trim: one step from zero, as a fresh layer gives it
+    ok = np.allclose(a.C["p"], fresh.C["p"], atol=1e-15) and np.allclose(a.C["r"], fresh.C["r"], atol=1e-15) and a.manip_active \
+        and any(e["kind"] == "takeover" for e in a.log)
+    return check("M264 (c) the trim is zero at the first manipulation command after a long staging run (takeover)", ok,
+                 f"trim before the takeover {built:.2f} mm; after the first manipulation command the trim equals a fresh layer's one step: {ok}")
+
+
 def main():
     model, data = robot()
-    results = [case_a(model, data), case_a_open(model, data), case_b(model, data), case_c(model, data), case_c_periodic(model, data), case_d(model, data), case_e(model, data), case_f(model, data), case_g(model, data), case_h(model, data), case_i(model, data)]
+    results = [case_a(model, data), case_a_open(model, data), case_b(model, data), case_c(model, data), case_c_periodic(model, data), case_d(model, data), case_e(model, data), case_f(model, data), case_g(model, data), case_h(model, data), case_i(model, data), case_m264_a(model, data), case_m264_b(model, data), case_m264_c(model, data)]
     print(f"{sum(results)} of {len(results)} passed")
     return 0 if all(results) else 1
 

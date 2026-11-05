@@ -61,27 +61,9 @@ from src.world_model import SimGroundTruthSource, WorldModel
 TRACE = {}                                              # logging only (freeze experiment part 2): per arm side, the last tick's label, reference pad position (before the trim), pad error, correction and freeze flag
 
 
-def _clip_norm(v, limit):
-    """Scales a vector down to at most `limit` in length."""
-    n = float(np.linalg.norm(v))
-    return v if n <= limit else v * (limit / n)
-
-
 # ----------------------------------------------------------------------------------------------------------
 # World model
 # ----------------------------------------------------------------------------------------------------------
-def _sag_trim_step(C, cfg, model, side, t, p_err, r_err, dt):
-    """One integral step of the sag correction C (position "p", rotation "r"): the one line that integrates it (M225, M226, M238).
-
-    p_err (m) and r_err (rad, a rotation vector) are the reference minus the measured pad pose. The correction does not integrate while a ramp of the held
-    mass runs on this side, rate or target ramp (M238): it keeps its value, and it still acts through the command.
-    """
-    if hmr.ramp_running(model, side, t):
-        return
-    C["p"] = _clip_norm(C["p"] + cfg["sag_gain_per_s"] * p_err * dt, cfg["sag_max_m"])
-    C["r"] = _clip_norm(C["r"] + cfg["sag_gain_per_s"] * r_err * dt, cfg["sag_max_rad"])
-
-
 def make_sim_world_model(model, data, task_cfg=TASK_CFG, beaker_cfg=BEAKER_CFG):
     """Builds the world model (the knowledge base) filled from the simulator's true state.
 
@@ -200,7 +182,6 @@ def make_scripted_manipulation(model, data, world, side, home_q, task_cfg=TASK_C
     home_q = np.asarray(home_q, float)
     gff_arm = ArmGravityFeedforward.from_model(model, sides=(side,))    # the arm's own gravity torque, for the handoff weight reading (M196)
     W = {"qd": None, "q": None, "tau": None}                 # the still-window buffers of the weight reading (M196)
-    C = {"p": np.zeros(3), "r": np.zeros(3)}
 
     S = {"steps": [], "i": 0, "t0": None, "error": None, "events": [], "started": False, "phase": "IDLE", "still": None, "grip": open_g, "ctx": {}, "ramp_k": 10 ** 9, "v_last": np.zeros(7)}
 
@@ -296,9 +277,6 @@ def make_scripted_manipulation(model, data, world, side, home_q, task_cfg=TASK_C
         else:
             S["q_prev"] = arm.q_cmd.copy() if cfg["skill_start_ramp"] else None      # M195: the command of the last tick, from which the ramp of the first tick of this skill starts
             arm.reset(data)
-        if cfg["sag_reset_at_skill_start"]:                  # M227: the correction is zeroed at a skill start only when this key is on (off: it carries over from the previous skill)
-            C["p"], C["r"] = np.zeros(3), np.zeros(3)
-            hmr.end_load_change(model, side)                 # a reset also clears the freeze (M226)
         S["v_last"] = np.zeros(7)
         if prim == "pick":                                    # M222: a pick starts with nothing in the hand: the mass ramps to 0 through the ramp module, no abrupt clear
             hmr.set_target(model, side, 0.0, data.time, S.get("tick", -1))
@@ -323,8 +301,6 @@ def make_scripted_manipulation(model, data, world, side, home_q, task_cfg=TASK_C
         S.update(i=0, t0=None, error=None, events=[], started=True, still=None)
         S["ctx"]["primitive"] = "recover"
         arm.reset(data)
-        C["p"], C["r"] = np.zeros(3), np.zeros(3)
-        hmr.end_load_change(model, side)                     # a reset also clears the freeze (M226)
         S["v_last"] = np.zeros(7)
         p, R0 = arm.pad_pose(data)
         a = forward()
@@ -354,15 +330,13 @@ def make_scripted_manipulation(model, data, world, side, home_q, task_cfg=TASK_C
         t = obs["time"]
         st = S["steps"][S["i"]]
         S["phase"] = st["name"]
-        TRACE[side] = {"tick": obs["tick"], "label": f"{S['ctx'].get('primitive')}: {st['name']}", "ref": None, "err": None, "C_p": C["p"].copy(), "C_r": C["r"].copy(), "frozen": hmr.is_load_changing(model, side, t),
+        TRACE[side] = {"tick": obs["tick"], "label": f"{S['ctx'].get('primitive')}: {st['name']}", "ref": None, "err": None, "frozen": hmr.is_load_changing(model, side, t),
                        "ramp": (None if hmr.RAMP.get(id(model), {}).get(side) is None else dict(hmr.RAMP[id(model)][side])), "grip": S.get("grip"), "meas": None, "rot_err_deg": None}
         if S["t0"] is None:
             S["t0"], S["still"] = t, None
             if st["kind"] == "move":
-                if cfg["restart_from_commanded"]:                   # M195: the reference starts where the command is (its pad pose, less the sag correction that is added back to every target), not at the measured pad pose
+                if cfg["restart_from_commanded"]:                   # M195: the reference starts where the command is (its pad pose), not at the measured pad pose
                     p0, R0 = commanded_pad_pose()
-                    p0 = p0 - C["p"]
-                    R0 = (Rotation.from_rotvec(C["r"]).inv() * Rotation.from_matrix(R0)).as_matrix()
                 else:
                     p0, R0 = arm.pad_pose(data)
                 T, dry = move_duration(arm, data, p0, R0, st["target"], st["R"], st["speed"], cfg, st["name"])
@@ -389,11 +363,10 @@ def make_scripted_manipulation(model, data, world, side, home_q, task_cfg=TASK_C
             TRACE[side]["ref"] = p_ref.copy()
             p_now, R_now = arm.pad_pose(data)                          # the measured pad pose: what the arm really does under the beaker's weight
             dt = obs["timestep"] * obs["steps_per_frame"]
-            _sag_trim_step(C, cfg, model, side, t, p_ref - p_now, Rotation.from_matrix(R_ref @ R_now.T).as_rotvec(), dt)
             TRACE[side]["meas"] = p_now.copy()
             TRACE[side]["rot_err_deg"] = float(np.degrees(np.linalg.norm(Rotation.from_matrix(R_ref @ R_now.T).as_rotvec())))
             try:
-                arm.step(data, p_ref + C["p"], (Rotation.from_rotvec(C["r"]) * Rotation.from_matrix(R_ref)).as_matrix())
+                arm.step(data, p_ref, R_ref)                       # the sag correction is a layer in the control loop now (M262, src/sag_layer.py)
             except mink.NoSolutionFound:
                 fail(f"{st['name']}: mink found no solution (joint limits or collision avoidance leave no motion)")
                 return None
@@ -443,9 +416,6 @@ def make_scripted_manipulation(model, data, world, side, home_q, task_cfg=TASK_C
                         return None
                     S["ctx"]["z_at_close"] = float(world.object_pose(S["ctx"]["obj"])["position"][2])
                 S["events"].append("gripper_closed" if closing else "gripper_opened")
-                if not closing:
-                    C["p"], C["r"] = np.zeros(3), np.zeros(3)      # the beaker's weight is off the arm
-                    hmr.end_load_change(model, side)               # a reset also clears the freeze (M226)
                 advance = True
             elif el > (cfg["close_timeout_s"] if closing else cfg["open_timeout_s"]):
                 fail(f"{st['name']}: the gripper did not stop within {el:.1f} s")

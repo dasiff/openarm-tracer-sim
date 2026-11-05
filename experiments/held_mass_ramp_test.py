@@ -40,7 +40,7 @@ import numpy as np                                    # noqa: E402
 
 from src import held_mass_ramp as hmr                # noqa: E402
 from src.gravity_ff import ArmGravityFeedforward, held_pad_z_per_kg  # noqa: E402
-from src.mpvi_modules import _sag_trim_step           # noqa: E402
+from src.sag_layer import _sag_trim_step              # noqa: E402  (M262: the trim moved to the control loop's layer)
 from src.rate_limit import min_jerk                  # noqa: E402
 from src.run_record import load_recording            # noqa: E402
 from src.replay import build_model                   # noqa: E402

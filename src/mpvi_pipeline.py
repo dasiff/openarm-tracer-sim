@@ -101,10 +101,14 @@ def make_pipeline_task(plan=BEAKER_ON_HOTPLATE_PLAN, task_cfg=TASK_CFG, staging_
         return ok and finished, {**diag, "plan_finished": finished}
 
     task.update(make_policy=make_policy, check_success=check_success, pipeline=built)
+    # the loop's settings this pipeline needs (read by experiments/demo_video.py): the sag layer's posture targets (M262), for every source
+    loop_cfg = {"sag_home_q": {arm_: task_cfg[f"home_q_{arm_}"] for arm_ in ("left", "right")}}
     if manipulation == "mock":
-        # the sources the loop adds after the policy, and the routes the auto mode needs (both read by experiments/demo_video.py)
+        # the sources the loop adds after the policy, and the routes the auto mode needs
         task.update(extra_sources=lambda model, data: {"vla": mock_box["source"]},
-                    loop_cfg={"auto_routes": {"arms.left": ("policy", "vla"), "gripper.left": ("policy", "vla")}})
+                    loop_cfg={**loop_cfg, "auto_routes": {"arms.left": ("policy", "vla"), "gripper.left": ("policy", "vla")}})
+    else:
+        task.update(loop_cfg=loop_cfg)
     place_deg = next((seg["place_theta_deg"] for seg in tagged["segments"] if seg.get("primitive") == "place" and seg.get("place_theta_deg") is not None), None)
     first = (stance_report.get("chosen") or {})
     panel = {"instruction": instruction, "steps": [seg["description"] for seg in tagged["segments"]],      # what the status panel shows (src/viewer_layout.panel_from_status); the same text in the live window and the video

@@ -16,6 +16,7 @@ Contents:
 """
 
 from src.mpvi_modules import make_oracle_checker, make_scripted_manipulation, make_scripted_navigation, make_sim_world_model
+from src.mock_policy import MockPolicy, make_mock_manipulation, make_mock_source
 from src.grounding import make_grounder, make_operator, make_search_stub
 from src.mpvi_plan import BEAKER_ON_HOTPLATE_PLAN
 from src.mpvi_postprocess import postprocess
@@ -27,7 +28,7 @@ from src.task_config import EPISODE_CFG, PICK_PLACE_CFG, SUCCESS_CFG, STAGING_CF
 
 
 def make_pipeline_task(plan=BEAKER_ON_HOTPLATE_PLAN, task_cfg=TASK_CFG, staging_cfg=STAGING_CFG, episode_cfg=EPISODE_CFG, success_cfg=SUCCESS_CFG, arm="left",
-                       operator=None, search=None, stop_on_disagreement=False, checker="oracle", vlm_caller=None, drop_monitor=True, orch_cfg=None, grip_force=None, module_hook=None, instruction=None):
+                       operator=None, search=None, stop_on_disagreement=False, checker="oracle", vlm_caller=None, drop_monitor=True, orch_cfg=None, grip_force=None, module_hook=None, instruction=None, manipulation="scripted"):
     """Packages the pipeline as a task for the generic episode runner.
 
     Args:
@@ -46,12 +47,17 @@ def make_pipeline_task(plan=BEAKER_ON_HOTPLATE_PLAN, task_cfg=TASK_CFG, staging_
         orch_cfg (dict or None): The orchestrator's failure settings (ORCH_CFG: retry_max, knocked_over_deg). Defaults to ORCH_CFG.
         grip_force (float or None): Overrides the grip force per finger, newtons, for a test (the forced slip test); None uses the grip force table (GRIP_FORCE_TABLE is never changed).
         instruction (str or None): The typed instruction the plan was made from; shown in the viewer's status panel and the demo video (task["meta"]["panel"]). Defaults to None (not shown).
+        manipulation (str): "scripted" (the scripted pick and place drive the arm, as before) or "mock" (the mock policy of src/mock_policy.py drives the arm and gripper
+            as a chunk source named "vla", routed for the left arm and gripper; the scripted module still plans). Defaults to "scripted".
         module_hook (callable or None): A test seam: module_hook(modules, model, data) -> modules, called on the module dictionary before the orchestrator is built (a test wraps a module to inject a failure).
 
     Returns:
         dict: The task (see src/episode_runner.py); task["pipeline"] is filled with the orchestrator and the modules when the policy is made.
     """
     built = {}
+    if manipulation not in ("scripted", "mock"):
+        raise ValueError(f"manipulation is 'scripted' or 'mock', not {manipulation!r}")
+    mock_box = {}                                        # M260: the mock source, made with the policy
     use_vlm = checker == "vlm"
     if checker not in ("oracle", "vlm") or (use_vlm and vlm_caller is None):
         raise ValueError("checker is 'oracle' or 'vlm' (the latter needs vlm_caller)")
@@ -75,6 +81,10 @@ def make_pipeline_task(plan=BEAKER_ON_HOTPLATE_PLAN, task_cfg=TASK_CFG, staging_
         grounder = make_grounder(world, search or make_search_stub(), op, arm)
         monitors = ([make_drop_monitor(model, oracle, arm)] if drop_monitor else []) + [make_carry_slice_monitor(model, data, manip, arm)]       # the carry slice monitor logs the carry of every episode (M180)
         modules = {"navigation": nav, "manipulation": manip, "checker": checker, "world": world, "grounder": grounder, "monitors": monitors, "operator": op}
+        if manipulation == "mock":                          # M260: the mock stands where the openpi client will sit (a chunk source; the planner is the scripted module)
+            mock = MockPolicy(model, data, arm, task_cfg[f"home_q_{arm}"], force=grip_force)
+            modules["manipulation"] = make_mock_manipulation(manip, mock, world, data)
+            mock_box["source"] = make_mock_source(model, data, mock, world)
         if module_hook is not None:
             modules = module_hook(modules, model, data)
         orch = make_orchestrator(tagged, modules, orch_cfg)
@@ -90,6 +100,10 @@ def make_pipeline_task(plan=BEAKER_ON_HOTPLATE_PLAN, task_cfg=TASK_CFG, staging_
         return ok and finished, {**diag, "plan_finished": finished}
 
     task.update(make_policy=make_policy, check_success=check_success, pipeline=built)
+    if manipulation == "mock":
+        # the sources the loop adds after the policy, and the routes the auto mode needs (both read by experiments/demo_video.py)
+        task.update(extra_sources=lambda model, data: {"vla": mock_box["source"]},
+                    loop_cfg={"auto_routes": {"arms.left": ("policy", "vla"), "gripper.left": ("policy", "vla")}})
     place_deg = next((seg["place_theta_deg"] for seg in tagged["segments"] if seg.get("primitive") == "place" and seg.get("place_theta_deg") is not None), None)
     first = (stance_report.get("chosen") or {})
     panel = {"instruction": instruction, "steps": [seg["description"] for seg in tagged["segments"]],      # what the status panel shows (src/viewer_layout.panel_from_status); the same text in the live window and the video

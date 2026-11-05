@@ -803,6 +803,8 @@ def run_loop(model, data, sources, cfg, viewer=None, logger=None):
                 teleop["disable"]()
         routes.clear()
         routes.update(ctl["tables"]["teleop"] if new == "teleop" else {k: auto_src for k in ROUTE_KEYS})
+        if new == "auto":
+            routes.update(cfg.get("auto_routes", {}))         # M260: fields that a second source also owns (the mock policy takes the arm and gripper)
         if new == "teleop" and teleop is not None and routes["arms.left"] == "teleop":
             teleop["enable"]()
         ctl.update(mode=new, ramp=True, note=reason if cause == "policy_request" else None, requested=cause == "policy_request", responded=False)

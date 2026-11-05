@@ -498,7 +498,7 @@ def make_scripted_manipulation(model, data, world, side, home_q, task_cfg=TASK_C
         ev, S["events"] = S["events"], []
         return ev
 
-    return {"name": "scripted manipulation", "start": start, "step": step, "done": done, "error": lambda: S["error"], "phase": lambda: S["phase"], "events": pop_events,
+    return {"name": "scripted manipulation", "start": start, "step": step, "done": done, "plan": lambda: S["steps"], "error": lambda: S["error"], "phase": lambda: S["phase"], "events": pop_events,
             "resume": lambda: None, "report": lambda: {"steps_done": S["i"], "error": S["error"], "task_text": S["ctx"].get("task_text"), "lift_rise_m": S["ctx"].get("lift_rise_m")}, "end_report": end_report, "recover": recover, "side": side, "pad_pose": lambda: arm.pad_pose(data), "arm": arm, "state": S}
 
 

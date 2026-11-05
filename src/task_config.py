@@ -697,3 +697,16 @@ BEAKER_GRAVITY_CFG = {
     # Weighing and the held-mass ramp state keep running either way. [row M254]
     "enabled": True,
 }
+
+# Mock policy (M260, David, Nov 4-5, 2026): a stand-in for the openpi pi0.5 VLA, at the interface the real client will use (src/mock_policy.py).
+MOCK_POLICY_CFG = {
+    # Steps in one chunk (the policy's future commands). Design plan section 7.3: the policy returns 50 future commands. The harness plays
+    # CHUNK_CFG["play_count"] of them and asks again. The mock always returns a full chunk (short plans are padded with the final hold pose).
+    "chunk_len": 50,
+    # Physics pauses while the policy thinks (design plan section 7.3, default on). In this synchronous simulation a query takes no
+    # simulated time, so the setting changes nothing here; a live client would need it. Recorded, not built.
+    "pause_physics_while_thinking": True,
+    # PROVISIONAL, SIM-ONLY PLACEHOLDER. The gripper value of fully open on the 0 to 1 scale the policy uses (the adapter maps the value to
+    # finger travel by this many metres). 1 = open, 0 = closed, is an assumption; the direction convention is NEEDS DECISION (David).
+    "gripper_open_value": 1.0,
+}

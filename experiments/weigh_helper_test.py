@@ -24,7 +24,7 @@ from src.weigh_helper import LIFT, SETTLE, STILL, WeighHelper  # noqa: E402
 DT = 1.0 / 150.0
 HPZ = 0.09                                           # hand height per kilogram for the synthetic cases (m/kg)
 CLOSE = {"position": 0.0, "max_force": 8.0}
-BASELINE = os.path.join(REPO, "experiments", "baselines", "held_200g_20261104", "liftoff_ticks.csv")
+BASELINE = os.path.join(REPO, "experiments", "baselines", "retired", "held_200g_20261104", "liftoff_ticks.csv")   # the old-code run (a560eb6), retired Nov 4
 RUN_LOG = os.path.join(REPO, "data", "logs")
 
 

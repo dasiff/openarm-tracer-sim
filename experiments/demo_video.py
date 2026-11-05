@@ -93,8 +93,10 @@ def record_only(args):
     caller = GeminiCaller(mode="cache_only")
     plan = make_llm_planner(caller.bind("plan", LLM_CFG["planner_prompt_version"]))(args.instruction)
     sim = load_task(MOVED, cameras=True)
-    task = make_pipeline_task(plan, task_cfg=MOVED, stop_on_disagreement=True, checker="oracle", instruction=args.instruction)
-    s = run_episode(task, sim.model, sim.data, out_dir=out / "episode", record_dir=out / "recording", loop_cfg=loop_cfg_for(args))
+    manip = getattr(args, "manipulation", "scripted")                 # M260: "mock" makes the mock policy the arm and gripper source
+    task = make_pipeline_task(plan, task_cfg=MOVED, stop_on_disagreement=True, checker="oracle", instruction=args.instruction, manipulation=manip)
+    loop = {**(task.get("loop_cfg") or {}), **(loop_cfg_for(args) or {})}
+    s = run_episode(task, sim.model, sim.data, out_dir=out / "episode", record_dir=out / "recording", loop_cfg=loop, extra_sources=task.get("extra_sources"))
     state = task["pipeline"]["orchestrator"]["state"]
     print(f"outcome {s['outcome']}; plan failure {state['failure']}; status {state['status']}", flush=True)
     return 0 if s["outcome"] == "SUCCESS" else 1
@@ -156,5 +158,6 @@ if __name__ == "__main__":
     ap.add_argument("--hz", type=int, default=30, help="video frames per simulated second (a whole divisor of the physics rate)")
     ap.add_argument("--name", default="demo_moved")
     ap.add_argument("--no-bridge", action="store_true", help="run without the command bridge (the real arms' command limits, COMMAND_BRIDGE_CFG; ON by default here, as for D3)")
+    ap.add_argument("--manipulation", choices=["scripted", "mock"], default="scripted", help="the arm and gripper source: the scripted pick and place (default) or the mock policy (M260; --record-only only)")
     ap.add_argument("--record-only", metavar="DIR", help="run the episode and keep its recording in DIR (data/demo_record/...); make no video, no files in data/videos (for measurements and panel screenshots)")
     sys.exit(main(ap.parse_args()))

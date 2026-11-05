@@ -105,6 +105,7 @@ from src.weigh_helper import WeighHelper                         # M258: weighs 
 from src.sag_layer import MANIPULATION_SOURCES, SAG_TRACE, SagLayer, correct_command                    # M262: the sag trim, a layer between the source and the bridge (always on); M264: it acts on the manipulation source only
 from src.task_config import PICK_PLACE_CFG                       # M258: the weighing's values (liftoff_*, settle_*)
 from src.task_config import CHUNK_CFG
+from src.elbow_guard import ElbowGuard                        # M265: the elbow height guard, clamps the arm targets (ctrl_block)
 
 # Servo control signal logging for diagnostic extraction (Task 3): stores per-tick tau_cmd and tau_ff
 # Populated during run, read by extraction script via module introspection
@@ -456,6 +457,10 @@ def run_loop(model, data, sources, cfg, viewer=None, logger=None):
         frac = np.clip((ramp_k[None, :] + steps_axis) / ramp_len[None, :], 0.0, 1.0)
         block = np.where(frac >= 1.0, hold_qpos_targets[None, :], ramp_from[None, :] + (hold_qpos_targets - ramp_from)[None, :] * frac)
         block = np.where(is_pos[None, :], block, 0.0)
+        for k in range(block.shape[0]):                      # M265: the elbow guard clamps each physics step's arm targets (measured pose at the tick's start)
+            safe = elbow_guard.clamp(data.qpos, {s: block[k, arm_act[s]] for s in sides}, block[k, ped_aid])
+            for s in sides:
+                block[k, arm_act[s]] = safe[s]
         ramp_k[:] += steps_per_frame
         last_ctrl = block[-1].copy()
         return block
@@ -601,6 +606,7 @@ def run_loop(model, data, sources, cfg, viewer=None, logger=None):
     # --- M262: the sag trim, one layer per arm (always on). Its posture target is cfg["sag_home_q"] (side -> 7 radians), else the joints at the start ---
     sag_home = cfg.get("sag_home_q") or {}
     sag = {s: SagLayer(model, data, s, sag_home[s] if s in sag_home else data.qpos[arm_qadr[s]].copy()) for s in sides}
+    elbow_guard = ElbowGuard(model, sides, arm_qadr, ped_qadr)     # M265: the elbow joint centre stays above ELBOW_GUARD_CFG["min_joint_z_m"]
     # --- M258: the weighing helper (one per hand, always on): the pad centre is the robot's own kinematics (the same point as the script's pad) ---
     def pad_point(s):
         tcp, pad = gff.pads[s]

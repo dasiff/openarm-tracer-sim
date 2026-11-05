@@ -721,3 +721,21 @@ SAG_LAYER_CFG = {
     # the layer passes the source's joint targets through unchanged, so the arm gets no sag correction. [row M262]
     "enabled": True,
 }
+
+# ----------------------------------------------------------------------------------------------------------
+# Elbow height guard (M265, David, Nov 5, 2026): the elbow joint centre of each arm must stay above a minimum world z. src/elbow_guard.py clamps
+# the arm targets in the control loop when a target would put it lower. The minimum is the bench top plus the housing below the joint plus two
+# allowances: 0.960 + 0.1188 + 0.012 + 0.014 = 1.1048 m.
+# ----------------------------------------------------------------------------------------------------------
+ELBOW_GUARD_CFG = {
+    # Plain on/off switch, no unit. True (default): the clamp runs on every arm target of every source. False: no clamp (experiment only). [row M265]
+    "enabled": True,
+    # The minimum world z of the elbow joint centre (the origin of openarm_<side>_link4), metres. Built from the parts below (the sum is
+    # exact). The housing below the joint (0.1188 m, the elbow link's true lowest point, report 20261105_1647) is inside this number, so the
+    # guard checks the joint centre only. [row M265]
+    "min_joint_z_m": round(0.960 + 0.1188 + 0.012 + 0.014, 4),
+    "table_top_z_m": 0.960,         # metres, world z of the bench top the elbow must clear (the bench top's surface, task_config.py scene). [row M265]
+    "housing_m": 0.1188,            # metres, the elbow link's lowest point below the joint centre (sphere bound, report 20261105_1647). [row M265]
+    "allowance_m": 0.012,           # metres, for 1 degree of base tilt and 5 mm of sag together (the assumed values; not measured, report 20261105_1700). [row M265]
+    "margin_m": 0.014,              # metres, the safety margin David set on Nov 5, 2026 (the one judgement number of the rule). [row M265]
+}

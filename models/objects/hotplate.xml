@@ -6,11 +6,12 @@
   Base 180 x 180 x 60 mm in dark grey, thin top plate 150 x 150 x 8 mm in a saturated orange so it
   stands out against the dark bench top and the translucent beaker. The top surface is 68 mm above
   the bench top. Site "hotplate_top" is at the centre of that top surface.
-  pos is the default placement (z = bench top, 0.96); src/task_config.py is the source of truth.
+  The body has no pos: its position is set at load from TASK_CFG (hotplate_xy in src/task_config.py, by
+  apply_task_poses in src/task_beaker_hotplate.py), at the bench top height.
 -->
 <mujoco>
   <worldbody>
-    <body name="task_hotplate" pos="0.80 0.66 0.96">
+    <body name="task_hotplate">
       <geom name="task_hotplate_base" type="box" size="0.09 0.09 0.03" pos="0 0 0.03"
             rgba="0.30 0.30 0.33 1" friction="1.0 0.005 0.0001"/>
       <geom name="task_hotplate_top_plate" type="box" size="0.075 0.075 0.004" pos="0 0 0.064"

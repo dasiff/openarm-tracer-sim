@@ -13,13 +13,13 @@
   in total (7 mm a side), above the 10 mm minimum.
 
   The body origin is the bottom centre, so the "beaker_base" site sits at the body origin and the
-  beaker rests with its body z equal to the surface height. The pos below is only the default
-  placement; src/task_config.py is the source of truth and overwrites it at load.
+  beaker rests with its body z equal to the surface height. The body has no pos: its position is set
+  at load from TASK_CFG (beaker_xy in src/task_config.py, by apply_task_poses in src/task_beaker_hotplate.py).
   Named task_beaker so it does not collide with the old 9 cm "beaker" of chemistry_lab_combined.xml.
 -->
 <mujoco>
   <worldbody>
-    <body name="task_beaker" pos="1.00 0.66 0.962">
+    <body name="task_beaker">
       <freejoint name="task_beaker_free"/>
       <geom name="task_beaker_glass" type="cylinder" size="0.035 0.05" pos="0 0 0.05" mass="0.2"
             friction="1.0 0.005 0.0001" rgba="0.55 0.85 0.95 0.45"/>

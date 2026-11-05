@@ -48,6 +48,7 @@ from src import held_mass_ramp as hmr
 from src.gravity_ff import ArmGravityFeedforward
 from src.mink_arm import MinkArm, pad_rotation
 from src.rate_limit import min_jerk
+from src.sag_layer import PLAN_TRACE            # logging only: the step label and the planned pad pose of this tick (the sag layer's trace)
 from src.robot_helpers import arm_ids
 from src.staging_source import make_staging_source
 from src.task_beaker_hotplate import bench_top_z, check_success
@@ -332,6 +333,7 @@ def make_scripted_manipulation(model, data, world, side, home_q, task_cfg=TASK_C
         S["phase"] = st["name"]
         TRACE[side] = {"tick": obs["tick"], "label": f"{S['ctx'].get('primitive')}: {st['name']}", "ref": None, "err": None, "frozen": hmr.is_load_changing(model, side, t),
                        "ramp": (None if hmr.RAMP.get(id(model), {}).get(side) is None else dict(hmr.RAMP[id(model)][side])), "grip": S.get("grip"), "meas": None, "rot_err_deg": None}
+        PLAN_TRACE[side] = {"label": TRACE[side]["label"], "p": None, "R": None}                 # logging only (M263)
         if S["t0"] is None:
             S["t0"], S["still"] = t, None
             if st["kind"] == "move":
@@ -361,6 +363,7 @@ def make_scripted_manipulation(model, data, world, side, home_q, task_cfg=TASK_C
                 p_ref = st["p0"] + (st["target"] - st["p0"]) * s
             R_ref = st["slerp"](s).as_matrix()
             TRACE[side]["ref"] = p_ref.copy()
+            PLAN_TRACE[side].update(p=p_ref.copy(), R=R_ref.copy())                             # logging only (M263)
             p_now, R_now = arm.pad_pose(data)                          # the measured pad pose: what the arm really does under the beaker's weight
             dt = obs["timestep"] * obs["steps_per_frame"]
             TRACE[side]["meas"] = p_now.copy()

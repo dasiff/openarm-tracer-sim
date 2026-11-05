@@ -22,6 +22,7 @@ import mujoco
 import numpy as np
 
 from src import held_mass_ramp as hmr
+from src import sag_layer
 from src.gripper_geometry import gripper_frame
 from src.rate_limit import min_jerk
 from src.robot_helpers import arm_ids
@@ -47,6 +48,7 @@ def columns():
         # stage 1b, log only: the raw condition flags, the holding verdict, hand speed and acceleration, and the still verdict
         cols += [f"{s}_squeeze_ok", f"{s}_closure_in_range", f"{s}_holding_verdict", f"{s}_hand_speed_m_s", f"{s}_hand_accel_m_s2",
                  f"{s}_speed_below_limit", f"{s}_still_verdict"]
+        cols += [f"{s}_sag_{c}" for c in sag_layer.TRACE_COLUMNS]                  # M263, log only: the sag layer's label, planned pose, reference, correction, resets, guard count
     for s in SIDES:
         cols += [f"sim_only_{s}_pad_contact_z_N"]
     cols += ["sim_only_beaker_bench_contacts"]
@@ -154,6 +156,8 @@ class SignalTrace:
             row += [f"{data.qpos[q]:.9f}" for q in qadr] + [f"{data.qvel[v]:.9f}" for v in vadr]
             row += [f"{_held_mass(m, s, t):.9f}"]
             row += self._verdicts(s, t, dt, force, float(data.qpos[fq[0]]), pad_w)
+            layer = sag_layer.SAG_LAYERS.get(s)
+            row += layer.trace_values(t) if layer is not None else [""] * len(sag_layer.TRACE_COLUMNS)
         z, bench = self._pad_contacts(data)
         row += [f"{z[s]:.9f}" for s in SIDES] + [bench]
         self.writer.writerow(row)

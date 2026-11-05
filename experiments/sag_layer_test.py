@@ -20,6 +20,7 @@ from src import held_mass_ramp as hmr  # noqa: E402
 from src import sag_layer  # noqa: E402
 from src.robot_helpers import arm_ids  # noqa: E402
 from src.sag_layer import SagLayer  # noqa: E402
+import src.sag_layer as sag_layer  # noqa: E402
 from src.task_config import PICK_PLACE_CFG, SAG_LAYER_CFG, TASK_CFG  # noqa: E402
 
 HOME = np.asarray(TASK_CFG["home_q_left"], float)
@@ -79,7 +80,7 @@ def case_a(model, data):
     for t_, p_err, r_err, dt in recorded:
         old(C_old, PICK_PLACE_CFG, model, "left", t_, p_err, r_err, dt)
     ok = np.array_equal(layer.C["p"], C_old["p"]) and np.array_equal(layer.C["r"], C_old["r"]) and len(recorded) == 200
-    return check("(a) the layer's correction equals the old in-script trim for the same input sequence (200 commands)", ok,
+    return check("(S1) the layer's correction equals the old in-script trim for the same input sequence (200 commands)", ok,
                  f"correction p {np.round(1000 * layer.C['p'], 4)} mm (old {np.round(1000 * C_old['p'], 4)}), identical: {ok}")
 
 
@@ -101,7 +102,7 @@ def case_b(model, data):
     resumed = not np.array_equal(layer.C["p"], before)
     hmr.reset(model)
     ok = frozen and resumed
-    return check("(b) frozen during a held-mass ramp, integrating again after it", ok, f"frozen during the ramp: {frozen}; resumed after: {resumed}")
+    return check("(S2) frozen during a held-mass ramp, integrating again after it", ok, f"frozen during the ramp: {frozen}; resumed after: {resumed}")
 
 
 def case_c(model, data):
@@ -127,7 +128,7 @@ def case_c(model, data):
     finally:
         sag_layer._sag_trim_step = real
     ok = np.array_equal(held, held) and seen_dt == [NOMINAL] and abs(layer.C["p"] - held).max() < 0.01
-    return check("(c) holds its value during a helper pause; the first command after the pause integrates one nominal period", ok,
+    return check("(S3) holds its value during a helper pause; the first command after the pause integrates one nominal period", ok,
                  f"integration step after a 5 s pause {seen_dt[0]:.6f} s (nominal {NOMINAL:.6f} s)")
 
 
@@ -142,12 +143,12 @@ def case_d(model, data):
     finally:
         SAG_LAYER_CFG["enabled"] = True
     ok = np.array_equal(out, q) and np.array_equal(out2, q) and not np.any(layer.C["p"]) and not np.any(layer.C["r"])
-    return check("(d) the setting OFF passes the targets through unchanged; nothing is integrated", ok, f"targets unchanged: {np.array_equal(out, q)}")
+    return check("(S4) the setting OFF passes the targets through unchanged; nothing is integrated", ok, f"targets unchanged: {np.array_equal(out, q)}")
 
 
 def case_e(model, data):
-    """The reset rules the loop can see: the gripper-open completion resets the trim and clears the freeze flag (after close_min_s, by the stall
-    test); a time before the minimum does not; nothing else resets it (a skill start or a recovery is not visible to the loop)."""
+    """The reset rule (M263): the open-catch release arms the watch, and the trim is reset when the release completes (the fingers at rest, at
+    least close_min_s after the release). Before close_min_s nothing resets; without a release nothing resets."""
     layer = SagLayer(model, data, "left", HOME)
     layer.C["p"][:] = [0.001, 0.002, 0.003]
     layer.C["r"][:] = [0.01, 0.0, 0.0]
@@ -159,22 +160,76 @@ def case_e(model, data):
     fq = int(model.jnt_qposadr[ids["finger_jnt"][0]])
     data.qpos[fq] = sag_layer.TASK_OPEN                  # the fingers are open and at rest
     data.qvel[:] = 0.0
-    layer.start_open(0.0)
+    layer.release_open(0.0)
     layer.track_open(data, 0.5)                          # before close_min_s: no reset
     early = layer.C["p"].copy()
-    layer.track_open(data, 1.6)                          # stalled for 0.3 s and past close_min_s: the reset
-    reset_ok = not np.any(layer.C["p"]) and not np.any(layer.C["r"]) and rec["changing"] is False
-    kept_before_open = SagLayer(model, data, "left", HOME)
-    kept_before_open.C["p"][:] = [0.004, 0.0, 0.0]
-    for k in range(50):
-        kept_before_open.correct(source_targets(data, [0, 0, 0, 0, 0, 0, 0]), data, 0.0 + k * NOMINAL, NOMINAL)
-    no_reset_without_open = bool(np.any(kept_before_open.C["p"]))
-    ok = bool(np.array_equal(early, np.array([0.001, 0.002, 0.003]))) and reset_ok and no_reset_without_open
+    layer.track_open(data, 1.6)                          # stalled and past close_min_s: the reset
+    reset_ok = not np.any(layer.C["p"]) and not np.any(layer.C["r"]) and rec["changing"] is False and layer.reset_at is not None and layer.reset_at[1] == "release_open_done"
+    kept = bool(np.array_equal(early, np.array([0.001, 0.002, 0.003])))
     hmr.reset(model)
     data.qpos[fq] = 0.0
-    return check("(e) reset rules the loop can see: the gripper-open completion (stall and close_min_s) resets the trim and clears the freeze; no other reset", ok,
-                 f"before close_min_s kept {bool(np.array_equal(early, np.array([0.001, 0.002, 0.003])))}; reset at open {reset_ok}; "
-                 f"kept without an open event {no_reset_without_open}")
+    ok = kept and reset_ok
+    return check("(b) reset rule: the release arms the watch; nothing resets before close_min_s; the reset comes when the release completes", ok,
+                 f"kept before close_min_s {kept}; reset at completion {reset_ok}")
+
+
+def case_g(model, data):
+    """A release that completes is one reset: after it, the watch is not armed again by the layer (only a new release arms it)."""
+    layer = SagLayer(model, data, "left", HOME)
+    layer.C["p"][:] = [0.004, 0.0, 0.0]
+    ids = arm_ids(model, "left")
+    fq = int(model.jnt_qposadr[ids["finger_jnt"][0]])
+    data.qpos[fq] = sag_layer.TASK_OPEN
+    data.qvel[:] = 0.0
+    layer.release_open(0.0)
+    t = 0.0
+    while layer.reset_at is None and t < 5.0:            # the release completes after the stall dwell and close_min_s
+        t += NOMINAL
+        layer.track_open(data, t)
+    first = layer.reset_at is not None
+    layer.C["p"][:] = [0.002, 0.0, 0.0]                  # the trim builds again after the reset
+    for k in range(200):
+        t += NOMINAL
+        layer.track_open(data, t)                        # 200 ticks with the fingers open at rest, no release
+    ok = first and bool(np.array_equal(layer.C["p"], np.array([0.002, 0.0, 0.0]))) and sum(1 for e in layer.log if e["kind"] == "release_reset") == 1
+    return check("(g) one release, one reset: no second reset without a new release", ok, f"correction kept after the first reset: {ok}")
+
+
+def case_h(model, data):
+    """Logging only (M263): the trace values have the declared length, the reset and the guard counter appear in them, and the signal trace header
+    has the sag columns in the same order as its rows (per hand, after the verdicts)."""
+    from src import signal_trace
+    layer = SagLayer(model, data, "left", HOME)
+    sag_layer.PLAN_TRACE["left"] = {"label": "pick: OVER", "p": layer.arm.pad_pose(data)[0], "R": layer.arm.pad_pose(data)[1]}
+    q = source_targets(data, [0.01, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
+    layer.correct(q, data, 0.0, NOMINAL)
+    layer.correct(q, data, 0.0, NOMINAL)                 # the same tick again: the guard fires
+    vals = layer.trace_values(NOMINAL)                  # the row written at the start of the next tick: it shows the previous tick
+    cols = signal_trace.columns()
+    width_ok = len(vals) == len(sag_layer.TRACE_COLUMNS) and vals[0] == "pick: OVER" and vals[-1] == "1"
+    left_at = cols.index("left_sag_label")
+    right_at = cols.index("right_sag_label")
+    order_ok = left_at == cols.index("left_still_verdict") + 1 and right_at == cols.index("right_still_verdict") + 1 and cols.index("right_finger1_m") == left_at + len(sag_layer.TRACE_COLUMNS)
+    layer.track_open(data, 0.0)                          # nothing armed: no reset value
+    layer.reset_at = (0.5, "release_open_done")
+    reset_value = layer.trace_values(0.5 + NOMINAL)[sag_layer.TRACE_COLUMNS.index("reset")] == "release_open_done"
+    reset_once = layer.trace_values(0.5 + 3 * NOMINAL)[sag_layer.TRACE_COLUMNS.index("reset")] == ""
+    ok = width_ok and order_ok and reset_value and reset_once
+    sag_layer.PLAN_TRACE.pop("left", None)
+    return check("(d) logging: the trace values and header columns are written; the guard counter and the reset cause appear", ok,
+                 f"values {len(vals)} of {len(sag_layer.TRACE_COLUMNS)}; guard counter {vals[-1]}; header order {order_ok}; reset cause {reset_value}")
+
+
+def case_i(model, data):
+    """Wiring check (M263): the ordinary gripper-open command in the control loop no longer arms the watch; only the release does (the call
+    sites in src/control_loop.py: the release callback calls release_open, and the sag correction does not)."""
+    text = open(os.path.join(REPO, "src", "control_loop.py"), encoding="utf-8").read()
+    a = text.index("    def sag_correct(cmd):")
+    b = text.index("    def bridge_take(cmd):")
+    body = text[a:b]
+    ok = "release_open" not in body and "start_open" not in body and text.count("sag[s_].release_open(t)") == 1 and text.count("start_open") == 0
+    return check("(i) wiring: only the open-catch release arms the watch (sag_correct does not; one release call site)", ok,
+                 f"release call sites {text.count('sag[s_].release_open(t)')}; sag_correct arms the watch: {('release_open' in body) or ('start_open' in body)}")
 
 
 def case_f(model, data):
@@ -185,13 +240,46 @@ def case_f(model, data):
     again = layer.correct(q, data, 0.0, NOMINAL)
     nxt = layer.correct(q, data, NOMINAL, NOMINAL)
     ok = bool(np.all(np.isfinite(again)) and np.array_equal(again, first) and np.all(np.isfinite(nxt)))
-    return check("(f) two commands in one tick: no integration on the second, outputs stay finite", ok,
+    return check("(S5) two commands in one tick: no integration on the second, outputs stay finite", ok,
                  f"second command equals the first: {np.array_equal(again, first)}; later output finite: {bool(np.all(np.isfinite(nxt)))}")
+
+
+def case_a_open(model, data):
+    """(a) no reset on an ordinary gripper-open command: the fingers open at rest, the trim kept, and no release call (only the release arms it)."""
+    layer = SagLayer(model, data, "left", HOME)
+    layer.C["p"][:] = [0.003, 0.0, 0.0]
+    ids = arm_ids(model, "left")
+    fq = int(model.jnt_qposadr[ids["finger_jnt"][0]])
+    data.qpos[fq] = sag_layer.TASK_OPEN
+    data.qvel[:] = 0.0
+    for k in range(30):
+        layer.track_open(data, k * NOMINAL)              # the loop's per-tick watch, with no release armed
+    ok = bool(np.array_equal(layer.C["p"], np.array([0.003, 0.0, 0.0]))) and layer.reset_at is None
+    return check("(a) no reset on an ordinary gripper-open command (no release, the fingers open at rest)", ok, f"correction kept {ok}")
+
+
+def case_c_periodic(model, data):
+    """(c) no periodic reset: 10 s of control ticks with the gripper open and at rest, no release, the trim integrating; no reset at all."""
+    layer = SagLayer(model, data, "left", HOME)
+    ids = arm_ids(model, "left")
+    fq = int(model.jnt_qposadr[ids["finger_jnt"][0]])
+    data.qpos[fq] = sag_layer.TASK_OPEN
+    data.qvel[:] = 0.0
+    t = 0.0
+    peak = 0.0
+    for k in range(int(10.0 / NOMINAL)):
+        layer.correct(source_targets(data, [0.03, 0.0, 0, 0, 0, 0, 0]), data, t, NOMINAL)
+        layer.track_open(data, t)
+        peak = max(peak, float(np.linalg.norm(layer.C["p"])))
+        t += NOMINAL
+    ok = layer.reset_at is None and not any(e["kind"] == "release_reset" for e in layer.log) and peak > 0.01 and float(np.linalg.norm(layer.C["p"])) > 0.01
+    return check("(c) no periodic reset over 10 s with the gripper open (the trim keeps integrating)", ok,
+                 f"resets {0 if layer.reset_at is None else 1}; peak |C| {1000 * peak:.2f} mm, final {1000 * float(np.linalg.norm(layer.C['p'])):.2f} mm")
 
 
 def main():
     model, data = robot()
-    results = [case_a(model, data), case_b(model, data), case_c(model, data), case_d(model, data), case_e(model, data), case_f(model, data)]
+    results = [case_a(model, data), case_a_open(model, data), case_b(model, data), case_c(model, data), case_c_periodic(model, data), case_d(model, data), case_e(model, data), case_f(model, data), case_g(model, data), case_h(model, data), case_i(model, data)]
     print(f"{sum(results)} of {len(results)} passed")
     return 0 if all(results) else 1
 

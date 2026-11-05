@@ -602,6 +602,7 @@ BENCH_STANCE_CFG = {
     # grasp point (the pre-grasp point is `hand_standoff_m` back from the grasp point along the approach direction) thickened by `arm_radius_m`. A bin whose chain meets any cylinder is removed.
     "obstacle_margin_m": 0.03,                  # m [row M170: David: start with 3 cm]
     "arm_radius_m": 0.06,                       # m, half the arm's cross-section (conservative: the forearm and hand are about 8 cm wide) [row M170 PENDING David: placeholder]
+    "world_margin_m": 0.03,                     # PROVISIONAL, m: the one global clearance margin of the world-model collision check (src/world_collision.py), started from obstacle_margin_m. It caps the clearance and gates nothing yet [row M271 PROVISIONAL: David 2026-11-05, value to be confirmed]
     "hand_standoff_m": 0.15,                    # m, how far behind the grasp point the hand's body reaches along the approach direction (conservative) [row M170 PENDING David: placeholder]
     # The robot-hides-target filter counts sample points on the object's surface that fall on the robot's silhouette in the eagle image (a stand-in for the finder's pixel count). The beaker's limit is 0 %
     # (STANCE_REQUIREMENTS["occlusion_max_hidden"]); a sampled share of exactly 0 is too brittle on a 1 cm grid (one sample on a pixel edge flips it), so this much is allowed on top of the limit.

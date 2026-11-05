@@ -67,7 +67,7 @@ if __name__ == "__main__":
     fc.chk.q_scene = q
     bxy = np.array(TASK_CFG["beaker_xy"], float)
     boxobj = {"id": "box", "outline": np.array([[bxy[0] - 0.06, bxy[1] - 0.06], [bxy[0] + 0.06, bxy[1] + 0.06]]), "height_range": (top, top + r)}
-    pts = task_points(m, fc.scene_data)
+    pts = task_points(m, fc.scene_data, TASK_CFG)
     for p in pts:
         if p["path"] == "grasp":
             p["p"][2] += r

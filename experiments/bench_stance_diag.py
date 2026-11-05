@@ -31,7 +31,7 @@ if __name__ == "__main__":
     n, t = bs.bench_frame(yaw)
     furn = FurnitureMap.from_model(m, mujoco.MjData(m), exclude_bodies=("task_beaker",))
     allmaps = bs.load_maps("data/reach_map", sides=("left",))
-    fpts = [dict(p, arm="left") for p in task_points(m, d)]
+    fpts = [dict(p, arm="left") for p in task_points(m, d, TASK_CFG)]
     FX, FY, FS = region_scores(fpts, allmaps, furn, rg, yaw, qs)
     fs = FS["left"]
     args = [float(v) for v in sys.argv[1:]]

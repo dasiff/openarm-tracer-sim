@@ -16,7 +16,7 @@ if __name__ == "__main__":
     last = json.load(open("data/bench_stance_last.json"))
     maps = bs.load_maps("data/reach_map")
     fc = FullCheck(maps=maps)
-    pts = task_points(fc.model, fc.scene_data)
+    pts = task_points(fc.model, fc.scene_data, TASK_CFG)
     yaw = TASK_CFG["staging_yaw"]
     for name in ("task_cfg", "best"):
         st = last[name]

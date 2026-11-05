@@ -57,7 +57,7 @@ if __name__ == "__main__":
         q[j + 2] += r
         fc.chk.q_scene = q
         box = {"id": "box", "outline": np.array([[bxy[0] - 0.06, bxy[1] - 0.06], [bxy[0] + 0.06, bxy[1] + 0.06]]), "height_range": (top, top + r)}
-        pts = task_points(m, fc.scene_data)
+        pts = task_points(m, fc.scene_data, TASK_CFG)
         for p in pts:
             if p["path"] == "grasp":
                 p["p"][2] += r

@@ -63,7 +63,7 @@ def main():
     print(f"peak resident set before the check's simulation: {rss():.0f} MB")
     fc = FullCheck(maps=maps)
     print(f"peak resident set with the check's own simulation and the reach maps loaded: {rss():.0f} MB")
-    pts = task_points(fc.model, fc.scene_data)
+    pts = task_points(fc.model, fc.scene_data, TASK_CFG)
     print(f"the check's own simulation loaded in {fc.load_seconds:.1f} s; {len(pts)} points; {len(maps)} reach maps")
 
     print("\n3b. the body distance does not depend on the arm joints a path check left behind (P3, M181)")

@@ -40,8 +40,7 @@ from src.mpvi_planner import make_llm_planner  # noqa: E402
 from src.task_beaker_hotplate import load_task  # noqa: E402
 from src.task_config import LLM_CFG, TASK_CFG  # noqa: E402
 
-SHIFT_X = -0.15
-MOVED = {**TASK_CFG, "beaker_xy": (TASK_CFG["beaker_xy"][0] + SHIFT_X, TASK_CFG["beaker_xy"][1]), "hotplate_xy": (TASK_CFG["hotplate_xy"][0] + SHIFT_X, TASK_CFG["hotplate_xy"][1])}
+MOVED = {**TASK_CFG, "beaker_xy": (TASK_CFG["beaker_xy"][0] + TASK_CFG["moved_shift_x_m"], TASK_CFG["beaker_xy"][1]), "hotplate_xy": (TASK_CFG["hotplate_xy"][0] + TASK_CFG["moved_shift_x_m"], TASK_CFG["hotplate_xy"][1])}
 
 
 # The phases before the robot moves (these happen in wall time before the episode, so the video holds the first picture while the panel says what is going on): seconds held, plan rows shown or not.

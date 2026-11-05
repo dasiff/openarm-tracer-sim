@@ -1,7 +1,7 @@
 """The FULL CHECK of a stance candidate, sped up (overnight queue 2026-10-22, stage 1; decisions-log M130 to M142; navigation proposal 12.7, design plan 3.4).
 
     fc = FullCheck(maps=maps)                                   # once per run: loads its own copy of the simulation and the renderers
-    pts = task_points(fc.model, fc.scene_data)                  # the 12 points of the skill paths of the current scene (or the points of the next step)
+    pts = task_points(fc.model, fc.scene_data, task_cfg)                  # the 12 points of the skill paths of the current scene (or the points of the next step)
     r = fc.check((x, y, heading, q), pts, objects=[...], source_data=running_sim.data)      # r["ok"], r["failed"], r["reason"], r["seconds"], r["ik"], ...
 
 What it checks, cheapest first so that a stance fails early:

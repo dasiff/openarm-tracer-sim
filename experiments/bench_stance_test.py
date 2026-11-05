@@ -89,7 +89,7 @@ def main():
 
     print("\n4. agreement with the finder around TASK_CFG's stance")
     furn = FurnitureMap.from_model(m, mujoco.MjData(m), exclude_bodies=("task_beaker",))
-    fpts = [dict(p, arm="left") for p in task_points(m, d)]
+    fpts = [dict(p, arm="left") for p in task_points(m, d, TASK_CFG)]
     FX, FY, FS = region_scores(fpts, maps, furn, rg, yaw, qs)
     fs = FS["left"]
     rows, dis, rej, rej_pass = [], [], 0, 0

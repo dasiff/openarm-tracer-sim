@@ -37,7 +37,7 @@ def reached(maps, robot, arm, stance, q, P):
 if __name__ == "__main__":
     sim = load_task(cameras=False)
     model, data = sim.model, sim.data
-    robot, pts = robot_geometry(model), task_points(model, data)
+    robot, pts = robot_geometry(model), task_points(model, data, TASK_CFG)
     stance = (*TASK_CFG["staging_xy"], TASK_CFG["staging_yaw"])
     for folder in sys.argv[1:]:
         maps = load_maps(folder)

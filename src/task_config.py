@@ -49,6 +49,7 @@ TASK_CFG = {
     # y = 0.66 puts the 18 cm deep hotplate 5 cm from the bench's front edge (the layout search's rule).
     "beaker_xy": (1.00, 0.66),  # [row M078]
     "hotplate_xy": (0.80, 0.66),  # world x, y of the hotplate's centre, m (20 cm from the beaker along the bench) [row M078]
+    "moved_shift_x_m": -0.15,  # m, x shift of the moved layout (the demo video and the moved-layout test): the beaker and the hotplate both move this far along the bench from the places above; the scene itself is not changed [row M267]
     "beaker_settle_clearance": 0.002,      # m, the beaker is dropped from this height above the bench top [row M101 PENDING David: no decision recorded]
     # ASSUMPTION until the real lab bench is measured (design plan 4.1): the bench is open below its top, i.e. only the top and the four legs are collidable (the four frame rails
     # are removed from the model), so the base may drive partly under it. False gives the solid bench (the rails included). A cfg without the key (old recordings) is solid.

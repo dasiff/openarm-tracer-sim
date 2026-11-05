@@ -84,7 +84,7 @@ def main(args):
     t0 = time.perf_counter()
     fc = FullCheck()
     print(f"setup (the check's simulation, once per run): {time.perf_counter() - t0:.1f} s", flush=True)
-    pts = task_points(fc.model, fc.scene_data)
+    pts = task_points(fc.model, fc.scene_data, TASK_CFG)
     A = (TASK_CFG["staging_xy"][0], TASK_CFG["staging_xy"][1], math.radians(-90.0), TASK_CFG["pedestal_q"])
     B = (0.855, 0.925, math.radians(-90.0), 0.12)
     out = {"setup_seconds": round(time.perf_counter() - t0, 1), "old": {"A cold": 284.7, "A warm": 252.4, "B": 0.54, "report": "docs/reports/20261022_0344_stance_check_profile.md"}}

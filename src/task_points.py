@@ -1,6 +1,6 @@
 """The task points of the beaker-on-hotplate task and the path points around them: ONE builder for the stance finder, the full check and the bench stance regions (David 2026-10-23, F1).
 
-    pts = task_points(model, data)                       # the 12 points of the finder's search and the full check's IK path check
+    pts = task_points(model, data, TASK_CFG)             # the 12 points of the finder's search and the full check's IK path check
     off = path_offsets(k, z_points, surface_z)           # the skill's other path points for approach bin k, relative to a target, in the robot's forward frame
 
 The 12 task points are the grasp-band heights at the beaker ("grasp"), the same heights at the set-down above the hotplate ("setdown") and 10 cm above those ("above", ABOVE_M). The skill
@@ -19,18 +19,19 @@ import mujoco
 import numpy as np
 
 from src.task_beaker_hotplate import bench_top_z
-from src.task_config import BEAKER_CFG, PICK_PLACE_CFG, TASK_CFG
+from src.task_config import BEAKER_CFG, PICK_PLACE_CFG
 
 ABOVE_M = 0.10      # m: the "above" points (and the lift point) are this far above the set-down (grasp-mid) height
 
 
-def task_points(model, data, fracs=None):
+def task_points(model, data, task_cfg, fracs=None):
     """The task points of the current scene's skill paths (the 12 points of the stance search): the grasp band heights at the beaker, the same heights at the set-down above the hotplate, and
     10 cm above those, each {"p", "arm": "either", "bin": None, "path": "grasp" | "setdown" | "above"}.
 
     Args:
         model (mujoco.MjModel): The model.
         data (mujoco.MjData): Its data (the objects placed).
+        task_cfg (dict): The layout the points are for: "beaker_xy" and "hotplate_xy" (the TASK_CFG of the scene, or the shifted one of the same model).
         fracs (tuple of float or None): The grasp band fractions of the beaker's height. Defaults to BEAKER_CFG["grasp_band"] in 0.05 steps.
 
     Returns:
@@ -44,7 +45,7 @@ def task_points(model, data, fracs=None):
     plate = model.geom("task_hotplate_top_plate")
     plate_top = float(d.geom_xpos[plate.id][2] + model.geom_size[plate.id][2])
     top, H = bench_top_z(model), BEAKER_CFG["height"]
-    bxy, hxy = np.array(TASK_CFG["beaker_xy"], float), np.array(TASK_CFG["hotplate_xy"], float)
+    bxy, hxy = np.array(task_cfg["beaker_xy"], float), np.array(task_cfg["hotplate_xy"], float)
     pts = [("grasp", np.array([*bxy, top + f * H])) for f in fracs]
     pts += [("setdown", np.array([*hxy, plate_top + 0.002 + f * H])) for f in fracs]
     pts += [("above", np.array([*hxy, plate_top + 0.002 + f * H + ABOVE_M])) for f in fracs]

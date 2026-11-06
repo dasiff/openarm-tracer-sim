@@ -32,7 +32,7 @@ import numpy as np
 from scipy.spatial.transform import Rotation
 
 from src import robot_specs
-from src.arm_collision import ArmCollisionChecker
+from src.arm_collision import ArmCollisionChecker, bench_geoms
 from src.arm_kinematics import arm_chain, batch_fk, solve_ik
 from src.grasp_rules import bin_center, joint_bounds, make_constraint, make_pose_constraint
 from src.gripper_geometry import grasp_cfg
@@ -301,12 +301,17 @@ class FullCheck:
         return h.hexdigest()
 
     # ------------------------------------------------------------------ IK
-    def _checker(self, q):
-        key = round(float(q), 4)
+    def _checker(self, stance):
+        """The arm's contact checker at a stance (x, y, yaw, pedestal command). With the bench in the check (FULLCHECK_CFG bench_in_contact_check, M273) the bench is
+        placed for this stance's base pose and pedestal, so the checker is kept per stance; without it, per pedestal command as before."""
+        q = float(stance[3])
+        bench = self.cfg.get("bench_in_contact_check", False)
+        key = (round(float(stance[0]), 4), round(float(stance[1]), 4), round(float(stance[2]), 4), round(q, 4)) if bench else round(q, 4)
         if key not in self._checkers:
             while len(self._checkers) >= self.cfg["checkers_kept"]:
                 self._checkers.pop(next(iter(self._checkers)))
-            self._checkers[key] = ArmCollisionChecker(self.model, SIDE, TASK_CFG["home_q_right"], finger_open=STAGING_CFG["finger_open"], pedestal_q=float(q))
+            b = {"geoms": bench_geoms(self.model), "base_pose": (float(stance[0]), float(stance[1]), float(stance[2])), "pedestal_q": q} if bench else None
+            self._checkers[key] = ArmCollisionChecker(self.model, SIDE, TASK_CFG["home_q_right"], finger_open=STAGING_CFG["finger_open"], pedestal_q=q, bench=b)
         else:
             self._checkers[key] = self._checkers.pop(key)
         return self._checkers[key]
@@ -342,7 +347,7 @@ class FullCheck:
         cfg = self.cfg
         n = len(Q)
         ok = np.ones(n, bool)
-        ok &= ~self._checker(stance[3]).check(Q)
+        ok &= ~self._checker(stance).check(Q)
         if flip_ok_prev and prev is not None:
             ok &= np.max(np.abs(Q - prev), axis=1) <= cfg["ik_flip_rad"]
         idx = np.nonzero(ok)[0]

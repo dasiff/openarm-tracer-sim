@@ -111,6 +111,37 @@ def robot_group_points(model, data, side, subdiv=SURFACE_SUBDIV):
     return out
 
 
+def bench_boxes(model, geoms):
+    """One oriented box per bench geom, in the world frame (M273, David 2026-11-06): the bench is a surface root, so boxes_from_world skips it.
+
+    A box geom gives its own half-sizes; a cylinder gives a square box of its radius and half-height. Positions and headings come from
+    the scene's kinematics, so the boxes are at the world position at any pedestal height (the robot moves relative to them).
+
+    Args:
+        model (mujoco.MjModel): The compiled scene.
+        geoms (iterable of int): The bench geom ids (src/arm_collision.bench_geoms).
+
+    Returns:
+        list of dict: {"id", "center" (3,), "yaw" (rad), "half" (3,)}.
+    """
+    import mujoco
+    d = mujoco.MjData(model)
+    mujoco.mj_kinematics(model, d)
+    boxes = []
+    for g in geoms:
+        t = int(model.geom_type[g])
+        size = np.asarray(model.geom_size[g], float)
+        if t == mujoco.mjtGeom.mjGEOM_BOX:
+            half = size[:3]
+        elif t == mujoco.mjtGeom.mjGEOM_CYLINDER:
+            half = np.array([size[0], size[0], size[1]])
+        else:
+            raise ValueError(f"bench geom {model.geom(g).name} has type {t}: only box and cylinder are boxed")
+        R = d.geom_xmat[g].reshape(3, 3)
+        boxes.append({"id": f"bench:{model.geom(g).name}", "center": np.array(d.geom_xpos[g], float), "yaw": float(math.atan2(R[1, 0], R[0, 0])), "half": np.array(half, float)})
+    return boxes
+
+
 def check_boxes(groups, boxes, margin, target_ids=("beaker",)):
     """Per group: the signed distance to every box (exemptions applied), the smallest over the boxes, and the clearance (that minimum capped at the margin).
 

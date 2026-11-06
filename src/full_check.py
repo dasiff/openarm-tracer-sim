@@ -435,6 +435,8 @@ class FullCheck:
 
         A point with "pose" "skill" or "place" is solved at the skill's own pose (`_solve_pose_point`; a "place" point with the hand turned by `theta` radians); any other point as a grasp in any bin."""
         C, cfg = self.C, self.cfg
+        if not len(points):                                    # nothing to solve (a place-only run: its place points are tested by the hand turns); a crash here was a latent bug (2026-11-06)
+            return {"ok": True, "failed_point": None, "bins": [], "sources": [], "tried_bins": 0, "solution": np.zeros((0, 7))}
         P = np.array([pt["p"] for pt in points], float)
         T = self.to_torso(stance, P)
         sol = np.full((len(points), 7), np.nan)

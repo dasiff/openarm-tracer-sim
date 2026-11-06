@@ -684,7 +684,7 @@ def overlay(objects, maps, robot, cams, bench, extra_blocked=None, arm=None, cfg
         say (callable): Progress lines.
 
     Returns:
-        dict: "ok", "xy", "q", "qi", "covered", "uncovered", "counts" ({name: count at the best spot}), "ranked" (the best stances in order, at least `nms_distance` apart: dicts with "xy", "q", "qi", "score", "counts"), "score" (objects covered, pedestal run width in m, smallest count, distance to the region's edge in m,
+        dict: "ok", "xy", "q", "qi", "covered", "uncovered", "counts" ({name: count at the best spot}), "ranked" (ALL the stances after the distance thinning, in order, no cap (2026-11-06; the selection applies rank_keep); the best stances in order, at least `nms_distance` apart: dicts with "xy", "q", "qi", "score", "counts"), "score" (objects covered, pedestal run width in m, smallest count, distance to the region's edge in m,
         obstacle clearance in m), "run" ((q_lo, q_hi) of the chosen spot), "grid" (X, Y), "stack" ((nobj, nq, ny, nx) counts), "allowed", "width" ((ny, nx) run width in steps), "qmid" ((ny, nx) index of the chosen
         height per cell), "valid" ((nq, ny, nx): the best number of objects covered), "seconds", "regions".
 
@@ -763,8 +763,6 @@ def overlay(objects, maps, robot, cams, bench, extra_blocked=None, arm=None, cfg
             q_i = int(qmid[cy, cx])
             ranked.append({"xy": (float(X[cy, cx]), float(Y[cy, cx])), "q": float(qs[q_i]), "qi": q_i, "score": (best_n, float(width[cy, cx] * cfg["pedestal_step"]), int(minc[cy, cx]), float(round(edge[cy, cx], 2)), float(dist_obs[cy, cx])),
                            "counts": {nm: int(cnts[nm][q_i, cy, cx]) for nm in names}})
-            if len(ranked) >= cfg["rank_keep"]:
-                break
     sec["overlay"] = time.time() - t0
     covered = [nm for nm in names if cnts[nm][qi, iy, ix] > 0 and allowed[qi, iy, ix]]
     return {"ok": True, "xy": (float(X[iy, ix]), float(Y[iy, ix])), "q": float(qs[qi]), "qi": qi, "covered": covered, "uncovered": [nm for nm in names if nm not in covered],

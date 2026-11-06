@@ -476,7 +476,7 @@ def select_bench_stance(tagged, world, task_cfg, ctx, cfg=BENCH_STANCE_CFG, full
         # 3. the full check on the best stance, the next ranked ones if it fails
         passed, tries = None, []
         pts = [p for o in objs for p in o["points"]]
-        for cand_st in res["ranked"][: 1 + cfg["full_check_fallbacks"]]:
+        for cand_st in res["ranked"][: cfg["rank_keep"]][: 1 + cfg["full_check_fallbacks"]]:      # the overlay returns every thinned stance; the rank_keep cap is applied here (2026-11-06)
             st = {"xy": cand_st["xy"], "q": cand_st["q"], "score": cand_st["score"], "counts": cand_st["counts"]}
             if full_check is None:
                 st["full_check_ok"] = None
@@ -495,7 +495,7 @@ def select_bench_stance(tagged, world, task_cfg, ctx, cfg=BENCH_STANCE_CFG, full
             rep["tried"].append({"steps": cand[:k], "full_check": tries})
             return out
         run = {"stance": {"xy": passed["xy"], "q": passed["q"], "yaw": yaw}, "steps": list(cand[:k]), "nav": [], "place_theta_deg": (passed.get("place") or {}).get("theta_deg"), "surface": surf, "counts": passed["counts"], "score": passed["score"], "full_check": tries,
-               "ranked": res["ranked"], "overlay_run_q": [float(x) for x in res["run"]], "seconds": res["seconds"]}
+               "ranked": res["ranked"][: cfg["rank_keep"]], "overlay_run_q": [float(x) for x in res["run"]], "seconds": res["seconds"]}
         nj = _nav_before(segs, cand[0])
         if nj is not None:
             run["nav"].append(nj)

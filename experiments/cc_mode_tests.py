@@ -357,9 +357,11 @@ def scenario_R1(model, data):
     check("the operator moved the pedestal away from the staging height", abs(p[T + n(2340)] - target) > 0.03, f"{1000 * (p[T + n(2340)] - target):+.0f} mm")
     check("staging completes: no STAGING_FAILED, handoff reached (ARMS did not time out although the operator had control for 35 s)", not s["staging_error"] and s["handoff_time"] is not None,
           f"{s['staging_error']}")
-    check("the pedestal is back at the staging height at the handoff", abs(p[h] - target) < 1e-6, f"{1000 * float(p[h] - target):+.3f} mm")
-    check(f"and it was re-ramped smoothly (no tick changes the target by more than pedestal_speed * dt = {1000 * STAGING_CFG['pedestal_speed'] * DT:.2f} mm)", np.abs(np.diff(p[T + n(2350) - 1:h])).max() <= STAGING_CFG["pedestal_speed"] * DT + 1e-9,
-          f"{1000 * np.abs(np.diff(p[T + n(2350) - 1:h])).max():.3f} mm")
+    check("the pedestal is back at the staging height at the handoff", h is not None and abs(p[h] - target) < 1e-6,
+          "no handoff, so no pedestal value at the handoff" if h is None else f"{1000 * float(p[h] - target):+.3f} mm")
+    ramp = np.abs(np.diff(p[T + n(2350) - 1:h])).max() if h is not None else None      # no handoff: nothing to re-ramp up to (a clean FAIL, not a crash)
+    check(f"and it was re-ramped smoothly (no tick changes the target by more than pedestal_speed * dt = {1000 * STAGING_CFG['pedestal_speed'] * DT:.2f} mm)", ramp is not None and ramp <= STAGING_CFG["pedestal_speed"] * DT + 1e-9,
+          "no handoff" if ramp is None else f"{1000 * ramp:.3f} mm")
     check("the ARMS duration in the report does not include the operator's 35 s", s["phase_durations_s"]["ARMS"] < 30.0, f"{s['phase_durations_s']['ARMS']:.1f} s")
     s2, p2, T2, h2 = runs["control: restoring off"]
     i2 = min(len(p2) - 1, T2 + n(2590))                      # shortly before the run's abort (the staging may fail later with the pedestal left up: only the pedestal is looked at)

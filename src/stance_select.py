@@ -36,6 +36,9 @@ from src import bench_stance as bs
 from src.grounding import resolve
 from src.support import SupportError, band_points, check_band, stance_method, step_support, support_chain, top_of
 from src.task_config import BEAKER_CFG, BENCH_STANCE_CFG, PICK_PLACE_CFG, STANCE_REQUIREMENTS, TASK_CFG
+from src.arm_collision import bench_geoms
+from src.stance_passes import ArmPoses, classify, evaluate_cell
+from src.world_collision import bench_boxes, boxes_from_world
 from src.task_points import ABOVE_M
 
 
@@ -348,6 +351,88 @@ def _manip_steps(tagged):
     return [i for i, s in enumerate(tagged["segments"]) if s["type"] == "manipulation"]
 
 
+
+def _grasp_z(ob):
+    """The height of an object's grasp point (its first "grasp" point; a place target has none and uses its first point)."""
+    gp = [p for p in ob["points"] if p.get("path") == "grasp"]
+    return float((gp[0] if gp else ob["points"][0])["p"][2])
+
+
+def _two_pass(ranked, objs, ctx, fc, cfg, say):
+    """The cheap and slow passes of stance_check_mode "two_pass" (David 2026-11-06, row M274), on the overlay's full thinned list.
+
+    Cheap: the stance's nominal IK for every point of the run (the full check's own solver, any bin, placed at the stance); no solution drops it.
+    Slow: for each cheap survivor, the robot at the same base pose and pedestal; each object of the run is checked on its own with
+    src/stance_passes.evaluate_cell (the hand, fingers and forearm against the world boxes, the bench included); an object fails when no
+    approach bin of cfg["approach_bins"] gives a non-hard verdict (stage 3's hard reject: the grasp IK fails or the grasp penetrates a box).
+    Reject the candidate if any object fails.
+
+    Returns:
+        (list of dict, list of dict): the survivors in the overlay's order (each the ranked entry plus "slow"), and one row per candidate
+        with its cheap and slow verdicts (for the report and the failure log).
+    """
+    model, chk = fc.model, fc.chk
+    pts = [p for o in objs for p in o["points"] if p.get("pose") != "place"]
+    boxes = boxes_from_world(ctx.world) + bench_boxes(model, bench_geoms(model))
+    arm = ArmPoses(model, cfg["arm"], TASK_CFG[f"home_q_{cfg['arm']}"])
+    survivors, rows = [], []
+    for cand in ranked:
+        st = (float(cand["xy"][0]), float(cand["xy"][1]), ctx.yaw, float(cand["q"]))
+        info = fc._solve_stance(st, pts, None)
+        row = {"xy": [round(st[0], 4), round(st[1], 4)], "q": round(st[3], 4), "cheap_ok": bool(info["ok"]), "cheap_failed_point": info["failed_point"], "slow": None, "ok": False}
+        rows.append(row)
+        if not info["ok"]:
+            continue
+        chk.place(st)
+        slow = []
+        for o in objs:
+            bins = tuple(cfg["approach_bins"])
+            rowsb = evaluate_cell(model, chk.d, arm, st, ctx.rg, boxes, cfg["world_margin_m"], bins, o["xy"], _grasp_z(o), o["surface_z"],
+                                  cfg["hand_standoff_m"], cfg["two_pass_tol_m"], cfg["two_pass_iters"])
+            verdict = {k: classify(rowsb[k], cfg["world_margin_m"]) for k in bins}
+            ok_bins = [k for k in bins if verdict[k] != "hard"]
+            slow.append({"object": o["name"], "ok": bool(ok_bins), "bins_not_hard": ok_bins, "verdicts": verdict})
+        row["slow"] = slow
+        if all(x["ok"] for x in slow):
+            row["ok"] = True
+            survivors.append(dict(cand, slow=slow))
+    say(f"[stance] two_pass: {len(rows)} candidates; cheap pass keeps {sum(r['cheap_ok'] for r in rows)}; slow pass keeps {len(survivors)}")
+    return survivors, rows
+
+
+def _log_two_pass_failure(cfg, task_cfg, objs, ctx, steps, tries, tp_rows, say):
+    """Writes the failure log of a "two_pass" selection in which no candidate passed the full check (David 2026-11-06, row M274): enough state to replicate it.
+
+    Returns:
+        str: the path of the JSON file.
+    """
+    import json
+    import os
+    from datetime import datetime
+    slow_by_xy = {(r["xy"][0], r["xy"][1], r["q"]): r["slow"] for r in tp_rows}
+    cands = []
+    for t in tries:
+        key = (round(float(t["xy"][0]), 4), round(float(t["xy"][1]), 4), round(float(t["q"]), 4))
+        slow = slow_by_xy.get(key)
+        bins = {o["object"]: [{"bin": k, "heading_deg": 30 * k} for k in o["bins_not_hard"]] for o in slow} if slow else None
+        cands.append({"parking_spot_xy": [round(float(t["xy"][0]), 4), round(float(t["xy"][1]), 4)], "pedestal_q": float(t["q"]), "arm": cfg["arm"],
+                      "approach_bins_passing_slow_pass": bins, "full_check_failed": list(t.get("failed", [])), "full_check_reason": str(t.get("reason", ""))[:400],
+                      "reach_score": [float(v) for v in t["score"]] if t.get("score") is not None else None})
+    doc = {"when": datetime.now().isoformat(timespec="seconds"), "steps": list(steps), "yaw": float(ctx.yaw),
+           "layout": {"beaker_xy": list(task_cfg["beaker_xy"]), "hotplate_xy": list(task_cfg["hotplate_xy"]), "staging_xy": list(task_cfg["staging_xy"]), "staging_yaw": task_cfg["staging_yaw"]},
+           "objects": [{"name": o["name"], "xy": [float(v) for v in o["xy"]], "surface_z": float(o["surface_z"]), "height": float(o["height"]), "radius": float(o.get("radius", 0.0)),
+                        "points": [{"path": p.get("path"), "pose": p.get("pose"), "p": [float(v) for v in p["p"]]} for p in o["points"]]} for o in objs],
+           "world_entries": [{"id": e.id, "kind": e.kind, "position": [float(v) for v in e.position]} for e in ctx.world.entries()],
+           "cheap_and_slow_summary": {"candidates": len(tp_rows), "cheap_kept": sum(r["cheap_ok"] for r in tp_rows), "slow_kept": sum(r["ok"] for r in tp_rows)},
+           "candidates_full_checked": cands, "arm_pose_home": {"left": [float(v) for v in TASK_CFG["home_q_left"]]}}
+    d = cfg["two_pass_log_dir"]
+    os.makedirs(d, exist_ok=True)
+    path = os.path.join(d, f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_steps{'-'.join(str(i) for i in steps)}.json")
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(doc, f, indent=1, default=str)
+    say(f"[stance] two_pass failure logged: {path}")
+    return path
+
 def select_bench_stance(tagged, world, task_cfg, ctx, cfg=BENCH_STANCE_CFG, full_check=None, say=print):
     """Chooses the stance of every run of the plan (see the module docstring).
 
@@ -476,7 +561,21 @@ def select_bench_stance(tagged, world, task_cfg, ctx, cfg=BENCH_STANCE_CFG, full
         # 3. the full check on the best stance, the next ranked ones if it fails
         passed, tries = None, []
         pts = [p for o in objs for p in o["points"]]
-        for cand_st in res["ranked"][: cfg["rank_keep"]][: 1 + cfg["full_check_fallbacks"]]:      # the overlay returns every thinned stance; the rank_keep cap is applied here (2026-11-06)
+        if cfg.get("stance_check_mode", "current") == "two_pass":
+            if full_check is None:
+                out["stop"] = "stance_check_mode two_pass needs the full check object (none given)"
+                rep["notes"].append(out["stop"])
+                return out
+            survivors, tp_rows = _two_pass(res["ranked"], objs, ctx, full_check, cfg, say)
+            rep.setdefault("two_pass", []).append({"steps": cand[:k], "rows": tp_rows})
+            cands = survivors[: cfg["two_pass_full_check_cap"]]
+            if not cands:
+                out["stop"] = f"two_pass: no stance survived the cheap and slow passes for steps {cand[:k]}"
+                rep["notes"].append(out["stop"])
+                return out
+        else:
+            cands = res["ranked"][: cfg["rank_keep"]][: 1 + cfg["full_check_fallbacks"]]      # the overlay returns every thinned stance; the rank_keep cap is applied here (2026-11-06)
+        for cand_st in cands:
             st = {"xy": cand_st["xy"], "q": cand_st["q"], "score": cand_st["score"], "counts": cand_st["counts"]}
             if full_check is None:
                 st["full_check_ok"] = None
@@ -493,6 +592,9 @@ def select_bench_stance(tagged, world, task_cfg, ctx, cfg=BENCH_STANCE_CFG, full
         if passed is None:
             out["stop"] = "no stance passed the full check: " + "; ".join(f"({t['xy'][0]:.3f}, {t['xy'][1]:.3f}) pedestal {t['q']:.2f}: {t.get('failed')} {t.get('reason', '')[:120]}" for t in tries)
             rep["tried"].append({"steps": cand[:k], "full_check": tries})
+            if cfg.get("stance_check_mode", "current") == "two_pass":
+                rep["failure_log"] = _log_two_pass_failure(cfg, task_cfg, objs, ctx, cand[:k], tries, rep["two_pass"][-1]["rows"], say)
+                out["stop"] += f" [failure log: {rep['failure_log']}]"
             return out
         run = {"stance": {"xy": passed["xy"], "q": passed["q"], "yaw": yaw}, "steps": list(cand[:k]), "nav": [], "place_theta_deg": (passed.get("place") or {}).get("theta_deg"), "surface": surf, "counts": passed["counts"], "score": passed["score"], "full_check": tries,
                "ranked": res["ranked"][: cfg["rank_keep"]], "overlay_run_q": [float(x) for x in res["run"]], "seconds": res["seconds"]}

@@ -35,6 +35,7 @@ World frame: the bench is centred on the origin (top z = 0.96, x +-2.2, y +-0.8)
 +x. The staging pose is on the +y side of the bench, facing -y (yaw = -90 deg).
 """
 
+import os
 import math
 
 # ----------------------------------------------------------------------------------------------------------
@@ -603,7 +604,11 @@ BENCH_STANCE_CFG = {
     # grasp point (the pre-grasp point is `hand_standoff_m` back from the grasp point along the approach direction) thickened by `arm_radius_m`. A bin whose chain meets any cylinder is removed.
     "obstacle_margin_m": 0.03,                  # m [row M170: David: start with 3 cm]
     "arm_radius_m": 0.06,                       # m, half the arm's cross-section (conservative: the forearm and hand are about 8 cm wide) [row M170 PENDING David: placeholder]
-    "stance_check_mode": "current",             # "current": the stance search as before (no world-model clearance); "world_box": the cheap and slow passes of src/stance_passes.py (selectable, OFF by default until David approves) [row M272 PENDING David]
+    "stance_check_mode": os.environ.get("OPENARM_STANCE_CHECK_MODE", "current"),             # "current": the stance search as before (the overlay ranking, rank_keep and full_check_fallbacks); "two_pass": the cheap pass (reach score and nominal IK, any bin), then the slow pass (hand, fingers and forearm box clearance per object, bench included), then the full check on the top two_pass_full_check_cap survivors (David 2026-11-06; rows M272 and M274). Default stays "current".
+    "two_pass_full_check_cap": 8,               # count: "two_pass" only: the full check is run on at most this many slow-pass survivors, no deeper (David 2026-11-06, row M274)
+    "two_pass_tol_m": 0.003,                    # m, the slow pass's IK tolerance per pose (src/stance_passes.py evaluate_cell; the stage 3 value, world_model_build_stage3 report section 1) [row M274]
+    "two_pass_iters": 150,                      # count, the slow pass's IK iterations (the stage 3 value) [row M274]
+    "two_pass_log_dir": "data/logs/selection_failures",  # folder: one JSON per "two_pass" selection in which no candidate passes the full check (layout, candidates, failed checks) [row M274]
     "world_margin_m": 0.03,                     # PROVISIONAL, m: the one global clearance margin of the world-model collision check (src/world_collision.py), started from obstacle_margin_m. It caps the clearance and gates nothing yet [row M271 PROVISIONAL: David 2026-11-05, value to be confirmed]
     "hand_standoff_m": 0.15,                    # m, how far behind the grasp point the hand's body reaches along the approach direction (conservative) [row M170 PENDING David: placeholder]
     # The robot-hides-target filter counts sample points on the object's surface that fall on the robot's silhouette in the eagle image (a stand-in for the finder's pixel count). The beaker's limit is 0 %

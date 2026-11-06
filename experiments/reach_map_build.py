@@ -69,11 +69,11 @@ def stamp_of(model, C):
     return h.hexdigest()[:16]
 
 
-def stamp_config(m, side, no_bench=False):
-    """The settings the staleness stamp hashes for one arm: the grasp settings (without the quick sample count) and, unless no_bench, the bench the maps were built with (C1, M171)."""
+def stamp_config(m, side, bench=False):
+    """The settings the staleness stamp hashes for one arm: the grasp settings (without the quick sample count) and, if bench, the bench of the old maps (C1, M171; off by default, option A, see main)."""
     stamp_cfg = {k: v for k, v in grasp_cfg(m, side).items() if k != "quick_samples"}
-    if not no_bench:
-        stamp_cfg["bench"] = {"geoms": sorted(m.geom(g).name for g in bench_geoms(m)), "base_pose": [float(v) for v in (*TASK_CFG["staging_xy"], TASK_CFG["staging_yaw"])], "pedestal_q": TASK_CFG["pedestal_q"]}
+    if bench:
+        stamp_cfg["bench"] = {"geoms": sorted(m.geom(g).name for g in bench_geoms(m)), "base_pose": [float(v) for v in (*TASK_CFG["staging_xy"], TASK_CFG["staging_yaw"])]}
     return stamp_cfg
 
 
@@ -89,9 +89,13 @@ def main(args):
         if args.quick_samples:
             C = {**C, "quick_samples": args.quick_samples}
         stamp_cfg = {k: v for k, v in C.items() if k != "quick_samples"}
-        bench = None if args.no_bench else {"geoms": bench_geoms(m), "base_pose": (*TASK_CFG["staging_xy"], TASK_CFG["staging_yaw"]), "pedestal_q": TASK_CFG["pedestal_q"]}
-        if bench is not None:                                  # the bench is part of what the map means: in the stamp
-            stamp_cfg["bench"] = {"geoms": sorted(m.geom(g).name for g in bench["geoms"]), "base_pose": [float(v) for v in bench["base_pose"]], "pedestal_q": bench["pedestal_q"]}
+        # The bench is OFF in the maps by default (David, Nov 5-6, option A). Bench collision is handled at stance selection time by the
+        # world-model collision checker at the actual pedestal height, so baking a bench at one pedestal height into the map is redundant
+        # and forced rebuilds whenever the pedestal changed. The pedestal command is therefore not in the staleness stamp at all.
+        # --bench builds the old bench-filtered maps (for comparison only).
+        bench = {"geoms": bench_geoms(m), "base_pose": (*TASK_CFG["staging_xy"], TASK_CFG["staging_yaw"]), "pedestal_q": TASK_CFG["pedestal_q"]} if args.bench else None
+        if bench is not None:                                  # the bench is part of what the map means: in the stamp (no pedestal)
+            stamp_cfg["bench"] = {"geoms": sorted(m.geom(g).name for g in bench["geoms"]), "base_pose": [float(v) for v in bench["base_pose"]]}
         stamp = stamp_of(m, stamp_cfg)
         todo = []
         for k in args.bins:
@@ -177,7 +181,7 @@ def main(args):
 if __name__ == "__main__":
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[1])
     ap.add_argument("--out", default=str(PROJECT_ROOT / "data" / "reach_map"))
-    ap.add_argument("--no-bench", action="store_true", help="the old filter without the bench (for comparisons)")
+    ap.add_argument("--bench", action="store_true", help="also filter the bench at the TASK_CFG pedestal height (the old maps; for comparisons only, the default is no bench, see main)")
     ap.add_argument("--sides", nargs="*", default=["left", "right"])
     ap.add_argument("--bins", nargs="*", type=int, default=list(range(12)))
     ap.add_argument("--quick-samples", type=int, default=None, help="override GRASP_MAP_CFG quick_samples (smoke tests)")

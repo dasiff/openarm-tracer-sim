@@ -378,7 +378,10 @@ def _two_pass(ranked, objs, ctx, fc, cfg, say):
     survivors, rows = [], []
     for cand in ranked:
         st = (float(cand["xy"][0]), float(cand["xy"][1]), ctx.yaw, float(cand["q"]))
-        info = fc._solve_stance(st, pts, None)
+        if pts:
+            info = fc._solve_stance(st, pts, None)
+        else:                                                    # a place-only run has no IK points here (the full check tests its place points by the hand turns): nothing to solve, so no cheap-pass failure (2026-11-06)
+            info = {"ok": True, "failed_point": None}
         row = {"xy": [round(st[0], 4), round(st[1], 4)], "q": round(st[3], 4), "cheap_ok": bool(info["ok"]), "cheap_failed_point": info["failed_point"], "slow": None, "ok": False}
         rows.append(row)
         if not info["ok"]:

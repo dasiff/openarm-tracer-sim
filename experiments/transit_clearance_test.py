@@ -32,6 +32,7 @@ import numpy as np  # noqa: E402
 from src import bench_stance as bs  # noqa: E402
 from src.mpvi_postprocess import postprocess  # noqa: E402
 from src.stance_select import carry_blocked, carry_blocked_mask, carry_bottom_z, make_context, run_transit_blocked, select_bench_stance, shoulder_xy, slice_distance  # noqa: E402
+from src.full_check import FullCheck  # noqa: E402  (plumbing 2026-11-06: the selection gets a full-check object, as in the pipeline)
 from src.task_beaker_hotplate import load_task  # noqa: E402
 from src.task_config import BEAKER_CFG, BENCH_STANCE_CFG, PICK_PLACE_CFG, STANCE_REQUIREMENTS, TASK_CFG  # noqa: E402
 from stance_select_test import PLAN4, pillar, world  # noqa: E402
@@ -104,12 +105,13 @@ def main():
     m, d = sim.model, sim.data
     maps = bs.load_maps("data/reach_map", sides=("left",))
     ctx = make_context(m, d, maps)
+    FULL = FullCheck(maps=bs.load_maps("data/reach_map"), task_cfg=TASK_CFG)      # the same full check the pipeline builds (apply_stance_selection)
     tagged = postprocess(PLAN4, False, say=quiet)
 
     print("\n2. an obstacle between the objects")
     hp_xy = (0.70, 0.66)                                       # 30 cm from the beaker (1.0, 0.66): the post at 0.85 is 15 cm from each, outside the filter's reach around either grasp point
     w = world(hotplate_xy=hp_xy, extra=[pillar((0.85, 0.66), 0.25, radius=0.03)])
-    sel = select_bench_stance(tagged, w, TASK_CFG, ctx, cfg, say=quiet)
+    sel = select_bench_stance(tagged, w, TASK_CFG, ctx, cfg, full_check=FULL, say=quiet)
     rep = sel["report"]
     cf = [t for t in rep.get("carry_filter", []) if t["steps"] == [1, 3]]
     print(f"    ok {sel['ok']}; stop {sel['stop']}; runs {[(r['steps'], r['nav'], np.round(r['stance']['xy'], 3).tolist(), r['stance']['q']) for r in rep['runs']]}; null nav {rep['null_nav']}; carry filter {rep.get('carry_filter')}; notes {rep['notes']}")
@@ -120,17 +122,17 @@ def main():
     check("each step gets its own navigation (none is null)", [r["nav"] for r in rep["runs"]] == [[0], [2]] and rep["null_nav"] == [], f"{[r['nav'] for r in rep['runs']]} {rep['null_nav']}")
     check("the pick returns to the zombie pose before the second navigation (end_at_zombie)", sel["ok"] and sel["plan"]["segments"][1].get("end_at_zombie") is True)
     check("the second run is reached holding the beaker and says so", any("holding the beaker" in n for n in rep["notes"]), f"{rep['notes']}")
-    sw = select_bench_stance(tagged, w, TASK_CFG, ctx, {**cfg, "transit_check": False}, say=quiet)
+    sw = select_bench_stance(tagged, w, TASK_CFG, ctx, {**cfg, "transit_check": False}, full_check=FULL, say=quiet)
     check("with the check off the same world lets k=2 through (the switch is the only difference)", sw["ok"] and [r["steps"] for r in sw["report"]["runs"]] == [[1, 3]], f"{[r['steps'] for r in sw['report']['runs']] if sw['ok'] else sw['stop']}")
 
     print("\n3. nothing between the objects; and the best spot blocked")
-    sel0 = select_bench_stance(tagged, world(hotplate_xy=hp_xy), TASK_CFG, ctx, cfg, say=quiet)
+    sel0 = select_bench_stance(tagged, world(hotplate_xy=hp_xy), TASK_CFG, ctx, cfg, full_check=FULL, say=quiet)
     r0 = sel0["report"]
     check("k=2 passes as before (same 30 cm spacing, no post): one run with both steps, the second navigation step null", sel0["ok"] and [r["steps"] for r in r0["runs"]] == [[1, 3]] and r0["null_nav"] == [2] and r0["carry_filter"][0]["spots_removed"] == 0, f"{r0.get('carry_filter')}")
     S0 = sel0["report"]["runs"][0]["stance"]
     print(f"    best spot without the post: {np.round(S0['xy'], 3).tolist()} pedestal {S0['q']}; carry check time {1000 * r0.get('carry_check_seconds', 0):.1f} ms for {r0['carry_filter'][0]['spots']} spots")
     post = pillar((0.60, 0.90), 0.25, radius=0.03)             # left of the best spot's slice by less than the margin, farther from the second-ranked spot's
-    selb = select_bench_stance(tagged, world(hotplate_xy=hp_xy, extra=[post]), TASK_CFG, ctx, cfg, say=quiet)
+    selb = select_bench_stance(tagged, world(hotplate_xy=hp_xy, extra=[post]), TASK_CFG, ctx, cfg, full_check=FULL, say=quiet)
     rb = selb["report"]
     sb = rb["runs"][0]["stance"] if selb["ok"] else None
     blocked_best = run_transit_blocked([{**a, "name": "1:beaker", "radius": 0.035, "z0": 0.96, "z1": 1.06, "extra_obstacles": [{"name": "pillar", "xy": (0.60, 0.90), "radius": 0.03, "z0": 0.96, "z1": 1.21}]},

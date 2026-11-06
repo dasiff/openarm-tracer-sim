@@ -25,6 +25,7 @@ import numpy as np  # noqa: E402
 
 from src import bench_stance as bs  # noqa: E402
 from src.furniture_map import FurnitureMap  # noqa: E402
+from src.full_check import FullCheck  # noqa: E402  (plumbing 2026-11-06: the selection gets a full-check object, as in the pipeline)
 from src.mpvi_postprocess import postprocess  # noqa: E402
 from src.stance_select import make_context, select_bench_stance  # noqa: E402
 from src.task_beaker_hotplate import load_task  # noqa: E402
@@ -91,12 +92,13 @@ def main():
     m, d = sim.model, sim.data
     maps = bs.load_maps("data/reach_map", sides=("left",))
     ctx = make_context(m, d, maps)
+    FULL = FullCheck(maps=bs.load_maps("data/reach_map"), task_cfg=TASK_CFG)      # the same full check the pipeline builds (apply_stance_selection)
     tagged = postprocess(PLAN4, False, say=lambda *_: None)
     quiet = lambda *_: None
     cfg = copy.deepcopy(BENCH_STANCE_CFG)
 
     print("\n1. the test scene")
-    sel = select_bench_stance(tagged, world(), TASK_CFG, ctx, cfg, say=quiet)
+    sel = select_bench_stance(tagged, world(), TASK_CFG, ctx, cfg, full_check=FULL, say=quiet)
     rep = sel["report"]
     ch = rep.get("chosen")
     print(f"    chosen {ch}; runs {[(r['steps'], r['nav'], np.round(r['stance']['xy'], 3).tolist(), r['stance']['q']) for r in rep['runs']]}; null nav {rep['null_nav']}; TASK_CFG {TASK_CFG['staging_xy']} {TASK_CFG['pedestal_q']}")
@@ -107,7 +109,7 @@ def main():
 
     print("\n2. two objects far apart")
     w = world(hotplate_xy=(-0.9, 0.66))
-    sel = select_bench_stance(tagged, w, TASK_CFG, ctx, cfg, say=quiet)
+    sel = select_bench_stance(tagged, w, TASK_CFG, ctx, cfg, full_check=FULL, say=quiet)
     rep = sel["report"]
     print(f"    ok {sel['ok']}; runs {[(r['steps'], r['nav'], np.round(r['stance']['xy'], 3).tolist()) for r in rep['runs']]}; tried {[(t.get('steps'), t.get('covered')) for t in rep['tried']]}")
     check("k=2 fails (the best stance covers one object), k=1 passes for each: two runs, each with its own stance", sel["ok"] and len(rep["runs"]) == 2 and [r["steps"] for r in rep["runs"]] == [[1], [3]] and rep["tried"] and rep["tried"][0]["steps"] == [1, 3] and len(rep["tried"][0]["covered"]) == 1)
@@ -117,13 +119,13 @@ def main():
     print("\n3. an obstacle that blocks at a low pedestal height and clears at a high one")
     pick_only = {"task_name": "pick", "segments": PLAN4["segments"][:2]}
     tg1 = postprocess(pick_only, False, say=quiet)
-    base = select_bench_stance(tg1, world(), TASK_CFG, ctx, cfg, say=quiet)
+    base = select_bench_stance(tg1, world(), TASK_CFG, ctx, cfg, full_check=FULL, say=quiet)
     q0 = base["report"]["runs"][0]["stance"]["q"]
     print(f"    without the obstacle: stance {np.round(base['report']['runs'][0]['stance']['xy'], 3).tolist()} pedestal {q0}")
     found = None
     for hgt in (0.10, 0.15, 0.20, 0.25, 0.30):
         w = world(extra=[pillar((1.0, 0.80), hgt)])
-        s2 = select_bench_stance(tg1, w, TASK_CFG, ctx, cfg, say=quiet)
+        s2 = select_bench_stance(tg1, w, TASK_CFG, ctx, cfg, full_check=FULL, say=quiet)
         if s2["ok"]:
             q1 = s2["report"]["runs"][0]["stance"]["q"]
             print(f"    pillar {hgt:.2f} m tall at (1.0, 0.80): stance {np.round(s2['report']['runs'][0]['stance']['xy'], 3).tolist()} pedestal {q1}")
@@ -133,7 +135,7 @@ def main():
 
     print("\n4. all approaches blocked")
     w = world(extra=[pillar((1.0, 0.70), 1.2, radius=0.06)])
-    s3 = select_bench_stance(tg1, w, TASK_CFG, ctx, cfg, say=quiet)
+    s3 = select_bench_stance(tg1, w, TASK_CFG, ctx, cfg, full_check=FULL, say=quiet)
     print(f"    stop: {s3['stop']}")
     check("the selection stops and names the blocker", (not s3["ok"]) and s3["stop"] and s3["stop"].startswith("no stance covers any of the objects") and "blocked by ['pillar']" in s3["stop"])
 
@@ -148,7 +150,7 @@ def main():
 
     print("\n6. navigation off")
     cfg_off = {**cfg, "navigation": False}
-    s6 = select_bench_stance(tagged, world(), TASK_CFG, ctx, cfg_off, say=quiet)
+    s6 = select_bench_stance(tagged, world(), TASK_CFG, ctx, cfg_off, full_check=FULL, say=quiet)
     check("the test scene is served from TASK_CFG's stance: kept, no stop", s6["ok"] and s6["task_cfg"]["staging_xy"] == tuple(TASK_CFG["staging_xy"]) and s6["task_cfg"]["pedestal_q"] == TASK_CFG["pedestal_q"], f"{s6['stop']}")
     # M184 (Oct 26): navigation off no longer means "the skill turns the hand by 0": the place angle is searched at TASK_CFG's stance (the same window search) and goes to the place step.
     # Before: this section only checked that the stance is kept. Now it also checks that the search ran at that stance, on the place points, and that its angle is in the plan.
@@ -162,7 +164,7 @@ def main():
     s6c = select_bench_stance(tagged, world(), TASK_CFG, ctx, cfg_off, full_check=FakeCheck(fail=0), say=quiet)
     FakeCheck.window = True
     check("navigation off, no window at the stance: the selection stops with 'no place angle window'", (not s6c["ok"]) and s6c["stop"].startswith("no place angle window"), f"{s6c['stop']}")
-    s7 = select_bench_stance(tagged, world(beaker_xy=(1.45, 0.66), hotplate_xy=(1.25, 0.66)), TASK_CFG, ctx, cfg_off, say=quiet)
+    s7 = select_bench_stance(tagged, world(beaker_xy=(1.45, 0.66), hotplate_xy=(1.25, 0.66)), TASK_CFG, ctx, cfg_off, full_check=FULL, say=quiet)
     print(f"    stop: {s7['stop']}")
     check("objects TASK_CFG's stance does not serve stop with 'needs navigation on' and the two stances", (not s7["ok"]) and s7["stop"].startswith("needs navigation on: the current stance is (0.765, 1.085)") and "the best stance" in s7["stop"])
 
@@ -185,8 +187,8 @@ def main():
     ctx2.extra = bs.make_extra_blocked(L2, rg, ctx.yaw, ctx.home_clear, creep_back_m=back)
     ctx_nocreep = copy.copy(ctx2)
     ctx_nocreep.extra = bs.make_extra_blocked(L2, rg, ctx.yaw, ctx.home_clear)
-    sA = select_bench_stance(tagged, world(), TASK_CFG, ctx_nocreep, cfg, say=quiet)
-    sB = select_bench_stance(tagged, world(), TASK_CFG, ctx2, cfg, say=quiet)
+    sA = select_bench_stance(tagged, world(), TASK_CFG, ctx_nocreep, cfg, full_check=FULL, say=quiet)
+    sB = select_bench_stance(tagged, world(), TASK_CFG, ctx2, cfg, full_check=FULL, say=quiet)
     a, b = sA["report"]["runs"][0]["stance"], sB["report"]["runs"][0]["stance"]
     cb = bs.creep_blocked(L2, rg["footprint"], ctx.yaw, back)
     def clipped(st):

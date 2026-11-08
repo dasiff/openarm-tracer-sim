@@ -1,0 +1,4521 @@
+{
+ "mode": "current",
+ "unfiltered_maps": "data/reach_map",
+ "standard_layout": {
+  "beaker_xy": [
+   1.0,
+   0.66
+  ],
+  "hotplate_xy": [
+   0.8,
+   0.66
+  ]
+ },
+ "seed": 20261107,
+ "per_size": 20,
+ "layouts": [
+  {
+   "i": 0,
+   "group": "control",
+   "size_m": 0.0,
+   "beaker_xy": [
+    1.0,
+    0.66
+   ],
+   "hotplate_xy": [
+    0.8,
+    0.66
+   ],
+   "beaker_offset": [
+    0.0,
+    0.0
+   ],
+   "hotplate_offset": [
+    0.0,
+    0.0
+   ],
+   "ok": true,
+   "reason": "pass",
+   "stop": null,
+   "rejecting_checks_per_candidate": [],
+   "most_common_rejecting_check": null,
+   "stance": {
+    "xy": [
+     0.675,
+     1.125
+    ],
+    "q": 0.1
+   },
+   "seconds": 56.2
+  },
+  {
+   "i": 1,
+   "group": "nudge_2cm",
+   "size_m": 0.02,
+   "beaker_xy": [
+    1.0026,
+    0.6552
+   ],
+   "hotplate_xy": [
+    0.8123,
+    0.646
+   ],
+   "beaker_offset": [
+    0.0026,
+    -0.0048
+   ],
+   "hotplate_offset": [
+    0.0123,
+    -0.014
+   ],
+   "ok": true,
+   "reason": "pass",
+   "stop": null,
+   "rejecting_checks_per_candidate": [],
+   "most_common_rejecting_check": null,
+   "stance": {
+    "xy": [
+     0.6973,
+     1.121
+    ],
+    "q": 0.1
+   },
+   "seconds": 70.5
+  },
+  {
+   "i": 2,
+   "group": "nudge_2cm",
+   "size_m": 0.02,
+   "beaker_xy": [
+    1.0043,
+    0.6498
+   ],
+   "hotplate_xy": [
+    0.7887,
+    0.6429
+   ],
+   "beaker_offset": [
+    0.0043,
+    -0.0102
+   ],
+   "hotplate_offset": [
+    -0.0113,
+    -0.0171
+   ],
+   "ok": true,
+   "reason": "pass",
+   "stop": null,
+   "rejecting_checks_per_candidate": [],
+   "most_common_rejecting_check": null,
+   "stance": {
+    "xy": [
+     0.6837,
+     1.1179
+    ],
+    "q": 0.1
+   },
+   "seconds": 72.6
+  },
+  {
+   "i": 3,
+   "group": "nudge_2cm",
+   "size_m": 0.02,
+   "beaker_xy": [
+    1.0023,
+    0.6426
+   ],
+   "hotplate_xy": [
+    0.7885,
+    0.643
+   ],
+   "beaker_offset": [
+    0.0023,
+    -0.0174
+   ],
+   "hotplate_offset": [
+    -0.0115,
+    -0.017
+   ],
+   "ok": true,
+   "reason": "pass",
+   "stop": null,
+   "rejecting_checks_per_candidate": [],
+   "most_common_rejecting_check": null,
+   "stance": {
+    "xy": [
+     0.6835,
+     1.1076
+    ],
+    "q": 0.1
+   },
+   "seconds": 92.9
+  },
+  {
+   "i": 4,
+   "group": "nudge_2cm",
+   "size_m": 0.02,
+   "beaker_xy": [
+    1.0194,
+    0.6475
+   ],
+   "hotplate_xy": [
+    0.7867,
+    0.6494
+   ],
+   "beaker_offset": [
+    0.0194,
+    -0.0125
+   ],
+   "hotplate_offset": [
+    -0.0133,
+    -0.0106
+   ],
+   "ok": true,
+   "reason": "pass",
+   "stop": null,
+   "rejecting_checks_per_candidate": [],
+   "most_common_rejecting_check": null,
+   "stance": {
+    "xy": [
+     0.7817,
+     1.1025
+    ],
+    "q": 0.12
+   },
+   "seconds": 78.4
+  },
+  {
+   "i": 5,
+   "group": "nudge_2cm",
+   "size_m": 0.02,
+   "beaker_xy": [
+    0.9915,
+    0.6713
+   ],
+   "hotplate_xy": [
+    0.797,
+    0.6652
+   ],
+   "beaker_offset": [
+    -0.0085,
+    0.0113
+   ],
+   "hotplate_offset": [
+    -0.003,
+    0.0052
+   ],
+   "ok": true,
+   "reason": "pass",
+   "stop": null,
+   "rejecting_checks_per_candidate": [],
+   "most_common_rejecting_check": null,
+   "stance": {
+    "xy": [
+     0.682,
+     1.1402
+    ],
+    "q": 0.1
+   },
+   "seconds": 71.2
+  },
+  {
+   "i": 6,
+   "group": "nudge_2cm",
+   "size_m": 0.02,
+   "beaker_xy": [
+    1.018,
+    0.6725
+   ],
+   "hotplate_xy": [
+    0.8107,
+    0.643
+   ],
+   "beaker_offset": [
+    0.018,
+    0.0125
+   ],
+   "hotplate_offset": [
+    0.0107,
+    -0.017
+   ],
+   "ok": true,
+   "reason": "pass",
+   "stop": null,
+   "rejecting_checks_per_candidate": [],
+   "most_common_rejecting_check": null,
+   "stance": {
+    "xy": [
+     0.7057,
+     1.138
+    ],
+    "q": 0.1
+   },
+   "seconds": 49.2
+  },
+  {
+   "i": 7,
+   "group": "nudge_2cm",
+   "size_m": 0.02,
+   "beaker_xy": [
+    1.0061,
+    0.6651
+   ],
+   "hotplate_xy": [
+    0.7893,
+    0.6735
+   ],
+   "beaker_offset": [
+    0.0061,
+    0.0051
+   ],
+   "hotplate_offset": [
+    -0.0107,
+    0.0135
+   ],
+   "ok": true,
+   "reason": "pass",
+   "stop": null,
+   "rejecting_checks_per_candidate": [],
+   "most_common_rejecting_check": null,
+   "stance": {
+    "xy": [
+     0.6843,
+     1.1301
+    ],
+    "q": 0.1
+   },
+   "seconds": 55.9
+  },
+  {
+   "i": 8,
+   "group": "nudge_2cm",
+   "size_m": 0.02,
+   "beaker_xy": [
+    0.9825,
+    0.6571
+   ],
+   "hotplate_xy": [
+    0.8008,
+    0.6579
+   ],
+   "beaker_offset": [
+    -0.0175,
+    -0.0029
+   ],
+   "hotplate_offset": [
+    0.0008,
+    -0.0021
+   ],
+   "ok": false,
+   "reason": "no stance covers any of the objects",
+   "stop": "no stance covers any of the objects: 1:beaker: best count 3 without obstacles, 0 with them; blocked by ['hotplate']",
+   "rejecting_checks_per_candidate": [],
+   "most_common_rejecting_check": null,
+   "stance": null,
+   "seconds": 32.2
+  },
+  {
+   "i": 9,
+   "group": "nudge_2cm",
+   "size_m": 0.02,
+   "beaker_xy": [
+    0.9861,
+    0.68
+   ],
+   "hotplate_xy": [
+    0.7854,
+    0.6606
+   ],
+   "beaker_offset": [
+    -0.0139,
+    0.02
+   ],
+   "hotplate_offset": [
+    -0.0146,
+    0.0006
+   ],
+   "ok": true,
+   "reason": "pass",
+   "stop": null,
+   "rejecting_checks_per_candidate": [],
+   "most_common_rejecting_check": null,
+   "stance": {
+    "xy": [
+     0.6804,
+     1.1456
+    ],
+    "q": 0.1
+   },
+   "seconds": 61.5
+  },
+  {
+   "i": 10,
+   "group": "nudge_2cm",
+   "size_m": 0.02,
+   "beaker_xy": [
+    1.0189,
+    0.6661
+   ],
+   "hotplate_xy": [
+    0.8091,
+    0.6783
+   ],
+   "beaker_offset": [
+    0.0189,
+    0.0061
+   ],
+   "hotplate_offset": [
+    0.0091,
+    0.0183
+   ],
+   "ok": true,
+   "reason": "pass",
+   "stop": null,
+   "rejecting_checks_per_candidate": [],
+   "most_common_rejecting_check": null,
+   "stance": {
+    "xy": [
+     0.8041,
+     1.1211
+    ],
+    "q": 0.12
+   },
+   "seconds": 60.0
+  },
+  {
+   "i": 11,
+   "group": "nudge_2cm",
+   "size_m": 0.02,
+   "beaker_xy": [
+    1.0011,
+    0.6798
+   ],
+   "hotplate_xy": [
+    0.8127,
+    0.6645
+   ],
+   "beaker_offset": [
+    0.0011,
+    0.0198
+   ],
+   "hotplate_offset": [
+    0.0127,
+    0.0045
+   ],
+   "ok": true,
+   "reason": "pass",
+   "stop": null,
+   "rejecting_checks_per_candidate": [],
+   "most_common_rejecting_check": null,
+   "stance": {
+    "xy": [
+     0.6777,
+     1.1495
+    ],
+    "q": 0.1
+   },
+   "seconds": 52.4
+  },
+  {
+   "i": 12,
+   "group": "nudge_2cm",
+   "size_m": 0.02,
+   "beaker_xy": [
+    0.9882,
+    0.6426
+   ],
+   "hotplate_xy": [
+    0.7994,
+    0.6443
+   ],
+   "beaker_offset": [
+    -0.0118,
+    -0.0174
+   ],
+   "hotplate_offset": [
+    -0.0006,
+    -0.0157
+   ],
+   "ok": false,
+   "reason": "no stance passed the full check",
+   "stop": "no stance passed the full check: (0.744, 1.098) pedestal 0.12: ['occlusion'] at pedestal 0.120 something hides 0.3 % of the beaker and 5.3 % of the hotplate in the eagle image; (0.854, 1.118) pedestal 0.11: ['occlusion'] at pedestal 0.110 something hides 0.2 % of the beaker and 2.7 % of the hotplate in the eagle image; (0.644, 1.098) pedestal 0.10: ['view'] at pedestal 0.080 beaker_corner7 is 9.1 % from the nearest edge of the eagle image (limit 10 %); (0.774, 1.198) pedestal 0.06: ['ik'] at the stance 'y+1' point 0 (grasp, [0.988, 0.643, 1.005]) has no collision-free solution",
+   "rejecting_checks_per_candidate": [
+    {
+     "xy": [
+      0.7444,
+      1.0976
+     ],
+     "pedestal_q": 0.12,
+     "failed": [
+      "occlusion"
+     ]
+    },
+    {
+     "xy": [
+      0.8544,
+      1.1176
+     ],
+     "pedestal_q": 0.11,
+     "failed": [
+      "occlusion"
+     ]
+    },
+    {
+     "xy": [
+      0.6444,
+      1.0976
+     ],
+     "pedestal_q": 0.1,
+     "failed": [
+      "view"
+     ]
+    },
+    {
+     "xy": [
+      0.7744,
+      1.1976
+     ],
+     "pedestal_q": 0.06,
+     "failed": [
+      "ik"
+     ]
+    }
+   ],
+   "most_common_rejecting_check": "occlusion",
+   "stance": null,
+   "seconds": 106.6
+  },
+  {
+   "i": 13,
+   "group": "nudge_2cm",
+   "size_m": 0.02,
+   "beaker_xy": [
+    0.9904,
+    0.6527
+   ],
+   "hotplate_xy": [
+    0.7944,
+    0.6629
+   ],
+   "beaker_offset": [
+    -0.0096,
+    -0.0073
+   ],
+   "hotplate_offset": [
+    -0.0056,
+    0.0029
+   ],
+   "ok": true,
+   "reason": "pass",
+   "stop": null,
+   "rejecting_checks_per_candidate": [],
+   "most_common_rejecting_check": null,
+   "stance": {
+    "xy": [
+     0.7394,
+     1.1177
+    ],
+    "q": 0.11
+   },
+   "seconds": 62.4
+  },
+  {
+   "i": 14,
+   "group": "nudge_2cm",
+   "size_m": 0.02,
+   "beaker_xy": [
+    1.0175,
+    0.6409
+   ],
+   "hotplate_xy": [
+    0.7949,
+    0.6403
+   ],
+   "beaker_offset": [
+    0.0175,
+    -0.0191
+   ],
+   "hotplate_offset": [
+    -0.0051,
+    -0.0197
+   ],
+   "ok": true,
+   "reason": "pass",
+   "stop": null,
+   "rejecting_checks_per_candidate": [],
+   "most_common_rejecting_check": null,
+   "stance": {
+    "xy": [
+     0.6899,
+     1.1153
+    ],
+    "q": 0.1
+   },
+   "seconds": 62.3
+  },
+  {
+   "i": 15,
+   "group": "nudge_2cm",
+   "size_m": 0.02,
+   "beaker_xy": [
+    0.9802,
+    0.6477
+   ],
+   "hotplate_xy": [
+    0.8124,
+    0.666
+   ],
+   "beaker_offset": [
+    -0.0198,
+    -0.0123
+   ],
+   "hotplate_offset": [
+    0.0124,
+    0.006
+   ],
+   "ok": false,
+   "reason": "no stance covers any of the objects",
+   "stop": "no stance covers any of the objects: 1:beaker: best count 3 without obstacles, 0 with them; blocked by ['hotplate']",
+   "rejecting_checks_per_candidate": [],
+   "most_common_rejecting_check": null,
+   "stance": null,
+   "seconds": 32.3
+  },
+  {
+   "i": 16,
+   "group": "nudge_2cm",
+   "size_m": 0.02,
+   "beaker_xy": [
+    0.9864,
+    0.6723
+   ],
+   "hotplate_xy": [
+    0.8079,
+    0.6452
+   ],
+   "beaker_offset": [
+    -0.0136,
+    0.0123
+   ],
+   "hotplate_offset": [
+    0.0079,
+    -0.0148
+   ],
+   "ok": false,
+   "reason": "no stance covers any of the objects",
+   "stop": "no stance covers any of the objects: 1:beaker: best count 3 without obstacles, 0 with them; blocked by ['hotplate']",
+   "rejecting_checks_per_candidate": [],
+   "most_common_rejecting_check": null,
+   "stance": null,
+   "seconds": 31.9
+  },
+  {
+   "i": 17,
+   "group": "nudge_2cm",
+   "size_m": 0.02,
+   "beaker_xy": [
+    1.0194,
+    0.6491
+   ],
+   "hotplate_xy": [
+    0.8104,
+    0.6401
+   ],
+   "beaker_offset": [
+    0.0194,
+    -0.0109
+   ],
+   "hotplate_offset": [
+    0.0104,
+    -0.0199
+   ],
+   "ok": true,
+   "reason": "pass",
+   "stop": null,
+   "rejecting_checks_per_candidate": [],
+   "most_common_rejecting_check": null,
+   "stance": {
+    "xy": [
+     0.7054,
+     1.1151
+    ],
+    "q": 0.1
+   },
+   "seconds": 54.7
+  },
+  {
+   "i": 18,
+   "group": "nudge_2cm",
+   "size_m": 0.02,
+   "beaker_xy": [
+    1.006,
+    0.6636
+   ],
+   "hotplate_xy": [
+    0.8051,
+    0.6534
+   ],
+   "beaker_offset": [
+    0.006,
+    0.0036
+   ],
+   "hotplate_offset": [
+    0.0051,
+    -0.0066
+   ],
+   "ok": true,
+   "reason": "pass",
+   "stop": null,
+   "rejecting_checks_per_candidate": [],
+   "most_common_rejecting_check": null,
+   "stance": {
+    "xy": [
+     0.7001,
+     1.1384
+    ],
+    "q": 0.1
+   },
+   "seconds": 61.2
+  },
+  {
+   "i": 19,
+   "group": "nudge_2cm",
+   "size_m": 0.02,
+   "beaker_xy": [
+    1.0126,
+    0.6723
+   ],
+   "hotplate_xy": [
+    0.8165,
+    0.6425
+   ],
+   "beaker_offset": [
+    0.0126,
+    0.0123
+   ],
+   "hotplate_offset": [
+    0.0165,
+    -0.0175
+   ],
+   "ok": true,
+   "reason": "pass",
+   "stop": null,
+   "rejecting_checks_per_candidate": [],
+   "most_common_rejecting_check": null,
+   "stance": {
+    "xy": [
+     0.7015,
+     1.1375
+    ],
+    "q": 0.1
+   },
+   "seconds": 48.4
+  },
+  {
+   "i": 20,
+   "group": "nudge_2cm",
+   "size_m": 0.02,
+   "beaker_xy": [
+    0.9976,
+    0.6482
+   ],
+   "hotplate_xy": [
+    0.8179,
+    0.6698
+   ],
+   "beaker_offset": [
+    -0.0024,
+    -0.0118
+   ],
+   "hotplate_offset": [
+    0.0179,
+    0.0098
+   ],
+   "ok": false,
+   "reason": "no stance covers any of the objects",
+   "stop": "no stance covers any of the objects: 1:beaker: best count 3 without obstacles, 0 with them; blocked by ['hotplate']",
+   "rejecting_checks_per_candidate": [],
+   "most_common_rejecting_check": null,
+   "stance": null,
+   "seconds": 32.5
+  },
+  {
+   "i": 21,
+   "group": "nudge_5cm",
+   "size_m": 0.05,
+   "beaker_xy": [
+    1.0219,
+    0.6858
+   ],
+   "hotplate_xy": [
+    0.8382,
+    0.6667
+   ],
+   "beaker_offset": [
+    0.0219,
+    0.0258
+   ],
+   "hotplate_offset": [
+    0.0382,
+    0.0067
+   ],
+   "ok": true,
+   "reason": "pass",
+   "stop": null,
+   "rejecting_checks_per_candidate": [],
+   "most_common_rejecting_check": null,
+   "stance": {
+    "xy": [
+     0.7032,
+     1.1517
+    ],
+    "q": 0.1
+   },
+   "seconds": 54.4
+  },
+  {
+   "i": 22,
+   "group": "nudge_5cm",
+   "size_m": 0.05,
+   "beaker_xy": [
+    0.9815,
+    0.6769
+   ],
+   "hotplate_xy": [
+    0.8174,
+    0.6863
+   ],
+   "beaker_offset": [
+    -0.0185,
+    0.0169
+   ],
+   "hotplate_offset": [
+    0.0174,
+    0.0263
+   ],
+   "ok": false,
+   "reason": "no stance covers any of the objects",
+   "stop": "no stance covers any of the objects: 1:beaker: best count 3 without obstacles, 0 with them; blocked by ['hotplate']",
+   "rejecting_checks_per_candidate": [],
+   "most_common_rejecting_check": null,
+   "stance": null,
+   "seconds": 32.6
+  },
+  {
+   "i": 23,
+   "group": "nudge_5cm",
+   "size_m": 0.05,
+   "beaker_xy": [
+    1.0205,
+    0.6807
+   ],
+   "hotplate_xy": [
+    0.7807,
+    0.7031
+   ],
+   "beaker_offset": [
+    0.0205,
+    0.0207
+   ],
+   "hotplate_offset": [
+    -0.0193,
+    0.0431
+   ],
+   "ok": true,
+   "reason": "pass",
+   "stop": null,
+   "rejecting_checks_per_candidate": [],
+   "most_common_rejecting_check": null,
+   "stance": {
+    "xy": [
+     0.7757,
+     1.1457
+    ],
+    "q": 0.11
+   },
+   "seconds": 62.6
+  },
+  {
+   "i": 24,
+   "group": "nudge_5cm",
+   "size_m": 0.05,
+   "beaker_xy": [
+    1.0074,
+    0.6408
+   ],
+   "hotplate_xy": [
+    0.8337,
+    0.6777
+   ],
+   "beaker_offset": [
+    0.0074,
+    -0.0192
+   ],
+   "hotplate_offset": [
+    0.0337,
+    0.0177
+   ],
+   "ok": false,
+   "reason": "no stance covers any of the objects",
+   "stop": "no stance covers any of the objects: 1:beaker: best count 3 without obstacles, 0 with them; blocked by ['hotplate']",
+   "rejecting_checks_per_candidate": [],
+   "most_common_rejecting_check": null,
+   "stance": null,
+   "seconds": 33.8
+  },
+  {
+   "i": 25,
+   "group": "nudge_5cm",
+   "size_m": 0.05,
+   "beaker_xy": [
+    1.0114,
+    0.6135
+   ],
+   "hotplate_xy": [
+    0.8178,
+    0.6359
+   ],
+   "beaker_offset": [
+    0.0114,
+    -0.0465
+   ],
+   "hotplate_offset": [
+    0.0178,
+    -0.0241
+   ],
+   "ok": true,
+   "reason": "pass",
+   "stop": null,
+   "rejecting_checks_per_candidate": [],
+   "most_common_rejecting_check": null,
+   "stance": {
+    "xy": [
+     0.7628,
+     1.0885
+    ],
+    "q": 0.11
+   },
+   "seconds": 57.1
+  },
+  {
+   "i": 26,
+   "group": "nudge_5cm",
+   "size_m": 0.05,
+   "beaker_xy": [
+    1.0194,
+    0.6948
+   ],
+   "hotplate_xy": [
+    0.8284,
+    0.6113
+   ],
+   "beaker_offset": [
+    0.0194,
+    0.0348
+   ],
+   "hotplate_offset": [
+    0.0284,
+    -0.0487
+   ],
+   "ok": true,
+   "reason": "pass",
+   "stop": null,
+   "rejecting_checks_per_candidate": [],
+   "most_common_rejecting_check": null,
+   "stance": {
+    "xy": [
+     0.6934,
+     1.1563
+    ],
+    "q": 0.1
+   },
+   "seconds": 50.8
+  },
+  {
+   "i": 27,
+   "group": "nudge_5cm",
+   "size_m": 0.05,
+   "beaker_xy": [
+    0.952,
+    0.6618
+   ],
+   "hotplate_xy": [
+    0.8111,
+    0.688
+   ],
+   "beaker_offset": [
+    -0.048,
+    0.0018
+   ],
+   "hotplate_offset": [
+    0.0111,
+    0.028
+   ],
+   "ok": false,
+   "reason": "no stance covers any of the objects",
+   "stop": "no stance covers any of the objects: 1:beaker: best count 3 without obstacles, 0 with them; blocked by ['hotplate']",
+   "rejecting_checks_per_candidate": [],
+   "most_common_rejecting_check": null,
+   "stance": null,
+   "seconds": 33.6
+  },
+  {
+   "i": 28,
+   "group": "nudge_5cm",
+   "size_m": 0.05,
+   "beaker_xy": [
+    1.0436,
+    0.6479
+   ],
+   "hotplate_xy": [
+    0.8385,
+    0.6548
+   ],
+   "beaker_offset": [
+    0.0436,
+    -0.0121
+   ],
+   "hotplate_offset": [
+    0.0385,
+    -0.0052
+   ],
+   "ok": true,
+   "reason": "pass",
+   "stop": null,
+   "rejecting_checks_per_candidate": [],
+   "most_common_rejecting_check": null,
+   "stance": {
+    "xy": [
+     0.9035,
+     1.1229
+    ],
+    "q": 0.1
+   },
+   "seconds": 94.3
+  },
+  {
+   "i": 29,
+   "group": "nudge_5cm",
+   "size_m": 0.05,
+   "beaker_xy": [
+    1.0147,
+    0.7018
+   ],
+   "hotplate_xy": [
+    0.7563,
+    0.6518
+   ],
+   "beaker_offset": [
+    0.0147,
+    0.0418
+   ],
+   "hotplate_offset": [
+    -0.0437,
+    -0.0082
+   ],
+   "ok": true,
+   "reason": "pass",
+   "stop": null,
+   "rejecting_checks_per_candidate": [],
+   "most_common_rejecting_check": null,
+   "stance": {
+    "xy": [
+     0.6913,
+     1.1668
+    ],
+    "q": 0.1
+   },
+   "seconds": 56.5
+  },
+  {
+   "i": 30,
+   "group": "nudge_5cm",
+   "size_m": 0.05,
+   "beaker_xy": [
+    0.9584,
+    0.6747
+   ],
+   "hotplate_xy": [
+    0.8274,
+    0.6505
+   ],
+   "beaker_offset": [
+    -0.0416,
+    0.0147
+   ],
+   "hotplate_offset": [
+    0.0274,
+    -0.0095
+   ],
+   "ok": false,
+   "reason": "no stance covers any of the objects",
+   "stop": "no stance covers any of the objects: 1:beaker: best count 3 without obstacles, 0 with them; blocked by ['hotplate']",
+   "rejecting_checks_per_candidate": [],
+   "most_common_rejecting_check": null,
+   "stance": null,
+   "seconds": 34.8
+  },
+  {
+   "i": 31,
+   "group": "nudge_5cm",
+   "size_m": 0.05,
+   "beaker_xy": [
+    1.0444,
+    0.6304
+   ],
+   "hotplate_xy": [
+    0.7853,
+    0.644
+   ],
+   "beaker_offset": [
+    0.0444,
+    -0.0296
+   ],
+   "hotplate_offset": [
+    -0.0147,
+    -0.016
+   ],
+   "ok": false,
+   "reason": "no stance passed the full check",
+   "stop": "no stance passed the full check: (0.820, 1.095) pedestal 0.11: ['occlusion'] at pedestal 0.110 something hides 0.6 % of the beaker and 0.6 % of the hotplate in the eagle image; (0.720, 1.095) pedestal 0.10: ['occlusion'] at pedestal 0.120 something hides 2.5 % of the beaker and 5.7 % of the hotplate in the eagle image; (0.840, 0.995) pedestal 0.13: ['placed_beaker'] at pedestal 0.130 the arms at home are 32 mm from a beaker placed on the hotplate; (0.920, 1.065) pedestal 0.09: ['home_clearance'] at pedestal 0.070 the arms at home are 32 mm from openarm_right_right_finger_collision vs task_hotplate_base (the limit ",
+   "rejecting_checks_per_candidate": [
+    {
+     "xy": [
+      0.8203,
+      1.0954
+     ],
+     "pedestal_q": 0.11,
+     "failed": [
+      "occlusion"
+     ]
+    },
+    {
+     "xy": [
+      0.7203,
+      1.0954
+     ],
+     "pedestal_q": 0.1,
+     "failed": [
+      "occlusion"
+     ]
+    },
+    {
+     "xy": [
+      0.8403,
+      0.9954
+     ],
+     "pedestal_q": 0.13,
+     "failed": [
+      "placed_beaker"
+     ]
+    },
+    {
+     "xy": [
+      0.9203,
+      1.0654
+     ],
+     "pedestal_q": 0.09,
+     "failed": [
+      "home_clearance"
+     ]
+    }
+   ],
+   "most_common_rejecting_check": "occlusion",
+   "stance": null,
+   "seconds": 86.7
+  },
+  {
+   "i": 32,
+   "group": "nudge_5cm",
+   "size_m": 0.05,
+   "beaker_xy": [
+    1.0493,
+    0.6361
+   ],
+   "hotplate_xy": [
+    0.7711,
+    0.6879
+   ],
+   "beaker_offset": [
+    0.0493,
+    -0.0239
+   ],
+   "hotplate_offset": [
+    -0.0289,
+    0.0279
+   ],
+   "ok": true,
+   "reason": "pass",
+   "stop": null,
+   "rejecting_checks_per_candidate": [],
+   "most_common_rejecting_check": null,
+   "stance": {
+    "xy": [
+     0.7661,
+     1.1311
+    ],
+    "q": 0.09
+   },
+   "seconds": 85.7
+  },
+  {
+   "i": 33,
+   "group": "nudge_5cm",
+   "size_m": 0.05,
+   "beaker_xy": [
+    1.0068,
+    0.6123
+   ],
+   "hotplate_xy": [
+    0.8401,
+    0.6485
+   ],
+   "beaker_offset": [
+    0.0068,
+    -0.0477
+   ],
+   "hotplate_offset": [
+    0.0401,
+    -0.0115
+   ],
+   "ok": false,
+   "reason": "no stance covers any of the objects",
+   "stop": "no stance covers any of the objects: 1:beaker: best count 3 without obstacles, 0 with them; blocked by ['hotplate']",
+   "rejecting_checks_per_candidate": [],
+   "most_common_rejecting_check": null,
+   "stance": null,
+   "seconds": 34.8
+  },
+  {
+   "i": 34,
+   "group": "nudge_5cm",
+   "size_m": 0.05,
+   "beaker_xy": [
+    0.9797,
+    0.6343
+   ],
+   "hotplate_xy": [
+    0.7929,
+    0.621
+   ],
+   "beaker_offset": [
+    -0.0203,
+    -0.0257
+   ],
+   "hotplate_offset": [
+    -0.0071,
+    -0.039
+   ],
+   "ok": false,
+   "reason": "no stance passed the full check",
+   "stop": "no stance passed the full check: (0.758, 1.066) pedestal 0.13: ['ik'] at the stance 'nominal' point 0 (grasp, [0.98, 0.634, 1.005]) has no collision-free solution; (0.658, 1.106) pedestal 0.10: ['ik'] at the stance 'nominal' point 0 (grasp, [0.98, 0.634, 1.005]) has no collision-free solution; (0.878, 1.066) pedestal 0.10: ['ik'] at the stance 'nominal' point 0 (grasp, [0.98, 0.634, 1.005]) has no collision-free solution; (0.748, 1.166) pedestal 0.08: ['ik'] at the stance 'nominal' point 0 (grasp, [0.98, 0.634, 1.005]) has no collision-free solution",
+   "rejecting_checks_per_candidate": [
+    {
+     "xy": [
+      0.7579,
+      1.066
+     ],
+     "pedestal_q": 0.13,
+     "failed": [
+      "ik"
+     ]
+    },
+    {
+     "xy": [
+      0.6579,
+      1.106
+     ],
+     "pedestal_q": 0.1,
+     "failed": [
+      "ik"
+     ]
+    },
+    {
+     "xy": [
+      0.8779,
+      1.066
+     ],
+     "pedestal_q": 0.1,
+     "failed": [
+      "ik"
+     ]
+    },
+    {
+     "xy": [
+      0.7479,
+      1.166
+     ],
+     "pedestal_q": 0.08,
+     "failed": [
+      "ik"
+     ]
+    }
+   ],
+   "most_common_rejecting_check": "ik",
+   "stance": null,
+   "seconds": 28.4
+  },
+  {
+   "i": 35,
+   "group": "nudge_5cm",
+   "size_m": 0.05,
+   "beaker_xy": [
+    0.989,
+    0.6613
+   ],
+   "hotplate_xy": [
+    0.7719,
+    0.6392
+   ],
+   "beaker_offset": [
+    -0.011,
+    0.0013
+   ],
+   "hotplate_offset": [
+    -0.0281,
+    -0.0208
+   ],
+   "ok": true,
+   "reason": "pass",
+   "stop": null,
+   "rejecting_checks_per_candidate": [],
+   "most_common_rejecting_check": null,
+   "stance": {
+    "xy": [
+     0.6769,
+     1.1342
+    ],
+    "q": 0.1
+   },
+   "seconds": 60.0
+  },
+  {
+   "i": 36,
+   "group": "nudge_5cm",
+   "size_m": 0.05,
+   "beaker_xy": [
+    1.0193,
+    0.6268
+   ],
+   "hotplate_xy": [
+    0.8362,
+    0.6166
+   ],
+   "beaker_offset": [
+    0.0193,
+    -0.0332
+   ],
+   "hotplate_offset": [
+    0.0362,
+    -0.0434
+   ],
+   "ok": true,
+   "reason": "pass",
+   "stop": null,
+   "rejecting_checks_per_candidate": [],
+   "most_common_rejecting_check": null,
+   "stance": {
+    "xy": [
+     0.7912,
+     1.1616
+    ],
+    "q": 0.08
+   },
+   "seconds": 92.3
+  },
+  {
+   "i": 37,
+   "group": "nudge_5cm",
+   "size_m": 0.05,
+   "beaker_xy": [
+    0.9837,
+    0.6453
+   ],
+   "hotplate_xy": [
+    0.7836,
+    0.7046
+   ],
+   "beaker_offset": [
+    -0.0163,
+    -0.0147
+   ],
+   "hotplate_offset": [
+    -0.0164,
+    0.0446
+   ],
+   "ok": false,
+   "reason": "no stance passed the full check",
+   "stop": "no stance passed the full check: (0.769, 1.060) pedestal 0.16: ['ik'] at the stance 'nominal' point 0 (grasp, [0.984, 0.645, 1.005]) has no collision-free solution; (0.829, 1.140) pedestal 0.11: ['ik'] at the stance 'nominal' point 0 (grasp, [0.984, 0.645, 1.005]) has no collision-free solution; (0.719, 1.150) pedestal 0.09: ['ik'] at the stance 'nominal' point 0 (grasp, [0.984, 0.645, 1.005]) has no collision-free solution; (0.629, 1.100) pedestal 0.12: ['ik'] at the stance 'nominal' point 0 (grasp, [0.984, 0.645, 1.005]) has no collision-free solution",
+   "rejecting_checks_per_candidate": [
+    {
+     "xy": [
+      0.7686,
+      1.0603
+     ],
+     "pedestal_q": 0.16,
+     "failed": [
+      "ik"
+     ]
+    },
+    {
+     "xy": [
+      0.8286,
+      1.1403
+     ],
+     "pedestal_q": 0.11,
+     "failed": [
+      "ik"
+     ]
+    },
+    {
+     "xy": [
+      0.7186,
+      1.1503
+     ],
+     "pedestal_q": 0.09,
+     "failed": [
+      "ik"
+     ]
+    },
+    {
+     "xy": [
+      0.6286,
+      1.1003
+     ],
+     "pedestal_q": 0.12,
+     "failed": [
+      "ik"
+     ]
+    }
+   ],
+   "most_common_rejecting_check": "ik",
+   "stance": null,
+   "seconds": 30.3
+  },
+  {
+   "i": 38,
+   "group": "nudge_5cm",
+   "size_m": 0.05,
+   "beaker_xy": [
+    0.9981,
+    0.6342
+   ],
+   "hotplate_xy": [
+    0.7771,
+    0.6498
+   ],
+   "beaker_offset": [
+    -0.0019,
+    -0.0258
+   ],
+   "hotplate_offset": [
+    -0.0229,
+    -0.0102
+   ],
+   "ok": true,
+   "reason": "pass",
+   "stop": null,
+   "rejecting_checks_per_candidate": [],
+   "most_common_rejecting_check": null,
+   "stance": {
+    "xy": [
+     0.7721,
+     1.0892
+    ],
+    "q": 0.12
+   },
+   "seconds": 59.0
+  },
+  {
+   "i": 39,
+   "group": "nudge_5cm",
+   "size_m": 0.05,
+   "beaker_xy": [
+    0.9534,
+    0.6735
+   ],
+   "hotplate_xy": [
+    0.7544,
+    0.6415
+   ],
+   "beaker_offset": [
+    -0.0466,
+    0.0135
+   ],
+   "hotplate_offset": [
+    -0.0456,
+    -0.0185
+   ],
+   "ok": false,
+   "reason": "no stance passed the full check",
+   "stop": "no stance passed the full check: (0.739, 1.097) pedestal 0.13: ['ik'] at the stance 'nominal' point 0 (grasp, [0.953, 0.674, 1.005]) has no collision-free solution; (0.639, 1.147) pedestal 0.10: ['ik'] at the stance 'nominal' point 0 (grasp, [0.953, 0.674, 1.005]) has no collision-free solution; (0.849, 1.097) pedestal 0.09: ['ik'] at the stance 'nominal' point 0 (grasp, [0.953, 0.674, 1.005]) has no collision-free solution; (0.729, 1.197) pedestal 0.07: ['ik'] at the stance 'nominal' point 0 (grasp, [0.953, 0.674, 1.005]) has no collision-free solution",
+   "rejecting_checks_per_candidate": [
+    {
+     "xy": [
+      0.7394,
+      1.0965
+     ],
+     "pedestal_q": 0.13,
+     "failed": [
+      "ik"
+     ]
+    },
+    {
+     "xy": [
+      0.6394,
+      1.1465
+     ],
+     "pedestal_q": 0.1,
+     "failed": [
+      "ik"
+     ]
+    },
+    {
+     "xy": [
+      0.8494,
+      1.0965
+     ],
+     "pedestal_q": 0.09,
+     "failed": [
+      "ik"
+     ]
+    },
+    {
+     "xy": [
+      0.7294,
+      1.1965
+     ],
+     "pedestal_q": 0.07,
+     "failed": [
+      "ik"
+     ]
+    }
+   ],
+   "most_common_rejecting_check": "ik",
+   "stance": null,
+   "seconds": 28.2
+  },
+  {
+   "i": 40,
+   "group": "nudge_5cm",
+   "size_m": 0.05,
+   "beaker_xy": [
+    0.9784,
+    0.6285
+   ],
+   "hotplate_xy": [
+    0.7708,
+    0.6575
+   ],
+   "beaker_offset": [
+    -0.0216,
+    -0.0315
+   ],
+   "hotplate_offset": [
+    -0.0292,
+    -0.0025
+   ],
+   "ok": false,
+   "reason": "no stance passed the full check",
+   "stop": "no stance passed the full check: (0.766, 1.094) pedestal 0.11: ['ik'] at the stance 'nominal' point 0 (grasp, [0.978, 0.628, 1.005]) has no collision-free solution; (0.666, 1.094) pedestal 0.11: ['ik'] at the stance 'nominal' point 0 (grasp, [0.978, 0.628, 1.005]) has no collision-free solution; (0.866, 1.104) pedestal 0.10: ['ik'] at the stance 'nominal' point 0 (grasp, [0.978, 0.628, 1.005]) has no collision-free solution; (0.776, 0.994) pedestal 0.13: ['home_clearance'] at pedestal 0.110 the arms at home are 27 mm from openarm_left_right_finger_collision vs task_beaker_wall_16 (the limit ",
+   "rejecting_checks_per_candidate": [
+    {
+     "xy": [
+      0.7658,
+      1.0935
+     ],
+     "pedestal_q": 0.11,
+     "failed": [
+      "ik"
+     ]
+    },
+    {
+     "xy": [
+      0.6658,
+      1.0935
+     ],
+     "pedestal_q": 0.11,
+     "failed": [
+      "ik"
+     ]
+    },
+    {
+     "xy": [
+      0.8658,
+      1.1035
+     ],
+     "pedestal_q": 0.1,
+     "failed": [
+      "ik"
+     ]
+    },
+    {
+     "xy": [
+      0.7758,
+      0.9935
+     ],
+     "pedestal_q": 0.13,
+     "failed": [
+      "home_clearance"
+     ]
+    }
+   ],
+   "most_common_rejecting_check": "ik",
+   "stance": null,
+   "seconds": 27.0
+  },
+  {
+   "i": 41,
+   "group": "nudge_10cm",
+   "size_m": 0.1,
+   "beaker_xy": [
+    0.9505,
+    0.7052
+   ],
+   "hotplate_xy": [
+    0.7815,
+    0.6256
+   ],
+   "beaker_offset": [
+    -0.0495,
+    0.0452
+   ],
+   "hotplate_offset": [
+    -0.0185,
+    -0.0344
+   ],
+   "ok": false,
+   "reason": "no stance passed the full check",
+   "stop": "no stance passed the full check: (0.717, 1.111) pedestal 0.13: ['ik'] at the stance 'nominal' point 0 (grasp, [0.95, 0.705, 1.005]) has no collision-free solution; (0.617, 1.171) pedestal 0.10: ['ik'] at the stance 'nominal' point 0 (grasp, [0.95, 0.705, 1.005]) has no collision-free solution; (0.717, 1.211) pedestal 0.05: ['ik'] at the stance 'nominal' point 0 (grasp, [0.95, 0.705, 1.005]) has no collision-free solution",
+   "rejecting_checks_per_candidate": [
+    {
+     "xy": [
+      0.7165,
+      1.1106
+     ],
+     "pedestal_q": 0.13,
+     "failed": [
+      "ik"
+     ]
+    },
+    {
+     "xy": [
+      0.6165,
+      1.1706
+     ],
+     "pedestal_q": 0.1,
+     "failed": [
+      "ik"
+     ]
+    },
+    {
+     "xy": [
+      0.7165,
+      1.2106
+     ],
+     "pedestal_q": 0.05,
+     "failed": [
+      "ik"
+     ]
+    }
+   ],
+   "most_common_rejecting_check": "ik",
+   "stance": null,
+   "seconds": 28.7
+  },
+  {
+   "i": 42,
+   "group": "nudge_10cm",
+   "size_m": 0.1,
+   "beaker_xy": [
+    1.0298,
+    0.6926
+   ],
+   "hotplate_xy": [
+    0.7151,
+    0.6527
+   ],
+   "beaker_offset": [
+    0.0298,
+    0.0326
+   ],
+   "hotplate_offset": [
+    -0.0849,
+    -0.0073
+   ],
+   "ok": true,
+   "reason": "pass",
+   "stop": null,
+   "rejecting_checks_per_candidate": [],
+   "most_common_rejecting_check": null,
+   "stance": {
+    "xy": [
+     0.7201,
+     1.1577
+    ],
+    "q": 0.1
+   },
+   "seconds": 60.7
+  },
+  {
+   "i": 43,
+   "group": "nudge_10cm",
+   "size_m": 0.1,
+   "beaker_xy": [
+    1.0136,
+    0.6985
+   ],
+   "hotplate_xy": [
+    0.7298,
+    0.6081
+   ],
+   "beaker_offset": [
+    0.0136,
+    0.0385
+   ],
+   "hotplate_offset": [
+    -0.0702,
+    -0.0519
+   ],
+   "ok": true,
+   "reason": "pass",
+   "stop": null,
+   "rejecting_checks_per_candidate": [],
+   "most_common_rejecting_check": null,
+   "stance": {
+    "xy": [
+     0.6848,
+     1.1431
+    ],
+    "q": 0.09
+   },
+   "seconds": 60.4
+  },
+  {
+   "i": 44,
+   "group": "nudge_10cm",
+   "size_m": 0.1,
+   "beaker_xy": [
+    0.9868,
+    0.57
+   ],
+   "hotplate_xy": [
+    0.7928,
+    0.5649
+   ],
+   "beaker_offset": [
+    -0.0132,
+    -0.09
+   ],
+   "hotplate_offset": [
+    -0.0072,
+    -0.0951
+   ],
+   "ok": true,
+   "reason": "pass",
+   "stop": null,
+   "rejecting_checks_per_candidate": [],
+   "most_common_rejecting_check": null,
+   "stance": {
+    "xy": [
+     0.7578,
+     1.0999
+    ],
+    "q": 0.08
+   },
+   "seconds": 57.4
+  },
+  {
+   "i": 45,
+   "group": "nudge_10cm",
+   "size_m": 0.1,
+   "beaker_xy": [
+    1.063,
+    0.5821
+   ],
+   "hotplate_xy": [
+    0.7195,
+    0.6932
+   ],
+   "beaker_offset": [
+    0.063,
+    -0.0779
+   ],
+   "hotplate_offset": [
+    -0.0805,
+    0.0332
+   ],
+   "ok": false,
+   "reason": "no stance passed the full check",
+   "stop": "no stance passed the full check: (0.765, 1.057) pedestal 0.13: ['ik'] at the stance 'pedestal+1' point 0 (grasp, [1.063, 0.582, 1.005]) has no collision-free solution; (0.845, 1.117) pedestal 0.09: ['ik'] at the stance 'y+1' point 0 (grasp, [1.063, 0.582, 1.005]) has no collision-free solution; (0.675, 1.007) pedestal 0.17: ['placed_beaker'] at pedestal 0.170 the arms at home are 23 mm from a beaker placed on the hotplate",
+   "rejecting_checks_per_candidate": [
+    {
+     "xy": [
+      0.7645,
+      1.0571
+     ],
+     "pedestal_q": 0.13,
+     "failed": [
+      "ik"
+     ]
+    },
+    {
+     "xy": [
+      0.8445,
+      1.1171
+     ],
+     "pedestal_q": 0.09,
+     "failed": [
+      "ik"
+     ]
+    },
+    {
+     "xy": [
+      0.6745,
+      1.0071
+     ],
+     "pedestal_q": 0.17,
+     "failed": [
+      "placed_beaker"
+     ]
+    }
+   ],
+   "most_common_rejecting_check": "ik",
+   "stance": null,
+   "seconds": 29.4
+  },
+  {
+   "i": 46,
+   "group": "nudge_10cm",
+   "size_m": 0.1,
+   "beaker_xy": [
+    1.009,
+    0.6181
+   ],
+   "hotplate_xy": [
+    0.7174,
+    0.6935
+   ],
+   "beaker_offset": [
+    0.009,
+    -0.0419
+   ],
+   "hotplate_offset": [
+    -0.0826,
+    0.0335
+   ],
+   "ok": true,
+   "reason": "pass",
+   "stop": null,
+   "rejecting_checks_per_candidate": [],
+   "most_common_rejecting_check": null,
+   "stance": {
+    "xy": [
+     0.7924,
+     1.0631
+    ],
+    "q": 0.15
+   },
+   "seconds": 62.1
+  },
+  {
+   "i": 47,
+   "group": "nudge_10cm",
+   "size_m": 0.1,
+   "beaker_xy": [
+    0.9327,
+    0.725
+   ],
+   "hotplate_xy": [
+    0.739,
+    0.7339
+   ],
+   "beaker_offset": [
+    -0.0673,
+    0.065
+   ],
+   "hotplate_offset": [
+    -0.061,
+    0.0739
+   ],
+   "ok": false,
+   "reason": "no stance passed the full check",
+   "stop": "no stance passed the full check: (0.694, 1.180) pedestal 0.12: ['ik'] at the stance 'nominal' point 0 (grasp, [0.933, 0.725, 1.005]) has no collision-free solution; (0.794, 1.200) pedestal 0.10: ['ik'] at the stance 'nominal' point 0 (grasp, [0.933, 0.725, 1.005]) has no collision-free solution; (0.594, 1.180) pedestal 0.10: ['ik'] at the stance 'nominal' point 0 (grasp, [0.933, 0.725, 1.005]) has no collision-free solution; (0.724, 1.280) pedestal 0.06: ['ik'] at the stance 'nominal' point 0 (grasp, [0.933, 0.725, 1.005]) has no collision-free solution",
+   "rejecting_checks_per_candidate": [
+    {
+     "xy": [
+      0.694,
+      1.18
+     ],
+     "pedestal_q": 0.12,
+     "failed": [
+      "ik"
+     ]
+    },
+    {
+     "xy": [
+      0.794,
+      1.2
+     ],
+     "pedestal_q": 0.1,
+     "failed": [
+      "ik"
+     ]
+    },
+    {
+     "xy": [
+      0.594,
+      1.18
+     ],
+     "pedestal_q": 0.1,
+     "failed": [
+      "ik"
+     ]
+    },
+    {
+     "xy": [
+      0.724,
+      1.28
+     ],
+     "pedestal_q": 0.06,
+     "failed": [
+      "ik"
+     ]
+    }
+   ],
+   "most_common_rejecting_check": "ik",
+   "stance": null,
+   "seconds": 44.5
+  },
+  {
+   "i": 48,
+   "group": "nudge_10cm",
+   "size_m": 0.1,
+   "beaker_xy": [
+    0.9065,
+    0.6326
+   ],
+   "hotplate_xy": [
+    0.7185,
+    0.6699
+   ],
+   "beaker_offset": [
+    -0.0935,
+    -0.0274
+   ],
+   "hotplate_offset": [
+    -0.0815,
+    0.0099
+   ],
+   "ok": false,
+   "reason": "no stance passed the full check",
+   "stop": "no stance passed the full check: (0.724, 1.118) pedestal 0.11: ['ik'] at the stance 'nominal' point 0 (grasp, [0.906, 0.633, 1.005]) has no collision-free solution; (0.624, 1.118) pedestal 0.10: ['ik'] at the stance 'nominal' point 0 (grasp, [0.906, 0.633, 1.005]) has no collision-free solution; (0.824, 1.148) pedestal 0.07: ['ik'] at the stance 'nominal' point 0 (grasp, [0.906, 0.633, 1.005]) has no collision-free solution; (0.674, 1.028) pedestal 0.21: ['ik'] at the stance 'nominal' point 0 (grasp, [0.906, 0.633, 1.005]) has no collision-free solution",
+   "rejecting_checks_per_candidate": [
+    {
+     "xy": [
+      0.7235,
+      1.1176
+     ],
+     "pedestal_q": 0.11,
+     "failed": [
+      "ik"
+     ]
+    },
+    {
+     "xy": [
+      0.6235,
+      1.1176
+     ],
+     "pedestal_q": 0.1,
+     "failed": [
+      "ik"
+     ]
+    },
+    {
+     "xy": [
+      0.8235,
+      1.1476
+     ],
+     "pedestal_q": 0.07,
+     "failed": [
+      "ik"
+     ]
+    },
+    {
+     "xy": [
+      0.6735,
+      1.0276
+     ],
+     "pedestal_q": 0.21,
+     "failed": [
+      "ik"
+     ]
+    }
+   ],
+   "most_common_rejecting_check": "ik",
+   "stance": null,
+   "seconds": 56.8
+  },
+  {
+   "i": 49,
+   "group": "nudge_10cm",
+   "size_m": 0.1,
+   "beaker_xy": [
+    1.0533,
+    0.671
+   ],
+   "hotplate_xy": [
+    0.7123,
+    0.7414
+   ],
+   "beaker_offset": [
+    0.0533,
+    0.011
+   ],
+   "hotplate_offset": [
+    -0.0877,
+    0.0814
+   ],
+   "ok": true,
+   "reason": "pass",
+   "stop": null,
+   "rejecting_checks_per_candidate": [],
+   "most_common_rejecting_check": null,
+   "stance": {
+    "xy": [
+     0.7773,
+     1.136
+    ],
+    "q": 0.13
+   },
+   "seconds": 60.1
+  },
+  {
+   "i": 50,
+   "group": "nudge_10cm",
+   "size_m": 0.1,
+   "beaker_xy": [
+    0.9914,
+    0.7002
+   ],
+   "hotplate_xy": [
+    0.8492,
+    0.6571
+   ],
+   "beaker_offset": [
+    -0.0086,
+    0.0402
+   ],
+   "hotplate_offset": [
+    0.0492,
+    -0.0029
+   ],
+   "ok": false,
+   "reason": "no stance covers any of the objects",
+   "stop": "no stance covers any of the objects: 1:beaker: best count 3 without obstacles, 0 with them; blocked by ['hotplate']",
+   "rejecting_checks_per_candidate": [],
+   "most_common_rejecting_check": null,
+   "stance": null,
+   "seconds": 31.6
+  },
+  {
+   "i": 51,
+   "group": "nudge_10cm",
+   "size_m": 0.1,
+   "beaker_xy": [
+    1.0276,
+    0.7322
+   ],
+   "hotplate_xy": [
+    0.829,
+    0.6776
+   ],
+   "beaker_offset": [
+    0.0276,
+    0.0722
+   ],
+   "hotplate_offset": [
+    0.029,
+    0.0176
+   ],
+   "ok": true,
+   "reason": "pass",
+   "stop": null,
+   "rejecting_checks_per_candidate": [],
+   "most_common_rejecting_check": null,
+   "stance": {
+    "xy": [
+     0.714,
+     1.2026
+    ],
+    "q": 0.1
+   },
+   "seconds": 51.3
+  },
+  {
+   "i": 52,
+   "group": "nudge_10cm",
+   "size_m": 0.1,
+   "beaker_xy": [
+    1.0019,
+    0.5672
+   ],
+   "hotplate_xy": [
+    0.7207,
+    0.6039
+   ],
+   "beaker_offset": [
+    0.0019,
+    -0.0928
+   ],
+   "hotplate_offset": [
+    -0.0793,
+    -0.0561
+   ],
+   "ok": false,
+   "reason": "no stance passed the full check",
+   "stop": "no stance passed the full check: (0.786, 0.992) pedestal 0.15: ['ik'] at the stance 'pedestal-1' point 4 (over, [1.002, 0.687, 1.16]) has no collision-free solution; (0.706, 1.052) pedestal 0.10: ['home_clearance'] at pedestal 0.080 the arms at home are 34 mm from openarm_left_left_finger_collision vs task_hotplate_top_plate (the lim; (0.806, 1.092) pedestal 0.07: ['home_clearance'] at pedestal 0.050 the arms at home are 34 mm from openarm_right_right_finger_collision vs task_hotplate_base (the limit ; (0.626, 0.992) pedestal 0.16: ['placed_beaker'] at pedestal 0.160 the arms at home are 9 mm from a beaker placed on the hotplate",
+   "rejecting_checks_per_candidate": [
+    {
+     "xy": [
+      0.7857,
+      0.9922
+     ],
+     "pedestal_q": 0.15,
+     "failed": [
+      "ik"
+     ]
+    },
+    {
+     "xy": [
+      0.7057,
+      1.0522
+     ],
+     "pedestal_q": 0.1,
+     "failed": [
+      "home_clearance"
+     ]
+    },
+    {
+     "xy": [
+      0.8057,
+      1.0922
+     ],
+     "pedestal_q": 0.07,
+     "failed": [
+      "home_clearance"
+     ]
+    },
+    {
+     "xy": [
+      0.6257,
+      0.9922
+     ],
+     "pedestal_q": 0.16,
+     "failed": [
+      "placed_beaker"
+     ]
+    }
+   ],
+   "most_common_rejecting_check": "home_clearance",
+   "stance": null,
+   "seconds": 27.9
+  },
+  {
+   "i": 53,
+   "group": "nudge_10cm",
+   "size_m": 0.1,
+   "beaker_xy": [
+    0.9935,
+    0.6658
+   ],
+   "hotplate_xy": [
+    0.8371,
+    0.707
+   ],
+   "beaker_offset": [
+    -0.0065,
+    0.0058
+   ],
+   "hotplate_offset": [
+    0.0371,
+    0.047
+   ],
+   "ok": false,
+   "reason": "no stance covers any of the objects",
+   "stop": "no stance covers any of the objects: 1:beaker: best count 3 without obstacles, 0 with them; blocked by ['hotplate']",
+   "rejecting_checks_per_candidate": [],
+   "most_common_rejecting_check": null,
+   "stance": null,
+   "seconds": 33.4
+  },
+  {
+   "i": 54,
+   "group": "nudge_10cm",
+   "size_m": 0.1,
+   "beaker_xy": [
+    0.9414,
+    0.7125
+   ],
+   "hotplate_xy": [
+    0.7172,
+    0.5699
+   ],
+   "beaker_offset": [
+    -0.0586,
+    0.0525
+   ],
+   "hotplate_offset": [
+    -0.0828,
+    -0.0901
+   ],
+   "ok": false,
+   "reason": "no stance passed the full check",
+   "stop": "no stance passed the full check: (0.622, 1.135) pedestal 0.08: ['ik'] at the stance 'nominal' point 0 (grasp, [0.941, 0.712, 1.005]) has no collision-free solution; (0.732, 1.105) pedestal 0.07: ['ik'] at the stance 'nominal' point 0 (grasp, [0.941, 0.712, 1.005]) has no collision-free solution",
+   "rejecting_checks_per_candidate": [
+    {
+     "xy": [
+      0.6222,
+      1.1349
+     ],
+     "pedestal_q": 0.08,
+     "failed": [
+      "ik"
+     ]
+    },
+    {
+     "xy": [
+      0.7322,
+      1.1049
+     ],
+     "pedestal_q": 0.07,
+     "failed": [
+      "ik"
+     ]
+    }
+   ],
+   "most_common_rejecting_check": "ik",
+   "stance": null,
+   "seconds": 27.0
+  },
+  {
+   "i": 55,
+   "group": "nudge_10cm",
+   "size_m": 0.1,
+   "beaker_xy": [
+    1.0387,
+    0.6595
+   ],
+   "hotplate_xy": [
+    0.8197,
+    0.6907
+   ],
+   "beaker_offset": [
+    0.0387,
+    -0.0005
+   ],
+   "hotplate_offset": [
+    0.0197,
+    0.0307
+   ],
+   "ok": true,
+   "reason": "pass",
+   "stop": null,
+   "rejecting_checks_per_candidate": [],
+   "most_common_rejecting_check": null,
+   "stance": {
+    "xy": [
+     0.8547,
+     1.1445
+    ],
+    "q": 0.11
+   },
+   "seconds": 53.2
+  },
+  {
+   "i": 56,
+   "group": "nudge_10cm",
+   "size_m": 0.1,
+   "beaker_xy": [
+    0.9691,
+    0.6425
+   ],
+   "hotplate_xy": [
+    0.8598,
+    0.5731
+   ],
+   "beaker_offset": [
+    -0.0309,
+    -0.0175
+   ],
+   "hotplate_offset": [
+    0.0598,
+    -0.0869
+   ],
+   "ok": false,
+   "reason": "no stance covers any of the objects",
+   "stop": "no stance covers any of the objects: 1:beaker: best count 3 without obstacles, 0 with them; blocked by ['hotplate']",
+   "rejecting_checks_per_candidate": [],
+   "most_common_rejecting_check": null,
+   "stance": null,
+   "seconds": 31.2
+  },
+  {
+   "i": 57,
+   "group": "nudge_10cm",
+   "size_m": 0.1,
+   "beaker_xy": [
+    0.9202,
+    0.6656
+   ],
+   "hotplate_xy": [
+    0.8807,
+    0.5953
+   ],
+   "beaker_offset": [
+    -0.0798,
+    0.0056
+   ],
+   "hotplate_offset": [
+    0.0807,
+    -0.0647
+   ],
+   "ok": false,
+   "reason": "no stance covers any of the objects",
+   "stop": "no stance covers any of the objects: 1:beaker: best count 3 without obstacles, 0 with them; blocked by ['hotplate']",
+   "rejecting_checks_per_candidate": [],
+   "most_common_rejecting_check": null,
+   "stance": null,
+   "seconds": 31.1
+  },
+  {
+   "i": 58,
+   "group": "nudge_10cm",
+   "size_m": 0.1,
+   "beaker_xy": [
+    0.9518,
+    0.7544
+   ],
+   "hotplate_xy": [
+    0.8279,
+    0.7316
+   ],
+   "beaker_offset": [
+    -0.0482,
+    0.0944
+   ],
+   "hotplate_offset": [
+    0.0279,
+    0.0716
+   ],
+   "ok": false,
+   "reason": "no stance covers any of the objects",
+   "stop": "no stance covers any of the objects: 1:beaker: best count 3 without obstacles, 0 with them; blocked by ['hotplate']",
+   "rejecting_checks_per_candidate": [],
+   "most_common_rejecting_check": null,
+   "stance": null,
+   "seconds": 30.2
+  },
+  {
+   "i": 59,
+   "group": "nudge_10cm",
+   "size_m": 0.1,
+   "beaker_xy": [
+    1.0248,
+    0.5739
+   ],
+   "hotplate_xy": [
+    0.888,
+    0.6118
+   ],
+   "beaker_offset": [
+    0.0248,
+    -0.0861
+   ],
+   "hotplate_offset": [
+    0.088,
+    -0.0482
+   ],
+   "ok": false,
+   "reason": "no stance covers any of the objects",
+   "stop": "no stance covers any of the objects: 1:beaker: best count 3 without obstacles, 0 with them; blocked by ['hotplate']",
+   "rejecting_checks_per_candidate": [],
+   "most_common_rejecting_check": null,
+   "stance": null,
+   "seconds": 30.5
+  },
+  {
+   "i": 60,
+   "group": "nudge_10cm",
+   "size_m": 0.1,
+   "beaker_xy": [
+    0.9562,
+    0.5919
+   ],
+   "hotplate_xy": [
+    0.8798,
+    0.7069
+   ],
+   "beaker_offset": [
+    -0.0438,
+    -0.0681
+   ],
+   "hotplate_offset": [
+    0.0798,
+    0.0469
+   ],
+   "ok": false,
+   "reason": "no stance covers any of the objects",
+   "stop": "no stance covers any of the objects: 1:beaker: best count 3 without obstacles, 0 with them; blocked by ['hotplate']",
+   "rejecting_checks_per_candidate": [],
+   "most_common_rejecting_check": null,
+   "stance": null,
+   "seconds": 30.8
+  },
+  {
+   "i": 61,
+   "group": "nudge_20cm",
+   "size_m": 0.2,
+   "beaker_xy": [
+    1.027,
+    0.4781
+   ],
+   "hotplate_xy": [
+    0.8846,
+    0.6437
+   ],
+   "beaker_offset": [
+    0.027,
+    -0.1819
+   ],
+   "hotplate_offset": [
+    0.0846,
+    -0.0163
+   ],
+   "ok": false,
+   "reason": "no stance passed the full check",
+   "stop": "no stance passed the full check: (0.900, 0.953) pedestal 0.14: ['placed_beaker'] at pedestal 0.140 the arms at home are -11 mm from a beaker placed on the hotplate",
+   "rejecting_checks_per_candidate": [
+    {
+     "xy": [
+      0.8996,
+      0.9531
+     ],
+     "pedestal_q": 0.14,
+     "failed": [
+      "placed_beaker"
+     ]
+    }
+   ],
+   "most_common_rejecting_check": "placed_beaker",
+   "stance": null,
+   "seconds": 24.6
+  },
+  {
+   "i": 62,
+   "group": "nudge_20cm",
+   "size_m": 0.2,
+   "beaker_xy": [
+    0.8937,
+    0.5332
+   ],
+   "hotplate_xy": [
+    0.6789,
+    0.5415
+   ],
+   "beaker_offset": [
+    -0.1063,
+    -0.1268
+   ],
+   "hotplate_offset": [
+    -0.1211,
+    -0.1185
+   ],
+   "ok": false,
+   "reason": "no stance passed the full check",
+   "stop": "no stance passed the full check: (0.674, 0.978) pedestal 0.12: ['placed_beaker'] at pedestal 0.120 the arms at home are -8 mm from a beaker placed on the hotplate; (0.574, 0.998) pedestal 0.10: ['home_clearance'] at pedestal 0.100 the arms at home are 39 mm from openarm_left_right_finger_collision vs task_hotplate_top_plate (the li; (0.774, 0.988) pedestal 0.10: ['home_clearance'] at pedestal 0.100 the arms at home are 17 mm from openarm_left_right_finger_collision vs task_beaker_wall_17 (the limit ; (0.654, 1.078) pedestal 0.07: ['home_clearance'] at pedestal 0.070 the arms at home are 37 mm from openarm_left_left_finger_collision vs task_hotplate_base (the limit is",
+   "rejecting_checks_per_candidate": [
+    {
+     "xy": [
+      0.6739,
+      0.9782
+     ],
+     "pedestal_q": 0.12,
+     "failed": [
+      "placed_beaker"
+     ]
+    },
+    {
+     "xy": [
+      0.5739,
+      0.9982
+     ],
+     "pedestal_q": 0.1,
+     "failed": [
+      "home_clearance"
+     ]
+    },
+    {
+     "xy": [
+      0.7739,
+      0.9882
+     ],
+     "pedestal_q": 0.1,
+     "failed": [
+      "home_clearance"
+     ]
+    },
+    {
+     "xy": [
+      0.6539,
+      1.0782
+     ],
+     "pedestal_q": 0.07,
+     "failed": [
+      "home_clearance"
+     ]
+    }
+   ],
+   "most_common_rejecting_check": "home_clearance",
+   "stance": null,
+   "seconds": 24.5
+  },
+  {
+   "i": 63,
+   "group": "nudge_20cm",
+   "size_m": 0.2,
+   "beaker_xy": [
+    1.0868,
+    0.524
+   ],
+   "hotplate_xy": [
+    0.8469,
+    0.5587
+   ],
+   "beaker_offset": [
+    0.0868,
+    -0.136
+   ],
+   "hotplate_offset": [
+    0.0469,
+    -0.1013
+   ],
+   "ok": false,
+   "reason": "no stance passed the full check",
+   "stop": "no stance passed the full check: (0.902, 1.009) pedestal 0.11: ['home_clearance'] at pedestal 0.110 the arms at home are 29 mm from openarm_left_left_finger_collision vs task_beaker_wall_11 (the limit i; (0.802, 0.999) pedestal 0.11: ['home_clearance'] at pedestal 0.110 the arms at home are 27 mm from openarm_left_right_finger_collision vs task_beaker_wall_12 (the limit ; (0.872, 0.909) pedestal 0.15: ['placed_beaker'] at pedestal 0.150 the arms at home are -8 mm from a beaker placed on the hotplate; (0.712, 0.949) pedestal 0.15: ['placed_beaker'] at pedestal 0.150 the arms at home are -12 mm from a beaker placed on the hotplate",
+   "rejecting_checks_per_candidate": [
+    {
+     "xy": [
+      0.9019,
+      1.009
+     ],
+     "pedestal_q": 0.11,
+     "failed": [
+      "home_clearance"
+     ]
+    },
+    {
+     "xy": [
+      0.8019,
+      0.999
+     ],
+     "pedestal_q": 0.11,
+     "failed": [
+      "home_clearance"
+     ]
+    },
+    {
+     "xy": [
+      0.8719,
+      0.909
+     ],
+     "pedestal_q": 0.15,
+     "failed": [
+      "placed_beaker"
+     ]
+    },
+    {
+     "xy": [
+      0.7119,
+      0.949
+     ],
+     "pedestal_q": 0.15,
+     "failed": [
+      "placed_beaker"
+     ]
+    }
+   ],
+   "most_common_rejecting_check": "home_clearance",
+   "stance": null,
+   "seconds": 24.2
+  },
+  {
+   "i": 64,
+   "group": "nudge_20cm",
+   "size_m": 0.2,
+   "beaker_xy": [
+    0.8939,
+    0.5529
+   ],
+   "hotplate_xy": [
+    0.8054,
+    0.8118
+   ],
+   "beaker_offset": [
+    -0.1061,
+    -0.1071
+   ],
+   "hotplate_offset": [
+    0.0054,
+    0.1518
+   ],
+   "ok": false,
+   "reason": "no stance passed the full check",
+   "stop": "no stance passed the full check: (0.879, 0.878) pedestal 0.15: ['placed_beaker'] at pedestal 0.150 the arms at home are -13 mm from a beaker placed on the hotplate; (0.959, 0.938) pedestal 0.11: ['home_clearance'] at pedestal 0.110 the arms at home are 14 mm from openarm_left_left_finger_collision vs task_beaker_wall_6 (the limit is; (0.859, 0.978) pedestal 0.10: ['home_clearance'] at pedestal 0.100 the arms at home are 16 mm from openarm_left_left_finger_collision vs task_beaker_wall_20 (the limit i; (0.939, 1.038) pedestal 0.06: ['home_clearance'] at pedestal 0.060 the arms at home are 11 mm from openarm_right_right_finger_collision vs task_hotplate_top_plate (the l",
+   "rejecting_checks_per_candidate": [
+    {
+     "xy": [
+      0.8789,
+      0.8779
+     ],
+     "pedestal_q": 0.15,
+     "failed": [
+      "placed_beaker"
+     ]
+    },
+    {
+     "xy": [
+      0.9589,
+      0.9379
+     ],
+     "pedestal_q": 0.11,
+     "failed": [
+      "home_clearance"
+     ]
+    },
+    {
+     "xy": [
+      0.8589,
+      0.9779
+     ],
+     "pedestal_q": 0.1,
+     "failed": [
+      "home_clearance"
+     ]
+    },
+    {
+     "xy": [
+      0.9389,
+      1.0379
+     ],
+     "pedestal_q": 0.06,
+     "failed": [
+      "home_clearance"
+     ]
+    }
+   ],
+   "most_common_rejecting_check": "home_clearance",
+   "stance": null,
+   "seconds": 33.9
+  },
+  {
+   "i": 65,
+   "group": "nudge_20cm",
+   "size_m": 0.2,
+   "beaker_xy": [
+    1.1738,
+    0.4708
+   ],
+   "hotplate_xy": [
+    0.9286,
+    0.6463
+   ],
+   "beaker_offset": [
+    0.1738,
+    -0.1892
+   ],
+   "hotplate_offset": [
+    0.1286,
+    -0.0137
+   ],
+   "ok": false,
+   "reason": "no stance passed the full check",
+   "stop": "no stance passed the full check: (0.924, 0.956) pedestal 0.13: ['home_clearance'] at pedestal 0.130 the arms at home are 34 mm from openarm_left_left_finger_collision vs task_beaker_wall_12 (the limit i",
+   "rejecting_checks_per_candidate": [
+    {
+     "xy": [
+      0.9236,
+      0.9558
+     ],
+     "pedestal_q": 0.13,
+     "failed": [
+      "home_clearance"
+     ]
+    }
+   ],
+   "most_common_rejecting_check": "home_clearance",
+   "stance": null,
+   "seconds": 28.7
+  },
+  {
+   "i": 66,
+   "group": "nudge_20cm",
+   "size_m": 0.2,
+   "beaker_xy": [
+    0.9841,
+    0.6212
+   ],
+   "hotplate_xy": [
+    0.8243,
+    0.6338
+   ],
+   "beaker_offset": [
+    -0.0159,
+    -0.0388
+   ],
+   "hotplate_offset": [
+    0.0243,
+    -0.0262
+   ],
+   "ok": false,
+   "reason": "no stance covers any of the objects",
+   "stop": "no stance covers any of the objects: 1:beaker: best count 3 without obstacles, 0 with them; blocked by ['hotplate']",
+   "rejecting_checks_per_candidate": [],
+   "most_common_rejecting_check": null,
+   "stance": null,
+   "seconds": 36.9
+  },
+  {
+   "i": 67,
+   "group": "nudge_20cm",
+   "size_m": 0.2,
+   "beaker_xy": [
+    1.1985,
+    0.5581
+   ],
+   "hotplate_xy": [
+    0.8569,
+    0.7041
+   ],
+   "beaker_offset": [
+    0.1985,
+    -0.1019
+   ],
+   "hotplate_offset": [
+    0.0569,
+    0.0441
+   ],
+   "ok": false,
+   "reason": "no stance passed the full check",
+   "stop": "no stance passed the full check: (0.872, 1.023) pedestal 0.13: ['placed_beaker'] at pedestal 0.130 the arms at home are 24 mm from a beaker placed on the hotplate; (0.952, 1.093) pedestal 0.09: ['ik'] at the stance 'y+1' point 0 (grasp, [1.198, 0.558, 1.005]) has no collision-free solution",
+   "rejecting_checks_per_candidate": [
+    {
+     "xy": [
+      0.8719,
+      1.0231
+     ],
+     "pedestal_q": 0.13,
+     "failed": [
+      "placed_beaker"
+     ]
+    },
+    {
+     "xy": [
+      0.9519,
+      1.0931
+     ],
+     "pedestal_q": 0.09,
+     "failed": [
+      "ik"
+     ]
+    }
+   ],
+   "most_common_rejecting_check": "placed_beaker",
+   "stance": null,
+   "seconds": 30.6
+  },
+  {
+   "i": 68,
+   "group": "nudge_20cm",
+   "size_m": 0.2,
+   "beaker_xy": [
+    1.1213,
+    0.5875
+   ],
+   "hotplate_xy": [
+    0.9211,
+    0.5134
+   ],
+   "beaker_offset": [
+    0.1213,
+    -0.0725
+   ],
+   "hotplate_offset": [
+    0.1211,
+    -0.1466
+   ],
+   "ok": false,
+   "reason": "no stance passed the full check",
+   "stop": "no stance passed the full check: (0.896, 0.998) pedestal 0.13: ['placed_beaker'] at pedestal 0.130 the arms at home are -6 mm from a beaker placed on the hotplate; (0.796, 1.058) pedestal 0.10: ['home_clearance'] at pedestal 0.080 the arms at home are 39 mm from openarm_left_left_finger_collision vs task_hotplate_base (the limit is; (0.996, 1.008) pedestal 0.06: ['home_clearance'] at pedestal 0.060 the arms at home are 3 mm from openarm_right_left_finger_collision vs task_hotplate_top_plate (the lim; (0.996, 0.868) pedestal 0.25: ['ik'] at the stance 'pedestal+1' point 0 (grasp, [1.121, 0.588, 1.005]) has no collision-free solution",
+   "rejecting_checks_per_candidate": [
+    {
+     "xy": [
+      0.8961,
+      0.9984
+     ],
+     "pedestal_q": 0.13,
+     "failed": [
+      "placed_beaker"
+     ]
+    },
+    {
+     "xy": [
+      0.7961,
+      1.0584
+     ],
+     "pedestal_q": 0.1,
+     "failed": [
+      "home_clearance"
+     ]
+    },
+    {
+     "xy": [
+      0.9961,
+      1.0084
+     ],
+     "pedestal_q": 0.06,
+     "failed": [
+      "home_clearance"
+     ]
+    },
+    {
+     "xy": [
+      0.9961,
+      0.8684
+     ],
+     "pedestal_q": 0.25,
+     "failed": [
+      "ik"
+     ]
+    }
+   ],
+   "most_common_rejecting_check": "home_clearance",
+   "stance": null,
+   "seconds": 28.8
+  },
+  {
+   "i": 69,
+   "group": "nudge_20cm",
+   "size_m": 0.2,
+   "beaker_xy": [
+    1.1979,
+    0.8374
+   ],
+   "hotplate_xy": [
+    0.7563,
+    0.8083
+   ],
+   "beaker_offset": [
+    0.1979,
+    0.1774
+   ],
+   "hotplate_offset": [
+    -0.0437,
+    0.1483
+   ],
+   "ok": true,
+   "reason": "pass",
+   "stop": null,
+   "rejecting_checks_per_candidate": [],
+   "most_common_rejecting_check": null,
+   "stance": {
+    "xy": [
+     0.8513,
+     1.2533
+    ],
+    "q": 0.12
+   },
+   "seconds": 57.0
+  },
+  {
+   "i": 70,
+   "group": "nudge_20cm",
+   "size_m": 0.2,
+   "beaker_xy": [
+    0.9693,
+    0.4773
+   ],
+   "hotplate_xy": [
+    0.9287,
+    0.7506
+   ],
+   "beaker_offset": [
+    -0.0307,
+    -0.1827
+   ],
+   "hotplate_offset": [
+    0.1287,
+    0.0906
+   ],
+   "ok": false,
+   "reason": "no stance passed the full check",
+   "stop": "no stance passed the full check: (1.004, 0.852) pedestal 0.13: ['placed_beaker'] at pedestal 0.130 the arms at home are -14 mm from a beaker placed on the hotplate; (0.904, 0.862) pedestal 0.16: ['placed_beaker'] at pedestal 0.160 the arms at home are -5 mm from a beaker placed on the hotplate; (1.054, 0.942) pedestal 0.06: ['home_clearance'] at pedestal 0.060 the arms at home are -9 mm from openarm_right_left_finger_collision vs task_hotplate_top_plate (the li; (1.114, 0.862) pedestal 0.06: ['home_clearance'] at pedestal 0.060 the arms at home are -31 mm from openarm_right_link7_collision vs task_beaker_wall_19 (the limit is 40",
+   "rejecting_checks_per_candidate": [
+    {
+     "xy": [
+      1.0043,
+      0.8523
+     ],
+     "pedestal_q": 0.13,
+     "failed": [
+      "placed_beaker"
+     ]
+    },
+    {
+     "xy": [
+      0.9043,
+      0.8623
+     ],
+     "pedestal_q": 0.16,
+     "failed": [
+      "placed_beaker"
+     ]
+    },
+    {
+     "xy": [
+      1.0543,
+      0.9423
+     ],
+     "pedestal_q": 0.06,
+     "failed": [
+      "home_clearance"
+     ]
+    },
+    {
+     "xy": [
+      1.1143,
+      0.8623
+     ],
+     "pedestal_q": 0.06,
+     "failed": [
+      "home_clearance"
+     ]
+    }
+   ],
+   "most_common_rejecting_check": "placed_beaker",
+   "stance": null,
+   "seconds": 33.4
+  },
+  {
+   "i": 71,
+   "group": "nudge_20cm",
+   "size_m": 0.2,
+   "beaker_xy": [
+    0.9514,
+    0.5368
+   ],
+   "hotplate_xy": [
+    0.8228,
+    0.6527
+   ],
+   "beaker_offset": [
+    -0.0486,
+    -0.1232
+   ],
+   "hotplate_offset": [
+    0.0228,
+    -0.0073
+   ],
+   "ok": false,
+   "reason": "no stance covers any of the objects",
+   "stop": "no stance covers any of the objects: 1:beaker: best count 3 without obstacles, 0 with them; blocked by ['hotplate']",
+   "rejecting_checks_per_candidate": [],
+   "most_common_rejecting_check": null,
+   "stance": null,
+   "seconds": 21.0
+  },
+  {
+   "i": 72,
+   "group": "nudge_20cm",
+   "size_m": 0.2,
+   "beaker_xy": [
+    1.0557,
+    0.5754
+   ],
+   "hotplate_xy": [
+    0.6079,
+    0.7034
+   ],
+   "beaker_offset": [
+    0.0557,
+    -0.0846
+   ],
+   "hotplate_offset": [
+    -0.1921,
+    0.0434
+   ],
+   "ok": false,
+   "reason": "no stance passed the full check",
+   "stop": "no stance passed the full check: (0.673, 1.060) pedestal 0.10: ['home_clearance'] at pedestal 0.080 the arms at home are 38 mm from openarm_left_left_finger_collision vs task_hotplate_top_plate (the lim",
+   "rejecting_checks_per_candidate": [
+    {
+     "xy": [
+      0.6729,
+      1.0604
+     ],
+     "pedestal_q": 0.1,
+     "failed": [
+      "home_clearance"
+     ]
+    }
+   ],
+   "most_common_rejecting_check": "home_clearance",
+   "stance": null,
+   "seconds": 27.9
+  },
+  {
+   "i": 73,
+   "group": "nudge_20cm",
+   "size_m": 0.2,
+   "beaker_xy": [
+    1.0856,
+    0.5245
+   ],
+   "hotplate_xy": [
+    0.61,
+    0.6821
+   ],
+   "beaker_offset": [
+    0.0856,
+    -0.1355
+   ],
+   "hotplate_offset": [
+    -0.19,
+    0.0221
+   ],
+   "ok": false,
+   "reason": "no stance passed the full check",
+   "stop": "no stance passed the full check: (1.051, 0.860) pedestal 0.15: ['placed_beaker'] at pedestal 0.150 the arms at home are 2 mm from a beaker placed on the hotplate; (0.871, 0.940) pedestal 0.13: ['home_clearance'] at pedestal 0.130 the arms at home are 35 mm from openarm_left_left_finger_collision vs task_beaker_wall_19 (the limit i; (1.001, 0.950) pedestal 0.13: ['placed_beaker'] at pedestal 0.130 the arms at home are -10 mm from a beaker placed on the hotplate; (1.111, 0.940) pedestal 0.11: ['home_clearance'] at pedestal 0.110 the arms at home are 13 mm from openarm_right_right_finger_collision vs task_beaker_wall_8 (the limit ",
+   "rejecting_checks_per_candidate": [
+    {
+     "xy": [
+      1.0506,
+      0.8595
+     ],
+     "pedestal_q": 0.15,
+     "failed": [
+      "placed_beaker"
+     ]
+    },
+    {
+     "xy": [
+      0.8706,
+      0.9395
+     ],
+     "pedestal_q": 0.13,
+     "failed": [
+      "home_clearance"
+     ]
+    },
+    {
+     "xy": [
+      1.0006,
+      0.9495
+     ],
+     "pedestal_q": 0.13,
+     "failed": [
+      "placed_beaker"
+     ]
+    },
+    {
+     "xy": [
+      1.1106,
+      0.9395
+     ],
+     "pedestal_q": 0.11,
+     "failed": [
+      "home_clearance"
+     ]
+    }
+   ],
+   "most_common_rejecting_check": "placed_beaker",
+   "stance": null,
+   "seconds": 37.6
+  },
+  {
+   "i": 74,
+   "group": "nudge_20cm",
+   "size_m": 0.2,
+   "beaker_xy": [
+    0.9141,
+    0.543
+   ],
+   "hotplate_xy": [
+    0.8252,
+    0.8196
+   ],
+   "beaker_offset": [
+    -0.0859,
+    -0.117
+   ],
+   "hotplate_offset": [
+    0.0252,
+    0.1596
+   ],
+   "ok": false,
+   "reason": "no stance passed the full check",
+   "stop": "no stance passed the full check: (0.889, 0.878) pedestal 0.15: ['placed_beaker'] at pedestal 0.150 the arms at home are -12 mm from a beaker placed on the hotplate; (0.979, 0.928) pedestal 0.11: ['home_clearance'] at pedestal 0.110 the arms at home are 22 mm from openarm_left_left_finger_collision vs task_beaker_wall_3 (the limit is; (0.889, 0.978) pedestal 0.10: ['home_clearance'] at pedestal 0.100 the arms at home are 12 mm from openarm_left_left_finger_collision vs task_beaker_wall_14 (the limit i; (0.979, 1.028) pedestal 0.05: ['home_clearance'] at pedestal 0.050 the arms at home are -2 mm from openarm_right_right_finger_collision vs task_hotplate_top_plate (the l",
+   "rejecting_checks_per_candidate": [
+    {
+     "xy": [
+      0.8891,
+      0.878
+     ],
+     "pedestal_q": 0.15,
+     "failed": [
+      "placed_beaker"
+     ]
+    },
+    {
+     "xy": [
+      0.9791,
+      0.928
+     ],
+     "pedestal_q": 0.11,
+     "failed": [
+      "home_clearance"
+     ]
+    },
+    {
+     "xy": [
+      0.8891,
+      0.978
+     ],
+     "pedestal_q": 0.1,
+     "failed": [
+      "home_clearance"
+     ]
+    },
+    {
+     "xy": [
+      0.9791,
+      1.028
+     ],
+     "pedestal_q": 0.05,
+     "failed": [
+      "home_clearance"
+     ]
+    }
+   ],
+   "most_common_rejecting_check": "home_clearance",
+   "stance": null,
+   "seconds": 35.9
+  },
+  {
+   "i": 75,
+   "group": "nudge_20cm",
+   "size_m": 0.2,
+   "beaker_xy": [
+    0.9676,
+    0.7916
+   ],
+   "hotplate_xy": [
+    0.9847,
+    0.5685
+   ],
+   "beaker_offset": [
+    -0.0324,
+    0.1316
+   ],
+   "hotplate_offset": [
+    0.1847,
+    -0.0915
+   ],
+   "ok": false,
+   "reason": "no stance passed the full check",
+   "stop": "no stance passed the full check: (0.973, 1.054) pedestal 0.14: ['ik'] at the stance 'nominal' point 0 (grasp, [0.968, 0.792, 1.005]) has no collision-free solution",
+   "rejecting_checks_per_candidate": [
+    {
+     "xy": [
+      0.9726,
+      1.0535
+     ],
+     "pedestal_q": 0.14,
+     "failed": [
+      "ik"
+     ]
+    }
+   ],
+   "most_common_rejecting_check": "ik",
+   "stance": null,
+   "seconds": 26.4
+  },
+  {
+   "i": 76,
+   "group": "nudge_20cm",
+   "size_m": 0.2,
+   "beaker_xy": [
+    0.9569,
+    0.4847
+   ],
+   "hotplate_xy": [
+    0.7939,
+    0.5045
+   ],
+   "beaker_offset": [
+    -0.0431,
+    -0.1753
+   ],
+   "hotplate_offset": [
+    -0.0061,
+    -0.1555
+   ],
+   "ok": false,
+   "reason": "no stance covers any of the objects",
+   "stop": "no stance covers any of the objects: 1:beaker: best count 3 without obstacles, 0 with them; blocked by ['hotplate']",
+   "rejecting_checks_per_candidate": [],
+   "most_common_rejecting_check": null,
+   "stance": null,
+   "seconds": 33.0
+  },
+  {
+   "i": 77,
+   "group": "nudge_20cm",
+   "size_m": 0.2,
+   "beaker_xy": [
+    0.9551,
+    0.6384
+   ],
+   "hotplate_xy": [
+    0.826,
+    0.4869
+   ],
+   "beaker_offset": [
+    -0.0449,
+    -0.0216
+   ],
+   "hotplate_offset": [
+    0.026,
+    -0.1731
+   ],
+   "ok": false,
+   "reason": "no stance passed the full check",
+   "stop": "no stance passed the full check: (0.611, 1.032) pedestal 0.11: ['placed_beaker'] at pedestal 0.110 the arms at home are 32 mm from a beaker placed on the hotplate",
+   "rejecting_checks_per_candidate": [
+    {
+     "xy": [
+      0.611,
+      1.0319
+     ],
+     "pedestal_q": 0.11,
+     "failed": [
+      "placed_beaker"
+     ]
+    }
+   ],
+   "most_common_rejecting_check": "placed_beaker",
+   "stance": null,
+   "seconds": 24.2
+  },
+  {
+   "i": 78,
+   "group": "nudge_20cm",
+   "size_m": 0.2,
+   "beaker_xy": [
+    0.9015,
+    0.4836
+   ],
+   "hotplate_xy": [
+    0.6172,
+    0.6808
+   ],
+   "beaker_offset": [
+    -0.0985,
+    -0.1764
+   ],
+   "hotplate_offset": [
+    -0.1828,
+    0.0208
+   ],
+   "ok": false,
+   "reason": "no stance passed the full check",
+   "stop": "no stance passed the full check: (0.652, 0.989) pedestal 0.12: ['placed_beaker'] at pedestal 0.120 the arms at home are 4 mm from a beaker placed on the hotplate; (0.532, 0.969) pedestal 0.11: ['placed_beaker'] at pedestal 0.110 the arms at home are 32 mm from a beaker placed on the hotplate",
+   "rejecting_checks_per_candidate": [
+    {
+     "xy": [
+      0.6522,
+      0.9886
+     ],
+     "pedestal_q": 0.12,
+     "failed": [
+      "placed_beaker"
+     ]
+    },
+    {
+     "xy": [
+      0.5322,
+      0.9686
+     ],
+     "pedestal_q": 0.11,
+     "failed": [
+      "placed_beaker"
+     ]
+    }
+   ],
+   "most_common_rejecting_check": "placed_beaker",
+   "stance": null,
+   "seconds": 26.8
+  },
+  {
+   "i": 79,
+   "group": "nudge_20cm",
+   "size_m": 0.2,
+   "beaker_xy": [
+    1.1312,
+    0.6295
+   ],
+   "hotplate_xy": [
+    0.9855,
+    0.496
+   ],
+   "beaker_offset": [
+    0.1312,
+    -0.0305
+   ],
+   "hotplate_offset": [
+    0.1855,
+    -0.164
+   ],
+   "ok": false,
+   "reason": "no stance passed the full check",
+   "stop": "no stance passed the full check: (0.921, 1.021) pedestal 0.11: ['home_clearance'] at pedestal 0.110 the arms at home are 37 mm from openarm_left_left_finger_collision vs task_beaker_wall_9 (the limit is; (0.821, 1.061) pedestal 0.08: ['home_clearance'] at pedestal 0.080 the arms at home are 39 mm from openarm_right_right_finger_collision vs task_hotplate_top_plate (the l",
+   "rejecting_checks_per_candidate": [
+    {
+     "xy": [
+      0.9205,
+      1.021
+     ],
+     "pedestal_q": 0.11,
+     "failed": [
+      "home_clearance"
+     ]
+    },
+    {
+     "xy": [
+      0.8205,
+      1.061
+     ],
+     "pedestal_q": 0.08,
+     "failed": [
+      "home_clearance"
+     ]
+    }
+   ],
+   "most_common_rejecting_check": "home_clearance",
+   "stance": null,
+   "seconds": 23.6
+  },
+  {
+   "i": 80,
+   "group": "nudge_20cm",
+   "size_m": 0.2,
+   "beaker_xy": [
+    0.9698,
+    0.8118
+   ],
+   "hotplate_xy": [
+    0.837,
+    0.7014
+   ],
+   "beaker_offset": [
+    -0.0302,
+    0.1518
+   ],
+   "hotplate_offset": [
+    0.037,
+    0.0414
+   ],
+   "ok": false,
+   "reason": "no stance covers any of the objects",
+   "stop": "no stance covers any of the objects: 1:beaker: best count 3 without obstacles, 0 with them; blocked by ['hotplate']",
+   "rejecting_checks_per_candidate": [],
+   "most_common_rejecting_check": null,
+   "stance": null,
+   "seconds": 33.3
+  },
+  {
+   "i": 81,
+   "group": "nudge_40cm",
+   "size_m": 0.4,
+   "beaker_xy": [
+    0.761,
+    0.3749
+   ],
+   "hotplate_xy": [
+    0.5018,
+    0.9727
+   ],
+   "beaker_offset": [
+    -0.239,
+    -0.2851
+   ],
+   "hotplate_offset": [
+    -0.2982,
+    0.3127
+   ],
+   "ok": false,
+   "reason": "no stance passed the full check",
+   "stop": "no stance passed the full check: (0.576, 0.860) pedestal 0.11: ['placed_beaker'] at pedestal 0.110 the arms at home are -14 mm from a beaker placed on the hotplate; (0.676, 0.860) pedestal 0.10: ['home_clearance'] at pedestal 0.100 the arms at home are 32 mm from openarm_left_right_finger_collision vs task_hotplate_top_plate (the li; (0.476, 0.860) pedestal 0.10: ['home_clearance'] at pedestal 0.080 the arms at home are 25 mm from openarm_left_right_finger_collision vs task_hotplate_base (the limit i; (0.776, 0.860) pedestal 0.08: ['home_clearance'] at pedestal 0.080 the arms at home are -13 mm from openarm_left_right_finger_collision vs task_beaker_wall_32 (the limit",
+   "rejecting_checks_per_candidate": [
+    {
+     "xy": [
+      0.576,
+      0.8599
+     ],
+     "pedestal_q": 0.11,
+     "failed": [
+      "placed_beaker"
+     ]
+    },
+    {
+     "xy": [
+      0.676,
+      0.8599
+     ],
+     "pedestal_q": 0.1,
+     "failed": [
+      "home_clearance"
+     ]
+    },
+    {
+     "xy": [
+      0.476,
+      0.8599
+     ],
+     "pedestal_q": 0.1,
+     "failed": [
+      "home_clearance"
+     ]
+    },
+    {
+     "xy": [
+      0.776,
+      0.8599
+     ],
+     "pedestal_q": 0.08,
+     "failed": [
+      "home_clearance"
+     ]
+    }
+   ],
+   "most_common_rejecting_check": "home_clearance",
+   "stance": null,
+   "seconds": 38.9
+  },
+  {
+   "i": 82,
+   "group": "nudge_40cm",
+   "size_m": 0.4,
+   "beaker_xy": [
+    0.9459,
+    0.6966
+   ],
+   "hotplate_xy": [
+    0.529,
+    0.271
+   ],
+   "beaker_offset": [
+    -0.0541,
+    0.0366
+   ],
+   "hotplate_offset": [
+    -0.271,
+    -0.389
+   ],
+   "ok": false,
+   "reason": "no stance passed the full check",
+   "stop": "no stance passed the full check: (0.921, 1.032) pedestal 0.15: ['placed_beaker'] at pedestal 0.150 the arms at home are 25 mm from a beaker placed on the hotplate; (0.741, 1.112) pedestal 0.13: ['ik'] at the stance 'nominal' point 0 (grasp, [0.946, 0.697, 1.005]) has no collision-free solution; (0.871, 1.122) pedestal 0.13: ['ik'] at the stance 'nominal' point 0 (grasp, [0.946, 0.697, 1.005]) has no collision-free solution; (0.981, 1.112) pedestal 0.11: ['ik'] at the stance 'nominal' point 0 (grasp, [0.946, 0.697, 1.005]) has no collision-free solution",
+   "rejecting_checks_per_candidate": [
+    {
+     "xy": [
+      0.9209,
+      1.0316
+     ],
+     "pedestal_q": 0.15,
+     "failed": [
+      "placed_beaker"
+     ]
+    },
+    {
+     "xy": [
+      0.7409,
+      1.1116
+     ],
+     "pedestal_q": 0.13,
+     "failed": [
+      "ik"
+     ]
+    },
+    {
+     "xy": [
+      0.8709,
+      1.1216
+     ],
+     "pedestal_q": 0.13,
+     "failed": [
+      "ik"
+     ]
+    },
+    {
+     "xy": [
+      0.9809,
+      1.1116
+     ],
+     "pedestal_q": 0.11,
+     "failed": [
+      "ik"
+     ]
+    }
+   ],
+   "most_common_rejecting_check": "ik",
+   "stance": null,
+   "seconds": 39.0
+  },
+  {
+   "i": 83,
+   "group": "nudge_40cm",
+   "size_m": 0.4,
+   "beaker_xy": [
+    1.3141,
+    0.9045
+   ],
+   "hotplate_xy": [
+    1.0961,
+    0.4791
+   ],
+   "beaker_offset": [
+    0.3141,
+    0.2445
+   ],
+   "hotplate_offset": [
+    0.2961,
+    -0.1809
+   ],
+   "ok": false,
+   "reason": "no stance passed the full check",
+   "stop": "no stance passed the full check: (1.279, 1.240) pedestal 0.15: ['ik'] at the stance 'nominal' point 4 (over, [1.314, 1.024, 1.16]) has no collision-free solution; (1.099, 1.320) pedestal 0.13: ['ik'] at the stance 'nominal' point 4 (over, [1.314, 1.024, 1.16]) has no collision-free solution; (1.229, 1.330) pedestal 0.13: ['ik'] at the stance 'x-1' point 4 (over, [1.314, 1.024, 1.16]) has no collision-free solution; (1.339, 1.320) pedestal 0.11: ['ik'] at the stance 'nominal' point 0 (grasp, [1.314, 0.904, 1.005]) has no collision-free solution",
+   "rejecting_checks_per_candidate": [
+    {
+     "xy": [
+      1.2791,
+      1.2395
+     ],
+     "pedestal_q": 0.15,
+     "failed": [
+      "ik"
+     ]
+    },
+    {
+     "xy": [
+      1.0991,
+      1.3195
+     ],
+     "pedestal_q": 0.13,
+     "failed": [
+      "ik"
+     ]
+    },
+    {
+     "xy": [
+      1.2291,
+      1.3295
+     ],
+     "pedestal_q": 0.13,
+     "failed": [
+      "ik"
+     ]
+    },
+    {
+     "xy": [
+      1.3391,
+      1.3195
+     ],
+     "pedestal_q": 0.11,
+     "failed": [
+      "ik"
+     ]
+    }
+   ],
+   "most_common_rejecting_check": "ik",
+   "stance": null,
+   "seconds": 36.3
+  },
+  {
+   "i": 84,
+   "group": "nudge_40cm",
+   "size_m": 0.4,
+   "beaker_xy": [
+    1.3574,
+    0.8393
+   ],
+   "hotplate_xy": [
+    0.9662,
+    0.3769
+   ],
+   "beaker_offset": [
+    0.3574,
+    0.1793
+   ],
+   "hotplate_offset": [
+    0.1662,
+    -0.2831
+   ],
+   "ok": false,
+   "reason": "no stance passed the full check",
+   "stop": "no stance passed the full check: (1.322, 1.184) pedestal 0.15: ['ik'] at the stance 'nominal' point 4 (over, [1.357, 0.959, 1.16]) has no collision-free solution; (1.142, 1.264) pedestal 0.13: ['ik'] at the stance 'nominal' point 4 (over, [1.357, 0.959, 1.16]) has no collision-free solution; (1.272, 1.274) pedestal 0.13: ['ik'] at the stance 'pedestal-1' point 4 (over, [1.357, 0.959, 1.16]) has no collision-free solution; (1.402, 1.244) pedestal 0.11: ['ik'] at the stance 'nominal' point 0 (grasp, [1.357, 0.839, 1.005]) has no collision-free solution",
+   "rejecting_checks_per_candidate": [
+    {
+     "xy": [
+      1.3224,
+      1.1843
+     ],
+     "pedestal_q": 0.15,
+     "failed": [
+      "ik"
+     ]
+    },
+    {
+     "xy": [
+      1.1424,
+      1.2643
+     ],
+     "pedestal_q": 0.13,
+     "failed": [
+      "ik"
+     ]
+    },
+    {
+     "xy": [
+      1.2724,
+      1.2743
+     ],
+     "pedestal_q": 0.13,
+     "failed": [
+      "ik"
+     ]
+    },
+    {
+     "xy": [
+      1.4024,
+      1.2443
+     ],
+     "pedestal_q": 0.11,
+     "failed": [
+      "ik"
+     ]
+    }
+   ],
+   "most_common_rejecting_check": "ik",
+   "stance": null,
+   "seconds": 39.2
+  },
+  {
+   "i": 85,
+   "group": "nudge_40cm",
+   "size_m": 0.4,
+   "beaker_xy": [
+    0.9415,
+    0.2708
+   ],
+   "hotplate_xy": [
+    0.8691,
+    0.9171
+   ],
+   "beaker_offset": [
+    -0.0585,
+    -0.3892
+   ],
+   "hotplate_offset": [
+    0.0691,
+    0.2571
+   ],
+   "ok": false,
+   "reason": "no stance covers any of the objects",
+   "stop": "no stance covers any of the objects: 1:beaker: best count 3 without obstacles, 0 with them",
+   "rejecting_checks_per_candidate": [],
+   "most_common_rejecting_check": null,
+   "stance": null,
+   "seconds": 33.2
+  },
+  {
+   "i": 86,
+   "group": "nudge_40cm",
+   "size_m": 0.4,
+   "beaker_xy": [
+    0.8244,
+    0.5149
+   ],
+   "hotplate_xy": [
+    1.0137,
+    0.9428
+   ],
+   "beaker_offset": [
+    -0.1756,
+    -0.1451
+   ],
+   "hotplate_offset": [
+    0.2137,
+    0.2828
+   ],
+   "ok": false,
+   "reason": "no stance passed the full check",
+   "stop": "no stance passed the full check: (0.789, 0.880) pedestal 0.14: ['placed_beaker'] at pedestal 0.140 the arms at home are 15 mm from a beaker placed on the hotplate; (0.619, 0.930) pedestal 0.13: ['placed_beaker'] at pedestal 0.130 the arms at home are -13 mm from a beaker placed on the hotplate; (0.739, 0.970) pedestal 0.12: ['placed_beaker'] at pedestal 0.120 the arms at home are 2 mm from a beaker placed on the hotplate; (0.889, 0.890) pedestal 0.12: ['home_clearance'] at pedestal 0.120 the arms at home are 21 mm from openarm_left_left_finger_collision vs task_beaker_wall_28 (the limit i",
+   "rejecting_checks_per_candidate": [
+    {
+     "xy": [
+      0.7894,
+      0.8799
+     ],
+     "pedestal_q": 0.14,
+     "failed": [
+      "placed_beaker"
+     ]
+    },
+    {
+     "xy": [
+      0.6194,
+      0.9299
+     ],
+     "pedestal_q": 0.13,
+     "failed": [
+      "placed_beaker"
+     ]
+    },
+    {
+     "xy": [
+      0.7394,
+      0.9699
+     ],
+     "pedestal_q": 0.12,
+     "failed": [
+      "placed_beaker"
+     ]
+    },
+    {
+     "xy": [
+      0.8894,
+      0.8899
+     ],
+     "pedestal_q": 0.12,
+     "failed": [
+      "home_clearance"
+     ]
+    }
+   ],
+   "most_common_rejecting_check": "placed_beaker",
+   "stance": null,
+   "seconds": 31.9
+  },
+  {
+   "i": 87,
+   "group": "nudge_40cm",
+   "size_m": 0.4,
+   "beaker_xy": [
+    1.1728,
+    0.6219
+   ],
+   "hotplate_xy": [
+    0.7055,
+    0.2706
+   ],
+   "beaker_offset": [
+    0.1728,
+    -0.0381
+   ],
+   "hotplate_offset": [
+    -0.0945,
+    -0.3894
+   ],
+   "ok": false,
+   "reason": "no stance passed the full check",
+   "stop": "no stance passed the full check: (1.138, 0.957) pedestal 0.15: ['ik'] at the stance 'nominal' point 4 (over, [1.173, 0.742, 1.16]) has no collision-free solution; (0.958, 1.037) pedestal 0.13: ['ik'] at the stance 'nominal' point 4 (over, [1.173, 0.742, 1.16]) has no collision-free solution; (1.088, 1.047) pedestal 0.13: ['ik'] at the stance 'x-1' point 4 (over, [1.173, 0.742, 1.16]) has no collision-free solution; (1.228, 1.007) pedestal 0.11: ['home_clearance'] at pedestal 0.110 the arms at home are 34 mm from openarm_right_left_finger_collision vs task_beaker_wall_8 (the limit i",
+   "rejecting_checks_per_candidate": [
+    {
+     "xy": [
+      1.1378,
+      0.9569
+     ],
+     "pedestal_q": 0.15,
+     "failed": [
+      "ik"
+     ]
+    },
+    {
+     "xy": [
+      0.9578,
+      1.0369
+     ],
+     "pedestal_q": 0.13,
+     "failed": [
+      "ik"
+     ]
+    },
+    {
+     "xy": [
+      1.0878,
+      1.0469
+     ],
+     "pedestal_q": 0.13,
+     "failed": [
+      "ik"
+     ]
+    },
+    {
+     "xy": [
+      1.2278,
+      1.0069
+     ],
+     "pedestal_q": 0.11,
+     "failed": [
+      "home_clearance"
+     ]
+    }
+   ],
+   "most_common_rejecting_check": "ik",
+   "stance": null,
+   "seconds": 40.5
+  },
+  {
+   "i": 88,
+   "group": "nudge_40cm",
+   "size_m": 0.4,
+   "beaker_xy": [
+    1.1354,
+    0.603
+   ],
+   "hotplate_xy": [
+    0.7895,
+    0.4777
+   ],
+   "beaker_offset": [
+    0.1354,
+    -0.057
+   ],
+   "hotplate_offset": [
+    -0.0105,
+    -0.1823
+   ],
+   "ok": false,
+   "reason": "no stance passed the full check",
+   "stop": "no stance passed the full check: (0.825, 1.003) pedestal 0.07: ['home_clearance'] at pedestal 0.070 the arms at home are 6 mm from openarm_left_right_finger_collision vs task_beaker_wall_9 (the limit is",
+   "rejecting_checks_per_candidate": [
+    {
+     "xy": [
+      0.8245,
+      1.0027
+     ],
+     "pedestal_q": 0.07,
+     "failed": [
+      "home_clearance"
+     ]
+    }
+   ],
+   "most_common_rejecting_check": "home_clearance",
+   "stance": null,
+   "seconds": 28.0
+  },
+  {
+   "i": 89,
+   "group": "nudge_40cm",
+   "size_m": 0.4,
+   "beaker_xy": [
+    1.0669,
+    0.9777
+   ],
+   "hotplate_xy": [
+    1.1709,
+    0.9555
+   ],
+   "beaker_offset": [
+    0.0669,
+    0.3177
+   ],
+   "hotplate_offset": [
+    0.3709,
+    0.2955
+   ],
+   "ok": false,
+   "reason": "no stance covers any of the objects",
+   "stop": "no stance covers any of the objects: 1:beaker: best count 3 without obstacles, 0 with them; blocked by ['hotplate']",
+   "rejecting_checks_per_candidate": [],
+   "most_common_rejecting_check": null,
+   "stance": null,
+   "seconds": 33.3
+  },
+  {
+   "i": 90,
+   "group": "nudge_40cm",
+   "size_m": 0.4,
+   "beaker_xy": [
+    1.3944,
+    0.7012
+   ],
+   "hotplate_xy": [
+    1.0831,
+    0.5205
+   ],
+   "beaker_offset": [
+    0.3944,
+    0.0412
+   ],
+   "hotplate_offset": [
+    0.2831,
+    -0.1395
+   ],
+   "ok": false,
+   "reason": "no stance passed the full check",
+   "stop": "no stance passed the full check: (1.108, 1.066) pedestal 0.05: ['home_clearance'] at pedestal 0.050 the arms at home are 26 mm from openarm_right_left_finger_collision vs task_hotplate_base (the limit i",
+   "rejecting_checks_per_candidate": [
+    {
+     "xy": [
+      1.1081,
+      1.0655
+     ],
+     "pedestal_q": 0.05,
+     "failed": [
+      "home_clearance"
+     ]
+    }
+   ],
+   "most_common_rejecting_check": "home_clearance",
+   "stance": null,
+   "seconds": 26.5
+  },
+  {
+   "i": 91,
+   "group": "nudge_40cm",
+   "size_m": 0.4,
+   "beaker_xy": [
+    0.7534,
+    0.3313
+   ],
+   "hotplate_xy": [
+    0.8503,
+    0.721
+   ],
+   "beaker_offset": [
+    -0.2466,
+    -0.3287
+   ],
+   "hotplate_offset": [
+    0.0503,
+    0.061
+   ],
+   "ok": false,
+   "reason": "no stance passed the full check",
+   "stop": "no stance passed the full check: (0.518, 0.856) pedestal 0.08: ['home_clearance'] at pedestal 0.080 the arms at home are 11 mm from openarm_left_right_finger_collision vs task_hotplate_top_plate (the li; (0.618, 0.856) pedestal 0.09: ['home_clearance'] at pedestal 0.090 the arms at home are 21 mm from openarm_left_right_finger_collision vs task_hotplate_top_plate (the li; (0.408, 0.856) pedestal 0.06: ['home_clearance'] at pedestal 0.040 the arms at home are 30 mm from openarm_left_link5_collision vs bench_top (the limit is 40 mm)",
+   "rejecting_checks_per_candidate": [
+    {
+     "xy": [
+      0.5184,
+      0.8563
+     ],
+     "pedestal_q": 0.08,
+     "failed": [
+      "home_clearance"
+     ]
+    },
+    {
+     "xy": [
+      0.6184,
+      0.8563
+     ],
+     "pedestal_q": 0.09,
+     "failed": [
+      "home_clearance"
+     ]
+    },
+    {
+     "xy": [
+      0.4084,
+      0.8563
+     ],
+     "pedestal_q": 0.06,
+     "failed": [
+      "home_clearance"
+     ]
+    }
+   ],
+   "most_common_rejecting_check": "home_clearance",
+   "stance": null,
+   "seconds": 33.1
+  },
+  {
+   "i": 92,
+   "group": "nudge_40cm",
+   "size_m": 0.4,
+   "beaker_xy": [
+    0.8675,
+    0.7939
+   ],
+   "hotplate_xy": [
+    0.4336,
+    0.5021
+   ],
+   "beaker_offset": [
+    -0.1325,
+    0.1339
+   ],
+   "hotplate_offset": [
+    -0.3664,
+    -0.1579
+   ],
+   "ok": false,
+   "reason": "no stance passed the full check",
+   "stop": "no stance passed the full check: (0.842, 1.129) pedestal 0.15: ['ik'] at the stance 'nominal' point 4 (over, [0.868, 0.914, 1.16]) has no collision-free solution; (0.662, 1.209) pedestal 0.13: ['ik'] at the stance 'nominal' point 4 (over, [0.868, 0.914, 1.16]) has no collision-free solution; (0.792, 1.219) pedestal 0.13: ['ik'] at the stance 'y-1' point 4 (over, [0.868, 0.914, 1.16]) has no collision-free solution; (0.902, 1.209) pedestal 0.11: ['ik'] at the stance 'nominal' point 0 (grasp, [0.868, 0.794, 1.005]) has no collision-free solution",
+   "rejecting_checks_per_candidate": [
+    {
+     "xy": [
+      0.8425,
+      1.1289
+     ],
+     "pedestal_q": 0.15,
+     "failed": [
+      "ik"
+     ]
+    },
+    {
+     "xy": [
+      0.6625,
+      1.2089
+     ],
+     "pedestal_q": 0.13,
+     "failed": [
+      "ik"
+     ]
+    },
+    {
+     "xy": [
+      0.7925,
+      1.2189
+     ],
+     "pedestal_q": 0.13,
+     "failed": [
+      "ik"
+     ]
+    },
+    {
+     "xy": [
+      0.9025,
+      1.2089
+     ],
+     "pedestal_q": 0.11,
+     "failed": [
+      "ik"
+     ]
+    }
+   ],
+   "most_common_rejecting_check": "ik",
+   "stance": null,
+   "seconds": 36.6
+  },
+  {
+   "i": 93,
+   "group": "nudge_40cm",
+   "size_m": 0.4,
+   "beaker_xy": [
+    0.7306,
+    0.502
+   ],
+   "hotplate_xy": [
+    0.4846,
+    0.6102
+   ],
+   "beaker_offset": [
+    -0.2694,
+    -0.158
+   ],
+   "hotplate_offset": [
+    -0.3154,
+    -0.0498
+   ],
+   "ok": false,
+   "reason": "no stance passed the full check",
+   "stop": "no stance passed the full check: (0.510, 0.927) pedestal 0.16: ['ik'] at the stance 'nominal' point 0 (grasp, [0.731, 0.502, 1.005]) has no collision-free solution; (0.410, 0.967) pedestal 0.13: ['ik'] at the stance 'nominal' point 0 (grasp, [0.731, 0.502, 1.005]) has no collision-free solution; (0.570, 1.007) pedestal 0.12: ['placed_beaker'] at pedestal 0.120 the arms at home are 18 mm from a beaker placed on the hotplate",
+   "rejecting_checks_per_candidate": [
+    {
+     "xy": [
+      0.5096,
+      0.927
+     ],
+     "pedestal_q": 0.16,
+     "failed": [
+      "ik"
+     ]
+    },
+    {
+     "xy": [
+      0.4096,
+      0.967
+     ],
+     "pedestal_q": 0.13,
+     "failed": [
+      "ik"
+     ]
+    },
+    {
+     "xy": [
+      0.5696,
+      1.007
+     ],
+     "pedestal_q": 0.12,
+     "failed": [
+      "placed_beaker"
+     ]
+    }
+   ],
+   "most_common_rejecting_check": "ik",
+   "stance": null,
+   "seconds": 26.0
+  },
+  {
+   "i": 94,
+   "group": "nudge_40cm",
+   "size_m": 0.4,
+   "beaker_xy": [
+    1.2885,
+    0.7428
+   ],
+   "hotplate_xy": [
+    1.1187,
+    0.8909
+   ],
+   "beaker_offset": [
+    0.2885,
+    0.0828
+   ],
+   "hotplate_offset": [
+    0.3187,
+    0.2309
+   ],
+   "ok": true,
+   "reason": "pass",
+   "stop": null,
+   "rejecting_checks_per_candidate": [],
+   "most_common_rejecting_check": null,
+   "stance": {
+    "xy": [
+     1.1537,
+     1.2178
+    ],
+    "q": 0.14
+   },
+   "seconds": 55.1
+  },
+  {
+   "i": 95,
+   "group": "nudge_40cm",
+   "size_m": 0.4,
+   "beaker_xy": [
+    0.7957,
+    0.5061
+   ],
+   "hotplate_xy": [
+    0.5539,
+    0.5034
+   ],
+   "beaker_offset": [
+    -0.2043,
+    -0.1539
+   ],
+   "hotplate_offset": [
+    -0.2461,
+    -0.1566
+   ],
+   "ok": false,
+   "reason": "no stance passed the full check",
+   "stop": "no stance passed the full check: (0.579, 0.958) pedestal 0.12: ['placed_beaker'] at pedestal 0.120 the arms at home are -10 mm from a beaker placed on the hotplate; (0.469, 0.978) pedestal 0.10: ['home_clearance'] at pedestal 0.080 the arms at home are 30 mm from openarm_left_right_finger_collision vs task_hotplate_base (the limit i; (0.679, 0.948) pedestal 0.06: ['home_clearance'] at pedestal 0.060 the arms at home are -5 mm from openarm_left_left_finger_collision vs task_hotplate_top_plate (the lim; (0.549, 1.058) pedestal 0.06: ['home_clearance'] at pedestal 0.060 the arms at home are 21 mm from openarm_left_right_finger_collision vs task_hotplate_base (the limit i",
+   "rejecting_checks_per_candidate": [
+    {
+     "xy": [
+      0.5789,
+      0.9584
+     ],
+     "pedestal_q": 0.12,
+     "failed": [
+      "placed_beaker"
+     ]
+    },
+    {
+     "xy": [
+      0.4689,
+      0.9784
+     ],
+     "pedestal_q": 0.1,
+     "failed": [
+      "home_clearance"
+     ]
+    },
+    {
+     "xy": [
+      0.6789,
+      0.9484
+     ],
+     "pedestal_q": 0.06,
+     "failed": [
+      "home_clearance"
+     ]
+    },
+    {
+     "xy": [
+      0.5489,
+      1.0584
+     ],
+     "pedestal_q": 0.06,
+     "failed": [
+      "home_clearance"
+     ]
+    }
+   ],
+   "most_common_rejecting_check": "home_clearance",
+   "stance": null,
+   "seconds": 29.0
+  },
+  {
+   "i": 96,
+   "group": "nudge_40cm",
+   "size_m": 0.4,
+   "beaker_xy": [
+    1.2463,
+    0.812
+   ],
+   "hotplate_xy": [
+    1.1131,
+    0.4521
+   ],
+   "beaker_offset": [
+    0.2463,
+    0.152
+   ],
+   "hotplate_offset": [
+    0.3131,
+    -0.2079
+   ],
+   "ok": false,
+   "reason": "no stance passed the full check",
+   "stop": "no stance passed the full check: (1.211, 1.147) pedestal 0.15: ['ik'] at the stance 'nominal' point 4 (over, [1.246, 0.932, 1.16]) has no collision-free solution; (1.031, 1.227) pedestal 0.13: ['ik'] at the stance 'nominal' point 4 (over, [1.246, 0.932, 1.16]) has no collision-free solution; (1.161, 1.237) pedestal 0.13: ['ik'] at the stance 'x-1' point 4 (over, [1.246, 0.932, 1.16]) has no collision-free solution; (1.271, 1.227) pedestal 0.11: ['ik'] at the stance 'nominal' point 0 (grasp, [1.246, 0.812, 1.005]) has no collision-free solution",
+   "rejecting_checks_per_candidate": [
+    {
+     "xy": [
+      1.2113,
+      1.147
+     ],
+     "pedestal_q": 0.15,
+     "failed": [
+      "ik"
+     ]
+    },
+    {
+     "xy": [
+      1.0313,
+      1.227
+     ],
+     "pedestal_q": 0.13,
+     "failed": [
+      "ik"
+     ]
+    },
+    {
+     "xy": [
+      1.1613,
+      1.237
+     ],
+     "pedestal_q": 0.13,
+     "failed": [
+      "ik"
+     ]
+    },
+    {
+     "xy": [
+      1.2713,
+      1.227
+     ],
+     "pedestal_q": 0.11,
+     "failed": [
+      "ik"
+     ]
+    }
+   ],
+   "most_common_rejecting_check": "ik",
+   "stance": null,
+   "seconds": 38.4
+  },
+  {
+   "i": 97,
+   "group": "nudge_40cm",
+   "size_m": 0.4,
+   "beaker_xy": [
+    0.7465,
+    0.9013
+   ],
+   "hotplate_xy": [
+    0.8308,
+    0.6996
+   ],
+   "beaker_offset": [
+    -0.2535,
+    0.2413
+   ],
+   "hotplate_offset": [
+    0.0308,
+    0.0396
+   ],
+   "ok": false,
+   "reason": "no stance passed the full check",
+   "stop": "no stance passed the full check: (0.742, 1.195) pedestal 0.13: ['ik'] at the stance 'nominal' point 0 (grasp, [0.746, 0.901, 1.005]) has no collision-free solution; (0.692, 1.285) pedestal 0.06: ['ik'] at the stance 'nominal' point 4 (over, [0.746, 1.021, 1.16]) has no collision-free solution; (0.622, 1.175) pedestal 0.22: ['occlusion'] at pedestal 0.240 something hides 1.9 % of the beaker and 7.1 % of the hotplate in the eagle image",
+   "rejecting_checks_per_candidate": [
+    {
+     "xy": [
+      0.7415,
+      1.1946
+     ],
+     "pedestal_q": 0.13,
+     "failed": [
+      "ik"
+     ]
+    },
+    {
+     "xy": [
+      0.6915,
+      1.2846
+     ],
+     "pedestal_q": 0.06,
+     "failed": [
+      "ik"
+     ]
+    },
+    {
+     "xy": [
+      0.6215,
+      1.1746
+     ],
+     "pedestal_q": 0.22,
+     "failed": [
+      "occlusion"
+     ]
+    }
+   ],
+   "most_common_rejecting_check": "ik",
+   "stance": null,
+   "seconds": 53.6
+  },
+  {
+   "i": 98,
+   "group": "nudge_40cm",
+   "size_m": 0.4,
+   "beaker_xy": [
+    1.2724,
+    1.0166
+   ],
+   "hotplate_xy": [
+    0.4057,
+    1.0413
+   ],
+   "beaker_offset": [
+    0.2724,
+    0.3566
+   ],
+   "hotplate_offset": [
+    -0.3943,
+    0.3813
+   ],
+   "ok": false,
+   "reason": "no stance passed the full check",
+   "stop": "no stance passed the full check: (1.237, 1.362) pedestal 0.15: ['ik'] at the stance 'nominal' point 4 (over, [1.272, 1.137, 1.16]) has no collision-free solution; (1.057, 1.442) pedestal 0.13: ['ik'] at the stance 'nominal' point 4 (over, [1.272, 1.137, 1.16]) has no collision-free solution; (1.187, 1.452) pedestal 0.13: ['ik'] at the stance 'pedestal-1' point 4 (over, [1.272, 1.137, 1.16]) has no collision-free solution; (1.317, 1.422) pedestal 0.11: ['ik'] at the stance 'nominal' point 0 (grasp, [1.272, 1.017, 1.005]) has no collision-free solution",
+   "rejecting_checks_per_candidate": [
+    {
+     "xy": [
+      1.2374,
+      1.3616
+     ],
+     "pedestal_q": 0.15,
+     "failed": [
+      "ik"
+     ]
+    },
+    {
+     "xy": [
+      1.0574,
+      1.4416
+     ],
+     "pedestal_q": 0.13,
+     "failed": [
+      "ik"
+     ]
+    },
+    {
+     "xy": [
+      1.1874,
+      1.4516
+     ],
+     "pedestal_q": 0.13,
+     "failed": [
+      "ik"
+     ]
+    },
+    {
+     "xy": [
+      1.3174,
+      1.4216
+     ],
+     "pedestal_q": 0.11,
+     "failed": [
+      "ik"
+     ]
+    }
+   ],
+   "most_common_rejecting_check": "ik",
+   "stance": null,
+   "seconds": 39.7
+  },
+  {
+   "i": 99,
+   "group": "nudge_40cm",
+   "size_m": 0.4,
+   "beaker_xy": [
+    0.7021,
+    1.0202
+   ],
+   "hotplate_xy": [
+    0.6597,
+    0.8188
+   ],
+   "beaker_offset": [
+    -0.2979,
+    0.3602
+   ],
+   "hotplate_offset": [
+    -0.1403,
+    0.1588
+   ],
+   "ok": false,
+   "reason": "no stance passed the full check",
+   "stop": "no stance passed the full check: (0.667, 1.365) pedestal 0.15: ['ik'] at the stance 'nominal' point 4 (over, [0.702, 1.14, 1.16]) has no collision-free solution; (0.617, 1.455) pedestal 0.13: ['ik'] at the stance 'pedestal-1' point 4 (over, [0.702, 1.14, 1.16]) has no collision-free solution; (0.747, 1.425) pedestal 0.11: ['ik'] at the stance 'nominal' point 0 (grasp, [0.702, 1.02, 1.005]) has no collision-free solution; (0.697, 1.515) pedestal 0.08: ['ik'] at the stance 'nominal' point 0 (grasp, [0.702, 1.02, 1.005]) has no collision-free solution",
+   "rejecting_checks_per_candidate": [
+    {
+     "xy": [
+      0.6671,
+      1.3652
+     ],
+     "pedestal_q": 0.15,
+     "failed": [
+      "ik"
+     ]
+    },
+    {
+     "xy": [
+      0.6171,
+      1.4552
+     ],
+     "pedestal_q": 0.13,
+     "failed": [
+      "ik"
+     ]
+    },
+    {
+     "xy": [
+      0.7471,
+      1.4252
+     ],
+     "pedestal_q": 0.11,
+     "failed": [
+      "ik"
+     ]
+    },
+    {
+     "xy": [
+      0.6971,
+      1.5152
+     ],
+     "pedestal_q": 0.08,
+     "failed": [
+      "ik"
+     ]
+    }
+   ],
+   "most_common_rejecting_check": "ik",
+   "stance": null,
+   "seconds": 34.3
+  },
+  {
+   "i": 100,
+   "group": "nudge_40cm",
+   "size_m": 0.4,
+   "beaker_xy": [
+    0.801,
+    0.9947
+   ],
+   "hotplate_xy": [
+    0.829,
+    0.6542
+   ],
+   "beaker_offset": [
+    -0.199,
+    0.3347
+   ],
+   "hotplate_offset": [
+    0.029,
+    -0.0058
+   ],
+   "ok": false,
+   "reason": "no stance passed the full check",
+   "stop": "no stance passed the full check: (0.766, 1.330) pedestal 0.15: ['ik'] at the stance 'nominal' point 4 (over, [0.801, 1.115, 1.16]) has no collision-free solution; (0.716, 1.420) pedestal 0.13: ['ik'] at the stance 'x-1' point 4 (over, [0.801, 1.115, 1.16]) has no collision-free solution; (0.596, 1.420) pedestal 0.13: ['ik'] at the stance 'nominal' point 4 (over, [0.801, 1.115, 1.16]) has no collision-free solution; (0.826, 1.410) pedestal 0.11: ['ik'] at the stance 'nominal' point 0 (grasp, [0.801, 0.995, 1.005]) has no collision-free solution",
+   "rejecting_checks_per_candidate": [
+    {
+     "xy": [
+      0.766,
+      1.3297
+     ],
+     "pedestal_q": 0.15,
+     "failed": [
+      "ik"
+     ]
+    },
+    {
+     "xy": [
+      0.716,
+      1.4197
+     ],
+     "pedestal_q": 0.13,
+     "failed": [
+      "ik"
+     ]
+    },
+    {
+     "xy": [
+      0.596,
+      1.4197
+     ],
+     "pedestal_q": 0.13,
+     "failed": [
+      "ik"
+     ]
+    },
+    {
+     "xy": [
+      0.826,
+      1.4097
+     ],
+     "pedestal_q": 0.11,
+     "failed": [
+      "ik"
+     ]
+    }
+   ],
+   "most_common_rejecting_check": "ik",
+   "stance": null,
+   "seconds": 37.1
+  }
+ ],
+ "total_seconds": 4469.2
+}

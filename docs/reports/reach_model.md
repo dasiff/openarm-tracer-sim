@@ -181,3 +181,18 @@ Note: the 90 deg candidates lie on the bench footprint (y about 0.32 to 0.37 m).
 2. Heading prior: the model has no heading preference. Should the sweep prefer headings that face the bench from outside its footprint, with a rule for it, or leave it to the full check?
 3. Candidate spread: return the best candidate per (heading, pedestal) instead of 8 adjacent points?
 4. The `home_clearance` and `placed_beaker` failures: is the analytic model's reach enough, or should the arm-clearance margins enter the ranking?
+
+## Rerun with the beaker occlusion limit at 5% (2026-11-08)
+
+Config change (the only one): `STANCE_REQUIREMENTS["occlusion_max_hidden"]["beaker"]` 0.0 -> 0.05. Hotplate 20%, home_clearance 40 mm, placed_beaker unchanged. Same code as 7387c0d. Outputs: `docs/reports/reach_inverse_{standard,moved}.json` (5% run); the 0% run is kept as `..._occlusion0pct.json`.
+
+| scene | best heading | best pedestal | feasible segment points | passed full check | rejections (top 8, 5% run) |
+|---|---|---|---|---|---|
+| standard | 250 deg | 0.05 m | 6,784 | none | 4 `home_clearance`, 4 `placed_beaker` |
+| moved | 250 deg | 0.05 m | 6,784 | none | 8 `home_clearance` |
+
+The 5% run gives the same top 8 candidates, the same predicted counts and the same rejections as the 0% run. The beaker occlusion limit is not what blocks these candidates: the full check runs the arm clearance checks before the occlusion check, so the candidates are rejected at `home_clearance` or `placed_beaker` before occlusion is ever evaluated.
+
+Blocking checks, with counts: `home_clearance` 4 of 8 (standard) and 8 of 8 (moved); `placed_beaker` 4 of 8 (standard) and 0 of 8 (moved). Nothing passes in either scene.
+
+The test suite was not run for this config change; tests that pin the occlusion limit may need their expectations reviewed.

@@ -262,7 +262,7 @@ STANCE_REQUIREMENTS = {
     # Camera checks (fixed eagle camera, no neck: design plan 14.1, M153): every target must be INSIDE THE FIXED VIEW with this margin, and not hidden (occlusion below).
     "view_min_margin": 0.10,            # fraction of the image: the beaker's and hotplate's corners and both grippers (tool point, hand, finger tips) are at least this far from every image edge (src/eagle_view.py) [row M087, M153]
     # Occlusion by the pixel-area measure (src/stance_checks.OcclusionMeter): the share of the object's pixels in the eagle camera image that the robot hides.
-    "occlusion_max_hidden": {"beaker": 0.0, "hotplate": 0.20},  # [row M087]
+    "occlusion_max_hidden": {"beaker": 0.05, "hotplate": 0.20},  # [row M087; beaker relaxed from 0.0 to 0.05 for the analytic inverse test, David 2026-11-08]
 }
 
 # ----------------------------------------------------------------------------------------------------------

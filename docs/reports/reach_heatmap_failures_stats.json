@@ -1,0 +1,18 @@
+{
+ "sweep": "docs/reports/layout_sweep_current_20261106.json",
+ "pass": 0,
+ "n": 100,
+ "classes": {
+  "no_cover": {
+   "layouts": 69,
+   "median_count_at_beaker": 56.0,
+   "median_count_at_hotplate": 98.0
+  },
+  "full_check": {
+   "layouts": 31,
+   "median_count_at_beaker": 196.0,
+   "median_count_at_hotplate": 98.0
+  }
+ },
+ "all_usable_grid_median_count": 98.0
+}

@@ -1,0 +1,1526 @@
+{
+ "mode": "current",
+ "n": 100,
+ "seed": 20261106,
+ "pass": 0,
+ "fail": 100,
+ "pass_rate": 0.0,
+ "usable_rectangle": {
+  "x": [
+   -2.1500000000000004,
+   2.1500000000000004
+  ],
+  "y": [
+   -0.75,
+   0.75
+  ]
+ },
+ "radii": {
+  "beaker": 0.035,
+  "hotplate": 0.09
+ },
+ "bench_edge_margin": 0.05,
+ "total_seconds": 73785.1,
+ "layouts": [
+  {
+   "i": 0,
+   "beaker_xy": [
+    0.6394,
+    -0.6175
+   ],
+   "hotplate_xy": [
+    -1.1392,
+    0.1763
+   ],
+   "ok": false,
+   "stance": null,
+   "stop": "no stance covers any of the objects: 1:beaker: best count 3 without obstacles, 0 with them",
+   "seconds": 31.4
+  },
+  {
+   "i": 1,
+   "beaker_xy": [
+    -0.7522,
+    0.7471
+   ],
+   "hotplate_xy": [
+    1.6407,
+    -0.7326
+   ],
+   "ok": false,
+   "stance": null,
+   "stop": "no stance passed the full check: (-0.787, 1.082) pedestal 0.15: ['ik'] at the stance 'nominal' point 4 (over, [-0.752, 0.867, 1.16]) has no collision-free solution; (-0.967, 1.162) pedestal 0.13: ['ik'] at the stance 'nominal' point 4 (over, [-0.752, 0.867, 1.16]) has no collision-free solution; (-0.837, 1.172) pedestal 0.13: ['ik'] at the stance 'x-1' point 4 (over, [-0.752, 0.867, 1.16]) has no collision-free solution; (-0.727, 1.162) pedestal 0.11: ['ik'] at the stance 'nominal' point 0 (grasp, [-0.752, 0.747, 1.005]) has no collision-free solution",
+   "seconds": 42.6
+  },
+  {
+   "i": 2,
+   "beaker_xy": [
+    -2.0429,
+    -0.5802
+   ],
+   "hotplate_xy": [
+    -0.9777,
+    -0.5441
+   ],
+   "ok": false,
+   "stance": null,
+   "stop": "no stance passed the full check: (-2.268, -0.165) pedestal 0.19: ['view'] at pedestal 0.190 beaker_corner0 is -100.0 % from the nearest edge of the eagle image (limit 10 %); (-2.418, -0.165) pedestal 0.17: ['ik'] at the stance 'nominal' point 0 (grasp, [-2.043, -0.58, 1.005]) has no collision-free solution",
+   "seconds": 41.4
+  },
+  {
+   "i": 3,
+   "beaker_xy": [
+    -0.8206,
+    -0.5499
+   ],
+   "hotplate_xy": [
+    1.6777,
+    -0.7462
+   ],
+   "ok": false,
+   "stance": null,
+   "stop": "no stance covers any of the objects: 1:beaker: best count 3 without obstacles, 0 with them",
+   "seconds": 44.0
+  },
+  {
+   "i": 4,
+   "beaker_xy": [
+    0.9202,
+    0.2911
+   ],
+   "hotplate_xy": [
+    -2.1269,
+    0.1107
+   ],
+   "ok": false,
+   "stance": null,
+   "stop": "no stance passed the full check: (0.805, 0.856) pedestal 0.05: ['home_clearance'] at pedestal 0.050 the arms at home are -15 mm from openarm_left_right_finger_collision vs task_beaker_wall_39 (the limit; (0.705, 0.856) pedestal 0.05: ['home_clearance'] at pedestal 0.050 the arms at home are -15 mm from openarm_left_link6_collision vs task_hotplate_top_plate (the limit is",
+   "seconds": 53.2
+  },
+  {
+   "i": 5,
+   "beaker_xy": [
+    2.0052,
+    0.5011
+   ],
+   "hotplate_xy": [
+    -0.0818,
+    0.024
+   ],
+   "ok": false,
+   "stance": null,
+   "stop": "no stance passed the full check: (1.630, 0.956) pedestal 0.12: ['ik'] at the stance 'nominal' point 0 (grasp, [2.005, 0.501, 1.005]) has no collision-free solution",
+   "seconds": 48.5
+  },
+  {
+   "i": 6,
+   "beaker_xy": [
+    0.8302,
+    0.6646
+   ],
+   "hotplate_xy": [
+    1.6285,
+    0.3265
+   ],
+   "ok": false,
+   "stance": null,
+   "stop": "no stance passed the full check: (0.805, 1.000) pedestal 0.15: ['ik'] at the stance 'nominal' point 0 (grasp, [0.83, 0.665, 1.005]) has no collision-free solution; (0.625, 1.080) pedestal 0.13: ['ik'] at the stance 'nominal' point 0 (grasp, [0.83, 0.665, 1.005]) has no collision-free solution; (0.755, 1.090) pedestal 0.13: ['ik'] at the stance 'nominal' point 0 (grasp, [0.83, 0.665, 1.005]) has no collision-free solution; (0.895, 1.050) pedestal 0.11: ['ik'] at the stance 'nominal' point 0 (grasp, [0.83, 0.665, 1.005]) has no collision-free solution",
+   "seconds": 43.0
+  },
+  {
+   "i": 7,
+   "beaker_xy": [
+    0.1945,
+    0.3475
+   ],
+   "hotplate_xy": [
+    -1.4676,
+    0.419
+   ],
+   "ok": false,
+   "stance": null,
+   "stop": "no stance covers any of the objects: 1:beaker: best count 3 without obstacles, 0 with them",
+   "seconds": 41.3
+  },
+  {
+   "i": 8,
+   "beaker_xy": [
+    -1.7652,
+    -0.3274
+   ],
+   "hotplate_xy": [
+    -1.3974,
+    -0.1618
+   ],
+   "ok": false,
+   "stance": null,
+   "stop": "no stance covers any of the objects: 1:beaker: best count 3 without obstacles, 0 with them",
+   "seconds": 36.0
+  },
+  {
+   "i": 9,
+   "beaker_xy": [
+    -0.2783,
+    -0.0721
+   ],
+   "hotplate_xy": [
+    -0.787,
+    -0.6634
+   ],
+   "ok": false,
+   "stance": null,
+   "stop": "no stance covers any of the objects: 1:beaker: best count 3 without obstacles, 0 with them",
+   "seconds": 42.9
+  },
+  {
+   "i": 10,
+   "beaker_xy": [
+    -2.0125,
+    0.3102
+   ],
+   "hotplate_xy": [
+    0.5225,
+    0.2438
+   ],
+   "ok": false,
+   "stance": null,
+   "stop": "no stance passed the full check: (-2.378, 0.745) pedestal 0.14: ['ik'] at the stance 'nominal' point 0 (grasp, [-2.013, 0.31, 1.005]) has no collision-free solution",
+   "seconds": 52.3
+  },
+  {
+   "i": 11,
+   "beaker_xy": [
+    -1.3157,
+    0.1914
+   ],
+   "hotplate_xy": [
+    -1.6809,
+    -0.3168
+   ],
+   "ok": false,
+   "stance": null,
+   "stop": "no stance covers any of the objects: 1:beaker: best count 3 without obstacles, 0 with them",
+   "seconds": 39.6
+  },
+  {
+   "i": 12,
+   "beaker_xy": [
+    0.1482,
+    -0.1489
+   ],
+   "hotplate_xy": [
+    -1.7947,
+    -0.0667
+   ],
+   "ok": false,
+   "stance": null,
+   "stop": "no stance covers any of the objects: 1:beaker: best count 3 without obstacles, 0 with them",
+   "seconds": 43.0
+  },
+  {
+   "i": 13,
+   "beaker_xy": [
+    -2.0456,
+    -0.6523
+   ],
+   "hotplate_xy": [
+    -0.1106,
+    -0.2835
+   ],
+   "ok": false,
+   "stance": null,
+   "stop": "no stance passed the full check: (-2.261, -0.247) pedestal 0.20: ['view'] at pedestal 0.200 beaker_corner0 is -100.0 % from the nearest edge of the eagle image (limit 10 %); (-2.431, -0.247) pedestal 0.18: ['ik'] at the stance 'nominal' point 0 (grasp, [-2.046, -0.652, 1.005]) has no collision-free solution",
+   "seconds": 55.3
+  },
+  {
+   "i": 14,
+   "beaker_xy": [
+    -0.095,
+    0.4769
+   ],
+   "hotplate_xy": [
+    -0.9462,
+    -0.2334
+   ],
+   "ok": false,
+   "stance": null,
+   "stop": "no stance passed the full check: (-0.330, 0.882) pedestal 0.13: ['ik'] at the stance 'nominal' point 4 (over, [-0.095, 0.597, 1.16]) has no collision-free solution; (-0.410, 0.942) pedestal 0.10: ['view'] at pedestal 0.100 beaker_corner7 is -131.1 % from the nearest edge of the eagle image (limit 10 %)",
+   "seconds": 50.5
+  },
+  {
+   "i": 15,
+   "beaker_xy": [
+    0.3224,
+    -0.2329
+   ],
+   "hotplate_xy": [
+    -0.909,
+    -0.7133
+   ],
+   "ok": false,
+   "stance": null,
+   "stop": "no stance covers any of the objects: 1:beaker: best count 3 without obstacles, 0 with them",
+   "seconds": 47.2
+  },
+  {
+   "i": 16,
+   "beaker_xy": [
+    1.8305,
+    -0.0828
+   ],
+   "hotplate_xy": [
+    1.9998,
+    0.0039
+   ],
+   "ok": false,
+   "stance": null,
+   "stop": "no stance covers any of the objects: 1:beaker: best count 3 without obstacles, 0 with them",
+   "seconds": 36.6
+  },
+  {
+   "i": 17,
+   "beaker_xy": [
+    0.4751,
+    0.3792
+   ],
+   "hotplate_xy": [
+    -0.9099,
+    0.3288
+   ],
+   "ok": false,
+   "stance": null,
+   "stop": "no stance passed the full check: (0.330, 0.864) pedestal 0.11: ['view'] at pedestal 0.110 beaker_corner7 is -47.9 % from the nearest edge of the eagle image (limit 10 %); (0.430, 0.854) pedestal 0.10: ['view'] at pedestal 0.100 beaker_corner7 is -37.2 % from the nearest edge of the eagle image (limit 10 %); (0.530, 0.854) pedestal 0.07: ['home_clearance'] at pedestal 0.070 the arms at home are 1 mm from openarm_left_right_finger_collision vs task_hotplate_top_plate (the lim",
+   "seconds": 69314.9
+  },
+  {
+   "i": 18,
+   "beaker_xy": [
+    -0.104,
+    0.2639
+   ],
+   "hotplate_xy": [
+    1.3492,
+    0.6832
+   ],
+   "ok": false,
+   "stance": null,
+   "stop": "no stance covers any of the objects: 1:beaker: best count 3 without obstacles, 0 with them",
+   "seconds": 53.5
+  },
+  {
+   "i": 19,
+   "beaker_xy": [
+    -2.0279,
+    0.0413
+   ],
+   "hotplate_xy": [
+    -0.4844,
+    -0.1923
+   ],
+   "ok": false,
+   "stance": null,
+   "stop": "no stance passed the full check: (-2.383, 0.476) pedestal 0.13: ['ik'] at the stance 'pedestal+1' point 0 (grasp, [-2.028, 0.041, 1.005]) has no collision-free solution",
+   "seconds": 48.7
+  },
+  {
+   "i": 20,
+   "beaker_xy": [
+    0.8904,
+    -0.1974
+   ],
+   "hotplate_xy": [
+    -0.6043,
+    -0.701
+   ],
+   "ok": false,
+   "stance": null,
+   "stop": "no stance covers any of the objects: 1:beaker: best count 3 without obstacles, 0 with them",
+   "seconds": 45.7
+  },
+  {
+   "i": 21,
+   "beaker_xy": [
+    -0.5859,
+    -0.0659
+   ],
+   "hotplate_xy": [
+    2.1489,
+    0.2955
+   ],
+   "ok": false,
+   "stance": null,
+   "stop": "no stance covers any of the objects: 1:beaker: best count 3 without obstacles, 0 with them",
+   "seconds": 45.3
+  },
+  {
+   "i": 22,
+   "beaker_xy": [
+    -0.0897,
+    -0.0876
+   ],
+   "hotplate_xy": [
+    -0.41,
+    0.3355
+   ],
+   "ok": false,
+   "stance": null,
+   "stop": "no stance covers any of the objects: 1:beaker: best count 3 without obstacles, 0 with them",
+   "seconds": 39.6
+  },
+  {
+   "i": 23,
+   "beaker_xy": [
+    -1.1343,
+    -0.445
+   ],
+   "hotplate_xy": [
+    0.2802,
+    0.3561
+   ],
+   "ok": false,
+   "stance": null,
+   "stop": "no stance covers any of the objects: 1:beaker: best count 3 without obstacles, 0 with them",
+   "seconds": 52.0
+  },
+  {
+   "i": 24,
+   "beaker_xy": [
+    0.2206,
+    -0.1215
+   ],
+   "hotplate_xy": [
+    -1.4395,
+    -0.2798
+   ],
+   "ok": false,
+   "stance": null,
+   "stop": "no stance covers any of the objects: 1:beaker: best count 3 without obstacles, 0 with them",
+   "seconds": 47.8
+  },
+  {
+   "i": 25,
+   "beaker_xy": [
+    0.6659,
+    0.4097
+   ],
+   "hotplate_xy": [
+    1.1515,
+    -0.6149
+   ],
+   "ok": false,
+   "stance": null,
+   "stop": "no stance passed the full check: (0.441, 0.855) pedestal 0.12: ['ik'] at the stance 'nominal' point 5 (standoff, [0.666, 0.53, 1.012]) has no collision-free solution; (0.611, 0.855) pedestal 0.12: ['placed_beaker'] at pedestal 0.120 the arms at home are -16 mm from a beaker placed on the hotplate; (0.341, 0.875) pedestal 0.10: ['ik'] at the stance 'nominal' point 5 (standoff, [0.666, 0.53, 1.012]) has no collision-free solution; (0.521, 0.915) pedestal 0.10: ['home_clearance'] at pedestal 0.100 the arms at home are 31 mm from openarm_left_right_finger_collision vs task_hotplate_top_plate (the li",
+   "seconds": 42.8
+  },
+  {
+   "i": 26,
+   "beaker_xy": [
+    1.3331,
+    -0.4155
+   ],
+   "hotplate_xy": [
+    0.7085,
+    -0.408
+   ],
+   "ok": false,
+   "stance": null,
+   "stop": "no stance covers any of the objects: 1:beaker: best count 3 without obstacles, 0 with them",
+   "seconds": 37.1
+  },
+  {
+   "i": 27,
+   "beaker_xy": [
+    0.7065,
+    0.3511
+   ],
+   "hotplate_xy": [
+    0.9694,
+    0.7091
+   ],
+   "ok": false,
+   "stance": null,
+   "stop": "no stance passed the full check: (0.532, 0.856) pedestal 0.10: ['home_clearance'] at pedestal 0.100 the arms at home are 31 mm from openarm_left_right_finger_collision vs task_hotplate_top_plate (the li; (0.422, 0.856) pedestal 0.09: ['ik'] at the stance 'nominal' point 0 (grasp, [0.706, 0.351, 1.005]) has no collision-free solution; (0.632, 0.856) pedestal 0.09: ['home_clearance'] at pedestal 0.090 the arms at home are 21 mm from openarm_left_right_finger_collision vs task_hotplate_top_plate (the li; (0.732, 0.856) pedestal 0.06: ['home_clearance'] at pedestal 0.060 the arms at home are -8 mm from openarm_left_link6_collision vs task_hotplate_top_plate (the limit is ",
+   "seconds": 38.4
+  },
+  {
+   "i": 28,
+   "beaker_xy": [
+    1.0182,
+    0.0105
+   ],
+   "hotplate_xy": [
+    1.1688,
+    -0.5628
+   ],
+   "ok": false,
+   "stance": null,
+   "stop": "no stance covers any of the objects: 1:beaker: best count 3 without obstacles, 0 with them",
+   "seconds": 36.4
+  },
+  {
+   "i": 29,
+   "beaker_xy": [
+    1.3708,
+    -0.725
+   ],
+   "hotplate_xy": [
+    -0.5606,
+    0.6283
+   ],
+   "ok": false,
+   "stance": null,
+   "stop": "no stance covers any of the objects: 1:beaker: best count 3 without obstacles, 0 with them",
+   "seconds": 59.5
+  },
+  {
+   "i": 30,
+   "beaker_xy": [
+    1.8243,
+    0.697
+   ],
+   "hotplate_xy": [
+    0.7575,
+    -0.3011
+   ],
+   "ok": false,
+   "stance": null,
+   "stop": "no stance passed the full check: (1.589, 1.102) pedestal 0.13: ['ik'] at the stance 'nominal' point 4 (over, [1.824, 0.817, 1.16]) has no collision-free solution; (1.509, 1.162) pedestal 0.10: ['view'] at pedestal 0.100 hotplate_corner3 is -25.8 % from the nearest edge of the eagle image (limit 10 %); (1.579, 1.242) pedestal 0.07: ['ik'] at the stance 'y+1' point 0 (grasp, [1.824, 0.697, 1.005]) has no collision-free solution",
+   "seconds": 54.1
+  },
+  {
+   "i": 31,
+   "beaker_xy": [
+    -0.8874,
+    0.2732
+   ],
+   "hotplate_xy": [
+    1.1953,
+    -0.0311
+   ],
+   "ok": false,
+   "stance": null,
+   "stop": "no stance covers any of the objects: 1:beaker: best count 3 without obstacles, 0 with them",
+   "seconds": 46.9
+  },
+  {
+   "i": 32,
+   "beaker_xy": [
+    1.7804,
+    -0.3566
+   ],
+   "hotplate_xy": [
+    -0.3626,
+    0.0892
+   ],
+   "ok": false,
+   "stance": null,
+   "stop": "no stance covers any of the objects: 1:beaker: best count 3 without obstacles, 0 with them",
+   "seconds": 53.2
+  },
+  {
+   "i": 33,
+   "beaker_xy": [
+    -1.5575,
+    -0.329
+   ],
+   "hotplate_xy": [
+    1.2787,
+    -0.2702
+   ],
+   "ok": false,
+   "stance": null,
+   "stop": "no stance covers any of the objects: 1:beaker: best count 3 without obstacles, 0 with them",
+   "seconds": 55.4
+  },
+  {
+   "i": 34,
+   "beaker_xy": [
+    -1.2346,
+    -0.1298
+   ],
+   "hotplate_xy": [
+    -1.4779,
+    0.4559
+   ],
+   "ok": false,
+   "stance": null,
+   "stop": "no stance covers any of the objects: 1:beaker: best count 3 without obstacles, 0 with them",
+   "seconds": 45.8
+  },
+  {
+   "i": 35,
+   "beaker_xy": [
+    0.5348,
+    0.606
+   ],
+   "hotplate_xy": [
+    0.1412,
+    0.0744
+   ],
+   "ok": false,
+   "stance": null,
+   "stop": "no stance passed the full check: (0.500, 0.941) pedestal 0.15: ['ik'] at the stance 'nominal' point 4 (over, [0.535, 0.726, 1.16]) has no collision-free solution; (0.580, 1.001) pedestal 0.11: ['placed_beaker'] at pedestal 0.110 the arms at home are 7 mm from a beaker placed on the hotplate; (0.580, 0.881) pedestal 0.21: ['placed_beaker'] at pedestal 0.190 the arms at home are 22 mm from a beaker placed on the hotplate; (0.350, 0.981) pedestal 0.11: ['ik'] at the stance 'nominal' point 4 (over, [0.535, 0.726, 1.16]) has no collision-free solution",
+   "seconds": 43.1
+  },
+  {
+   "i": 36,
+   "beaker_xy": [
+    -0.9499,
+    -0.0441
+   ],
+   "hotplate_xy": [
+    -1.6926,
+    -0.2459
+   ],
+   "ok": false,
+   "stance": null,
+   "stop": "no stance covers any of the objects: 1:beaker: best count 3 without obstacles, 0 with them",
+   "seconds": 42.4
+  },
+  {
+   "i": 37,
+   "beaker_xy": [
+    -0.5671,
+    0.2258
+   ],
+   "hotplate_xy": [
+    -0.8043,
+    0.5784
+   ],
+   "ok": false,
+   "stance": null,
+   "stop": "no stance covers any of the objects: 1:beaker: best count 3 without obstacles, 0 with them",
+   "seconds": 40.3
+  },
+  {
+   "i": 38,
+   "beaker_xy": [
+    1.4508,
+    0.4583
+   ],
+   "hotplate_xy": [
+    -0.9334,
+    -0.577
+   ],
+   "ok": false,
+   "stance": null,
+   "stop": "no stance passed the full check: (1.236, 0.873) pedestal 0.13: ['home_clearance'] at pedestal 0.130 the arms at home are 28 mm from openarm_right_left_finger_collision vs task_beaker_wall_43 (the limit ; (1.376, 0.863) pedestal 0.13: ['ik'] at the stance 'nominal' point 4 (over, [1.451, 0.578, 1.16]) has no collision-free solution; (1.476, 0.853) pedestal 0.12: ['ik'] at the stance 'nominal' point 0 (grasp, [1.451, 0.458, 1.005]) has no collision-free solution; (1.316, 0.943) pedestal 0.11: ['view'] at pedestal 0.110 hotplate_corner3 is -25.0 % from the nearest edge of the eagle image (limit 10 %)",
+   "seconds": 58.0
+  },
+  {
+   "i": 39,
+   "beaker_xy": [
+    1.4477,
+    0.4581
+   ],
+   "hotplate_xy": [
+    0.0949,
+    -0.5256
+   ],
+   "ok": false,
+   "stance": null,
+   "stop": "no stance passed the full check: (1.233, 0.873) pedestal 0.13: ['home_clearance'] at pedestal 0.130 the arms at home are 28 mm from openarm_right_left_finger_collision vs task_beaker_wall_43 (the limit ; (1.373, 0.863) pedestal 0.13: ['ik'] at the stance 'nominal' point 4 (over, [1.448, 0.578, 1.16]) has no collision-free solution; (1.473, 0.853) pedestal 0.12: ['ik'] at the stance 'nominal' point 0 (grasp, [1.448, 0.458, 1.005]) has no collision-free solution; (1.313, 0.943) pedestal 0.11: ['view'] at pedestal 0.110 hotplate_corner3 is -24.6 % from the nearest edge of the eagle image (limit 10 %)",
+   "seconds": 43.2
+  },
+  {
+   "i": 40,
+   "beaker_xy": [
+    -1.7969,
+    -0.1994
+   ],
+   "hotplate_xy": [
+    1.049,
+    -0.5201
+   ],
+   "ok": false,
+   "stance": null,
+   "stop": "no stance covers any of the objects: 1:beaker: best count 3 without obstacles, 0 with them",
+   "seconds": 51.0
+  },
+  {
+   "i": 41,
+   "beaker_xy": [
+    0.6393,
+    -0.5986
+   ],
+   "hotplate_xy": [
+    1.4847,
+    -0.6458
+   ],
+   "ok": false,
+   "stance": null,
+   "stop": "no stance covers any of the objects: 1:beaker: best count 3 without obstacles, 0 with them",
+   "seconds": 39.4
+  },
+  {
+   "i": 42,
+   "beaker_xy": [
+    -0.9156,
+    0.6502
+   ],
+   "hotplate_xy": [
+    2.0691,
+    -0.2044
+   ],
+   "ok": false,
+   "stance": null,
+   "stop": "no stance passed the full check: (-0.951, 0.985) pedestal 0.15: ['ik'] at the stance 'nominal' point 4 (over, [-0.916, 0.77, 1.16]) has no collision-free solution; (-1.131, 1.065) pedestal 0.13: ['ik'] at the stance 'nominal' point 4 (over, [-0.916, 0.77, 1.16]) has no collision-free solution; (-1.001, 1.075) pedestal 0.13: ['ik'] at the stance 'x-1' point 4 (over, [-0.916, 0.77, 1.16]) has no collision-free solution; (-0.891, 1.065) pedestal 0.11: ['ik'] at the stance 'nominal' point 0 (grasp, [-0.916, 0.65, 1.005]) has no collision-free solution",
+   "seconds": 61.0
+  },
+  {
+   "i": 43,
+   "beaker_xy": [
+    -0.708,
+    0.1687
+   ],
+   "hotplate_xy": [
+    -1.9242,
+    -0.3696
+   ],
+   "ok": false,
+   "stance": null,
+   "stop": "no stance covers any of the objects: 1:beaker: best count 3 without obstacles, 0 with them",
+   "seconds": 49.4
+  },
+  {
+   "i": 44,
+   "beaker_xy": [
+    0.8476,
+    -0.5862
+   ],
+   "hotplate_xy": [
+    -1.6444,
+    -0.0435
+   ],
+   "ok": false,
+   "stance": null,
+   "stop": "no stance covers any of the objects: 1:beaker: best count 3 without obstacles, 0 with them",
+   "seconds": 58.5
+  },
+  {
+   "i": 45,
+   "beaker_xy": [
+    0.8848,
+    0.413
+   ],
+   "hotplate_xy": [
+    -1.0817,
+    0.6532
+   ],
+   "ok": false,
+   "stance": null,
+   "stop": "no stance passed the full check: (0.670, 0.858) pedestal 0.12: ['placed_beaker'] at pedestal 0.120 the arms at home are -31 mm from a beaker placed on the hotplate; (0.840, 0.858) pedestal 0.12: ['home_clearance'] at pedestal 0.120 the arms at home are 22 mm from openarm_left_right_finger_collision vs task_beaker_wall_43 (the limit ; (0.560, 0.878) pedestal 0.10: ['home_clearance'] at pedestal 0.100 the arms at home are 31 mm from openarm_left_right_finger_collision vs task_hotplate_top_plate (the li; (0.750, 0.918) pedestal 0.10: ['home_clearance'] at pedestal 0.100 the arms at home are 4 mm from openarm_left_right_finger_collision vs task_beaker_wall_21 (the limit i",
+   "seconds": 46.5
+  },
+  {
+   "i": 46,
+   "beaker_xy": [
+    0.4333,
+    -0.2179
+   ],
+   "hotplate_xy": [
+    -0.1856,
+    -0.0789
+   ],
+   "ok": false,
+   "stance": null,
+   "stop": "no stance covers any of the objects: 1:beaker: best count 3 without obstacles, 0 with them",
+   "seconds": 38.7
+  },
+  {
+   "i": 47,
+   "beaker_xy": [
+    1.8027,
+    0.2834
+   ],
+   "hotplate_xy": [
+    1.8304,
+    -0.293
+   ],
+   "ok": false,
+   "stance": null,
+   "stop": "no stance covers any of the objects: 1:beaker: best count 3 without obstacles, 0 with them",
+   "seconds": 34.3
+  },
+  {
+   "i": 48,
+   "beaker_xy": [
+    -0.4763,
+    -0.1566
+   ],
+   "hotplate_xy": [
+    1.2374,
+    -0.1448
+   ],
+   "ok": false,
+   "stance": null,
+   "stop": "no stance covers any of the objects: 1:beaker: best count 3 without obstacles, 0 with them",
+   "seconds": 37.4
+  },
+  {
+   "i": 49,
+   "beaker_xy": [
+    1.8912,
+    0.5003
+   ],
+   "hotplate_xy": [
+    -1.4814,
+    0.1985
+   ],
+   "ok": false,
+   "stance": null,
+   "stop": "no stance passed the full check: (1.636, 0.935) pedestal 0.12: ['view'] at pedestal 0.120 hotplate_corner3 is -64.0 % from the nearest edge of the eagle image (limit 10 %); (1.536, 0.965) pedestal 0.10: ['ik'] at the stance 'pedestal+1' point 0 (grasp, [1.891, 0.5, 1.005]) has no collision-free solution; (1.626, 1.035) pedestal 0.07: ['ik'] at the stance 'pedestal+1' point 0 (grasp, [1.891, 0.5, 1.005]) has no collision-free solution",
+   "seconds": 54.0
+  },
+  {
+   "i": 50,
+   "beaker_xy": [
+    -0.3057,
+    0.4028
+   ],
+   "hotplate_xy": [
+    0.9864,
+    -0.1998
+   ],
+   "ok": false,
+   "stance": null,
+   "stop": "no stance passed the full check: (-0.551, 0.858) pedestal 0.12: ['view'] at pedestal 0.120 beaker_corner7 is -168.3 % from the nearest edge of the eagle image (limit 10 %); (-0.421, 0.858) pedestal 0.12: ['ik'] at the stance 'pedestal-1' point 4 (over, [-0.306, 0.523, 1.16]) has no collision-free solution; (-0.321, 0.858) pedestal 0.10: ['ik'] at the stance 'nominal' point 0 (grasp, [-0.306, 0.403, 1.005]) has no collision-free solution; (-0.651, 0.858) pedestal 0.10: ['view'] at pedestal 0.100 beaker_corner7 is -191.5 % from the nearest edge of the eagle image (limit 10 %)",
+   "seconds": 47.6
+  },
+  {
+   "i": 51,
+   "beaker_xy": [
+    1.065,
+    0.125
+   ],
+   "hotplate_xy": [
+    -0.9734,
+    -0.0541
+   ],
+   "ok": false,
+   "stance": null,
+   "stop": "no stance covers any of the objects: 1:beaker: best count 3 without obstacles, 0 with them",
+   "seconds": 40.5
+  },
+  {
+   "i": 52,
+   "beaker_xy": [
+    0.7186,
+    0.3513
+   ],
+   "hotplate_xy": [
+    -0.5463,
+    -0.5305
+   ],
+   "ok": false,
+   "stance": null,
+   "stop": "no stance passed the full check: (0.544, 0.856) pedestal 0.10: ['home_clearance'] at pedestal 0.100 the arms at home are 31 mm from openarm_left_right_finger_collision vs task_hotplate_top_plate (the li; (0.434, 0.856) pedestal 0.09: ['ik'] at the stance 'nominal' point 0 (grasp, [0.719, 0.351, 1.005]) has no collision-free solution; (0.644, 0.856) pedestal 0.09: ['home_clearance'] at pedestal 0.090 the arms at home are 21 mm from openarm_left_right_finger_collision vs task_hotplate_top_plate (the li; (0.744, 0.856) pedestal 0.06: ['home_clearance'] at pedestal 0.060 the arms at home are -8 mm from openarm_left_link6_collision vs task_hotplate_top_plate (the limit is ",
+   "seconds": 41.6
+  },
+  {
+   "i": 53,
+   "beaker_xy": [
+    0.8174,
+    -0.1568
+   ],
+   "hotplate_xy": [
+    1.1674,
+    0.4355
+   ],
+   "ok": false,
+   "stance": null,
+   "stop": "no stance covers any of the objects: 1:beaker: best count 3 without obstacles, 0 with them",
+   "seconds": 34.1
+  },
+  {
+   "i": 54,
+   "beaker_xy": [
+    -2.1226,
+    0.2901
+   ],
+   "hotplate_xy": [
+    -1.3396,
+    0.4355
+   ],
+   "ok": false,
+   "stance": null,
+   "stop": "no stance passed the full check: (-2.378, 0.735) pedestal 0.13: ['view'] at pedestal 0.130 beaker_corner7 is -524.1 % from the nearest edge of the eagle image (limit 10 %); (-2.478, 0.725) pedestal 0.13: ['ik'] at the stance 'pedestal+1' point 0 (grasp, [-2.123, 0.29, 1.005]) has no collision-free solution; (-2.428, 0.825) pedestal 0.07: ['ik'] at the stance 'nominal' point 0 (grasp, [-2.123, 0.29, 1.005]) has no collision-free solution",
+   "seconds": 30.5
+  },
+  {
+   "i": 55,
+   "beaker_xy": [
+    -0.3612,
+    0.2652
+   ],
+   "hotplate_xy": [
+    0.5195,
+    -0.5999
+   ],
+   "ok": false,
+   "stance": null,
+   "stop": "no stance covers any of the objects: 1:beaker: best count 3 without obstacles, 0 with them",
+   "seconds": 41.6
+  },
+  {
+   "i": 56,
+   "beaker_xy": [
+    -0.9897,
+    -0.7016
+   ],
+   "hotplate_xy": [
+    1.1712,
+    0.2929
+   ],
+   "ok": false,
+   "stance": null,
+   "stop": "no stance covers any of the objects: 1:beaker: best count 3 without obstacles, 0 with them",
+   "seconds": 50.1
+  },
+  {
+   "i": 57,
+   "beaker_xy": [
+    -1.4641,
+    -0.5988
+   ],
+   "hotplate_xy": [
+    0.0302,
+    -0.2547
+   ],
+   "ok": false,
+   "stance": null,
+   "stop": "no stance covers any of the objects: 1:beaker: best count 3 without obstacles, 0 with them",
+   "seconds": 44.3
+  },
+  {
+   "i": 58,
+   "beaker_xy": [
+    1.5271,
+    -0.4786
+   ],
+   "hotplate_xy": [
+    -0.588,
+    -0.2368
+   ],
+   "ok": false,
+   "stance": null,
+   "stop": "no stance covers any of the objects: 1:beaker: best count 3 without obstacles, 0 with them",
+   "seconds": 41.2
+  },
+  {
+   "i": 59,
+   "beaker_xy": [
+    1.9892,
+    -0.058
+   ],
+   "hotplate_xy": [
+    -1.5272,
+    -0.0219
+   ],
+   "ok": false,
+   "stance": null,
+   "stop": "no stance covers any of the objects: 1:beaker: best count 3 without obstacles, 0 with them",
+   "seconds": 46.7
+  },
+  {
+   "i": 60,
+   "beaker_xy": [
+    1.7697,
+    -0.7
+   ],
+   "hotplate_xy": [
+    2.1453,
+    -0.1321
+   ],
+   "ok": false,
+   "stance": null,
+   "stop": "no stance covers any of the objects: 1:beaker: best count 3 without obstacles, 0 with them",
+   "seconds": 35.0
+  },
+  {
+   "i": 61,
+   "beaker_xy": [
+    1.1292,
+    -0.3498
+   ],
+   "hotplate_xy": [
+    -0.3715,
+    0.1459
+   ],
+   "ok": false,
+   "stance": null,
+   "stop": "no stance covers any of the objects: 1:beaker: best count 3 without obstacles, 0 with them",
+   "seconds": 43.9
+  },
+  {
+   "i": 62,
+   "beaker_xy": [
+    0.5237,
+    -0.1164
+   ],
+   "hotplate_xy": [
+    1.7039,
+    -0.3787
+   ],
+   "ok": false,
+   "stance": null,
+   "stop": "no stance covers any of the objects: 1:beaker: best count 3 without obstacles, 0 with them",
+   "seconds": 42.0
+  },
+  {
+   "i": 63,
+   "beaker_xy": [
+    1.5207,
+    -0.488
+   ],
+   "hotplate_xy": [
+    -1.7746,
+    -0.7236
+   ],
+   "ok": false,
+   "stance": null,
+   "stop": "no stance covers any of the objects: 1:beaker: best count 3 without obstacles, 0 with them",
+   "seconds": 47.4
+  },
+  {
+   "i": 64,
+   "beaker_xy": [
+    -1.6731,
+    -0.213
+   ],
+   "hotplate_xy": [
+    -0.5749,
+    -0.3146
+   ],
+   "ok": false,
+   "stance": null,
+   "stop": "no stance covers any of the objects: 1:beaker: best count 3 without obstacles, 0 with them",
+   "seconds": 38.1
+  },
+  {
+   "i": 65,
+   "beaker_xy": [
+    -0.1638,
+    -0.1348
+   ],
+   "hotplate_xy": [
+    0.1915,
+    0.2906
+   ],
+   "ok": false,
+   "stance": null,
+   "stop": "no stance covers any of the objects: 1:beaker: best count 3 without obstacles, 0 with them",
+   "seconds": 34.5
+  },
+  {
+   "i": 66,
+   "beaker_xy": [
+    -0.3856,
+    0.3575
+   ],
+   "hotplate_xy": [
+    0.6986,
+    0.5584
+   ],
+   "ok": false,
+   "stance": null,
+   "stop": "no stance passed the full check: (-0.571, 0.853) pedestal 0.10: ['ik'] at the stance 'nominal' point 0 (grasp, [-0.386, 0.358, 1.005]) has no collision-free solution; (-0.471, 0.853) pedestal 0.10: ['ik'] at the stance 'nominal' point 0 (grasp, [-0.386, 0.358, 1.005]) has no collision-free solution; (-0.681, 0.853) pedestal 0.09: ['ik'] at the stance 'nominal' point 0 (grasp, [-0.386, 0.358, 1.005]) has no collision-free solution; (-0.371, 0.853) pedestal 0.07: ['home_clearance'] at pedestal 0.050 the arms at home are 40 mm from openarm_left_link5_collision vs bench_top (the limit is 40 mm)",
+   "seconds": 37.1
+  },
+  {
+   "i": 67,
+   "beaker_xy": [
+    -0.029,
+    -0.4306
+   ],
+   "hotplate_xy": [
+    1.8801,
+    -0.3518
+   ],
+   "ok": false,
+   "stance": null,
+   "stop": "no stance covers any of the objects: 1:beaker: best count 3 without obstacles, 0 with them",
+   "seconds": 43.9
+  },
+  {
+   "i": 68,
+   "beaker_xy": [
+    0.7404,
+    -0.3128
+   ],
+   "hotplate_xy": [
+    -1.1897,
+    0.5942
+   ],
+   "ok": false,
+   "stance": null,
+   "stop": "no stance covers any of the objects: 1:beaker: best count 3 without obstacles, 0 with them",
+   "seconds": 49.0
+  },
+  {
+   "i": 69,
+   "beaker_xy": [
+    0.9815,
+    0.6678
+   ],
+   "hotplate_xy": [
+    1.7076,
+    -0.239
+   ],
+   "ok": false,
+   "stance": null,
+   "stop": "no stance passed the full check: (0.957, 1.003) pedestal 0.15: ['placed_beaker'] at pedestal 0.150 the arms at home are 19 mm from a beaker placed on the hotplate; (0.777, 1.083) pedestal 0.13: ['ik'] at the stance 'nominal' point 0 (grasp, [0.982, 0.668, 1.005]) has no collision-free solution; (0.907, 1.093) pedestal 0.13: ['ik'] at the stance 'nominal' point 0 (grasp, [0.982, 0.668, 1.005]) has no collision-free solution; (1.017, 1.083) pedestal 0.11: ['ik'] at the stance 'nominal' point 0 (grasp, [0.982, 0.668, 1.005]) has no collision-free solution",
+   "seconds": 39.4
+  },
+  {
+   "i": 70,
+   "beaker_xy": [
+    1.2272,
+    -0.4067
+   ],
+   "hotplate_xy": [
+    1.9651,
+    -0.3103
+   ],
+   "ok": false,
+   "stance": null,
+   "stop": "no stance covers any of the objects: 1:beaker: best count 3 without obstacles, 0 with them",
+   "seconds": 35.8
+  },
+  {
+   "i": 71,
+   "beaker_xy": [
+    -2.0205,
+    0.4051
+   ],
+   "hotplate_xy": [
+    -0.2469,
+    -0.6929
+   ],
+   "ok": false,
+   "stance": null,
+   "stop": "no stance passed the full check: (-2.376, 0.840) pedestal 0.13: ['ik'] at the stance 'pedestal+1' point 0 (grasp, [-2.021, 0.405, 1.005]) has no collision-free solution; (-2.366, 0.940) pedestal 0.05: ['home_clearance'] at pedestal 0.030 the arms at home are 29 mm from openarm_left_right_finger_collision vs bench_top (the limit is 40 mm)",
+   "seconds": 48.4
+  },
+  {
+   "i": 72,
+   "beaker_xy": [
+    -0.9518,
+    0.0133
+   ],
+   "hotplate_xy": [
+    1.545,
+    0.0535
+   ],
+   "ok": false,
+   "stance": null,
+   "stop": "no stance covers any of the objects: 1:beaker: best count 3 without obstacles, 0 with them",
+   "seconds": 42.2
+  },
+  {
+   "i": 73,
+   "beaker_xy": [
+    -0.5725,
+    0.5597
+   ],
+   "hotplate_xy": [
+    -1.6313,
+    -0.0339
+   ],
+   "ok": false,
+   "stance": null,
+   "stop": "no stance passed the full check: (-0.607, 0.895) pedestal 0.15: ['ik'] at the stance 'nominal' point 4 (over, [-0.572, 0.68, 1.16]) has no collision-free solution; (-0.787, 0.975) pedestal 0.13: ['ik'] at the stance 'nominal' point 4 (over, [-0.572, 0.68, 1.16]) has no collision-free solution; (-0.657, 0.985) pedestal 0.13: ['ik'] at the stance 'x-1' point 4 (over, [-0.572, 0.68, 1.16]) has no collision-free solution; (-0.547, 0.975) pedestal 0.11: ['ik'] at the stance 'nominal' point 0 (grasp, [-0.572, 0.56, 1.005]) has no collision-free solution",
+   "seconds": 45.5
+  },
+  {
+   "i": 74,
+   "beaker_xy": [
+    -0.9062,
+    -0.5662
+   ],
+   "hotplate_xy": [
+    -0.1342,
+    -0.196
+   ],
+   "ok": false,
+   "stance": null,
+   "stop": "no stance covers any of the objects: 1:beaker: best count 3 without obstacles, 0 with them",
+   "seconds": 38.8
+  },
+  {
+   "i": 75,
+   "beaker_xy": [
+    0.8981,
+    0.0265
+   ],
+   "hotplate_xy": [
+    -1.8659,
+    -0.5799
+   ],
+   "ok": false,
+   "stance": null,
+   "stop": "no stance covers any of the objects: 1:beaker: best count 3 without obstacles, 0 with them",
+   "seconds": 50.1
+  },
+  {
+   "i": 76,
+   "beaker_xy": [
+    -0.8212,
+    0.0036
+   ],
+   "hotplate_xy": [
+    -1.3531,
+    0.5619
+   ],
+   "ok": false,
+   "stance": null,
+   "stop": "no stance covers any of the objects: 1:beaker: best count 3 without obstacles, 0 with them",
+   "seconds": 37.7
+  },
+  {
+   "i": 77,
+   "beaker_xy": [
+    -0.0273,
+    -0.5126
+   ],
+   "hotplate_xy": [
+    0.7868,
+    0.3648
+   ],
+   "ok": false,
+   "stance": null,
+   "stop": "no stance covers any of the objects: 1:beaker: best count 3 without obstacles, 0 with them",
+   "seconds": 37.6
+  },
+  {
+   "i": 78,
+   "beaker_xy": [
+    -0.5677,
+    0.3901
+   ],
+   "hotplate_xy": [
+    0.2139,
+    0.6288
+   ],
+   "ok": false,
+   "stance": null,
+   "stop": "no stance passed the full check: (-0.823, 0.855) pedestal 0.11: ['view'] at pedestal 0.110 beaker_corner7 is -212.1 % from the nearest edge of the eagle image (limit 10 %); (-0.693, 0.855) pedestal 0.11: ['ik'] at the stance 'pedestal-1' point 4 (over, [-0.568, 0.51, 1.16]) has no collision-free solution; (-0.593, 0.855) pedestal 0.10: ['ik'] at the stance 'nominal' point 0 (grasp, [-0.568, 0.39, 1.005]) has no collision-free solution; (-0.923, 0.865) pedestal 0.09: ['ik'] at the stance 'pedestal+1' point 0 (grasp, [-0.568, 0.39, 1.005]) has no collision-free solution",
+   "seconds": 43.4
+  },
+  {
+   "i": 79,
+   "beaker_xy": [
+    -1.5256,
+    -0.3937
+   ],
+   "hotplate_xy": [
+    -0.7185,
+    -0.1252
+   ],
+   "ok": false,
+   "stance": null,
+   "stop": "no stance covers any of the objects: 1:beaker: best count 3 without obstacles, 0 with them",
+   "seconds": 42.3
+  },
+  {
+   "i": 80,
+   "beaker_xy": [
+    0.8364,
+    0.6629
+   ],
+   "hotplate_xy": [
+    -1.6375,
+    0.687
+   ],
+   "ok": false,
+   "stance": null,
+   "stop": "no stance passed the full check: (0.811, 0.998) pedestal 0.15: ['ik'] at the stance 'nominal' point 0 (grasp, [0.836, 0.663, 1.005]) has no collision-free solution; (0.631, 1.078) pedestal 0.13: ['ik'] at the stance 'nominal' point 0 (grasp, [0.836, 0.663, 1.005]) has no collision-free solution; (0.761, 1.088) pedestal 0.13: ['ik'] at the stance 'nominal' point 0 (grasp, [0.836, 0.663, 1.005]) has no collision-free solution; (0.871, 1.078) pedestal 0.11: ['ik'] at the stance 'nominal' point 0 (grasp, [0.836, 0.663, 1.005]) has no collision-free solution",
+   "seconds": 43.4
+  },
+  {
+   "i": 81,
+   "beaker_xy": [
+    0.6751,
+    -0.6229
+   ],
+   "hotplate_xy": [
+    -0.7019,
+    -0.4529
+   ],
+   "ok": false,
+   "stance": null,
+   "stop": "no stance covers any of the objects: 1:beaker: best count 3 without obstacles, 0 with them",
+   "seconds": 38.1
+  },
+  {
+   "i": 82,
+   "beaker_xy": [
+    -2.14,
+    0.0544
+   ],
+   "hotplate_xy": [
+    0.076,
+    -0.7441
+   ],
+   "ok": false,
+   "stance": null,
+   "stop": "no stance passed the full check: (-2.385, 0.489) pedestal 0.14: ['view'] at pedestal 0.140 beaker_corner7 is -1031.3 % from the nearest edge of the eagle image (limit 10 %); (-2.485, 0.499) pedestal 0.12: ['view'] at pedestal 0.120 beaker_corner7 is -1124.0 % from the nearest edge of the eagle image (limit 10 %); (-2.395, 0.589) pedestal 0.09: ['home_clearance'] at pedestal 0.070 the arms at home are 35 mm from openarm_left_link4_collision vs bench_top (the limit is 40 mm)",
+   "seconds": 51.7
+  },
+  {
+   "i": 83,
+   "beaker_xy": [
+    0.0454,
+    0.2387
+   ],
+   "hotplate_xy": [
+    0.3657,
+    0.5428
+   ],
+   "ok": false,
+   "stance": null,
+   "stop": "no stance covers any of the objects: 1:beaker: best count 3 without obstacles, 0 with them",
+   "seconds": 32.1
+  },
+  {
+   "i": 84,
+   "beaker_xy": [
+    -1.6998,
+    0.58
+   ],
+   "hotplate_xy": [
+    -0.2532,
+    -0.2826
+   ],
+   "ok": false,
+   "stance": null,
+   "stop": "no stance covers any of the objects: 1:beaker: best count 3 without obstacles, 0 with them",
+   "seconds": 49.5
+  },
+  {
+   "i": 85,
+   "beaker_xy": [
+    -1.6385,
+    -0.42
+   ],
+   "hotplate_xy": [
+    1.8586,
+    -0.0862
+   ],
+   "ok": false,
+   "stance": null,
+   "stop": "no stance covers any of the objects: 1:beaker: best count 3 without obstacles, 0 with them",
+   "seconds": 54.0
+  },
+  {
+   "i": 86,
+   "beaker_xy": [
+    0.5813,
+    -0.5213
+   ],
+   "hotplate_xy": [
+    1.7431,
+    -0.0206
+   ],
+   "ok": false,
+   "stance": null,
+   "stop": "no stance covers any of the objects: 1:beaker: best count 3 without obstacles, 0 with them",
+   "seconds": 39.7
+  },
+  {
+   "i": 87,
+   "beaker_xy": [
+    -1.1389,
+    0.3453
+   ],
+   "hotplate_xy": [
+    0.8557,
+    0.2941
+   ],
+   "ok": false,
+   "stance": null,
+   "stop": "no stance passed the full check: (-1.194, 0.850) pedestal 0.09: ['ik'] at the stance 'x+1' point 0 (grasp, [-1.139, 0.345, 1.005]) has no collision-free solution; (-1.084, 0.850) pedestal 0.05: ['home_clearance'] at pedestal 0.050 the arms at home are 39 mm from openarm_left_link5_collision vs bench_top (the limit is 40 mm)",
+   "seconds": 42.5
+  },
+  {
+   "i": 88,
+   "beaker_xy": [
+    1.7804,
+    -0.6106
+   ],
+   "hotplate_xy": [
+    -0.8644,
+    0.2839
+   ],
+   "ok": false,
+   "stance": null,
+   "stop": "no stance covers any of the objects: 1:beaker: best count 3 without obstacles, 0 with them",
+   "seconds": 47.1
+  },
+  {
+   "i": 89,
+   "beaker_xy": [
+    1.3454,
+    0.1626
+   ],
+   "hotplate_xy": [
+    1.6593,
+    -0.5692
+   ],
+   "ok": false,
+   "stance": null,
+   "stop": "no stance covers any of the objects: 1:beaker: best count 3 without obstacles, 0 with them",
+   "seconds": 40.2
+  },
+  {
+   "i": 90,
+   "beaker_xy": [
+    0.5444,
+    -0.4195
+   ],
+   "hotplate_xy": [
+    0.7748,
+    -0.7163
+   ],
+   "ok": false,
+   "stance": null,
+   "stop": "no stance covers any of the objects: 1:beaker: best count 3 without obstacles, 0 with them",
+   "seconds": 37.6
+  },
+  {
+   "i": 91,
+   "beaker_xy": [
+    -0.7139,
+    -0.6485
+   ],
+   "hotplate_xy": [
+    -1.7524,
+    0.2858
+   ],
+   "ok": false,
+   "stance": null,
+   "stop": "no stance covers any of the objects: 1:beaker: best count 3 without obstacles, 0 with them",
+   "seconds": 46.0
+  },
+  {
+   "i": 92,
+   "beaker_xy": [
+    1.243,
+    -0.3441
+   ],
+   "hotplate_xy": [
+    0.5169,
+    0.7194
+   ],
+   "ok": false,
+   "stance": null,
+   "stop": "no stance covers any of the objects: 1:beaker: best count 3 without obstacles, 0 with them",
+   "seconds": 41.5
+  },
+  {
+   "i": 93,
+   "beaker_xy": [
+    -1.7408,
+    -0.3635
+   ],
+   "hotplate_xy": [
+    -1.4178,
+    0.6378
+   ],
+   "ok": false,
+   "stance": null,
+   "stop": "no stance covers any of the objects: 1:beaker: best count 3 without obstacles, 0 with them",
+   "seconds": 51.4
+  },
+  {
+   "i": 94,
+   "beaker_xy": [
+    0.2542,
+    0.2192
+   ],
+   "hotplate_xy": [
+    -0.2294,
+    -0.2547
+   ],
+   "ok": false,
+   "stance": null,
+   "stop": "no stance covers any of the objects: 1:beaker: best count 3 without obstacles, 0 with them",
+   "seconds": 45.0
+  },
+  {
+   "i": 95,
+   "beaker_xy": [
+    -1.0055,
+    0.5749
+   ],
+   "hotplate_xy": [
+    1.0507,
+    -0.2612
+   ],
+   "ok": false,
+   "stance": null,
+   "stop": "no stance passed the full check: (-1.040, 0.910) pedestal 0.15: ['ik'] at the stance 'nominal' point 4 (over, [-1.006, 0.695, 1.16]) has no collision-free solution; (-1.090, 1.000) pedestal 0.13: ['ik'] at the stance 'x-1' point 4 (over, [-1.006, 0.695, 1.16]) has no collision-free solution; (-0.980, 0.990) pedestal 0.11: ['ik'] at the stance 'nominal' point 0 (grasp, [-1.006, 0.575, 1.005]) has no collision-free solution; (-1.170, 1.060) pedestal 0.11: ['view'] at pedestal 0.110 beaker_corner7 is -181.5 % from the nearest edge of the eagle image (limit 10 %)",
+   "seconds": 75.2
+  },
+  {
+   "i": 96,
+   "beaker_xy": [
+    -0.4917,
+    -0.0169
+   ],
+   "hotplate_xy": [
+    1.3598,
+    -0.6321
+   ],
+   "ok": false,
+   "stance": null,
+   "stop": "no stance covers any of the objects: 1:beaker: best count 3 without obstacles, 0 with them",
+   "seconds": 63.8
+  },
+  {
+   "i": 97,
+   "beaker_xy": [
+    -0.5147,
+    -0.396
+   ],
+   "hotplate_xy": [
+    1.3515,
+    0.6025
+   ],
+   "ok": false,
+   "stance": null,
+   "stop": "no stance covers any of the objects: 1:beaker: best count 3 without obstacles, 0 with them",
+   "seconds": 66.1
+  },
+  {
+   "i": 98,
+   "beaker_xy": [
+    -1.4861,
+    0.6635
+   ],
+   "hotplate_xy": [
+    -0.5053,
+    -0.1787
+   ],
+   "ok": false,
+   "stance": null,
+   "stop": "no stance covers any of the objects: 1:beaker: best count 3 without obstacles, 0 with them",
+   "seconds": 59.7
+  },
+  {
+   "i": 99,
+   "beaker_xy": [
+    -1.5372,
+    0.7178
+   ],
+   "hotplate_xy": [
+    0.1012,
+    0.5027
+   ],
+   "ok": false,
+   "stance": null,
+   "stop": "no stance covers any of the objects: 1:beaker: best count 3 without obstacles, 0 with them",
+   "seconds": 47.3
+  }
+ ]
+}

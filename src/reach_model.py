@@ -190,3 +190,94 @@ def inverse_stances(objects, arm, heading, q, geom, n_segment=50, top=8):
     for mn, tot, base, counts in scored[:top]:
         out["candidates"].append({"stance": [float(base[0]), float(base[1]), float(heading), float(q)], "counts": dict(zip(names, counts)), "min_count": mn, "total_count": tot})
     return out
+
+
+# ---------------------------------------------------------------- the sweep: heading and pedestal are search variables (mid-course change)
+HEADINGS = tuple(math.radians(d) for d in range(0, 360, 10))       # 36 headings, 0 to 350 deg
+PEDESTALS = tuple(float(v) for v in np.linspace(0.05, 0.25, 5))    # 5 pedestal commands, m
+N_SEGMENT_SWEEP = 50
+
+
+def _scan(objects, arm, heading, q, geom, n_segment):
+    """The segment points of one (heading, pedestal) combination: (scored, status). scored = [(min, total, base, counts)] for feasible points."""
+    ideal = [ideal_spot(o["xy"], o["z"], arm, heading, q, geom) for o in objects]
+    if any(s is None for s in ideal):
+        return [], "no ideal spot"
+    A, B = ideal[0]["xy"], ideal[1]["xy"]
+    if math.hypot(B[0] - A[0], B[1] - A[1]) > 2 * arm_params(arm)[0][1]:
+        return [], "ideal spots more than 2 r0 apart"
+    pts = [(o["xy"][0], o["xy"][1], o["z"]) for o in objects]
+    scored = []
+    for t in np.linspace(0.0, 1.0, n_segment):
+        base = (A[0] + t * (B[0] - A[0]), A[1] + t * (B[1] - A[1]))
+        counts = [counts_at(base, arm, heading, q, geom, [p])[0] for p in pts]
+        if min(counts) >= 1.0:
+            scored.append((min(counts), sum(counts), base, counts))
+    return scored, "ok" if scored else "no feasible point on the segment"
+
+
+def single_object_stance(obj_xy, obj_z, arm, geom, heading=None, pedestal=None):
+    """Part C2 with the sweep: the ideal spot of one object, optimized over heading and pedestal when they are not given.
+
+    The peak count is C at every (heading, pedestal) where the spot exists, so the choice is by margin: the larger of (r0 - |z|) and (z - z_cut), in metres,
+    the distance of the object from the peak sphere's edge and from the cutoff. Ties go to the lower pedestal, then the earlier heading in the grid.
+
+    Returns:
+        dict: "heading", "pedestal", "spot" (the ideal spot dict of single-object ideal_spot), "margin_m"; or None if no combination gives a spot.
+    """
+    headings = HEADINGS if heading is None else (heading,)
+    pedestals = PEDESTALS if pedestal is None else (pedestal,)
+    p, z_cut = arm_params(arm)
+    r0 = p[1]
+    best = None
+    for h in headings:
+        for q in pedestals:
+            s = ideal_spot(obj_xy, obj_z, arm, h, q, geom)
+            if s is None:
+                continue
+            z = s["z_rel"]
+            margin = min(r0 - abs(z), z - z_cut)
+            key = (margin, -q)
+            if best is None or key > best[0]:
+                best = (key, {"heading": float(h), "pedestal": float(q), "spot": s, "margin_m": float(margin)})
+    return None if best is None else best[1]
+
+
+def inverse_search(objects, arm, geom, n_segment=N_SEGMENT_SWEEP, top=8):
+    """The sweep: every (heading, pedestal) combination, its segment between the two objects' ideal spots, ranked together.
+
+    The ranking is by the worst object's count (largest first), then the total count. If no combination gives a feasible point (or no combination has both spots),
+    the result is "repositioning needed": the best single-object stance of each object, each with its own heading and pedestal.
+
+    Returns:
+        dict: "label" ("shared" or "repositioning needed"), "evaluations" (segment points evaluated), "feasible_points", "best_heading", "best_pedestal" (of the first candidate,
+        or None), "candidates" (top, each {"stance": (x, y, heading, q), "heading_deg", "pedestal", "counts", "min_count", "total_count"}), "split" ({name: single-object stance} or None),
+        "status_counts" (how many combinations ended with each status).
+    """
+    names = [o["name"] for o in objects]
+    scored_all = []
+    evaluations = 0
+    status_counts = {}
+    for h in HEADINGS:
+        for q in PEDESTALS:
+            scored, status = _scan(objects, arm, h, q, geom, n_segment)
+            status_counts[status] = status_counts.get(status, 0) + 1
+            evaluations += n_segment if status != "no ideal spot" else 0
+            for mn, tot, base, counts in scored:
+                scored_all.append((mn, tot, base, counts, h, q))
+    out = {"label": "shared", "evaluations": evaluations, "feasible_points": len(scored_all), "best_heading": None, "best_pedestal": None,
+           "candidates": [], "split": None, "status_counts": status_counts}
+    if not scored_all:
+        out["label"] = "repositioning needed"
+        out["split"] = {}
+        for o in objects:
+            best = single_object_stance(o["xy"], o["z"], arm, geom)
+            out["split"][o["name"]] = best
+        return out
+    scored_all.sort(key=lambda s: (-s[0], -s[1]))
+    for mn, tot, base, counts, h, q in scored_all[:top]:
+        out["candidates"].append({"stance": (float(base[0]), float(base[1]), float(h), float(q)), "heading_deg": math.degrees(h), "pedestal": float(q),
+                                  "counts": dict(zip(names, counts)), "min_count": mn, "total_count": tot})
+    out["best_heading"] = out["candidates"][0]["heading_deg"]
+    out["best_pedestal"] = out["candidates"][0]["pedestal"]
+    return out

@@ -1,0 +1,220 @@
+{
+ "scene": "moved",
+ "layout": {
+  "beaker_xy": [
+   0.85,
+   0.66
+  ],
+  "hotplate_xy": [
+   0.65,
+   0.66
+  ]
+ },
+ "arm": "left",
+ "heading_rad": -1.5707963267948966,
+ "pedestal_m": 0.16,
+ "geometry_shoulder_left": [
+  0.0,
+  0.031,
+  0.698
+ ],
+ "geometry_shoulder_right": [
+  0.0,
+  -0.031,
+  0.698
+ ],
+ "objects": [
+  {
+   "name": "beaker",
+   "xy": [
+    0.85,
+    0.66
+   ],
+   "z": 1.0125
+  },
+  {
+   "name": "hotplate",
+   "xy": [
+    0.65,
+    0.66
+   ],
+   "z": 1.0825
+  }
+ ],
+ "ideal": {
+  "beaker": {
+   "xy": [
+    0.819,
+    0.9963295240669907
+   ],
+   "d_horizontal": 0.3363295240669907,
+   "z_rel": -0.30300000000000016
+  },
+  "hotplate": {
+   "xy": [
+    0.619,
+    1.0481205338024884
+   ],
+   "d_horizontal": 0.3881205338024884,
+   "z_rel": -0.2330000000000001
+  }
+ },
+ "stop": null,
+ "single_stance_feasible": true,
+ "feasible_points": 42,
+ "candidates": [
+  {
+   "stance": [
+    0.655734693877551,
+    1.0386078993612746,
+    -1.5707963267948966,
+    0.16
+   ],
+   "counts": {
+    "beaker": 3.473859986237907,
+    "hotplate": 3.5201153076344536
+   },
+   "min_count": 3.473859986237907,
+   "total_count": 6.99397529387236,
+   "full_check_ok": false,
+   "failed": [
+    "occlusion"
+   ],
+   "reason": "at pedestal 0.160 something hides 0.8 % of the beaker and 1.4 % of the hotplate in the eagle image"
+  },
+  {
+   "stance": [
+    0.6598163265306123,
+    1.0375509399789173,
+    -1.5707963267948966,
+    0.16
+   ],
+   "counts": {
+    "beaker": 3.49135632958912,
+    "hotplate": 3.4704240224958074
+   },
+   "min_count": 3.4704240224958074,
+   "total_count": 6.9617803520849275,
+   "full_check_ok": false,
+   "failed": [
+    "occlusion"
+   ],
+   "reason": "at pedestal 0.160 something hides 1.8 % of the beaker and 1.8 % of the hotplate in the eagle image"
+  },
+  {
+   "stance": [
+    0.6516530612244897,
+    1.0396648587436317,
+    -1.5707963267948966,
+    0.16
+   ],
+   "counts": {
+    "beaker": 3.455598939292519,
+    "hotplate": 3.5649814329366936
+   },
+   "min_count": 3.455598939292519,
+   "total_count": 7.020580372229213,
+   "full_check_ok": false,
+   "failed": [
+    "occlusion"
+   ],
+   "reason": "at pedestal 0.160 something hides 0.2 % of the beaker and 1.4 % of the hotplate in the eagle image"
+  },
+  {
+   "stance": [
+    0.6475714285714286,
+    1.0407218181259887,
+    -1.5707963267948966,
+    0.16
+   ],
+   "counts": {
+    "beaker": 3.4365653471173507,
+    "hotplate": 3.604858465898216
+   },
+   "min_count": 3.4365653471173507,
+   "total_count": 7.041423813015567,
+   "full_check_ok": false,
+   "failed": [
+    "occlusion"
+   ],
+   "reason": "at pedestal 0.180 something hides 1.1 % of the beaker and 0.8 % of the hotplate in the eagle image"
+  },
+  {
+   "stance": [
+    0.6434897959183673,
+    1.0417787775083458,
+    -1.5707963267948966,
+    0.16
+   ],
+   "counts": {
+    "beaker": 3.41675241831784,
+    "hotplate": 3.6396091110226942
+   },
+   "min_count": 3.41675241831784,
+   "total_count": 7.056361529340535,
+   "full_check_ok": false,
+   "failed": [
+    "occlusion"
+   ],
+   "reason": "at pedestal 0.180 something hides 0.3 % of the beaker and 1.0 % of the hotplate in the eagle image"
+  },
+  {
+   "stance": [
+    0.6638979591836734,
+    1.0364939805965603,
+    -1.5707963267948966,
+    0.16
+   ],
+   "counts": {
+    "beaker": 3.508096823605781,
+    "hotplate": 3.4160970548404874
+   },
+   "min_count": 3.4160970548404874,
+   "total_count": 6.924193878446268,
+   "full_check_ok": false,
+   "failed": [
+    "occlusion"
+   ],
+   "reason": "at pedestal 0.160 something hides 3.0 % of the beaker and 2.5 % of the hotplate in the eagle image"
+  },
+  {
+   "stance": [
+    0.6394081632653061,
+    1.0428357368907029,
+    -1.5707963267948966,
+    0.16
+   ],
+   "counts": {
+    "beaker": 3.396154447433444,
+    "hotplate": 3.669123518260031
+   },
+   "min_count": 3.396154447433444,
+   "total_count": 7.065277965693475,
+   "full_check_ok": false,
+   "failed": [
+    "occlusion"
+   ],
+   "reason": "at pedestal 0.160 something hides 0.1 % of the beaker and 1.9 % of the hotplate in the eagle image"
+  },
+  {
+   "stance": [
+    0.6353265306122449,
+    1.04389269627306,
+    -1.5707963267948966,
+    0.16
+   ],
+   "counts": {
+    "beaker": 3.374766848552035,
+    "hotplate": 3.693319802434321
+   },
+   "min_count": 3.374766848552035,
+   "total_count": 7.068086650986356,
+   "full_check_ok": false,
+   "failed": [
+    "occlusion"
+   ],
+   "reason": "at pedestal 0.160 something hides 0.6 % of the beaker and 2.6 % of the hotplate in the eagle image"
+  }
+ ],
+ "passing": []
+}

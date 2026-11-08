@@ -7,7 +7,6 @@ The analytic search gives the ideal spot of each object and the segment candidat
 Candidate format: stance = (x, y, heading, pedestal command), the same tuple FullCheck.check takes; points = src/task_points.task_points(model, data, layout cfg).
 """
 import argparse
-import copy
 import json
 import math
 import os
@@ -24,12 +23,12 @@ from src import bench_stance as bs  # noqa: E402
 from src import reach_model as rm  # noqa: E402
 from src.full_check import FullCheck  # noqa: E402
 from src.task_beaker_hotplate import bench_top_z  # noqa: E402
-from src.task_config import BEAKER_CFG, PICK_PLACE_CFG, TASK_CFG  # noqa: E402
+from src.task_config import BEAKER_CFG, BENCH_STANCE_CFG, PICK_PLACE_CFG, TASK_CFG  # noqa: E402
 from src.task_points import task_points  # noqa: E402
 
 MAPS = "data/reach_map_before_bench"              # the filtered maps (David)
 ARM = "left"
-PEDESTAL = TASK_CFG["pedestal_override_m"]        # 0.16 m, the staging pedestal (the pedestal the shoulder was read at)
+PEDESTAL = BENCH_STANCE_CFG["pedestal_override_m"]        # 0.16 m, the staging pedestal (the pedestal the shoulder was read at)
 HEADING = TASK_CFG["staging_yaw"]                 # -90 deg, facing the bench
 LAYOUTS = {
     "standard": dict(TASK_CFG),
@@ -57,21 +56,26 @@ def main():
         {"name": "beaker", "xy": [float(v) for v in cfg["beaker_xy"]], "z": float(top + frac * BEAKER_CFG["height"])},
         {"name": "hotplate", "xy": [float(v) for v in cfg["hotplate_xy"]], "z": float(plate_top + 0.002 + frac * BEAKER_CFG["height"])},
     ]
-    res = rm.inverse_stances(objects, ARM, HEADING, PEDESTAL, geom)
+    res = rm.inverse_search(objects, ARM, geom)
+    best = res["candidates"][0] if res["candidates"] else None
+    ideal = {}
+    if best is not None:
+        for o in objects:
+            ideal[o["name"]] = rm.ideal_spot(o["xy"], o["z"], ARM, math.radians(best["heading_deg"]), best["pedestal"], geom)
     points = task_points(m, d, cfg)
     rows = []
     for c in res["candidates"]:
         chk = fc.check(tuple(c["stance"]), points)
         rows.append({**c, "full_check_ok": bool(chk["ok"]), "failed": chk["failed"], "reason": chk["reason"]})
-        print(f"{a.scene}: stance ({c['stance'][0]:.3f}, {c['stance'][1]:.3f}) counts {c['counts']} -> ok {chk['ok']} failed {chk['failed']}", flush=True)
-    out = {"scene": a.scene, "layout": {"beaker_xy": objects[0]["xy"], "hotplate_xy": objects[1]["xy"]}, "arm": ARM, "heading_rad": HEADING, "pedestal_m": PEDESTAL,
+        print(f"{a.scene}: stance ({c['stance'][0]:.3f}, {c['stance'][1]:.3f}) heading {c['heading_deg']:.0f} pedestal {c['pedestal']:.2f} counts {c['counts']} -> ok {chk['ok']} failed {chk['failed']}", flush=True)
+    out = {"scene": a.scene, "layout": {"beaker_xy": objects[0]["xy"], "hotplate_xy": objects[1]["xy"]}, "arm": ARM, "sweep": {"headings_deg": [0, 350, 10], "pedestals_m": [0.05, 0.25, 5], "segment_points": 50, "evaluations": res["evaluations"], "status_counts": res["status_counts"]}, "best_heading_deg": res["best_heading"], "best_pedestal_m": res["best_pedestal"],
            "geometry_shoulder_left": geom["shoulder"]["left"], "geometry_shoulder_right": geom["shoulder"]["right"],
-           "objects": objects, "ideal": res["ideal"], "stop": res["stop"], "single_stance_feasible": res["single_stance_feasible"],
+           "objects": objects, "label": res["label"], "ideal_at_best": ideal, "split": res["split"], "single_stance_feasible": res["feasible_points"] > 0,
            "feasible_points": res["feasible_points"], "candidates": rows, "passing": [r["stance"] for r in rows if r["full_check_ok"]]}
     tmp = a.out + ".tmp"
     Path(tmp).write_text(json.dumps(out, indent=1, default=float))
     os.replace(tmp, a.out)
-    print("RESULT", json.dumps({k: out[k] for k in ("scene", "stop", "single_stance_feasible", "feasible_points", "passing")}), flush=True)
+    print("RESULT", json.dumps({k: out[k] for k in ("scene", "label", "best_heading_deg", "best_pedestal_m", "single_stance_feasible", "feasible_points", "passing")}), flush=True)
 
 
 if __name__ == "__main__":

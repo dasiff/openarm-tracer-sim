@@ -133,3 +133,51 @@ Missed targets, plainly (held-out):
 - Per the task, A8 was the last attempt, so I stopped: **Part C (analytic inverse, stance finder, scene tests) was not started.**
 
 What the picture shows: the maps are a nearly full ring around the shoulder (both sides of the heading). The asymmetric model covers the left half well but is cut to a thin wedge on the right, where the maps still have reachable cells. That costs recall (about 75%) and the count error stays high (within-1-bin about 50%) because the maps' count varies by sector with the bins, which no smooth bearing term follows.
+
+## Analytic inverse (A8, left and right arms, heading and pedestal swept): scene test
+
+Code: `src/reach_model.py` (`arm_params`, `ideal_spot`, `counts_at`, `inverse_search`, `single_object_stance`), scene runner `experiments/reach_inverse_scene.py`. Outputs: `docs/reports/reach_inverse_{standard,moved}.json` (sweep), `..._fixed_heading.json` (the first pass, heading -90 deg, pedestal 0.16 m only).
+
+**Right arm.** The A8 model mirrored: `theta` flips sign, so the wide side (sigma0 = 50.68, sigma1 = -117.57) is theta < 0 and the narrow side (sigma0 = 0.2716, sigma1 = -0.5479) is theta >= 0. Right-arm shoulder: torso-frame (0, -0.031, 0.698), from the same `robot_geometry` read as the left.
+
+**Ideal spot (single object).** The peak is at the 3D distance r0 from the shoulder, so the horizontal distance is d = sqrt(r0^2 - z^2), with z the object's height relative to the shoulder (not d = r0; the spec's formula ignores z). Then:
+
+    base_xy = object_xy - d * (cos h, sin h) - R(h) (sx, sy)
+
+with (sx, sy) the arm's shoulder offset in the base frame (left +0.031, right -0.031) and z = object_z - (base_z + torso_z0 + q + sz), sz = 0.698. Exists only if z >= -0.375 and |z| < r0.
+
+Numbers (left arm, heading -90 deg, pedestal 0.16 m): beaker z_rel = -0.303 m, d = 0.336 m; hotplate z_rel = -0.233 m, d = 0.388 m. Spots: beaker (0.969, 0.996), hotplate (0.769, 1.048) (standard layout). The count at the peak equals C = 3.736 bins.
+
+**Sweep.** 36 headings (0 to 350 deg, 10 deg) x 5 pedestals (0.05 to 0.25 m, 5 steps) x 50 segment points. Pedestal 0.25 m gives no ideal spot for the beaker (z_rel = -0.393 < -0.375), so 36 of 180 combinations are skipped: 7,200 segment evaluations, not 9,000. 6,784 segment points are feasible (every object's count >= 1). Ranking: worst object's count, then total count.
+
+**Degeneracy, flagged.** The peak count is C at every (heading, pedestal), so the top 8 all sit at 3.73 to 3.74 bins and differ only in the total. The analytic model has no preference between headings, so the best heading is set by the tie-break, not by reach.
+
+**Single-object function.** Optimizes over heading and pedestal, scored by margin = min(r0 - |z|, z - z_cut). This is also degenerate in heading: every heading gives a spot, and many of them fall on the bench footprint. For the beaker alone the tie-break picks heading 0 deg, whose spot (0.59, 0.63) lies on the bench. The bench is only the full check's job, so no bench rule was added.
+
+**Scene results** (candidate format: `(x, y, heading, pedestal)`, `FullCheck.check(stance, points)`, `src/full_check.py`; points from `src/task_points.py`):
+
+| scene | label | best heading | best pedestal | feasible segment points | passing full check | rejections (top 8) |
+|---|---|---|---|---|---|---|
+| standard | shared | 250 deg | 0.05 m | 6,784 | none | 4 `home_clearance`, 4 `placed_beaker` |
+| moved | shared | 250 deg | 0.05 m | 6,784 | none | 8 `home_clearance` (the 90 deg candidates reach the arm-to-scene margin with links 1 to 4 at -34 to 3 mm, i.e. penetration at the 90 deg bases on the bench footprint) |
+
+The fixed-heading first pass (heading -90 deg, pedestal 0.16 m; 8 candidates per scene): every candidate failed `occlusion` (the robot hides 0.8 to 1.8 % of the beaker, which allows 0 %; the hotplate allows 20 %).
+
+**Full-check rejection names, and what they mean:**
+- `home_clearance`: the arms at their home pose come within a few centimetres of the bench, the hotplate or a beaker there (examples: 25 mm from `openarm_left_left_finger`, 34 mm from `openarm_left_right_f...`; the limit is 40 mm).
+- `placed_beaker`: the arms come too close to a beaker standing on the hotplate.
+- `occlusion`: the robot hides part of the beaker or hotplate from the eagle camera.
+
+Note: the 90 deg candidates lie on the bench footprint (y about 0.32 to 0.37 m). The spec leaves the bench to the full check, so these are only rejected by the full check.
+
+## Not done
+- No candidate passed the full check in either scene, so the analytic route did not yet produce a usable stance.
+- The split-stance fallback ("repositioning needed") was not triggered: a shared point exists at some (heading, pedestal) in both scenes, so the per-object fallback code path was only exercised through the code, not the scenes.
+- The 8 candidates are adjacent points of one segment (all within a few centimetres of each other); the spec's "top 8" does not spread them out.
+- Heading-facing-the-bench, and whether the shoulder is read from MuJoCo at each pedestal (it is read once at 0.16 m and shifted vertically).
+
+## Decisions needed
+1. Ideal spot: keep the 3D-consistent d = sqrt(r0^2 - z^2) (what the peak implies) or follow the spec's d = r0 literally?
+2. Heading prior: the model has no heading preference. Should the sweep prefer headings that face the bench from outside its footprint, with a rule for it, or leave it to the full check?
+3. Candidate spread: return the best candidate per (heading, pedestal) instead of 8 adjacent points?
+4. The `home_clearance` and `placed_beaker` failures: is the analytic model's reach enough, or should the arm-clearance margins enter the ranking?

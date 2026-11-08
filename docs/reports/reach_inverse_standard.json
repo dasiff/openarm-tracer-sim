@@ -1,0 +1,255 @@
+{
+ "scene": "standard",
+ "layout": {
+  "beaker_xy": [
+   1.0,
+   0.66
+  ],
+  "hotplate_xy": [
+   0.8,
+   0.66
+  ]
+ },
+ "arm": "left",
+ "sweep": {
+  "headings_deg": [
+   0,
+   350,
+   10
+  ],
+  "pedestals_m": [
+   0.05,
+   0.25,
+   5
+  ],
+  "segment_points": 50,
+  "evaluations": 7200,
+  "status_counts": {
+   "ok": 144,
+   "no ideal spot": 36
+  }
+ },
+ "best_heading_deg": 250.00000000000003,
+ "best_pedestal_m": 0.05,
+ "geometry_shoulder_left": [
+  0.0,
+  0.031,
+  0.698
+ ],
+ "geometry_shoulder_right": [
+  0.0,
+  -0.031,
+  0.698
+ ],
+ "objects": [
+  {
+   "name": "beaker",
+   "xy": [
+    1.0,
+    0.66
+   ],
+   "z": 1.0125
+  },
+  {
+   "name": "hotplate",
+   "xy": [
+    0.8,
+    0.66
+   ],
+   "z": 1.0825
+  }
+ ],
+ "label": "shared",
+ "ideal_at_best": {
+  "beaker": {
+   "xy": [
+    1.110921473219801,
+    1.0553921794090995
+   ],
+   "d_horizontal": 0.4094844914757194,
+   "z_rel": -0.19300000000000006
+  },
+  "hotplate": {
+   "xy": [
+    0.9198732052448343,
+    1.0799868610128873
+   ],
+   "d_horizontal": 0.43565760495959277,
+   "z_rel": -0.123
+  }
+ },
+ "split": null,
+ "single_stance_feasible": true,
+ "feasible_points": 6784,
+ "candidates": [
+  {
+   "stance": [
+    0.9198732052448343,
+    1.0799868610128873,
+    4.363323129985824,
+    0.05
+   ],
+   "heading_deg": 250.00000000000003,
+   "pedestal": 0.05,
+   "counts": {
+    "beaker": 3.7355132678616507,
+    "hotplate": 3.7362697343695577
+   },
+   "min_count": 3.7355132678616507,
+   "total_count": 7.471783002231208,
+   "full_check_ok": false,
+   "failed": [
+    "home_clearance"
+   ],
+   "reason": "at pedestal 0.050 the arms at home are 25 mm from openarm_left_left_finger_collision vs task_hotplate_base (the limit is 40 mm)"
+  },
+  {
+   "stance": [
+    0.9701288129762009,
+    1.016671747906163,
+    4.1887902047863905,
+    0.15000000000000002
+   ],
+   "heading_deg": 239.99999999999997,
+   "pedestal": 0.15000000000000002,
+   "counts": {
+    "beaker": 3.735439147394808,
+    "hotplate": 3.7362697343695577
+   },
+   "min_count": 3.735439147394808,
+   "total_count": 7.471708881764366,
+   "full_check_ok": false,
+   "failed": [
+    "home_clearance"
+   ],
+   "reason": "at pedestal 0.130 the arms at home are 34 mm from openarm_left_right_finger_collision vs task_beaker_wall_8 (the limit is 40 mm)"
+  },
+  {
+   "stance": [
+    1.031,
+    0.36457226135799564,
+    1.5707963267948966,
+    0.2
+   ],
+   "heading_deg": 90.0,
+   "pedestal": 0.2,
+   "counts": {
+    "beaker": 3.7362697343695577,
+    "hotplate": 3.7351412393045957
+   },
+   "min_count": 3.7351412393045957,
+   "total_count": 7.471410973674153,
+   "full_check_ok": false,
+   "failed": [
+    "placed_beaker"
+   ],
+   "reason": "at pedestal 0.200 the arms at home are 38 mm from a beaker placed on the hotplate"
+  },
+  {
+   "stance": [
+    1.031,
+    0.31492385078199264,
+    1.5707963267948966,
+    0.15000000000000002
+   ],
+   "heading_deg": 90.0,
+   "pedestal": 0.15000000000000002,
+   "counts": {
+    "beaker": 3.7362697343695577,
+    "hotplate": 3.7346733694170844
+   },
+   "min_count": 3.7346733694170844,
+   "total_count": 7.470943103786642,
+   "full_check_ok": false,
+   "failed": [
+    "placed_beaker"
+   ],
+   "reason": "at pedestal 0.150 the arms at home are 18 mm from a beaker placed on the hotplate"
+  },
+  {
+   "stance": [
+    0.9737117206112108,
+    1.0158079308358925,
+    4.1887902047863905,
+    0.15000000000000002
+   ],
+   "heading_deg": 239.99999999999997,
+   "pedestal": 0.15000000000000002,
+   "counts": {
+    "beaker": 3.7351028220109,
+    "hotplate": 3.73427457045777
+   },
+   "min_count": 3.73427457045777,
+   "total_count": 7.469377392468671,
+   "full_check_ok": false,
+   "failed": [
+    "home_clearance"
+   ],
+   "reason": "at pedestal 0.130 the arms at home are 34 mm from openarm_left_right_finger_collision vs task_beaker_wall_8 (the limit is 40 mm)"
+  },
+  {
+   "stance": [
+    0.9237721494892214,
+    1.079484928735259,
+    4.363323129985824,
+    0.05
+   ],
+   "heading_deg": 250.00000000000003,
+   "pedestal": 0.05,
+   "counts": {
+    "beaker": 3.7358377765045123,
+    "hotplate": 3.7337052091408633
+   },
+   "min_count": 3.7337052091408633,
+   "total_count": 7.469542985645376,
+   "full_check_ok": false,
+   "failed": [
+    "home_clearance"
+   ],
+   "reason": "at pedestal 0.050 the arms at home are 28 mm from openarm_left_left_finger_collision vs task_hotplate_base (the limit is 40 mm)"
+  },
+  {
+   "stance": [
+    1.0269183673469386,
+    0.31392640074589,
+    1.5707963267948966,
+    0.15000000000000002
+   ],
+   "heading_deg": 90.0,
+   "pedestal": 0.15000000000000002,
+   "counts": {
+    "beaker": 3.7334408535093697,
+    "hotplate": 3.73527623497836
+   },
+   "min_count": 3.7334408535093697,
+   "total_count": 7.46871708848773,
+   "full_check_ok": false,
+   "failed": [
+    "placed_beaker"
+   ],
+   "reason": "at pedestal 0.150 the arms at home are 16 mm from a beaker placed on the hotplate"
+  },
+  {
+   "stance": [
+    1.0269183673469386,
+    0.36323188852114846,
+    1.5707963267948966,
+    0.2
+   ],
+   "heading_deg": 90.0,
+   "pedestal": 0.2,
+   "counts": {
+    "beaker": 3.7328626739645574,
+    "hotplate": 3.7345877955113562
+   },
+   "min_count": 3.7328626739645574,
+   "total_count": 7.467450469475914,
+   "full_check_ok": false,
+   "failed": [
+    "placed_beaker"
+   ],
+   "reason": "at pedestal 0.200 the arms at home are 37 mm from a beaker placed on the hotplate"
+  }
+ ],
+ "passing": []
+}

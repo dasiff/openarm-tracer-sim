@@ -1,0 +1,65 @@
+{
+ "facts": {
+  "lowest_reachable_z_m": -0.445,
+  "highest_reachable_z_m": 0.44500000000000006,
+  "reachable_cells_per_slice_at_lowest_5_slices": [
+   50,
+   1193,
+   1919,
+   2518,
+   3049
+  ],
+  "reachable_r_m": [
+   0.04974937185533098,
+   0.7412658092749185
+  ]
+ },
+ "forms": {
+  "R1 gaussian in r": {
+   "C_bins": 2.522070640520339,
+   "r0_m": 0.3993671844748048,
+   "sigma_r_m": 0.2493871097366641,
+   "z_cut_m": null,
+   "rmse_fit_bins": 1.2910272795691928,
+   "fitted_slices": {
+    "precision": 0.6603356063018677,
+    "recall": 0.8882403709256763,
+    "within_1_bin": 0.44976628154569165,
+    "cells": 796518,
+    "truly_reachable": 317476,
+    "predicted_reachable": 427048
+   },
+   "held_out_slices": {
+    "precision": 0.6605369888162455,
+    "recall": 0.8881168199435169,
+    "within_1_bin": 0.4492391780036963,
+    "cells": 796518,
+    "truly_reachable": 317617,
+    "predicted_reachable": 427048
+   }
+  },
+  "R2 gaussian in r with height cutoff": {
+   "C_bins": 2.6342088419900387,
+   "r0_m": 0.41477956485732864,
+   "sigma_r_m": 0.24728071776902869,
+   "z_cut_m": -0.395,
+   "rmse_fit_bins": 1.2452742217589232,
+   "fitted_slices": {
+    "precision": 0.6897144457427598,
+    "recall": 0.8998727462863334,
+    "within_1_bin": 0.4676605475689501,
+    "cells": 796518,
+    "truly_reachable": 317476,
+    "predicted_reachable": 414212
+   },
+   "held_out_slices": {
+    "precision": 0.6827147633928359,
+    "recall": 0.9038307143509321,
+    "within_1_bin": 0.47004725817572734,
+    "cells": 796518,
+    "truly_reachable": 317617,
+    "predicted_reachable": 420486
+   }
+  }
+ }
+}

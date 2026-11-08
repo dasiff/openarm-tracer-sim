@@ -80,3 +80,18 @@ I added a constant angular centre th0 (9 parameters). Why: the reachable cells h
 - `docs/reports/reach_model_fit.json` (parameters, facts, scores)
 - `docs/reports/reach_model_slices.png`
 - Fit log: `data/logs/reach_model_fit_filtered_20261108_023447.log` (git-ignored)
+
+## Follow-up (David's suggestion): Gaussian in the 3D distance r = sqrt(d^2 + z^2)
+
+Same filtered maps, same even/odd slice split, no bearing term (`experiments/reach_model_fit_r.py`, results `docs/reports/reach_model_fit_r.json`). Part C is still not started.
+
+| model | parameters | precision (fit / held-out) | recall | within 1 bin |
+|---|---|---|---|---|
+| R1: C exp(-((r - r0)/sr)^2) | C = 2.522 bins, r0 = 0.3994 m, sr = 0.2494 m | 66.0% / 66.1% | 88.8% / 88.8% | 45.0% / 44.9% |
+| R2: R1 and count = 0 below z_cut | C = 2.634 bins, r0 = 0.4148 m, sr = 0.2473 m, z_cut = -0.395 m | 69.0% / 68.3% | 90.0% / 90.4% | 46.8% / 47.0% |
+| specified form (above, for comparison) | 8 parameters | 64.3% / 63.6% | 89.6% / 89.5% | 41.3% / 41.3% |
+
+- Targets (all >= 80%): **still missed**, precision by 10 to 14 points and within-1-bin by 33 to 35 points. Recall is met.
+- The table cutoff is not a sharp step in these maps: the lowest reachable cell is at z = -0.445 m and the reachable cells per slice grow gradually (50, 1,193, 1,919, 2,518, 3,049 for the lowest five slices). The best cut found was -0.395 m.
+- Why an r-only model cannot reach the targets: the best possible prediction from r alone (the mean count in each 1 cm band of r, learned on the fit slices) scores 64.6% precision, 91.8% recall and 44.4% within-1-bin on the held-out slices. The Gaussian in r (66%, 89%, 45%) is already as good as any function of r alone. The remaining error is the variation of the count with bearing and with the bin sectors, which an r-only model does not carry.
+- I did not obtain a valid ceiling for r with z, or with bearing: the even and odd slices have different z values, so a lookup learned on one set has no entries on the other. Not reported.

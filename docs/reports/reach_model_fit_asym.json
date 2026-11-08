@@ -1,0 +1,58 @@
+{
+ "forms": {
+  "A6 asymmetric bearing (6 parameters)": {
+   "C_bins": 3.528600404478846,
+   "r0_m": 0.43837772709203177,
+   "sigma_r_m": 0.22380611599804673,
+   "sigma_theta_neg_rad": 0.32027642707991316,
+   "sigma_theta_neg_per_m_rad": 0.0,
+   "sigma_theta_pos_rad": 15.955638520878392,
+   "sigma_theta_pos_per_m_rad": 0.0,
+   "z_cut_m": -0.395,
+   "rmse_fit_bins": 1.1624029347085074,
+   "fitted_slices": {
+    "precision": 0.7895970488268823,
+    "recall": 0.7544318310675453,
+    "within_1_bin": 0.4844964658745858,
+    "cells": 796518,
+    "truly_reachable": 317476,
+    "predicted_reachable": 303337
+   },
+   "held_out_slices": {
+    "precision": 0.7815925052461977,
+    "recall": 0.7575381670376585,
+    "within_1_bin": 0.4881571200533976,
+    "cells": 796518,
+    "truly_reachable": 317617,
+    "predicted_reachable": 307842
+   }
+  },
+  "A8 asymmetric bearing, widths linear in z (8 parameters)": {
+   "C_bins": 3.7362697343695577,
+   "r0_m": 0.4526881363136531,
+   "sigma_r_m": 0.21861105895402475,
+   "sigma_theta_neg_rad": 0.27163635870503666,
+   "sigma_theta_neg_per_m_rad": -0.5478728062183895,
+   "sigma_theta_pos_rad": 50.682374812360926,
+   "sigma_theta_pos_per_m_rad": -117.56740471140535,
+   "z_cut_m": -0.375,
+   "rmse_fit_bins": 1.1076570434479962,
+   "fitted_slices": {
+    "precision": 0.8261561712139754,
+    "recall": 0.7421316886945785,
+    "within_1_bin": 0.5090621023321448,
+    "cells": 796518,
+    "truly_reachable": 317476,
+    "predicted_reachable": 285187
+   },
+   "held_out_slices": {
+    "precision": 0.8234320002217234,
+    "recall": 0.7483289622406861,
+    "within_1_bin": 0.513265977576767,
+    "cells": 796518,
+    "truly_reachable": 317617,
+    "predicted_reachable": 288648
+   }
+  }
+ }
+}

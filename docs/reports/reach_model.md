@@ -95,3 +95,41 @@ Same filtered maps, same even/odd slice split, no bearing term (`experiments/rea
 - The table cutoff is not a sharp step in these maps: the lowest reachable cell is at z = -0.445 m and the reachable cells per slice grow gradually (50, 1,193, 1,919, 2,518, 3,049 for the lowest five slices). The best cut found was -0.395 m.
 - Why an r-only model cannot reach the targets: the best possible prediction from r alone (the mean count in each 1 cm band of r, learned on the fit slices) scores 64.6% precision, 91.8% recall and 44.4% within-1-bin on the held-out slices. The Gaussian in r (66%, 89%, 45%) is already as good as any function of r alone. The remaining error is the variation of the count with bearing and with the bin sectors, which an r-only model does not carry.
 - I did not obtain a valid ceiling for r with z, or with bearing: the even and odd slices have different z values, so a lookup learned on one set has no entries on the other. Not reported.
+
+## Follow-up 2 (David): asymmetric bearing term
+
+Formula (filtered maps, same even/odd split, `experiments/reach_model_fit_asym.py`, results `docs/reports/reach_model_fit_asym.json`, PNG `docs/reports/reach_model_asym_slices.png`):
+
+count = C exp(-((r - r0)/sr)^2) exp(-(theta / sigma(theta))^2), 0 below z_cut. r = 3D distance, theta = atan2(y, x) in the shoulder frame, so **theta > 0 is to the robot's left**. The formula's "sigma_left (theta < 0)" is therefore the width on the robot's right-hand side; the table names the widths by the sign of theta.
+
+| parameter | unit | A6 (6 parameters) | A8 (widths linear in z, 8 parameters) |
+|---|---|---|---|
+| C | bins | 3.5286 | 3.7363 |
+| r0 | m | 0.4384 | 0.4527 |
+| sr | m | 0.2238 | 0.2186 |
+| sigma, theta < 0 (David's sigma_left): at z = 0 | rad | 0.3203 | 0.2716 |
+| sigma, theta < 0: change per metre of z | rad/m | 0 (fixed) | -0.5479 |
+| sigma, theta >= 0 (David's sigma_right): at z = 0 | rad | 15.96 | 50.68 |
+| sigma, theta >= 0: change per metre of z | rad/m | 0 (fixed) | -117.57 |
+| z_cut | m | -0.395 | -0.375 |
+
+One-tailed behaviour: neither width is near zero at z = 0, but the fit is very lopsided. The theta >= 0 width is far above pi (16 rad in A6), so the model does not decay with bearing on the left side at all. The theta < 0 width is narrow (0.32 rad = 18 deg in A6), so on the right-hand side it falls off within about 20 to 30 degrees of the heading. In A8 the theta < 0 width shrinks with height (0.44 rad at z = -0.3 m, 0.11 rad at z = +0.3 m).
+
+All models tried so far (held-out slices; fitted-slice values are within 1 point except A6 and A8, where they are 79.0 / 75.4 / 48.4 and 82.6 / 74.2 / 50.9):
+
+| model | parameters | precision | recall | within 1 bin |
+|---|---|---|---|---|
+| target | | >= 80% | >= 80% | >= 80% |
+| specified (d, z, angular centre 0) | 8 | 63.6% | 89.5% | 41.3% |
+| alternative (constant angular centre) | 9 | 73.7% | 85.2% | 46.6% |
+| R1 Gaussian in r | 3 | 66.1% | 88.8% | 44.9% |
+| R2 Gaussian in r and z cutoff | 4 | 68.3% | 90.4% | 47.0% |
+| A6 asymmetric bearing | 6 | 78.2% | 75.8% | 48.8% |
+| A8 asymmetric bearing, widths linear in z | 8 | 82.3% | 74.8% | 51.3% |
+
+Missed targets, plainly (held-out):
+- A6: precision short by 1.8 points, recall short by 4.2, within-1-bin short by 31.2.
+- A8: precision met (+2.3), recall short by 5.2, within-1-bin short by 28.7.
+- Per the task, A8 was the last attempt, so I stopped: **Part C (analytic inverse, stance finder, scene tests) was not started.**
+
+What the picture shows: the maps are a nearly full ring around the shoulder (both sides of the heading). The asymmetric model covers the left half well but is cut to a thin wedge on the right, where the maps still have reachable cells. That costs recall (about 75%) and the count error stays high (within-1-bin about 50%) because the maps' count varies by sector with the bins, which no smooth bearing term follows.

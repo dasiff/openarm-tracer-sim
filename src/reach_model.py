@@ -39,3 +39,29 @@ def predict_count(d, theta, z, p, th0=0.0):
     st = np.maximum(e0 + e1 * z, MIN_WIDTH)
     dth = (theta - th0 + np.pi) % (2 * np.pi) - np.pi            # wrapped difference
     return np.clip(C * np.exp(-((d - d0) / sd) ** 2) * np.exp(-(dth / st) ** 2), 0.0, N_BINS)
+
+
+def predict_count_asym(r, theta, z, p, z_cut=None):
+    """Gaussian in the 3D distance r and in the bearing, with a different angular width on each side of the heading, zero below z_cut.
+
+    count = C exp(-((r - r0) / sr)^2) exp(-(theta / sigma(theta))^2); the peak is at r = r0, theta = 0 whatever the widths.
+    sigma(theta) = s_neg if theta < 0 else s_pos, each linear in z (s = s0 + s1 z).
+
+    Bearing sign: theta = atan2(y, x) in the shoulder frame (x forward, y left), so theta > 0 is to the robot's LEFT and theta < 0 to its right.
+
+    Args:
+        r (array-like): 3D distance from the shoulder, metres.
+        theta (array-like): Bearing relative to the heading, radians, in (-pi, pi].
+        z (array-like): Vertical offset, metres.
+        p (sequence of float): (C, r0, sr, s_neg0, s_neg1, s_pos0, s_pos1): peak count (bins), radial centre (m), radial width (m), angular width for theta < 0 at z = 0 (rad) and its change per metre
+            of z (rad/m), the same for theta >= 0.
+        z_cut (float or None): Below this vertical offset the count is 0.
+
+    Returns:
+        numpy.ndarray: The count, in [0, N_BINS].
+    """
+    r, theta, z = np.broadcast_arrays(np.asarray(r, float), np.asarray(theta, float), np.asarray(z, float))
+    C, r0, sr, sn0, sn1, sp0, sp1 = p
+    sig = np.maximum(np.where(theta < 0, sn0 + sn1 * z, sp0 + sp1 * z), MIN_WIDTH)
+    out = np.clip(C * np.exp(-((r - r0) / max(sr, MIN_WIDTH)) ** 2) * np.exp(-(theta / sig) ** 2), 0.0, N_BINS)
+    return out if z_cut is None else np.where(z >= z_cut, out, 0.0)

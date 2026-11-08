@@ -1,4 +1,4 @@
-"""A small Gaussian model of the reach maps (left arm, unfiltered maps): how many of the 12 approach bins reach a grasp point.
+"""A small Gaussian model of the reach maps (left arm, filtered maps): how many of the 12 approach bins reach a grasp point.
 
 Standalone: not used by the pipeline or the stance selection.
 

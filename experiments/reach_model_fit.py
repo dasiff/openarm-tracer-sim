@@ -1,4 +1,4 @@
-"""Fit the Gaussian reach model (src/reach_model.py) to the unfiltered left maps (data/reach_map) and score it. numpy/scipy only, no MuJoCo.
+"""Fit the Gaussian reach model (src/reach_model.py) to the filtered left maps (data/reach_map_before_bench) and score it. numpy/scipy only, no MuJoCo.
 
     source .venv/bin/activate && python experiments/reach_model_fit.py [--out docs/reports/reach_model_fit.json]
 
@@ -21,7 +21,7 @@ sys.path.insert(0, str(PROJECT_ROOT))
 
 from src.reach_model import PARAM_NAMES, predict_count  # noqa: E402
 
-MAPS_DIR = PROJECT_ROOT / "data" / "reach_map"        # the unfiltered maps (no bench)
+MAPS_DIR = PROJECT_ROOT / "data" / "reach_map_before_bench"        # the filtered maps (the bench is in the maps)
 CUBE = 0.01
 MAX_D = 1.5                                            # m: the evaluation region (the maps' boxes are smaller, so every cell qualifies)
 

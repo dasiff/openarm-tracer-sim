@@ -75,7 +75,7 @@ def main():
             ax.set_xlabel("x forward, m")
             ax.set_ylabel("y left, m")
     fig.colorbar(im, ax=axes, label="bins", shrink=0.6)
-    fig.suptitle("Unfiltered left maps vs Gaussian model in the shoulder frame (white line: maps count >= 1; red line: model count >= 1; + : object offset)", fontsize=9)
+    fig.suptitle("Filtered left maps vs Gaussian model in the shoulder frame (white line: maps count >= 1; red line: model count >= 1; + : object offset)", fontsize=9)
     fig.savefig(PROJECT_ROOT / "docs/reports/reach_model_slices.png", dpi=110, bbox_inches="tight")
     print({k: [round(float(v), 3) for v in o] for k, o in offs.items()})
 

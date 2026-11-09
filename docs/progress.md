@@ -717,3 +717,5 @@ PROGRESS 2026-11-09 (stance failure logging, M281): step 1 done (seed: default_r
 RUN 2026-11-09 12:34 (M281 chain, tmux m281, scratch/chain_m281.sh, log data/logs/m281_chain_20261109_123428.log): six-run logged + control, comparison, then one replay per record. Commit 8732fce (fixed: the log had dropped the place points; first attempt logs moved to data/logs/stance_failures_bugged_20261109 and data/logs/m281_bugged_20261109, not used).
 
 UPDATE 2026-11-09 (pedestal override removal, David): STOPPED at the start. The per-check seed build is not committed (overnight report and M281 say "reseed per check" is undecided), so the stance-code edits were not made. Stop report: docs/reports/pedestal_override_blocked_20261109_1850.md. No run in progress. Not pushed.
+
+RESULT 2026-11-09 (M283 per-check seed, David): built and committed locally (86c4666, a1226e4, report docs/reports/20261109_1915_per_check_seed.md). Chain data/logs/m283/20261109_185835/chain.log: six-run, 4 replays, order test both ways, full_check_test 30/31. Replay of row 18 does not reproduce the record's failing point; the order test does. Not pushed.

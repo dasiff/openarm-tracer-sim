@@ -86,6 +86,8 @@ No code in the pipeline locates objects from camera images today. The only image
 
 ## 4. Furniture and the lab map
 
+**Correction (2026-11-09, see section 5 below):** the hotplate was listed in this table as furniture. It is an object, like the beaker. Only the bench and the walls are fixed furniture.
+
 | item | where it is defined today | usable as a lab map as-is? |
 |---|---|---|
 | bench top | `models/scenes/chemistry_lab_beaker_hotplate.xml`: body `bench`, geom `bench_top` (box half-sizes 2.2 x 0.8 x 0.06 m, centre z 0.90 m, top 0.96 m); the top height also in `task_beaker_hotplate.py:66-67` | no: this is the simulator scene, not a surveyed map |
@@ -95,6 +97,58 @@ No code in the pipeline locates objects from camera images today. The only image
 | room, walls, other furniture | the same scene file (sink, fume hood, back counter, shelves, storage cabinet, etc.) and `FURNITURE_CFG` (`src/task_config.py:228`: grid bounds, bands) | no: a simulated scene with placeholders |
 
 Design intent (`docs/design_plan.md` lines 456-462): the furniture and fixture geometry come from the scene model in simulation, and a real lab map ("a built map with labeled fixtures", SLAM, §8 or lines 452-454) is later. No existing file is a surveyed lab map; `data/` has no lab map file, and no report calls one a lab map. So the answer is: no existing file can serve as the lab map as-is.
+
+## 5. Fixed furniture (correction and scope)
+
+Fixed = never moves in a run: the bench top and legs, and the walls (they have collision geometry). The hotplate is an object, not fixed furniture (correction to section 4). Other static items in the scene (back counter, fume hood, storage cabinet, sink, safety station, etc.) are also fixed but outside the scope you set; they are listed in the note at the end of this section.
+
+| item | where defined today | compiled contact flags | pose defined by | usable as a lab map as-is? |
+|---|---|---|---|---|
+| bench top | `models/scenes/chemistry_lab_beaker_hotplate.xml:52-53`: body `bench` (`pos` 0 0 0, line 50), geom `bench_top` box half-size 2.2 x 0.8 x 0.06 m, centre z 0.90 m (top 0.96 m) | collide yes (1, 1) | scene XML (fixed at the origin) | no |
+| bench legs | same file, lines 64-70: `bench_leg_fl`, `bench_leg_fr`, `bench_leg_bl`, `bench_leg_br`, box half-size 0.06 x 0.06 x 0.45 m at x ±2.0, y ±0.7 | collide yes | scene XML | no |
+| bench frame rails | same file, lines 55-61: `bench_frame_front/back/left/right` | removed at load: `remove_bench_rails` (`src/task_beaker_hotplate.py:147`) deletes them, the open-bench design (§4.1). Not in the compiled model. | scene XML (deleted) | not applicable |
+| walls | `models/scenes/chemistry_lab_beaker_hotplate.xml:24-31`: `wall_n`, `wall_s`, `wall_e`, `wall_w`, box half-sizes 6.0 x 0.08 x 1.5 m (inner faces at ±5.92 m) | collide yes (1, 1); comment says they collide since 2026-10-16 | scene XML | no as a surveyed map; the room bounds are also in `FURNITURE_CFG["bounds"]` (`src/task_config.py:230`, ±6.0 m) |
+| bench position (stance reference) | `src/task_config.py:80`: `staging_xy` (0.7650, 1.0850) and `staging_yaw`, a reference only; the pipeline recomputes the stance at plan time (`stance_select.py:562-577`, per the 2026-11-05 audit) | n/a | config, reference | no |
+
+Answer: **no existing file can serve as the lab map as-is.** The bench and walls are placeholders of the simulated scene (the bench's pose is the XML origin; the walls are a 12 m box). A real lab map is a later item (design plan lines 456-462).
+
+Note on other fixed scene items (not in your list): the back counter, fume hood, storage cabinet and sink have collision geometry and are fixed in the XML. The rolling cart, lab stool, bottles, flasks, microscope, balance, test-tube rack, waste bin and burner are movable in principle (listed as objects below). This is a question for you: whether the lab map should include the fixed items above.
+
+## 6. Replacements (decision-feeding reads from section 2a)
+
+Rule applied: robot state may come from the simulator; world information only from the world model, with the lab map for fixed furniture and perception for everything else. Classes: **robot state** (allowed as-is), **lab map** (fixed furniture), **perception** (objects, including the hotplate), **unclear** (needs a decision). Evaluation-only reads are not listed; they stay as they are.
+
+| file:line | current read | should come from | note |
+|---|---|---|---|
+| `world_model.py:274-276` | beaker and hotplate body ids; beaker geoms | perception | object identity via the detector |
+| `world_model.py:305-325` | beaker and hotplate live poses | perception | the world model's `found = "detector"` path (design plan 13) |
+| `world_model.py:327` | bench top geom | lab map | fixed furniture |
+| `world_model.py:285-303` `held_by` | which hand touches the beaker (sim contacts between finger geoms and beaker) | robot state | the robot's own holding verdict (`src/holding.py` HoldDetector: finger force and position); the sim contact check should not decide |
+| `mpvi_modules.py:70-82` | builds the sim source for the pipeline | perception | the source is replaced |
+| `mpvi_modules.py:234-257, 330-333, 570-571` | beaker and destination poses and height (pick and place waypoints, grasp height) | perception | objects |
+| `mpvi_modules.py` oracle checker (~558-587) | beaker and hotplate poses at each check; decides non-deciding events | **unclear** | the sim oracle is ground truth. Options: remove it from the decision, or replace its pose inputs with perception (needs David's decision) |
+| `stance_select.py:77` | furniture map from all world geoms (beaker excluded) | lab map (fixed) + perception (objects) | split by layer |
+| `stance_select.py:87-88` | bench top geom pose and size | lab map | fixed furniture |
+| `furniture_map.py:42-44, 82-87, 156-172` | every world geom pose and size | lab map (fixed) + perception (objects) | split by body |
+| `task_points.py:45-46` | hotplate top plate (geom pose and size) | perception | the hotplate is an object |
+| `task_beaker_hotplate.py:66-67` | bench top z from the model | lab map | fixed furniture (bench top height) |
+| `task_beaker_hotplate.py:80-81` | hotplate top z from live geom | perception | object |
+| `task_beaker_hotplate.py:295-299` | beaker axis and hotplate footprint | perception | objects |
+| `task_beaker_hotplate.py:348-353` | scene boxes of beaker and hotplate | perception | objects |
+| `stance_checks.py:82-84, 119, 197-201` | target bodies (beaker, hotplate) and world geoms | perception (objects); lab map (fixed furniture) | split |
+| `stance_checks.py:264-269` | beaker on the hotplate; beaker free joint | perception | object |
+| `full_check.py:90` | beaker body id | perception | object |
+| `full_check.py:336, 616` | hotplate body id | perception | object |
+| `stance_finder.py:123-130` | bench slab (top and underside) | lab map | fixed furniture |
+| `world_collision.py:65, 103-141` | bench geoms as boxes (world obstacles) | lab map | fixed furniture |
+| `home_clearance_map.py:47-68, 135-136` | world geoms for the home clearance | lab map (fixed) + perception (objects) | split |
+| `nav_footprint.py:47-84` | world geoms as navigation obstacles (beaker and hotplate excluded) | lab map (fixed) + perception (movable objects) | split |
+| `staging_source.py:500-505` | base geoms, world geoms, bench geoms | base geoms: robot state; bench: lab map; other world geoms: lab map or perception | split |
+| `mock_policy.py:302` | object pose as a "cheat" to the mock policy | perception | mock policy only; the cheat has to go if the mock policy is used in a decision path |
+| `gravity_ff.py:83-84` | body masses of all bodies with mass (beaker mass from the model) | **unclear** | the beaker's held mass should be the robot's own weighing estimate (`weigh_helper.py`, M258), which would be robot state. Not traced further |
+| `check_success` (`task_beaker_hotplate.py:269-301`) | beaker position and velocity | evaluation only, no change | it grades the run and ends the episode; it is not a robot decision |
+
+Conflict to note: `docs/design_plan.md` lines 456-462 say fixed fixtures such as the hotplate come from the lab map. Under your rule the hotplate is an object (perception). The design plan text should be corrected or the rule should be confirmed.
 
 ## Not done
 

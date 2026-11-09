@@ -123,6 +123,8 @@ def run_episode(task, model, data, mode="auto", viewer=None, out_dir=None, hando
                 "base_pose_error_at_handoff", "first_turn_deg", "final_in_place_turn_deg", "planned_final_turn_deg", "drive_reapproaches",
                 "pose_corrections", "base_drift", and "min_base_to_bench_clearance_during_drive_mm"; see
                 make_staging_source()), and "stages" (dict): stage name -> that stage's report.
+            "pedestal" (dict): "selected_m" and "checked_m" (the pipeline's stance-selection height and the height the full check passed at, metres; the keys are absent outside the pipeline) and
+                "first_tick_of_phase" (phase -> {"commanded_m", "measured_m"}: the pedestal command and the measured pedestal height at the phase's first tick).
             "contacts_by_phase" (dict): Phase name (or "OPERATOR") -> list of {"pair": [name, name], "first_s": float,
                 "last_s": float, "ticks": int} for each distinct robot contact pair seen in that phase.
             "holds" (list): The control loop's hold log (exclusivity waits).
@@ -163,7 +165,7 @@ def run_episode(task, model, data, mode="auto", viewer=None, out_dir=None, hando
 
     # --- bookkeeping ---
     R = {"outcome": None, "handoff_time": None, "success_time": None, "contacts": {}, "diag": None, "t_end": None, "timeout_kind": None,
-         "auto_ticks": 0, "operator_ticks": 0}
+         "auto_ticks": 0, "operator_ticks": 0, "pedestal_first_tick": {}}
     log_file, log_csv, next_log = None, None, [0.0]
     if out_dir is not None:
         Path(out_dir).mkdir(parents=True, exist_ok=True)
@@ -203,6 +205,8 @@ def run_episode(task, model, data, mode="auto", viewer=None, out_dir=None, hando
         for pair in contacts_now(data):
             c = R["contacts"].setdefault(phase, {}).setdefault(pair, {"first": t, "last": t, "ticks": 0})
             c["last"], c["ticks"] = t, c["ticks"] + 1
+        # M284: the pedestal's commanded and measured height at the first tick of each phase (the run record's settled heights)
+        R["pedestal_first_tick"].setdefault(phase, {"commanded_m": obs["applied"]["pedestal"], "measured_m": obs["pedestal_height"]})
         # log at log_hz
         if log_csv is not None and t >= next_log[0] - 1e-9:
             next_log[0] = (math.floor(t * lim["log_hz"] + 1e-9) + 1) / lim["log_hz"]
@@ -282,6 +286,7 @@ def run_episode(task, model, data, mode="auto", viewer=None, out_dir=None, hando
         "contacts_by_phase": {k: [{"pair": list(p), "first_s": v["first"], "last_s": v["last"], "ticks": v["ticks"]} for p, v in d.items()]
                               for k, d in R["contacts"].items()},
         "holds": result["hold_log"], "success_check": R["diag"], "log_rows_hz": lim["log_hz"],
+        "pedestal": {**(task.get("meta") or {}).get("pedestal", {}), "first_tick_of_phase": R["pedestal_first_tick"]},      # M284: selected and checked heights (metres, from the pipeline) and the measured and commanded heights at each phase's first tick
         "wall_seconds": time.perf_counter() - wall0,
     }
     if out_dir is not None:

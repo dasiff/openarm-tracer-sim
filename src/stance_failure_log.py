@@ -56,7 +56,7 @@ def run_header(seed):
 # The derived arrays of the simulation's data that a restore must also put back (M282): the kinematics of every body, joint, geom, site and camera, and the mass matrix.
 # They are saved with the physics state so that a replay starts from exactly the state the check saw, with no forward step of its own.
 DERIVED_ARRAYS = ("xpos", "xquat", "xmat", "xipos", "ximat", "xanchor", "xaxis", "geom_xpos", "geom_xmat", "site_xpos", "site_xmat", "cam_xpos", "cam_xmat",
-                  "subtree_com", "cdof", "cinert", "qM", "qLD", "qLDiagInv", "qacc", "actuator_force", "qfrc_bias", "qfrc_passive")
+                  "subtree_com", "cdof", "cinert", "M", "qLD", "qLDiagInv", "qacc", "actuator_force", "qfrc_bias", "qfrc_passive")
 
 
 def save_sim_state(model, data):

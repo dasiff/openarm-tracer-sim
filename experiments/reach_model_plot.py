@@ -23,7 +23,7 @@ sys.path.insert(0, str(PROJECT_ROOT / "experiments"))
 from reach_model_fit import CUBE, load_counts  # noqa: E402
 from src.reach_model import PARAM_NAMES, predict_count  # noqa: E402
 from src.task_config import BEAKER_CFG, PICK_PLACE_CFG, TASK_CFG  # noqa: E402
-from src.world_model import HOTPLATE_HEIGHT  # noqa: E402
+from src.task_beaker_hotplate import task_heights  # noqa: E402
 
 
 def standard_offsets():
@@ -37,7 +37,7 @@ def standard_offsets():
     sh_xy = base + np.array([c * sx - s * sy, s * sx + c * sy])
     sh_z = base_z + sz_q016 + (q - g["read_pedestal_m"])
     pad = PICK_PLACE_CFG["grasp_height_frac"] * BEAKER_CFG["height"]
-    pts = {"beaker (grasp)": (*TASK_CFG["beaker_xy"], surface + pad), "hotplate (place)": (*TASK_CFG["hotplate_xy"], surface + HOTPLATE_HEIGHT + pad)}
+    pts = {"beaker (grasp)": (*TASK_CFG["beaker_xy"], surface + pad), "hotplate (place)": (*TASK_CFG["hotplate_xy"], surface + task_heights()["plate_top"] - task_heights()["bench_top"] + pad)}
     out = {}
     for name, (x, y, zz) in pts.items():
         dx, dy = x - sh_xy[0], y - sh_xy[1]

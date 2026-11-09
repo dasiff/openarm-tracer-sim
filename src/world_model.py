@@ -17,7 +17,7 @@ Contents:
     Entry: one entry of the knowledge base.
     WorldModel: the knowledge base.
     SimGroundTruthSource: the source that reads the beaker, the hotplate and the bench from the simulator.
-    StaticTaskSource: the same entries from the task configuration alone, with no simulator (dry runs and the trace tool, experiments/mpvi_trace.py).
+    StaticTaskSource: the same entries from the task configuration and the scene's heights (no simulation step; dry runs and the trace tool, experiments/mpvi_trace.py).
 """
 
 from dataclasses import dataclass, field
@@ -25,7 +25,7 @@ from dataclasses import dataclass, field
 import mujoco
 import numpy as np
 
-from src.task_beaker_hotplate import bench_top_z
+from src.task_beaker_hotplate import bench_top_z, task_heights
 from src.task_config import BEAKER_CFG, TASK_CFG
 
 
@@ -33,7 +33,6 @@ BEAKER_PHRASES = ("beaker", "glass beaker")
 HOTPLATE_PHRASES = ("hotplate", "hot plate")
 HOTPLATE_SHAPE = {"kind": "box", "half": (0.09, 0.09)}          # m: the hotplate's footprint seen from above (models/objects/hotplate.xml: the base box), for the stance selection's obstacles and supports
 BEAKER_SHAPE = lambda: {"kind": "cylinder", "radius": BEAKER_CFG["outer_diameter"] / 2}   # the beaker's footprint
-HOTPLATE_HEIGHT = 0.068        # m: the hotplate's top above the bench top (models/objects/hotplate.xml: site "hotplate_top"); the configured (no model) source needs it, the simulator source reads it
 BENCH_PHRASES = ("bench", "lab bench")
 
 
@@ -332,19 +331,22 @@ class SimGroundTruthSource:
 
 
 class StaticTaskSource:
-    """The task's entries from the configuration alone: positions are the configured xy (z is 0: there is no model to give the bench height), nothing is read from a simulation.
+    """The task's entries from the configuration and the scene's heights (task_beaker_hotplate.task_heights: the same numbers the simulator source reads from the model, read once);
+    nothing is read from a running simulation. The stance-time world: for dry runs of the grounding, the stance selection and the trace tool.
 
-    For dry runs of the grounding and the trace tool; the same ids, phrases and properties as SimGroundTruthSource, found = "config".
+    The same ids, phrases and properties as SimGroundTruthSource, found = "config".
     """
 
-    def __init__(self, task_cfg=TASK_CFG, beaker_cfg=BEAKER_CFG):
-        """Keeps the configuration.
+    def __init__(self, task_cfg=TASK_CFG, beaker_cfg=BEAKER_CFG, heights=None):
+        """Keeps the configuration and the heights.
 
         Args:
             task_cfg (dict): TASK_CFG ("beaker_xy", "hotplate_xy", the staging stance).
             beaker_cfg (dict): BEAKER_CFG (height, liquid).
+            heights (dict or None): task_beaker_hotplate.scene_heights of the scene ("bench_top", "plate_top", "beaker_z", "beaker_height"). Defaults to task_heights(task_cfg, beaker_cfg).
         """
         self.task_cfg, self.beaker_cfg = task_cfg, beaker_cfg
+        self.heights = dict(heights) if heights is not None else task_heights(task_cfg, beaker_cfg)
 
     def __call__(self, world, t):
         """Writes the three entries; a hand-held state set on the beaker entry (held_by) is kept between calls.
@@ -353,10 +355,12 @@ class StaticTaskSource:
             world (WorldModel): The knowledge base to write.
             t (float): The time, seconds.
         """
-        c, b = self.task_cfg, self.beaker_cfg
+        c, b, h = self.task_cfg, self.beaker_cfg, self.heights
         held = world._entries["beaker"].properties.get("held_by") if "beaker" in world._entries else None
         up = np.array([0.0, 0.0, 1.0])
-        world.upsert(Entry("beaker", "beaker", BEAKER_PHRASES, "object", np.array([*c["beaker_xy"], 0.0]), up,
-                           {"contents": "liquid" if b["liquid_mass"] > 0 else "empty", "height": b["height"], "held_by": held, "location": "bench", "supported_by": "bench", "shape": BEAKER_SHAPE()}, "config", t))
-        world.upsert(Entry("hotplate", "hotplate", HOTPLATE_PHRASES, "fixture", np.array([*c["hotplate_xy"], 0.0]), up, {"location": "bench", "supported_by": "bench", "height": HOTPLATE_HEIGHT, "shape": HOTPLATE_SHAPE}, "config", t))
-        world.upsert(Entry("bench", "bench", BENCH_PHRASES, "fixture", np.array([*c["staging_xy"], 0.0]), None, {"top_z": 0.0, "surface": True, "stance": _stance(c)}, "config", t))
+        world.upsert(Entry("beaker", "beaker", BEAKER_PHRASES, "object", np.array([*c["beaker_xy"], h["beaker_z"]]), up,
+                           {"contents": "liquid" if b["liquid_mass"] > 0 else "empty", "height": h["beaker_height"], "held_by": held, "location": "bench", "supported_by": "bench", "shape": BEAKER_SHAPE()}, "config", t))
+        world.upsert(Entry("hotplate", "hotplate", HOTPLATE_PHRASES, "fixture", np.array([*c["hotplate_xy"], h["plate_top"]]), up,
+                           {"location": "bench", "supported_by": "bench", "height": h["plate_top"] - h["bench_top"], "shape": HOTPLATE_SHAPE}, "config", t))
+        world.upsert(Entry("bench", "bench", BENCH_PHRASES, "fixture", np.array([*c["staging_xy"], h["bench_top"]]), None,
+                           {"top_z": h["bench_top"], "top_z_known": True, "surface": True, "stance": _stance(c)}, "config", t))

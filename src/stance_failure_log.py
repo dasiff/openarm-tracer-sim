@@ -48,7 +48,10 @@ def git_commit():
 
 
 def run_header(seed):
-    """The generator state at the start of a run: the state of default_rng(seed) before any draw. Printed in the header of each pipeline or mock run's log."""
+    """The generator state at the start of a run: the state of default_rng(seed) before any draw. Printed in the header of each pipeline or mock run's log.
+    seed None (M283): the stance checks no longer share one stream; each check has its own seed (on its check_start line), so there is no run-level state to show."""
+    if seed is None:
+        return {"fullcheck_rng": "per check (M283): each check's seed is on its check_start line in checks.jsonl", "time": time.strftime("%Y-%m-%d %H:%M:%S")}
     return {"fullcheck_rng_seed": seed, "fullcheck_rng_state_at_start": np.random.default_rng(seed).bit_generator.state,
             "python_random": "not seeded (OS entropy); used only for the LLM retry delay (src/llm_gemini.py), never in a check", "time": time.strftime("%Y-%m-%d %H:%M:%S")}
 

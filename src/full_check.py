@@ -273,7 +273,7 @@ class FullCheck:
         self.clear = PathClearance(m, self.rg["base_z"])
         self._slots = [g for g in range(m.ngeom) if (m.geom(g).name or "").startswith("fc_slot")]
         self._checkers = {}
-        self.rng = np.random.default_rng(11)
+        self.rng = None                                             # no shared stream: each computed check builds its own from its seed (see check(), per-check seed)
         self.maps_dir = maps_dir
         self.failure_log_dir = failure_log_dir if STANCE_LOG_CFG["on"] else None      # M281: logs only, see _log_computed
         self.run_id = f"{os.getpid()}-{time.strftime('%Y%m%d%H%M%S')}"
@@ -290,7 +290,7 @@ class FullCheck:
             self.checks_path = os.path.join(self.failure_log_dir, "checks.jsonl")
             self.failures_path = os.path.join(self.failure_log_dir, "failures.jsonl")
             sfl.append(self.checks_path, {"event": "run_start", "run": self.run_id, "time": time.strftime("%Y-%m-%d %H:%M:%S"), "commit": self.commit, "dirty": self.dirty,
-                                          "generator_state_at_start": self.rng.bit_generator.state, "maps_dir": self.maps_dir, "config": self._config_in_force()})
+                                          "generator": "per check (each check's seed is on its own check_start line and record)", "maps_dir": self.maps_dir, "config": self._config_in_force()})
         self.objects = []
         self._beaker_free = m.joint("task_beaker_free").qposadr[0]
 
@@ -620,7 +620,7 @@ class FullCheck:
                "tasks": _ordered_tasks(points), "approach_bin": approach_bin, "all_angles": all_angles,
                "points": points, "objects": list(objects), "pedestal_heights": heights,
                "object_positions": {"beaker_free_joint_q": start["q_scene"][beaker_free:beaker_free + 7], "hotplate_body_pos": self.model.body_pos[hp]},
-               "generator_state_before": start["rng"], "scene_before": {"qpos": start["data"].qpos, "qvel": start["data"].qvel, "q_scene": start["q_scene"]},
+               "seed": res["seed"], "generator_state_before": start["rng"], "scene_before": {"qpos": start["data"].qpos, "qvel": start["data"].qvel, "q_scene": start["q_scene"]},
                "seconds": res.get("seconds"),
                "maps_dir": self.maps_dir, "cache_key": key[:12], "result": {"ok": res["ok"], "failed": res["failed"], "reason": res["reason"]},
                "approach_angles_passing": res.get("task_angle_lists", []), "config": self._config_in_force()}
@@ -634,7 +634,7 @@ class FullCheck:
             saved_stats, saved_seconds = self.stats, self.seconds
             for g in GROUPS:
                 self._restore(start)
-                r = self.check(stance, points, objects, approach_bin=approach_bin, all_angles=all_angles, only=g)
+                r = self.check(stance, points, objects, approach_bin=approach_bin, all_angles=all_angles, only=g, seed=res["seed"])
                 groups[g] = {"ok": r["ok"], "failed": r["failed"], "reason": r["reason"], "measured": self._measure.get(g), "seconds": r.get("seconds")}
             self.stats, self.seconds = saved_stats, saved_seconds
             self._restore(end)
@@ -645,7 +645,7 @@ class FullCheck:
         sfl.append(self.failures_path, rec)
 
     # ------------------------------------------------------------------ the check
-    def check(self, stance, points, objects=(), source_data=None, approach_bin=None, use_cache=True, all_angles=False, only=None):
+    def check(self, stance, points, objects=(), source_data=None, approach_bin=None, use_cache=True, all_angles=False, only=None, seed=None):
         """The full check of a stance candidate.
 
         Args:
@@ -658,6 +658,8 @@ class FullCheck:
             all_angles (bool): Part of the cache key (the caller's choice of the angles). Defaults to False.
             only (str or None): None runs the whole check (it stops at its first failing item, and is cached and logged). A group name ("clearance", "body", "ik", "place", "view", "occlusion")
                 runs that one check alone: every item of the group is evaluated, with no cache and no log (the diagnostic that `_log_computed` runs after a failure, M281).
+            seed (int or None): The seed of this check's random starts (M283). None: a computed check takes FULLCHECK_CFG seed_pin if set, else the clock (time.time_ns()).
+                A group run (only) must be given the seed of its check. A replay gives the saved seed.
 
         Returns:
             dict: "ok", "failed" (names), "reason", "heights" (per height: the clearances, the view margin and the occlusion numbers), "ik" (per error stance: ok, the failed point, sources), "seconds"
@@ -674,13 +676,19 @@ class FullCheck:
             r.update(cached=True, seconds={"total": round(time.perf_counter() - t_all, 4)})
             return r
         cfg, chk = self.cfg, self.chk
+        if seed is None:                                          # M283: a fresh seed for this computed check, from the clock (or the pin); its random starts use only this generator
+            seed = cfg["seed_pin"] if cfg["seed_pin"] is not None else time.time_ns()
+        self.rng = np.random.default_rng(seed)
+        if only is None and self.failure_log_dir is not None:       # the seed is written before the check runs, so a crash still leaves it (the record id is the one _log_computed will write)
+            sfl.append(self.checks_path, {"event": "check_start", "record_id": f"{self.run_id}-{self.check_n + 1}", "seed": seed, "time": time.strftime("%Y-%m-%d %H:%M:%S"),
+                                          "stance_raw": [float(v) for v in stance]})
         self.stats, self.seconds = {}, {}
         self._measure = {}
         start = self._snapshot() if only is None and self.failure_log_dir is not None else None
         early = only is None                 # the whole check stops at its first failing item (as it always did); a single group runs every item, for the diagnostic
         x, y, th, q0 = stance
         heights = [float(np.clip(q0 + off, 0.0, robot_specs.PEDESTAL_SPECS["range"][1])) for off in cfg["height_offsets"]]
-        res = {"ok": False, "failed": [], "reason": "", "heights": [], "ik": [], "cached": False, "key": key[:12], "stance": [float(v) for v in stance]}
+        res = {"ok": False, "failed": [], "reason": "", "heights": [], "ik": [], "cached": False, "key": key[:12], "stance": [float(v) for v in stance], "seed": seed}
 
         def finish(failed, reason):
             res.update(ok=not failed, failed=failed, reason=reason, stats=dict(self.stats))

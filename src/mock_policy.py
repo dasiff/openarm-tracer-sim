@@ -87,15 +87,17 @@ class MockPolicy:
         self.qadr = np.asarray(self.ids["qadr"])
         self.reset()
 
-    def reset(self):
+    def reset(self, holding=False):
         self.plan, self.i, self.active, self.done, self.error = [], 0, False, False, None
         self.events, self.step_t0, self.T_first, self.prev = [], None, None, None
         self.path, self.last_tau = None, 0.0                  # the waypoint's fixed path (set at its first query, M261) and the sensed progress on it
-        self.grip_target, self.obj, self.prompt, self.queries = 1.0, None, None, 0
+        # a segment that starts while the hand holds the object keeps the gripper closed (as the scripted skill does: its gripper is set only by its close and open steps);
+        # otherwise the gripper target starts open (1.0), as before
+        self.grip_target, self.obj, self.prompt, self.queries = (0.0 if holding else 1.0), None, None, 0
 
-    def begin(self, steps, t, prompt=None, obj=None, error=None):
+    def begin(self, steps, t, prompt=None, obj=None, error=None, holding=False):
         """Starts a plan (the waypoints of the scripted module's start()). An empty plan or an error ends it at once."""
-        self.reset()
+        self.reset(holding=holding)
         self.prompt, self.obj = prompt, obj
         self.plan = list(steps or [])
         self.step_t0 = t
@@ -255,7 +257,7 @@ def make_mock_manipulation(scripted, mock, world, data):
         scripted["start"](segment)
         err = scripted["error"]()
         obj = (segment.get("grounded") or {}).get("manipulated")
-        mock.begin(scripted["plan"](), data.time, prompt=segment.get("description"), obj=obj, error=err)
+        mock.begin(scripted["plan"](), data.time, prompt=segment.get("description"), obj=obj, error=err, holding=bool(world.held_by(mock.side)))
 
     def pop_events():
         ev, mock.events = mock.events, []

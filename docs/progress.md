@@ -710,3 +710,6 @@ RESULT 20:26 guard off + logging + reruns: docs/reports/guard_off_20261108.md; n
 RESULT 21:58 replay/HOME/CLOSE: docs/reports/replay_home_close_20261108.md; no commits.
 RESULT 01:03 sag layer separation + mock trim on/off: docs/reports/sag_layer_separation_20261109.md; no commits.
 RESULT 2026-11-09 12:04 overnight measurements (Parts A-D, copies oc_* outside repo, no change to HEAD 3e93f73): docs/reports/overnight_measurements_20261109.md; logs data/logs/overnight_20261109/; all runs finished (chain CD done 07:56). Decisions for David: place angle, reseed per check, pedestal at staging, place DOWN failure. Not committed to src; no push.
+TASK 2026-11-09 (David, stance failure logging + replay; logging only, results unchanged; no reseed; no push; no 51-stance rerun; no full suite): 
+PLAN: 1 report seeding + every random draw; 2 record generator state before each stance check; 3 failure records data/logs/stance_failures/*.jsonl (all checks run independently); 4 generator state in pipeline/mock log headers; 5 replay script, replay 6 candidates (3 overnight flips + 3 other failures); 6 diff review, run existing stance check tests only if < 5 min, 6c replay one at a time; 7 config rows + M-number decision row; 8 commit locally in pieces.
+CURRENT: step 1 (reading seeding and random draws).

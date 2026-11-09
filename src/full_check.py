@@ -200,6 +200,24 @@ def pose_ik_summary(log, limit):
     return out
 
 
+def _task_of(p):
+    """The task a point belongs to: the pick step of a pick point (its pick_path spec), the step of a place point; None for a point of no task."""
+    if p.get("pick_path") is not None:
+        return p["pick_path"].get("task")
+    return p.get("task")
+
+
+def _ordered_tasks(points):
+    """The distinct task ids of the points, in their order of first appearance (None is one task of its own)."""
+    seen = []
+    for p in points:
+        t = _task_of(p)
+        if t not in seen:
+            seen.append(t)
+    return seen
+
+
+
 class FullCheck:
     """The full check of a stance candidate (see the module docstring).
 
@@ -612,47 +630,58 @@ class FullCheck:
             if bd <= cfg["body_clearance"]:
                 res["ik"].append({"stance": name, "ok": False, "failed_point": None})
                 return finish(["body"], f"at the stance '{name}' the robot touches {pair}")
-        # M275 (David, 2026-11-08): a skill point is no longer solved with a straight-forward hand. The whole pick path is solved along ONE approach direction, the 12 approach
-        # bins tried in order (or the one given); the stance passes at the first bin that passes every point at every error stance. A skill point is then an ordinary grasp point.
+        # M279 (David, 2026-11-08): each task is solved on its own. A pick task (one pick step) is tried along every approach angle (the bins, or the one given); its
+        # list is the bins that pass its whole path at every error stance (the nominal stance first; a later stance starts from the nominal solution, as before).
+        # The stance passes only if every task has at least one passing angle (approach_angle.combine_task_lists). The lists go to the stance selection and to execution.
         bins = [approach_bin] if approach_bin is not None else list(range(self.C["n_bins"]))
-        furthest = None
-        passing, first_rows = [], None
-        for k in bins:
-            as_k = expand_pick_points(points, th, k)              # the pick path for this approach angle, from the stance's own heading (task_points, shared with plan_pick)
-            rows, nominal, fail = [], None, None
-            for name, s in stances:
-                info = timed("ik", self._solve_stance, s, as_k, k, None if nominal is None else nominal["solution"])
-                rows.append({"stance": name, "ok": info["ok"], "failed_point": info["failed_point"], "tried_bins": info["tried_bins"],
-                             "sources": {kk: info["sources"].count(kk) for kk in set(info["sources"])}, "bin": k})
-                if not info["ok"]:
-                    fail = (name, info["failed_point"])
-                    break
-                if nominal is None:
-                    nominal = info
-            if fail is None:
-                passing.append(int(k))
-                if len(passing) == 1:
-                    first_rows = rows                            # the rows of the angle the check reports (the first that passes)
-                if not all_angles:
-                    break
-                continue
-            if furthest is None or fail[1] > furthest[2][1]:
-                furthest = (k, rows, fail, as_k)
-        if passing:                                              # every approach angle that passes the whole path (the list is information; the choice is pick_angle.choose_angle)
-            res["pick_bins_passing"] = passing
-            res["pick_bin"] = passing[0]
-            res["ik"].extend(first_rows)
-        else:
-            k, rows, fail, as_k = furthest
-            res["ik"].extend(rows)
-            name, i = fail
-            pt = as_k[i]
-            return finish(["ik"], f"at the stance '{name}' point {i} ({pt.get('path')}, {np.round(pt['p'], 3).tolist()}) has no collision-free solution in any approach direction (furthest: bin {k})")
-        if place_pts:
-            win = timed("place_window", self._place_window, stances, place_pts)
-            res["place"] = win
+        task_lists = []
+        pick_tasks = _ordered_tasks(points)
+        for t in pick_tasks:
+            pts_t = [p for p in points if _task_of(p) == t]
+            passing, first_rows, furthest = [], None, None
+            for k in bins:
+                as_k = expand_pick_points(pts_t, th, k)          # the pick path of this task for this approach angle, from the stance's own heading (task_points, shared with plan_pick)
+                rows, nominal, fail = [], None, None
+                for name, s in stances:
+                    info = timed("ik", self._solve_stance, s, as_k, k, None if nominal is None else nominal["solution"])
+                    rows.append({"stance": name, "ok": info["ok"], "failed_point": info["failed_point"], "tried_bins": info["tried_bins"],
+                                 "sources": {kk: info["sources"].count(kk) for kk in set(info["sources"])}, "bin": k, "task": t})
+                    if not info["ok"]:
+                        fail = (name, info["failed_point"])
+                        break
+                    if nominal is None:
+                        nominal = info
+                if fail is None:
+                    passing.append(int(k))
+                    if first_rows is None:
+                        first_rows = rows
+                    continue
+                if furthest is None or fail[1] > furthest[2][1]:
+                    furthest = (k, rows, fail, as_k)
+            task_lists.append({"task": t, "kind": "pick", "angles": passing})
+            if passing:
+                res["ik"].extend(first_rows)
+            else:
+                k, rows, fail, as_k = furthest
+                res["ik"].extend(rows)
+                name, i_pt = fail
+                pt = as_k[i_pt]
+                res["task_angle_lists"] = task_lists
+                return finish(["ik"], f"task {t} (pick): at the stance '{name}' point {i_pt} ({pt.get('path')}, {np.round(pt['p'], 3).tolist()}) has no collision-free solution in any approach direction (furthest: bin {k}); the stance needs every task to pass")
+        place_tasks = _ordered_tasks(place_pts)
+        place_wins = {}
+        for t in place_tasks:
+            pp = [pt for pt in place_pts if _task_of(pt) == t]
+            win = timed("place_window", self._place_window, stances, pp)
+            place_wins[t] = win
+            task_lists.append({"task": t, "kind": "place", "angles": [float(d) for d in win["passing_deg"]]})
             if win["theta_deg"] is None:
-                return finish(["place_angle_window"], win["reason"])
+                res["task_angle_lists"] = task_lists
+                res["place"] = win
+                return finish(["place_angle_window"], f"task {t} (place): {win['reason']}")
+        res["task_angle_lists"] = task_lists
+        if place_tasks:
+            res["place"] = place_wins[place_tasks[0]]
         # 3. the fixed view and the occlusion at the heights
         for h, row in zip(heights, res["heights"]):
             st = (x, y, th, h)

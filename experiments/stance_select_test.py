@@ -57,7 +57,13 @@ class FakeCheck:
     def check(self, stance, points):
         self.calls.append(stance)
         ok = len(self.calls) > self.fail
-        return {"ok": ok, "failed": [] if ok else ["home_clearance"], "reason": "" if ok else "fake: home_clearance 10 mm"}
+        # M279: each task's list of passing approach angles (the fake passes every angle: pick bin 0, place turn FakeCheck.theta)
+        tasks = []
+        for p in points:
+            t = (p.get("pick_path") or {}).get("task", p.get("task"))
+            if t is not None and t not in [x["task"] for x in tasks]:
+                tasks.append({"task": t, "kind": "place" if p.get("pose") == "place" else "pick", "angles": [0] if p.get("pose") != "place" else [float(FakeCheck.theta)]})
+        return {"ok": ok, "failed": [] if ok else ["home_clearance"], "reason": "" if ok else "fake: home_clearance 10 mm", "task_angle_lists": tasks}
 
     place_calls = []
     theta, window = 35, True                      # what place_theta_at gives (class attributes; section 6 changes them)
@@ -67,7 +73,7 @@ class FakeCheck:
         FakeCheck.place_calls.append((tuple(stance), [p.get("path") for p in points]))
         if not FakeCheck.window:
             return {"theta_deg": None, "window_deg": None, "width_deg": 0, "windows": [], "reason": "no place angle window: fake"}
-        return {"theta_deg": FakeCheck.theta, "window_deg": [FakeCheck.theta - 20, FakeCheck.theta + 20], "width_deg": 40, "windows": [], "reason": ""}
+        return {"theta_deg": FakeCheck.theta, "window_deg": [FakeCheck.theta - 20, FakeCheck.theta + 20], "width_deg": 40, "windows": [], "reason": "", "passing_deg": [float(FakeCheck.theta)]}
 
 
 def world(beaker_xy=None, hotplate_xy=None, extra=()):
@@ -159,7 +165,7 @@ def main():
     st0 = FakeCheck.place_calls[-1][0] if FakeCheck.place_calls else None
     check("navigation off: the place angle is searched at TASK_CFG's stance and the plan's place step carries it (no default 0)",
           s6b["ok"] and len(FakeCheck.place_calls) == 1 and st0[:2] == tuple(TASK_CFG["staging_xy"]) and abs(st0[3] - TASK_CFG["pedestal_q"]) < 1e-9 and all(p == "carry" or p in ("setdown", "back") for p in FakeCheck.place_calls[-1][1])
-          and place_seg and all(g.get("place_theta_deg") == 35.0 for g in place_seg), f"calls {FakeCheck.place_calls}, place steps {[g.get('place_theta_deg') for g in place_seg]}")
+          and place_seg and all((g.get("approach_angles") or [None])[0] == 35.0 for g in place_seg), f"calls {FakeCheck.place_calls}, place steps {[g.get('approach_angles') for g in place_seg]}")
     FakeCheck.window = False
     s6c = select_bench_stance(tagged, world(), TASK_CFG, ctx, cfg_off, full_check=FakeCheck(fail=0), say=quiet)
     FakeCheck.window = True

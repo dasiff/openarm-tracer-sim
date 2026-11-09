@@ -107,8 +107,8 @@ def case_nav_off():
     w.refresh(0.0)
     cfg_off = {**copy.deepcopy(BENCH_STANCE_CFG), "navigation": False}
     sel = select_bench_stance(tagged, w, TASK_CFG, ctx, cfg_off, full_check=SearchOnly(), say=lambda *_: None)
-    th = [g.get("place_theta_deg") for g in sel["plan"]["segments"] if g.get("primitive") == "place"]
-    check("the place step gets a computed angle (5 degrees: later middle of 355, 0, 5, 10), not 0 and not missing", sel["ok"] and th == [5.0], f"{th} {sel['stop']}")
+    th = [(g.get("approach_angles") or [None])[0] for g in sel["plan"]["segments"] if g.get("primitive") == "place"]
+    check("the place step gets a computed angle (M279: the first passing turn of its list, here 0; the old rule was the middle of the window, 5), not missing", sel["ok"] and th == [0.0], f"{th} {sel['stop']}")
     check("the search ran once, at TASK_CFG's own stance (xy and pedestal)", len(SearchOnly.calls) == 1 and SearchOnly.calls[0][:2] == tuple(TASK_CFG["staging_xy"]) and abs(SearchOnly.calls[0][3] - TASK_CFG["pedestal_q"]) < 1e-9, f"{SearchOnly.calls}")
 
 

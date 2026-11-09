@@ -47,6 +47,7 @@ import mink
 from src import held_mass_ramp as hmr
 from src.gravity_ff import ArmGravityFeedforward
 from src.task_points import approach_unit, pick_waypoints, plate_top_z
+from src.approach_angle import ApproachAngleError, choose_approach_angle, place_approach_xy, task_approach_angles
 from src.mink_arm import MinkArm, pad_rotation
 from src.rate_limit import min_jerk
 from src.sag_layer import PLAN_TRACE            # logging only: the step label and the planned pad pose of this tick (the sag layer's trace)
@@ -210,11 +211,9 @@ def make_scripted_manipulation(model, data, world, side, home_q, task_cfg=TASK_C
         return f / np.linalg.norm(f)
 
     def pick_bin_index():
-        """The approach angle index of the pick (M275 plumbing; the name pick_bin is kept for now, see the shared-path report)."""
-        k = S["ctx"].get("pick_bin")
-        if k is None:
-            raise ValueError("the pick step has no approach angle: the stance selection gives every pick step the angle its full check passed (M275)")
-        return int(k)
+        """The approach angle index of the pick: the one choice from this task's list (approach_angle.choose_approach_angle, the first passing angle; M279).
+        The name pick_bin_index is kept (an existing identifier; see the report). The list was checked at start(); no forward fallback."""
+        return int(choose_approach_angle(S["ctx"]["approach_angles"]))
 
     def pick_approach():
         """The horizontal approach direction of a pick: the robot's forward turned to the approach bin the full check passed for this stance (M275; bin k is centred k * 30 deg
@@ -260,15 +259,13 @@ def make_scripted_manipulation(model, data, world, side, home_q, task_cfg=TASK_C
         a = forward()
         R = pad_rotation(a, R0[:, 0])
         off = p - b                                          # the pad centre relative to the beaker's bottom centre in the hand (measured now)
-        th = S["ctx"]["place_theta"]
-        if th is None:
-            raise ValueError("the place step has no place_theta_deg: the stance selection gives every place step its hand angle (M184)")
+        th = math.radians(float(choose_approach_angle(S["ctx"]["approach_angles"])))      # M279: this place's own approach angle, the one choice from its list
         # M183/M184: th is the hand turn the stance selection chose or searched for this place (radians, counter-clockwise seen from above)
         co, si = math.cos(th), math.sin(th)
         Rz = np.array([[co, -si, 0.0], [si, co, 0.0], [0.0, 0.0, 1.0]])
         R = Rz @ R                                           # the hand stays level and turns about the vertical axis through the beaker's centre: the beaker stays upright (the carry move turns it smoothly from the grasp angle)
         off = Rz @ off                                       # the pad centre turns round the beaker's axis with the hand
-        a = Rz @ a                                           # so does the approach direction (the back-off goes out along it)
+        a = place_approach_xy(a, th)                         # so does the approach direction (the back-off goes out along it); the same function recovery uses (M279)
         over = np.array([hp[0] + off[0], hp[1] + off[1], p[2]])
         down = np.array([hp[0] + off[0], hp[1] + off[1], hp[2] + off[2] + cfg["setdown_gap_m"]])
         back = down.copy()
@@ -286,8 +283,13 @@ def make_scripted_manipulation(model, data, world, side, home_q, task_cfg=TASK_C
         ids = segment.get("grounded") or {}
         S["ctx"]["obj"] = ids.get("manipulated")
         S["ctx"]["end_at_zombie"] = bool(segment.get("end_at_zombie"))
-        S["ctx"]["pick_bin"] = None if segment.get("pick_approach_bin") is None else int(segment["pick_approach_bin"])      # M275: the approach bin of a pick (None for other steps)
-        S["ctx"]["place_theta"] = None if segment.get("place_theta_deg") is None else math.radians(float(segment["place_theta_deg"]))      # M184: no default angle (0 is the marginal angle); a place without one fails below
+        S["ctx"]["approach_angles"] = None
+        if prim in ("pick", "place"):                         # M279: the task's list from the stance check. Missing or empty: this step fails with its reason and does not run
+            try:
+                S["ctx"]["approach_angles"] = task_approach_angles(segment)
+            except ApproachAngleError as e:
+                fail(f"{prim}: approach angles {e.reason}: {e}")
+                return
         if cfg["restart_from_commanded"]:                     # M195: the new skill continues from the ctrl that was applied on the previous tick, not from the measured joints (which lose the servo's holding offset under the beaker)
             arm.q_cmd = np.asarray(data.ctrl[act_ids], float).copy()
         else:
@@ -314,12 +316,16 @@ def make_scripted_manipulation(model, data, world, side, home_q, task_cfg=TASK_C
         The fingers are opened first when the world model says this hand holds nothing (a hand that holds something keeps its grip); then the pad centre backs off along the robot's forward
         direction by the retreat distance, goes to the zombie pose's pad centre, and the joints go to the zombie pose.
         """
+        failed_prim = S["ctx"].get("primitive")              # captured before this recovery overwrites the primitive (M279)
         S.update(i=0, t0=None, error=None, events=[], started=True, still=None)
         S["ctx"]["primitive"] = "recover"
         arm.reset(data)
         S["v_last"] = np.zeros(7)
         p, R0 = arm.pad_pose(data)
-        if S["ctx"].get("pick_bin") is not None and S["ctx"].get("obj") is not None:
+        if failed_prim == "pick" and S["ctx"].get("obj") is not None and not S["ctx"].get("approach_angles"):
+            fail("recovery of the pick: approach angles missing or empty: the pick's list was not given (no forward fallback)")
+            return
+        if failed_prim == "pick" and S["ctx"].get("obj") is not None:
             # a failed pick backs out to the pick's own BACK point (task_points.pick_waypoints, the same point the check tests), along the pick's approach angle
             ob = world.object_pose(S["ctx"]["obj"])["position"]
             hg = ob[2] + cfg["grasp_height_frac"] * world.object_height(S["ctx"]["obj"])
@@ -329,7 +335,15 @@ def make_scripted_manipulation(model, data, world, side, home_q, task_cfg=TASK_C
             R = pad_rotation(a, R0[:, 0])
             back = np.array(W["back"], float)
         else:
-            a = forward()                                    # a place (or other step) backs out along the robot's forward; the place's own angle theta is M183's, not yet used here
+            if failed_prim == "place":                       # M279: a failed place backs out along the place's own approach angle (the same direction plan_place uses)
+                try:
+                    th = math.radians(float(choose_approach_angle(S["ctx"]["approach_angles"])))
+                except (ApproachAngleError, TypeError) as e:
+                    fail(f"recovery of the place: approach angles missing or empty: {e}")
+                    return
+                a = place_approach_xy(forward(), th)
+            else:
+                a = forward()                                # any other step with no list backs out along the forward direction (no pick or place angle to use)
             R = pad_rotation(a, R0[:, 0])
             back = p.copy()
             back[:2] -= a[:2] * cfg["retreat_m"]

@@ -218,13 +218,13 @@ def step_target(ctx, world, seg, index, say=print):
         # function plan_pick uses. The stance's own heading is used there, not the staging yaw.
         band = [{"p": [float(xy[0]), float(xy[1]), float(z)], "arm": "either", "bin": None, "path": "grasp"} for z in z_pts]
         spec = {"beaker_xy": [float(xy[0]), float(xy[1])], "grasp_z": float(zm), "height": float(H_obj), "bench_top": float(bench_top_z(ctx.model)),
-                "carry_z_ref": plate_top_z(ctx.model, ctx.data), "band": band}
+                "carry_z_ref": plate_top_z(ctx.model, ctx.data), "band": band, "task": index}
         pts = [dict(b, pick_path=spec) for b in band]
     else:
         pv = [float(xy[0]), float(xy[1])]
-        pts = [pt(xy[0], xy[1], surface_z + PICK_PLACE_CFG["grasp_height_frac"] * H_obj + PICK_PLACE_CFG["carry_gap_m"], "carry", "place", pivot=pv)]       # OVER: the beaker's bottom carry_gap_m above the plate
-        pts += [pt(xy[0], xy[1], z, "setdown", "place", pivot=pv) for z in z_pts]                                                                      # DOWN and OPEN: the lowering and release stops
-        pts += [pt(xy[0] - rt * fwd[0], xy[1] - rt * fwd[1], zm + gap, "back", "place", pivot=pv)]                                                     # BACK: the retreat after the release
+        pts = [pt(xy[0], xy[1], surface_z + PICK_PLACE_CFG["grasp_height_frac"] * H_obj + PICK_PLACE_CFG["carry_gap_m"], "carry", "place", pivot=pv, task=index)]       # OVER: the beaker's bottom carry_gap_m above the plate
+        pts += [pt(xy[0], xy[1], z, "setdown", "place", pivot=pv, task=index) for z in z_pts]                                                                      # DOWN and OPEN: the lowering and release stops
+        pts += [pt(xy[0] - rt * fwd[0], xy[1] - rt * fwd[1], zm + gap, "back", "place", pivot=pv, task=index)]                                                     # BACK: the retreat after the release
     ob["points"] = pts
     return ob
 
@@ -500,7 +500,7 @@ def select_bench_stance(tagged, world, task_cfg, ctx, cfg=BENCH_STANCE_CFG, full
                     first_nav = False
                 run = rep["runs"][-1]
                 for i in cand[:kk]:                                            # M184: a place step served from the current stance has no angle from a full check: search it here, at this stance
-                    if targets[i]["primitive"] == "place" and hasattr(full_check, "place_theta_at") and i not in run.get("place_theta_by_step", {}):
+                    if targets[i]["primitive"] == "place" and hasattr(full_check, "place_theta_at") and i not in run.get("approach_angles", {}):
                         pp = [p for p in targets[i]["points"] if p.get("pose") == "place"]
                         win = full_check.place_theta_at((cur["xy"][0], cur["xy"][1], yaw, cur["q"]), pp)
                         rep.setdefault("place_search_at_current_stance", []).append({"step": i, "stance": [float(cur["xy"][0]), float(cur["xy"][1]), float(cur["q"])], "theta_deg": win["theta_deg"], "window_deg": win["window_deg"], "width_deg": win["width_deg"], "reason": win["reason"]})
@@ -508,7 +508,7 @@ def select_bench_stance(tagged, world, task_cfg, ctx, cfg=BENCH_STANCE_CFG, full
                             out["stop"] = win["reason"]
                             rep["notes"].append(win["reason"])
                             return out
-                        run.setdefault("place_theta_by_step", {})[i] = float(win["theta_deg"])
+                        run.setdefault("approach_angles", {})[i] = [float(d) for d in win["passing_deg"]]      # M279: the place's list of passing turns, the same form as a pick's
                 for i in cand[:kk]:
                     nj = _nav_before(segs, i)
                     if nj is not None:
@@ -583,7 +583,7 @@ def select_bench_stance(tagged, world, task_cfg, ctx, cfg=BENCH_STANCE_CFG, full
                 tries.append(st)
                 break
             r = full_check.check((cand_st["xy"][0], cand_st["xy"][1], yaw, cand_st["q"]), pts)
-            st.update(full_check_ok=bool(r["ok"]), failed=list(r.get("failed", [])), reason=str(r.get("reason", ""))[:300], place=r.get("place"), pick_bin=r.get("pick_bin"))      # M275: the approach bin the whole pick path passed in
+            st.update(full_check_ok=bool(r["ok"]), failed=list(r.get("failed", [])), reason=str(r.get("reason", ""))[:300], place=r.get("place"), task_lists=r.get("task_angle_lists"))      # M279: each task's list of passing approach angles in
             tries.append(st)
             say(f"[stance] run of steps {cand[:k]}: stance {np.round(cand_st['xy'], 3).tolist()} pedestal {cand_st['q']:.2f}: full check {'PASS' if r['ok'] else 'FAIL ' + str(r.get('failed'))}")
             if r["ok"]:
@@ -596,7 +596,9 @@ def select_bench_stance(tagged, world, task_cfg, ctx, cfg=BENCH_STANCE_CFG, full
                 rep["failure_log"] = _log_two_pass_failure(cfg, task_cfg, objs, ctx, cand[:k], tries, rep["two_pass"][-1]["rows"], say)
                 out["stop"] += f" [failure log: {rep['failure_log']}]"
             return out
-        run = {"stance": {"xy": passed["xy"], "q": passed["q"], "yaw": yaw}, "steps": list(cand[:k]), "nav": [], "place_theta_deg": (passed.get("place") or {}).get("theta_deg"), "pick_bin": passed.get("pick_bin"), "surface": surf, "counts": passed["counts"], "score": passed["score"], "full_check": tries,
+        lists = {int(t["task"]): list(t["angles"]) for t in (passed.get("task_lists") or []) if t.get("task") is not None}
+        run = {"stance": {"xy": passed["xy"], "q": passed["q"], "yaw": yaw}, "steps": list(cand[:k]), "nav": [], "approach_angles": lists,
+               "place_theta_deg": next((lists[int(i)][0] for i in cand[:k] if targets[i]["primitive"] == "place" and lists.get(int(i))), None), "surface": surf, "counts": passed["counts"], "score": passed["score"], "full_check": tries,
                "ranked": res["ranked"][: cfg["rank_keep"]], "overlay_run_q": [float(x) for x in res["run"]], "seconds": res["seconds"]}
         nj = _nav_before(segs, cand[0])
         if nj is not None:
@@ -625,16 +627,13 @@ def select_bench_stance(tagged, world, task_cfg, ctx, cfg=BENCH_STANCE_CFG, full
         nxt = plan2["segments"][j + 1] if j + 1 < len(plan2["segments"]) else None
         if seg["type"] == "manipulation" and seg.get("primitive") == "pick" and nxt is not None and nxt["type"] == "navigation" and (j + 1) in moving_nav and (j + 1) != min(moving_nav):
             seg["end_at_zombie"] = True
-    for r in rep["runs"]:                                             # M275: the approach bin the full check passed a run's pick path in goes to every pick step of the run
+    for r in rep["runs"]:                                             # M279: each task's own list of passing approach angles goes to its step: pick angles as bin indices, place angles as turns in degrees
         for i in r["steps"]:
-            if plan2["segments"][i].get("primitive") == "pick" and r.get("pick_bin") is not None:
-                plan2["segments"][i]["pick_approach_bin"] = int(r["pick_bin"])
-    for r in rep["runs"]:                                             # M183: the hand turn the full check chose for a run's place goes to that place step; M184: a place step served from the current stance has its own searched angle
-        for i in r["steps"]:
-            if plan2["segments"][i].get("primitive") == "place":
-                th = r.get("place_theta_by_step", {}).get(i, r.get("place_theta_deg"))
-                if th is not None:
-                    plan2["segments"][i]["place_theta_deg"] = float(th)
+            lst = r.get("approach_angles", {}).get(i)
+            if lst is None:
+                continue
+            prim = plan2["segments"][i].get("primitive")
+            plan2["segments"][i]["approach_angles"] = [int(x) for x in lst] if prim == "pick" else [float(x) for x in lst]
     if full_check is not None and getattr(full_check, "pose_ik_log", None):
         from src.full_check import pose_ik_summary
         rep["pose_ik"] = pose_ik_summary(full_check.pose_ik_log, full_check.cfg["pose_ik_iterations"])

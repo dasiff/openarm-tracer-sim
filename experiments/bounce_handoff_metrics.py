@@ -303,7 +303,7 @@ def main():
                   f"{1000*e_val[0]:+.3f}, {1000*e_val[1]:+.3f}, {1000*e_val[2]:+.3f} | {ch:.3e} |")
     md.append("")
     md.append(f"- Resets of the trim in this run: run start (construction, before the first traced tick); pick skill start at tick {segments(df, 'pick: OVER')[0][0]} "
-              f"(not a reset: sag_reset_at_skill_start is False); gripper-open event at tick {t_open_event} (the trim is set to zero there, and ref and full are cleared); "
+              f"(not a reset: the skill-start reset is not built, M263); gripper-open event at tick {t_open_event} (the trim is set to zero there, and ref and full are cleared); "
               f"recovery: none (VERIFIED from the run log and labels).")
     md.append(f"- The gripper-open reset at tick {t_open_event} is the end of the ramp-out freeze window.")
 
@@ -336,7 +336,7 @@ def main():
     md.append("")
     md.append("## 9. Callers (grep at the commit; VERIFIED in the working tree before the run)")
     md.append("- begin_load_change: removed (M234): no definition and no caller remain in src/, experiments/ or the unit tests.")
-    md.append("- end_load_change: three call sites in src/mpvi_modules.py: the skill-start reset (only when sag_reset_at_skill_start is on), the recovery start, and the gripper-open reset (the freeze end for the ramp-out).")
+    md.append("- end_load_change: three call sites in src/mpvi_modules.py: the skill-start reset (the skill-start reset is not built, M263; the setting sag_reset_at_skill_start was removed 2026-11-09), the recovery start, and the gripper-open reset (the freeze end for the ramp-out).")
 
     text = "\n".join(md)
     print(text)

@@ -2,8 +2,8 @@
 
     MUJOCO_GL=egl python experiments/bounce_freeze_run.py <out_dir> <A|B>
 
-Run A: the build as committed (sag_reset_at_skill_start False, the config value).
-Run B: the same, with PICK_PLACE_CFG["sag_reset_at_skill_start"] set to True in this process only (the config key, no code change).
+Run A: the build as committed (the skill-start reset is not built: M263).
+Run B (removed 2026-11-09): it set the dead key PICK_PLACE_CFG["sag_reset_at_skill_start"], which nothing in src reads; the run exits with that message.
 
 The scenario is the one of experiments/bounce_ramp_run.py. Nothing in the simulation is changed: the launcher wraps the gravity feedforward once per tick and
 reads the state it already computes, and it reads the trace that src/mpvi_modules.py keeps for the arm side (logging only).
@@ -45,8 +45,8 @@ out = Path(sys.argv[1])
 mode = sys.argv[2]
 if mode not in ("A", "B"):
     sys.exit("usage: bounce_freeze_run.py <out_dir> <A|B>")
-PICK_PLACE_CFG["sag_reset_at_skill_start"] = (mode == "B")
-print(f"[bounce_freeze_run] run {mode}: sag_reset_at_skill_start = {PICK_PLACE_CFG['sag_reset_at_skill_start']}", flush=True)
+if mode == "B":
+    sys.exit("run B was removed (2026-11-09): sag_reset_at_skill_start is a dead setting, nothing in src reads it")
 out.mkdir(parents=True, exist_ok=True)
 cur = {"tick": -1}
 rows = []

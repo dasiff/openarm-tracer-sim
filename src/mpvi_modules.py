@@ -31,7 +31,7 @@ Scripted pick and place (PICK_PLACE_CFG, MINK_CFG in src/task_config.py): the pa
 approach bin the full check passed for the stance (M275, David 2026-11-08; the bin is 30 deg steps from the robot's forward direction); a place approaches along the robot's forward direction. PICK: OVER (at the clearance height, a standoff back from the beaker), DOWN (to the grasp height), IN (the pad centre on the beaker's axis), CLOSE (8 N), UP
 (the carry height, the beaker held). PLACE: OVER (the hotplate, at that height), DOWN (the beaker's bottom just above the plate), OPEN, BACK (a standoff out, the fingers clear of the
 beaker), HOME (the pad centre to the home pose's, then the joints). The simulator's gravity compensation does not carry the beaker's weight, so the arm sags under it: a simple
-correction integrates the measured pad pose error (the forward kinematics of the measured joints) into the waypoint path (PICK_PLACE_CFG sag_*). A waypoint ends when the measured pad centre is within tolerance and the arm is settled; a timeout or a mink
+trim is NOT in this module: it is a control-loop layer (src/sag_layer.py, applied to the manipulation source's commands at src/control_loop.py sag_correct; PICK_PLACE_CFG sag_* are its gains). This module only plans the waypoints. A waypoint ends when the measured pad centre is within tolerance and the arm is settled; a timeout or a mink
 failure ends the plan with the reason.
 """
 

@@ -27,8 +27,8 @@ Navigation and manipulation modules share the protocol of a stage, plus a segmen
 Completion checker: check(segment, event, obs, decides=False) -> {"passed": bool, "reason": str, "details": dict}, called after every gripper event; `decides` says whether the verdict decides (the segment's
 last manipulation step at the event that ends its primitive) or is only logged. The oracle ignores it; the VLM checker (src/mpvi_vlm.py) calls the VLM only when it is true.
 
-Scripted pick and place (PICK_PLACE_CFG, MINK_CFG in src/task_config.py): the pad centre goes through the waypoints of design plan 3.3 with the hand level, the approach along the
-robot's forward direction. PICK: OVER (at the clearance height, a standoff back from the beaker), DOWN (to the grasp height), IN (the pad centre on the beaker's axis), CLOSE (8 N), UP
+Scripted pick and place (PICK_PLACE_CFG, MINK_CFG in src/task_config.py): the pad centre goes through the waypoints of design plan 3.3 with the hand level. A pick approaches along the
+approach bin the full check passed for the stance (M275, David 2026-11-08; the bin is 30 deg steps from the robot's forward direction); a place approaches along the robot's forward direction. PICK: OVER (at the clearance height, a standoff back from the beaker), DOWN (to the grasp height), IN (the pad centre on the beaker's axis), CLOSE (8 N), UP
 (the carry height, the beaker held). PLACE: OVER (the hotplate, at that height), DOWN (the beaker's bottom just above the plate), OPEN, BACK (a standoff out, the fingers clear of the
 beaker), HOME (the pad centre to the home pose's, then the joints). The simulator's gravity compensation does not carry the beaker's weight, so the arm sags under it: a simple
 correction integrates the measured pad pose error (the forward kinematics of the measured joints) into the waypoint path (PICK_PLACE_CFG sag_*). A waypoint ends when the measured pad centre is within tolerance and the arm is settled; a timeout or a mink
@@ -46,6 +46,7 @@ import mink
 
 from src import held_mass_ramp as hmr
 from src.gravity_ff import ArmGravityFeedforward
+from src.task_points import approach_unit, pick_waypoints, plate_top_z
 from src.mink_arm import MinkArm, pad_rotation
 from src.rate_limit import min_jerk
 from src.sag_layer import PLAN_TRACE            # logging only: the step label and the planned pad pose of this tick (the sag layer's trace)
@@ -208,6 +209,20 @@ def make_scripted_manipulation(model, data, world, side, home_q, task_cfg=TASK_C
         f[2] = 0.0
         return f / np.linalg.norm(f)
 
+    def pick_bin_index():
+        """The approach angle index of the pick (M275 plumbing; the name pick_bin is kept for now, see the shared-path report)."""
+        k = S["ctx"].get("pick_bin")
+        if k is None:
+            raise ValueError("the pick step has no approach angle: the stance selection gives every pick step the angle its full check passed (M275)")
+        return int(k)
+
+    def pick_approach():
+        """The horizontal approach direction of a pick: the robot's forward turned to the approach bin the full check passed for this stance (M275; bin k is centred k * 30 deg
+        from the forward axis towards the left, grasp_rules.bin_center). No straight-forward default: a pick without its bin fails."""
+        f = forward()
+        ux, uy = approach_unit(math.atan2(f[1], f[0]), pick_bin_index())       # the one definition (task_points.approach_unit)
+        return np.array([ux, uy, 0.0])
+
     def fail(msg):
         S["error"] = msg
         print(f"[manipulation] FAILED: {msg}")
@@ -218,22 +233,21 @@ def make_scripted_manipulation(model, data, world, side, home_q, task_cfg=TASK_C
     def plan_pick(obj):
         """The waypoints of a pick from the grounded object's pose now."""
         b = world.object_pose(obj)["position"]
-        a = forward()
+        k = pick_bin_index()                                 # M275: the approach angle the full check passed for this stance
         _, R0 = arm.pad_pose(data)
-        R = pad_rotation(a, R0[:, 0])
         frac = cfg["grasp_height_frac"]
         height = world.object_height(obj)
         hg = b[2] + frac * height
-        hp = world.object_pose(carry_ref)["position"]
-        z_clear = world.bench_top_z() + cfg["clearance_m"]
-        z_carry = max(hp[2] + frac * height + cfg["carry_gap_m"], hg + 0.05)
-        stand = b[:2] - a[:2] * cfg["standoff_m"]
+        f = forward()
+        # the one pick path (task_points.pick_waypoints, shared with the stance check): the robot's own heading and the approach angle k; the heights from the scene model
+        W = pick_waypoints(b[:2], hg, height, bench_top_z(model), plate_top_z(model, data), math.atan2(f[1], f[0]), k, cfg)
+        a = np.array([W["approach"][0], W["approach"][1], 0.0])
+        R = pad_rotation(a, R0[:, 0])
         S["ctx"]["z_rise_ref"] = float(b[2])
-        steps = [move("OVER", [*stand, z_clear], cfg["speed_m_s"], R), move("DOWN", [*stand, hg], cfg["slow_speed_m_s"], R),
-                 move("IN", [b[0], b[1], hg], cfg["slow_speed_m_s"], R), {"kind": "close", "name": "CLOSE"}, move("UP", [b[0], b[1], z_carry], cfg["slow_speed_m_s"], R)]
-        if S["ctx"].get("end_at_zombie"):                    # M074 (bench rectangle selection): the next step is a navigation step that moves, so the arm goes home holding the beaker, as the recovery does
-            back = np.array([b[0], b[1], z_carry])
-            back[:2] -= a[:2] * cfg["retreat_m"]
+        steps = [move("OVER", list(W["over"]), cfg["speed_m_s"], R), move("DOWN", list(W["standoff"]), cfg["slow_speed_m_s"], R),
+                 move("IN", [b[0], b[1], hg], cfg["slow_speed_m_s"], R), {"kind": "close", "name": "CLOSE"}, move("UP", list(W["lift"]), cfg["slow_speed_m_s"], R)]
+        if S["ctx"].get("end_at_zombie"):                    # M074 (bench rectangle selection): the next step is a navigation step that moves, so the arm goes home holding the beaker, as the recovery
+            back = np.array(W["back"], float)
             hp_pose, hR = home_pad_pose()
             steps += [move("BACK", back, cfg["slow_speed_m_s"], R), move("HOME", hp_pose, cfg["speed_m_s"], hR), {"kind": "joints", "name": "HOME"}]
         return steps
@@ -272,6 +286,7 @@ def make_scripted_manipulation(model, data, world, side, home_q, task_cfg=TASK_C
         ids = segment.get("grounded") or {}
         S["ctx"]["obj"] = ids.get("manipulated")
         S["ctx"]["end_at_zombie"] = bool(segment.get("end_at_zombie"))
+        S["ctx"]["pick_bin"] = None if segment.get("pick_approach_bin") is None else int(segment["pick_approach_bin"])      # M275: the approach bin of a pick (None for other steps)
         S["ctx"]["place_theta"] = None if segment.get("place_theta_deg") is None else math.radians(float(segment["place_theta_deg"]))      # M184: no default angle (0 is the marginal angle); a place without one fails below
         if cfg["restart_from_commanded"]:                     # M195: the new skill continues from the ctrl that was applied on the previous tick, not from the measured joints (which lose the servo's holding offset under the beaker)
             arm.q_cmd = np.asarray(data.ctrl[act_ids], float).copy()
@@ -304,10 +319,20 @@ def make_scripted_manipulation(model, data, world, side, home_q, task_cfg=TASK_C
         arm.reset(data)
         S["v_last"] = np.zeros(7)
         p, R0 = arm.pad_pose(data)
-        a = forward()
-        R = pad_rotation(a, R0[:, 0])
-        back = p.copy()
-        back[:2] -= a[:2] * cfg["retreat_m"]
+        if S["ctx"].get("pick_bin") is not None and S["ctx"].get("obj") is not None:
+            # a failed pick backs out to the pick's own BACK point (task_points.pick_waypoints, the same point the check tests), along the pick's approach angle
+            ob = world.object_pose(S["ctx"]["obj"])["position"]
+            hg = ob[2] + cfg["grasp_height_frac"] * world.object_height(S["ctx"]["obj"])
+            f = forward()
+            W = pick_waypoints(ob[:2], hg, world.object_height(S["ctx"]["obj"]), bench_top_z(model), plate_top_z(model, data), math.atan2(f[1], f[0]), pick_bin_index(), cfg)
+            a = np.array([W["approach"][0], W["approach"][1], 0.0])
+            R = pad_rotation(a, R0[:, 0])
+            back = np.array(W["back"], float)
+        else:
+            a = forward()                                    # a place (or other step) backs out along the robot's forward; the place's own angle theta is M183's, not yet used here
+            R = pad_rotation(a, R0[:, 0])
+            back = p.copy()
+            back[:2] -= a[:2] * cfg["retreat_m"]
         hp_pose, hR = home_pad_pose()
         steps = [] if world.held_by(side) else [{"kind": "open", "name": "OPEN"}]
         S["steps"] = steps + [move("BACK", back, cfg["slow_speed_m_s"], R), move("HOME", hp_pose, cfg["speed_m_s"], hR), {"kind": "joints", "name": "HOME"}]

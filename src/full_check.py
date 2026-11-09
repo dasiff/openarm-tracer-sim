@@ -43,6 +43,7 @@ from src.task_beaker_hotplate import bench_top_z, load_task
 from src.robot_specs import EAGLE_MOUNT
 from src.task_points import task_points  # noqa: F401  (moved to src/task_points.py; kept importable from here)
 from src.task_config import BEAKER_CFG, FULLCHECK_CFG, PICK_PLACE_CFG, STAGING_CFG, STANCE_REQUIREMENTS, TASK_CFG
+from src.task_points import expand_pick_points
 
 SIDE = "left"
 SLOT_PARK = (0.0, 0.0, -5.0)
@@ -238,12 +239,12 @@ class FullCheck:
         self.shoulder = np.asarray(self.rg["shoulder"][SIDE], float)
         Rpi = np.column_stack([self.C["closing_axis"], np.cross(self.C["approach_axis"], self.C["closing_axis"]), self.C["approach_axis"]])      # the pad frame in the tool frame (as MinkArm)
         _, Rh = batch_fk(self.chain, np.asarray(task_cfg["home_q_left"], float)[None], self.pad)
-        z = np.array([1.0, 0.0, 0.0])                                    # the skill approaches along the robot's forward direction (the torso frame's x) with the hand level (plan_pick: pad_rotation)
+        z = np.array([1.0, 0.0, 0.0])                                    # the reference direction of the level skill hand (the torso frame's x); a pick now uses the approach bin the check passed (M275), not this direction
         hint = (Rh[0] @ Rpi)[:, 0]                                        # the closing axis of the pad at the zombie pose keeps the hand's roll, as pad_rotation's closing_hint
         x = hint - z * float(hint @ z)
         x[2] = 0.0
         x /= np.linalg.norm(x)
-        self.R_skill = np.column_stack([x, np.cross(z, x), z]) @ Rpi.T     # the skill's tool frame rotation in the torso frame (level, straight forward)
+        self.R_skill = np.column_stack([x, np.cross(z, x), z]) @ Rpi.T     # the place hand's reference rotation in the torso frame (level, straight forward; a place turns it by theta, M183); pick points use their approach bin (M275)
         self.clear = PathClearance(m, self.rg["base_z"])
         self._slots = [g for g in range(m.ngeom) if (m.geom(g).name or "").startswith("fc_slot")]
         self._checkers = {}
@@ -362,7 +363,7 @@ class FullCheck:
         return ok
 
     def _pose_target(self, stance, pt, t, theta):
-        """The exact target of a skill point in the torso frame: (pad centre (3,), tool frame rotation (3, 3)). A "skill" point keeps the skill's level, straight-forward hand; a "place" point has the hand
+        """The exact target of a skill point in the torso frame: (pad centre (3,), tool frame rotation (3, 3)). A "skill" point keeps the level hand at the reference rotation (no longer used for picks: M275); a "place" point has the hand
         turned by `theta` (radians, counter-clockwise seen from above) about the vertical axis through the beaker's centre (pt["pivot"], world xy), the pad centre turning with it."""
         R = self.R_skill
         if pt["pose"] == "place" and theta:
@@ -549,7 +550,7 @@ class FullCheck:
         return self._place_window(self._error_stances(tuple(stance)), place_pts)
 
     # ------------------------------------------------------------------ the check
-    def check(self, stance, points, objects=(), source_data=None, approach_bin=None, use_cache=True):
+    def check(self, stance, points, objects=(), source_data=None, approach_bin=None, use_cache=True, all_angles=False):
         """The full check of a stance candidate.
 
         Args:
@@ -568,7 +569,7 @@ class FullCheck:
         if source_data is not None:
             self.sync(source_data)
         self.set_objects(list(objects))
-        key = self._key(stance, points, objects, approach_bin)
+        key = self._key(stance, points, objects, (approach_bin, all_angles))
         if use_cache and key in self.cache:
             r = dict(self.cache[key])
             r.update(cached=True, seconds={"total": round(time.perf_counter() - t_all, 4)})
@@ -603,7 +604,6 @@ class FullCheck:
             if pb is not None and pb < STANCE_REQUIREMENTS["placed_beaker_min_clearance"]:
                 return finish(["placed_beaker"], f"at pedestal {h:.3f} the arms at home are {1000 * pb:.0f} mm from a beaker placed on the hotplate")
         # 2. the IK path check: the nominal stance and each error on its own
-        nominal = None
         stances = self._error_stances((x, y, th, q0))
         place_pts = [pt for pt in points if pt.get("pose") == "place"]
         points = [pt for pt in points if pt.get("pose") != "place"]      # the place points are tested over the hand turns below (P3 part 5, M183)
@@ -612,14 +612,42 @@ class FullCheck:
             if bd <= cfg["body_clearance"]:
                 res["ik"].append({"stance": name, "ok": False, "failed_point": None})
                 return finish(["body"], f"at the stance '{name}' the robot touches {pair}")
-            info = timed("ik", self._solve_stance, s, points, approach_bin, None if nominal is None else nominal["solution"])
-            res["ik"].append({"stance": name, "ok": info["ok"], "failed_point": info["failed_point"], "tried_bins": info["tried_bins"],
-                              "sources": {k: info["sources"].count(k) for k in set(info["sources"])}})
-            if not info["ok"]:
-                pt = points[info["failed_point"]]
-                return finish(["ik"], f"at the stance '{name}' point {info['failed_point']} ({pt.get('path')}, {np.round(pt['p'], 3).tolist()}) has no collision-free solution")
-            if nominal is None:
-                nominal = info
+        # M275 (David, 2026-11-08): a skill point is no longer solved with a straight-forward hand. The whole pick path is solved along ONE approach direction, the 12 approach
+        # bins tried in order (or the one given); the stance passes at the first bin that passes every point at every error stance. A skill point is then an ordinary grasp point.
+        bins = [approach_bin] if approach_bin is not None else list(range(self.C["n_bins"]))
+        furthest = None
+        passing, first_rows = [], None
+        for k in bins:
+            as_k = expand_pick_points(points, th, k)              # the pick path for this approach angle, from the stance's own heading (task_points, shared with plan_pick)
+            rows, nominal, fail = [], None, None
+            for name, s in stances:
+                info = timed("ik", self._solve_stance, s, as_k, k, None if nominal is None else nominal["solution"])
+                rows.append({"stance": name, "ok": info["ok"], "failed_point": info["failed_point"], "tried_bins": info["tried_bins"],
+                             "sources": {kk: info["sources"].count(kk) for kk in set(info["sources"])}, "bin": k})
+                if not info["ok"]:
+                    fail = (name, info["failed_point"])
+                    break
+                if nominal is None:
+                    nominal = info
+            if fail is None:
+                passing.append(int(k))
+                if len(passing) == 1:
+                    first_rows = rows                            # the rows of the angle the check reports (the first that passes)
+                if not all_angles:
+                    break
+                continue
+            if furthest is None or fail[1] > furthest[2][1]:
+                furthest = (k, rows, fail, as_k)
+        if passing:                                              # every approach angle that passes the whole path (the list is information; the choice is pick_angle.choose_angle)
+            res["pick_bins_passing"] = passing
+            res["pick_bin"] = passing[0]
+            res["ik"].extend(first_rows)
+        else:
+            k, rows, fail, as_k = furthest
+            res["ik"].extend(rows)
+            name, i = fail
+            pt = as_k[i]
+            return finish(["ik"], f"at the stance '{name}' point {i} ({pt.get('path')}, {np.round(pt['p'], 3).tolist()}) has no collision-free solution in any approach direction (furthest: bin {k})")
         if place_pts:
             win = timed("place_window", self._place_window, stances, place_pts)
             res["place"] = win

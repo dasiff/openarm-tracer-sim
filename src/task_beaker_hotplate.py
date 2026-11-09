@@ -67,6 +67,58 @@ def bench_top_z(model):
     return float(model.geom_pos[g.id][2] + model.geom_size[g.id][2])
 
 
+def plate_top_z(model, data):
+    """The hotplate's top surface height (world, metres) from the scene: the carry reference of a pick (the surface the next place goes to) and the place's target height.
+
+    Args:
+        model (mujoco.MjModel): The task model with the geom "task_hotplate_top_plate".
+        data (mujoco.MjData): Its data, after a forward pass (the geom's world position).
+
+    Returns:
+        float: World z of the top face of the hotplate's plate, in metres.
+    """
+    g = model.geom("task_hotplate_top_plate").id
+    return float(data.geom_xpos[g][2] + model.geom_size[g][2])
+
+
+def scene_heights(model, data, task_cfg=TASK_CFG, beaker_cfg=BEAKER_CFG):
+    """THE source of the task's heights (world z, metres), read from the scene. Every reader of a height takes it from here or from the same model
+    (the simulator's world model, the stance-time world model via task_heights, the pick path and the place target).
+
+    Args:
+        model (mujoco.MjModel): The task model.
+        data (mujoco.MjData): Its data, after the task poses are applied and a forward pass is done.
+        task_cfg (dict): TASK_CFG (the beaker's settle clearance is read from it). Defaults to it.
+        beaker_cfg (dict): BEAKER_CFG (the beaker's height). Defaults to it.
+
+    Returns:
+        dict: "bench_top" (the bench top's surface), "plate_top" (the hotplate's plate top), "beaker_z" (the beaker's base site: the beaker's bottom centre)
+            and "beaker_height" (the beaker's height above its bottom, from its configuration).
+    """
+    return {"bench_top": bench_top_z(model), "plate_top": plate_top_z(model, data), "beaker_z": float(data.site("beaker_base").xpos[2]),
+            "beaker_height": float(beaker_cfg["height"])}
+
+
+_HEIGHTS = {}
+
+
+def task_heights(task_cfg=TASK_CFG, beaker_cfg=BEAKER_CFG):
+    """The scene heights of a task layout (scene_heights), read once from the task model (no simulation step, no cameras) and kept for the process.
+
+    Args:
+        task_cfg (dict): TASK_CFG or a layout of the same scene. Defaults to TASK_CFG.
+        beaker_cfg (dict): BEAKER_CFG. Defaults to it.
+
+    Returns:
+        dict: As scene_heights.
+    """
+    key = (task_cfg["scene"], tuple(task_cfg["beaker_xy"]), tuple(task_cfg["hotplate_xy"]), task_cfg["beaker_settle_clearance"], beaker_cfg["height"])
+    if key not in _HEIGHTS:
+        sim = load_task(task_cfg, cameras=False, beaker_cfg=beaker_cfg)
+        _HEIGHTS[key] = scene_heights(sim.model, sim.data, task_cfg, beaker_cfg)
+    return dict(_HEIGHTS[key])
+
+
 def apply_task_poses(model, data, cfg=TASK_CFG):
     """Writes the object poses from the config into the model and data, without stepping.
 

@@ -39,6 +39,8 @@ from src.task_config import BEAKER_CFG, BENCH_STANCE_CFG, PICK_PLACE_CFG, STANCE
 from src.arm_collision import bench_geoms
 from src.stance_passes import ArmPoses, classify, evaluate_cell
 from src.world_collision import bench_boxes, boxes_from_world
+from src.task_beaker_hotplate import bench_top_z
+from src.task_points import CARRY_LIFT_M, plate_top_z
 from src.task_points import ABOVE_M
 
 
@@ -57,7 +59,6 @@ class StanceContext:
         maps (dict): The left arm's reach maps ({(side, bin): ReachMap}).
         extra (callable): bench_stance.make_extra_blocked of the scene: the furniture footprint, the arms-at-home clearance and the creep-in path.
         bench (dict): {"yaw", "open"}.
-        bench_top (float): The bench top's height above the floor.
         world (WorldModel): The scene's objects read from the simulator (SimGroundTruthSource); the selection and the home clearance use it.
         near (float): The bench's near edge along the facing direction (the object's depth is its position along it minus this).
     """
@@ -67,7 +68,6 @@ class StanceContext:
         from src.home_clearance_map import HomeClearanceMap
         from src.stance_checks import StanceChecks
         from src.stance_finder import robot_geometry
-        from src.task_beaker_hotplate import bench_top_z
         self.model, self.data, self.cfg, self.task_cfg = model, data, cfg, task_cfg
         self.rg = robot_geometry(model)
         self.chk = chk or StanceChecks(model, data, self.rg["base_z"])
@@ -84,7 +84,6 @@ class StanceContext:
         self.hcm, self._extra_held = hcm, {}
         self.extra = bs.make_extra_blocked(furn, self.rg, self.yaw, hcm.clear_mask, creep_back_m=task_cfg.get("staging_approach_back_m"))
         self.bench = {"yaw": self.yaw, "open": task_cfg["bench_open"]}
-        self.bench_top = bench_top_z(model)
         g = model.geom("bench_top")
         c, hs = data.geom_xpos[g.id], model.geom_size[g.id]
         n, _ = bs.bench_frame(self.yaw)
@@ -127,13 +126,13 @@ def _footprint(shape):
     return (float(hx), float(hy)), float(max(hx, hy))            # a box is a cylinder of its larger half size (the validated placeholder; the circumscribed circle blocks every approach to a neighbour)
 
 
-def _body(entry, base_z, shift):
+def _body(entry, base_z):
     """An entry's footprint and heights as the region needs them: (xy, half sizes, covering radius, z0, z1, kind)."""
     sh = entry.properties.get("shape")
     if sh is None:
         return None
     half, rad = _footprint(sh)
-    z0 = base_z + shift
+    z0 = base_z
     return {"xy": np.asarray(entry.position, float)[:2], "half": half, "radius": rad, "z0": z0, "z1": z0 + float(entry.properties.get("height", 0.0)), "kind": sh["kind"], "shape": sh}
 
 
@@ -166,13 +165,12 @@ def step_target(ctx, world, seg, index, say=print):
     target = dest if prim == "place" else obj
     chain = support_chain(world, target, phrase)
     root_top = float(chain[-1].properties["top_z"])
-    shift = ctx.bench_top - root_top                                  # the world model's heights are its own; the model's bench top is the floor reference of the regions
-    base_rel = top_of(chain, 1)
-    body = _body(target, base_rel, shift)
+    base_rel = top_of(chain, 1)                                       # the heights are the scene's (the world model reads them from task_beaker_hotplate.scene_heights)
+    body = _body(target, base_rel)
     if body is None:
         raise SupportError(f"surface unknown: {phrase}")
     H_obj = float(obj.properties.get("height", BEAKER_CFG["height"]))
-    target_h = info["target_height"] + shift
+    target_h = info["target_height"]
     band = BEAKER_CFG["grasp_band"]
     z_pts = band_points(target_h, H_obj, band)
     gap = PICK_PLACE_CFG["setdown_gap_m"] if prim == "place" else 0.0
@@ -189,7 +187,7 @@ def step_target(ctx, world, seg, index, say=print):
         ob["radius_shape"] = body["radius"]
     supports = []                                                     # H: the entries under the target (for a place, the destination itself carries the beaker)
     for e in (chain[0:-1] if prim == "place" else chain[1:-1]):
-        sb = _body(e, top_of(chain, chain.index(e) + 1), shift)
+        sb = _body(e, top_of(chain, chain.index(e) + 1))
         if sb is not None:
             supports.append({"kind": "cylinder" if sb["kind"] == "cylinder" else "box", "xy": sb["xy"], "half": sb["half"], "radius": sb["radius"], "z0": sb["z0"], "z1": sb["z1"]})
     ob["supports"] = supports
@@ -203,23 +201,25 @@ def step_target(ctx, world, seg, index, say=print):
             ch = support_chain(world, e, e.name)
         except SupportError:
             pass
-        b = _body(e, top_of(ch, 1) if ch and len(ch) > 1 else root_top, shift)
+        b = _body(e, top_of(ch, 1) if ch and len(ch) > 1 else root_top)
         if b is not None:
             extra.append({"name": e.id, "xy": b["xy"], "radius": b["radius"], "z0": b["z0"], "z1": b["z1"]})
     ob["extra_obstacles"] = extra
-    fwd = np.array([math.cos(ctx.yaw), math.sin(ctx.yaw)])         # the skill approaches along the robot's forward direction (plan_pick / plan_place: forward())
+    fwd = np.array([math.cos(ctx.yaw), math.sin(ctx.yaw)])         # the robot's forward direction; the pick approaches along its approach bin (M275), the place along this direction (plan_place: forward())
     zm = float(np.mean(z_pts))
     sd, rt = PICK_PLACE_CFG["standoff_m"], PICK_PLACE_CFG["retreat_m"]
     pt = lambda x, y, z, path, pose, **kw: {"p": [float(x), float(y), float(z)], "arm": "either", "bin": None, "path": path, "pose": pose, **kw}
-    # Part 5 (M183): every stop is tested at the skill's own pose. The pick's stops at exactly the skill's angle (level hand, straight forward: "pose" "skill"); the place's stops with the hand turned by
+    # Part 5 (M183, changed by M275): the place's stops are tested at the skill's own pose. The pick's stops (tagged "pose" "skill") are solved with a level hand along one approach bin, the bin the whole path passes at (M275); the place's stops with the hand turned by
     # theta about the vertical axis through the beaker's centre ("pose" "place", the pivot is the destination's centre), theta searched by the full check (FullCheck._place_window). The "above" points
     # of the old 12-point list are gone: the skill has no stop 10 cm above the set-down height (its OVER is at the carry height).
     if prim == "pick":
-        pts = [pt(xy[0], xy[1], z, "grasp", "skill") for z in z_pts]
-        pts += [pt(xy[0] - sd * fwd[0], xy[1] - sd * fwd[1], surface_z + PICK_PLACE_CFG["clearance_m"], "over", "skill"),      # OVER: a standoff back, at the clearance height
-                pt(xy[0] - sd * fwd[0], xy[1] - sd * fwd[1], zm, "standoff", "skill"),                                          # the DOWN move starts here
-                pt(xy[0], xy[1], zm + ABOVE_M, "lift", "skill"),                                                                # UP (the region's definition; the true carry height depends on the destination)
-                pt(xy[0] - rt * fwd[0], xy[1] - rt * fwd[1], zm + ABOVE_M, "back", "skill")]                                    # BACK before the arm goes home holding the beaker
+        # ONE pick path (shared-path task, 2026-11-08): the OVER, standoff, UP and BACK points are not built here. The grasp band is listed, and each of its points carries the
+        # "pick_path" spec; the full check writes the path points for each approach angle from it (task_points.expand_pick_points, task_points.pick_waypoints), the same
+        # function plan_pick uses. The stance's own heading is used there, not the staging yaw.
+        band = [{"p": [float(xy[0]), float(xy[1]), float(z)], "arm": "either", "bin": None, "path": "grasp"} for z in z_pts]
+        spec = {"beaker_xy": [float(xy[0]), float(xy[1])], "grasp_z": float(zm), "height": float(H_obj), "bench_top": float(bench_top_z(ctx.model)),
+                "carry_z_ref": plate_top_z(ctx.model, ctx.data), "band": band}
+        pts = [dict(b, pick_path=spec) for b in band]
     else:
         pv = [float(xy[0]), float(xy[1])]
         pts = [pt(xy[0], xy[1], surface_z + PICK_PLACE_CFG["grasp_height_frac"] * H_obj + PICK_PLACE_CFG["carry_gap_m"], "carry", "place", pivot=pv)]       # OVER: the beaker's bottom carry_gap_m above the plate
@@ -227,9 +227,6 @@ def step_target(ctx, world, seg, index, say=print):
         pts += [pt(xy[0] - rt * fwd[0], xy[1] - rt * fwd[1], zm + gap, "back", "place", pivot=pv)]                                                     # BACK: the retreat after the release
     ob["points"] = pts
     return ob
-
-
-CARRY_LIFT_M = 0.05          # m: the scripted pick lifts the carry height to at least this far above the grasp height of the pick (src/mpvi_modules.py plan_pick: z_carry = max(hotplate + gap, grasp + 0.05))
 
 
 def shoulder_xy(rg, arm, xy, yaw):
@@ -586,7 +583,7 @@ def select_bench_stance(tagged, world, task_cfg, ctx, cfg=BENCH_STANCE_CFG, full
                 tries.append(st)
                 break
             r = full_check.check((cand_st["xy"][0], cand_st["xy"][1], yaw, cand_st["q"]), pts)
-            st.update(full_check_ok=bool(r["ok"]), failed=list(r.get("failed", [])), reason=str(r.get("reason", ""))[:300], place=r.get("place"))
+            st.update(full_check_ok=bool(r["ok"]), failed=list(r.get("failed", [])), reason=str(r.get("reason", ""))[:300], place=r.get("place"), pick_bin=r.get("pick_bin"))      # M275: the approach bin the whole pick path passed in
             tries.append(st)
             say(f"[stance] run of steps {cand[:k]}: stance {np.round(cand_st['xy'], 3).tolist()} pedestal {cand_st['q']:.2f}: full check {'PASS' if r['ok'] else 'FAIL ' + str(r.get('failed'))}")
             if r["ok"]:
@@ -599,7 +596,7 @@ def select_bench_stance(tagged, world, task_cfg, ctx, cfg=BENCH_STANCE_CFG, full
                 rep["failure_log"] = _log_two_pass_failure(cfg, task_cfg, objs, ctx, cand[:k], tries, rep["two_pass"][-1]["rows"], say)
                 out["stop"] += f" [failure log: {rep['failure_log']}]"
             return out
-        run = {"stance": {"xy": passed["xy"], "q": passed["q"], "yaw": yaw}, "steps": list(cand[:k]), "nav": [], "place_theta_deg": (passed.get("place") or {}).get("theta_deg"), "surface": surf, "counts": passed["counts"], "score": passed["score"], "full_check": tries,
+        run = {"stance": {"xy": passed["xy"], "q": passed["q"], "yaw": yaw}, "steps": list(cand[:k]), "nav": [], "place_theta_deg": (passed.get("place") or {}).get("theta_deg"), "pick_bin": passed.get("pick_bin"), "surface": surf, "counts": passed["counts"], "score": passed["score"], "full_check": tries,
                "ranked": res["ranked"][: cfg["rank_keep"]], "overlay_run_q": [float(x) for x in res["run"]], "seconds": res["seconds"]}
         nj = _nav_before(segs, cand[0])
         if nj is not None:
@@ -628,6 +625,10 @@ def select_bench_stance(tagged, world, task_cfg, ctx, cfg=BENCH_STANCE_CFG, full
         nxt = plan2["segments"][j + 1] if j + 1 < len(plan2["segments"]) else None
         if seg["type"] == "manipulation" and seg.get("primitive") == "pick" and nxt is not None and nxt["type"] == "navigation" and (j + 1) in moving_nav and (j + 1) != min(moving_nav):
             seg["end_at_zombie"] = True
+    for r in rep["runs"]:                                             # M275: the approach bin the full check passed a run's pick path in goes to every pick step of the run
+        for i in r["steps"]:
+            if plan2["segments"][i].get("primitive") == "pick" and r.get("pick_bin") is not None:
+                plan2["segments"][i]["pick_approach_bin"] = int(r["pick_bin"])
     for r in rep["runs"]:                                             # M183: the hand turn the full check chose for a run's place goes to that place step; M184: a place step served from the current stance has its own searched angle
         for i in r["steps"]:
             if plan2["segments"][i].get("primitive") == "place":

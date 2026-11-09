@@ -709,3 +709,4 @@ RESULT 19:46 baseline+IN task: HEAD baseline done (worktree removed); IN miss at
 RESULT 20:26 guard off + logging + reruns: docs/reports/guard_off_20261108.md; no commits.
 RESULT 21:58 replay/HOME/CLOSE: docs/reports/replay_home_close_20261108.md; no commits.
 RESULT 01:03 sag layer separation + mock trim on/off: docs/reports/sag_layer_separation_20261109.md; no commits.
+RESULT 2026-11-09 12:04 overnight measurements (Parts A-D, copies oc_* outside repo, no change to HEAD 3e93f73): docs/reports/overnight_measurements_20261109.md; logs data/logs/overnight_20261109/; all runs finished (chain CD done 07:56). Decisions for David: place angle, reseed per check, pedestal at staging, place DOWN failure. Not committed to src; no push.

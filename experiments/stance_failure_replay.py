@@ -37,8 +37,11 @@ def main():
     rec = load_record(path, rid)
     stance = tuple(rec["stance_raw"])
     fc = FullCheck(maps=bs.load_maps(rec["maps_dir"]), task_cfg=TASK_CFG, say=lambda *_: None, maps_dir=rec["maps_dir"], failure_log_dir=None)
-    # the saved state: the generator, the simulation's data and the object poses, as they were before the check
-    fc.rng.bit_generator.state = rec["generator_state_before"]
+    if "seed" not in rec:                                         # M283: the check's own seed; records from before M283 have none and cannot be replayed exactly
+        raise SystemExit(f"record {rid} has no seed (written before M283); it cannot be replayed with the per-check seed")
+    seed = rec["seed"]
+    # the saved state: the simulation's data and the object poses, as they were before the check; the check's own generator is built from its saved seed (M283)
+    fc.rng = np.random.default_rng(seed)
     fc.chk.q_scene = np.asarray(rec["scene_before"]["q_scene"], float).copy()
     if "sim_state" in rec["scene_before"]:                        # M282: the whole saved simulation state, restored exactly (no forward step)
         saved = rec["scene_before"]["sim_state"]
@@ -63,7 +66,7 @@ def main():
         print(f"  {'MATCH' if ok else 'DIFFERENT'}  {name}: saved {str(saved)[:110]} | replayed {str(got)[:110]}", flush=True)
 
     t1 = time.time()
-    r = fc.check(stance, rec["points"], rec["objects"], approach_bin=rec["approach_bin"], all_angles=rec["all_angles"], use_cache=False)
+    r = fc.check(stance, rec["points"], rec["objects"], approach_bin=rec["approach_bin"], all_angles=rec["all_angles"], use_cache=False, seed=seed)
     print(f"whole check replayed in {time.time() - t1:.1f} s", flush=True)
     compare("ok", rec["result"]["ok"], r["ok"])
     compare("failed", rec["result"]["failed"], r["failed"])
@@ -73,7 +76,7 @@ def main():
         for g in GROUPS:
             fc._restore(start)
             t1 = time.time()
-            rg = fc.check(stance, rec["points"], rec["objects"], approach_bin=rec["approach_bin"], all_angles=rec["all_angles"], only=g)
+            rg = fc.check(stance, rec["points"], rec["objects"], approach_bin=rec["approach_bin"], all_angles=rec["all_angles"], only=g, seed=seed)
             saved = rec["independent"][g]
             print(f"group {g} replayed in {time.time() - t1:.1f} s", flush=True)
             compare(f"{g}: ok", saved["ok"], rg["ok"])

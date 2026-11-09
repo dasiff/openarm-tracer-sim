@@ -52,7 +52,7 @@ def main():
     fc = FullCheck(maps=bs.load_maps(MAPS), task_cfg=TASK_CFG, say=lambda *_: None, maps_dir=MAPS,
                    failure_log_dir=(None if mode == "control" else STANCE_LOG_CFG["dir"]))
     pts = build_points(fc)
-    sfl.append(out, {"event": "header", "mode": mode, "header": sfl.run_header(11), "commit": sfl.git_commit(), "points": len(pts)})
+    sfl.append(out, {"event": "header", "mode": mode, "header": sfl.run_header(None), "commit": sfl.git_commit(), "points": len(pts)})
     print(f"{mode}: fresh FullCheck and {len(pts)} points in {time.time() - t0:.1f} s", flush=True)
     for stance, i, what in cands:
         x, y, hd, q = stance

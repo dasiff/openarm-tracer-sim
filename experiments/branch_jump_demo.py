@@ -30,8 +30,9 @@ What it does (headless, kinematic, no viewer)
     commanded wrist point and the solver output's wrist point, from robot_fk_at).
   * Reach scenario only: checks the motion against the joint limits and for
     self-collision (MuJoCo contacts on Kong's bimanual model, commanded and filtered).
-  * Saves data/branch_jump/trajectory.csv and trajectory.png (reach scenario:
-    reach_trajectory.csv / reach_trajectory.png).
+  * Saves data/branch_jump/trajectory.csv and branch_jump.png (reach scenario:
+    reach_trajectory.csv / reach_trajectory.png). The PNG has one panel per affected
+    joint: commanded angle as a light line, actual (filter ON) as a dark line.
   * --video: physics with the PD controller tracking the FILTERED output (base held
     still, motor torque limits applied), rendered offscreen with EGL.
       failure scenario: data/branch_jump/branch_jump.mp4
@@ -209,51 +210,66 @@ def save_csv(path, t, cmd, out, events, gap):
                        + [flags["on"][k], flags["off"][k], f"{gap[k]:.3f}"])
 
 
-def save_plot(path, t, cmd, out, events, policy, title, seed_mode):
+def save_plot(path, t, cmd, out, thr, title, duration, hold, seed_mode):
+    """One small panel per affected joint: commanded (light) and actual (dark) angle against time.
+
+    Affected = a joint that moves more than `thr` rad in one 750 Hz step in either filter
+    case (the jump test of find_jumps). Actual = the filter-ON output, the one the robot
+    tracks. Dashed lines mark the jumps of that joint.
+    """
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
+    from matplotlib.lines import Line2D
 
     INK, INK2, GRID = "#0b0b0b", "#52514e", "#e4e3df"
-    BLUE, ORANGE, SURFACE = "#2a78d6", "#eb6834", "#fcfcfb"   # validated, CVD-safe pair
-    fig, axes = plt.subplots(2, 1, figsize=(9.5, 6.4), sharex=True, facecolor=SURFACE)
-    for ax, j in zip(axes, (3, 5)):
+    CMD_LIGHT, ACT_DARK, SURFACE = "#9ec1e6", "#153a66", "#fcfcfb"
+    affected = sorted({j for k in out for j in range(7)
+                       if np.abs(np.diff(out[k][:, j])).max() > thr})
+    if not affected:                                          # no jump: show every joint
+        affected = list(range(7))
+    n = len(affected)
+    fig, axes = plt.subplots(n, 1, figsize=(9.5, 1.9 * n + 1.6), sharex=True, facecolor=SURFACE,
+                             squeeze=False)
+    axes = axes[:, 0]
+    for ax, j in zip(axes, affected):
         ax.set_facecolor(SURFACE)
-        ax.plot(t, cmd[:, j - 1], color="#8c8b86", lw=1.4, ls=":", label="commanded", zorder=2)
-        ax.plot(t, out["off"][:, j - 1], color=ORANGE, lw=3.2, alpha=0.95,
-                label="solver output, filter OFF (IK only)", zorder=3)
-        ax.plot(t, out["on"][:, j - 1], color=BLUE, lw=1.4,
-                label="solver output, filter ON (real case)", zorder=4)
-        for key in ("off", "on"):
-            for e in events[key]:
-                ax.axvline(e["t"], color=INK2, lw=1.0, ls="--", zorder=1)
-        ax.set_ylabel(f"joint {j} (rad)", color=INK)
+        ax.plot(t, cmd[:, j], color=CMD_LIGHT, lw=2.4, solid_capstyle="round", zorder=2)
+        ax.plot(t, out["on"][:, j], color=ACT_DARK, lw=1.3, zorder=3)
+        # every 750 Hz step where this joint moves more than thr, in either filter case
+        jumps = sorted({(int(k), float(t[k]), float(out[f][k, j] - out[f][k - 1, j]))
+                        for f in out for k in np.where(np.abs(np.diff(out[f][:, j])) > thr)[0] + 1})
+        for _, tj, _ in jumps:
+            ax.axvline(tj, color=INK2, lw=0.9, ls="--", zorder=1)
+        if jumps:
+            _, tj, dj = max(jumps, key=lambda e: abs(e[2]))
+            head = (f"joint {j + 1}: jump {dj:+.2f} rad at t = {tj:.3f} s "
+                    f"({abs(dj) / DT:.0f} rad/s in one {1000 * DT:.2f} ms step)")
+            if len(jumps) > 1:
+                head += f"; {len(jumps)} steps above {thr} rad"
+        else:
+            head = f"joint {j + 1}: no jump above {thr} rad per step"
+        ax.set_title(head, loc="left", fontsize=9, color=INK)
+        ax.set_ylabel("angle (rad)", color=INK, fontsize=9)
         ax.grid(color=GRID, lw=0.8)
-        ax.tick_params(colors=INK2)
+        ax.tick_params(colors=INK2, labelsize=8)
         for side in ("top", "right"):
             ax.spines[side].set_visible(False)
         for side in ("left", "bottom"):
             ax.spines[side].set_color("#b9b8b2")
-    first = min((e for ev in events.values() for e in ev), key=lambda e: e["t"], default=None)
-    if first is not None:
-        d = "; ".join(f"j{j} {first['delta'][j - 1]:+.2f} rad" for j in first["joints"])
-        axes[0].annotate(f"branch jump at t = {first['t']:.2f} s\n{d}\n"
-                         f"in one {1000 * DT:.2f} ms step ({first['speed']:.0f} rad/s)",
-                         xy=(first["t"], out["off"][first["step"], 2] / 2 + 0.5),
-                         xytext=(0.20, 0.50), textcoords="axes fraction", color=INK,
-                         fontsize=9, va="center",
-                         arrowprops=dict(arrowstyle="->", color=INK2, lw=1.0))
-    axes[1].set_xlabel("time (s)", color=INK)
-    axes[0].legend(loc="upper left", frameon=False, labelcolor=INK2, fontsize=9)
-    fig.suptitle(title, color=INK, fontsize=11, x=0.01, ha="left")
+    axes[-1].set_xlabel("time (s)", color=INK)
+    fig.legend(handles=[Line2D([], [], color=CMD_LIGHT, lw=2.4, label="commanded angle (what the controller asks for)"),
+                        Line2D([], [], color=ACT_DARK, lw=1.3, label="actual angle (solver output, filter ON: what the robot tracks)")],
+               loc="upper right", bbox_to_anchor=(0.99, 0.985), frameon=False, labelcolor=INK2, fontsize=8.5)
+    fig.suptitle(title, color=INK, fontsize=11, x=0.01, ha="left", y=0.995)
     gap = float(np.abs(out["on"] - out["off"]).max())
     same = ("Filter ON and OFF overlap (max difference "
             f"{gap:.1e} rad): the jump is the IK, not the filter." if gap < 1e-3 else
             f"Filter ON and OFF differ by up to {gap:.2f} rad.")
-    fig.text(0.01, 0.005, f"{policy.duration:g} s move then hold; 750 Hz; solver seeded with its "
+    fig.text(0.01, 0.005, f"{duration:g} s move then {hold:g} s hold; 750 Hz; solver seeded with its "
              f"{'previous output' if seed_mode == 'previous' else 'command'}. "
-             f"Dashed line = jump.\n{same}", color=INK2, fontsize=8)
-    fig.tight_layout(rect=(0, 0.04, 1, 0.96))
+             f"Dashed line = jump (either filter case).\n{same}", color=INK2, fontsize=8)
+    fig.tight_layout(rect=(0, 0.04, 1, 0.93))
     fig.savefig(path, dpi=150, facecolor=SURFACE)
 
 
@@ -646,8 +662,9 @@ def main():
     out_dir = PROJECT_ROOT / args.out
     out_dir.mkdir(parents=True, exist_ok=True)
     save_csv(out_dir / f"{prefix}trajectory.csv", t, cmd, out, events, gap)
-    save_plot(out_dir / f"{prefix}trajectory.png", t, cmd, out, events, policy, title, args.seed_mode)
-    print(f"\nSaved {out_dir / (prefix + 'trajectory.csv')}\nSaved {out_dir / (prefix + 'trajectory.png')}")
+    png = out_dir / ("reach_trajectory.png" if reach else "branch_jump.png")
+    save_plot(png, t, cmd, out, args.jump_threshold, title, duration, hold, args.seed_mode)
+    print(f"\nSaved {out_dir / (prefix + 'trajectory.csv')}\nSaved {png}")
     if reach and (args.video or args.check_sag):
         sag = hold_check(policy, [("start pose", out["on"][0], cmd[0]),
                                   ("fully extended pose", out["on"][-1], cmd[-1])])

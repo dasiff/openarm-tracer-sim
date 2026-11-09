@@ -677,7 +677,7 @@ def apply_stance_selection(tagged, task_cfg, maps_dir="data/reach_map", cfg=BENC
     import gc
     from src.full_check import FullCheck
     maps = bs.load_maps(maps_dir, sides=(cfg["arm"],))
-    fc = FullCheck(maps={**bs.load_maps(maps_dir)}, task_cfg=task_cfg)
+    fc = FullCheck(maps={**bs.load_maps(maps_dir)}, task_cfg=task_cfg, maps_dir=maps_dir)
     ctx = make_context(fc.model, fc.scene_data, maps, task_cfg, cfg, chk=fc.chk, say=say)
     try:
         return select_bench_stance(tagged, ctx.world, task_cfg, ctx, cfg, full_check=fc, say=say)

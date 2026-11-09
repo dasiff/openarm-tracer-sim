@@ -16,9 +16,12 @@ sys.path.insert(0, str(PROJECT_ROOT))
 sys.path.insert(0, str(PROJECT_ROOT / "experiments"))
 
 import mpvi_pipeline_test as T  # noqa: E402
+from src import stance_failure_log as sfl
 from src.task_config import NAV_CFG  # noqa: E402
 
 if __name__ == "__main__":
+    import json
+    print("run header (M281, generator state at the start of this run):", json.dumps(sfl.jsonable(sfl.run_header(11))), flush=True)
     ap = argparse.ArgumentParser()
     ap.add_argument("--keep")
     args = ap.parse_args()

@@ -26,6 +26,7 @@ if not os.environ.get("DISPLAY"):
 
 import numpy as np  # noqa: E402
 
+from src import stance_failure_log as sfl
 from src.episode_runner import run_episode  # noqa: E402
 from src.elbow_clearance_log import make_elbow_clearance_monitor, write_elbow_clearance  # noqa: E402
 from src.mpvi_pipeline import make_pipeline_task  # noqa: E402
@@ -46,6 +47,7 @@ def check(name, ok, detail=""):
 
 
 def main(args):
+    print("run header (M281, generator state at the start of this run):", json.dumps(sfl.jsonable(sfl.run_header(11))), flush=True)
     sim = load_task(cameras=True)
     task = make_pipeline_task()
     out = Path(args.keep) if args.keep else Path(tempfile.mkdtemp(prefix="mpvi_pipeline_"))

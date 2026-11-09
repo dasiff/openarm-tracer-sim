@@ -17,6 +17,8 @@ sys.path.insert(0, REPO)
 
 import mujoco  # noqa: E402
 
+import json
+from src import stance_failure_log as sfl
 from src.chunk_player import ChunkPlayer  # noqa: E402
 from src.mock_policy import MockPolicy, adapter_state, make_mock_source  # noqa: E402
 from src.open_catch import SourceGate  # noqa: E402
@@ -263,6 +265,7 @@ def case_i(model, data, tmpdir):
 
 
 def main():
+    print("run header (M281, generator state at the start of this run):", json.dumps(sfl.jsonable(sfl.run_header(11))), flush=True)
     model, data = robot()
     with tempfile.TemporaryDirectory() as tmp:
         results = [case_a(model, data), case_b(model, data), case_c(model, data), case_d(model, data), case_e(model, data),

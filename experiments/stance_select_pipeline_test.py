@@ -27,6 +27,7 @@ if not os.environ.get("DISPLAY"):
 
 import numpy as np  # noqa: E402
 
+from src import stance_failure_log as sfl
 from src.episode_runner import run_episode  # noqa: E402
 from src.mpvi_pipeline import make_pipeline_task  # noqa: E402
 from src.replay import replay_run  # noqa: E402
@@ -43,6 +44,7 @@ def check(name, ok, detail=""):
 
 
 def main():
+    print("run header (M281, generator state at the start of this run):", json.dumps(sfl.jsonable(sfl.run_header(11))), flush=True)
     print("1. the selection (inside make_pipeline_task)", flush=True)
     t0 = time.perf_counter()
     task = make_pipeline_task(PLAN4)

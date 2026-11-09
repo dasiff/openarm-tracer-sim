@@ -27,6 +27,7 @@ if not os.environ.get("DISPLAY"):
 import numpy as np  # noqa: E402
 
 from src.episode_runner import run_episode  # noqa: E402
+from src.elbow_clearance_log import make_elbow_clearance_monitor, write_elbow_clearance  # noqa: E402
 from src.mpvi_pipeline import make_pipeline_task  # noqa: E402
 from src.replay import replay_run  # noqa: E402
 from src.robot_helpers import arm_ids  # noqa: E402
@@ -54,9 +55,11 @@ def main(args):
 
     def extra(m, d):
         mon["m"] = make_clearance_monitor(m, d)
-        return {"clearance": mon["m"]}
+        mon["elbow"] = make_elbow_clearance_monitor(m, d)                       # logging only: the elbow height and the bench contact per arm
+        return {"clearance": mon["m"], "elbow": mon["elbow"]}
 
     s = run_episode(task, sim.model, sim.data, out_dir=out / "episode", record_dir=out / "recording", extra_sources=extra)
+    write_elbow_clearance(mon["elbow"], out / "elbow_clearance.json")
     pipe = task["pipeline"]
     state = pipe["orchestrator"]["state"]
     rep = s.get("report", s)

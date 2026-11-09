@@ -28,6 +28,7 @@ if not os.environ.get("DISPLAY"):
 import numpy as np  # noqa: E402
 
 from src.episode_runner import run_episode  # noqa: E402
+from src.elbow_clearance_log import make_elbow_clearance_monitor, write_elbow_clearance  # noqa: E402
 from src.full_check import FullCheck  # noqa: E402
 from src.mpvi_pipeline import make_pipeline_task  # noqa: E402
 from src.replay import replay_run  # noqa: E402
@@ -76,7 +77,16 @@ def main():
     print("\n3. the pipeline on the moved scene", flush=True)
     sim = load_task(MOVED, cameras=True)
     out = Path(tempfile.mkdtemp(prefix="stance_moved_"))
-    s = run_episode(task, sim.model, sim.data, out_dir=out / "episode", record_dir=out / "recording")
+    elbow = {}
+
+    def extra(m, d):                                 # logging only: the elbow height and the bench contact per arm
+        elbow["m"] = make_elbow_clearance_monitor(m, d)
+        return {"elbow": elbow["m"]}
+
+    s = run_episode(task, sim.model, sim.data, out_dir=out / "episode", record_dir=out / "recording", extra_sources=extra)
+    elbow_json = Path("data/logs/stance_select_moved_elbow_clearance.json")                 # kept (the temporary folder is removed below)
+    write_elbow_clearance(elbow["m"], elbow_json)
+    print(f"  elbow clearance log: {elbow_json}")
     state = task["pipeline"]["orchestrator"]["state"]
     print(f"  outcome {s['outcome']}; plan failure {state['failure']}; status {state['status']}")
     check("the episode outcome is SUCCESS", s["outcome"] == "SUCCESS", f"{s['outcome']}; failure {state['failure']}")

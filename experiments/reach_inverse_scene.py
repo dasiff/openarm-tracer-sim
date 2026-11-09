@@ -23,12 +23,12 @@ from src import bench_stance as bs  # noqa: E402
 from src import reach_model as rm  # noqa: E402
 from src.full_check import FullCheck  # noqa: E402
 from src.task_beaker_hotplate import bench_top_z  # noqa: E402
-from src.task_config import BEAKER_CFG, BENCH_STANCE_CFG, PICK_PLACE_CFG, TASK_CFG  # noqa: E402
+from src.task_config import BEAKER_CFG, PICK_PLACE_CFG, TASK_CFG  # noqa: E402
 from src.task_points import task_points  # noqa: E402
 
 MAPS = "data/reach_map_before_bench"              # the filtered maps (David)
 ARM = "left"
-PEDESTAL = BENCH_STANCE_CFG["pedestal_override_m"]        # 0.16 m, the staging pedestal (the pedestal the shoulder was read at)
+PEDESTAL = 0.16                                   # m, the pedestal the saved shoulder reading was taken at (data/reach_heatmap/shoulder_q016.json); a fixed reference of this study, not the run's pedestal (M284)
 HEADING = TASK_CFG["staging_yaw"]                 # -90 deg, facing the bench
 LAYOUTS = {
     "standard": dict(TASK_CFG),

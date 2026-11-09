@@ -536,6 +536,7 @@ STANCE_LOG_CFG = {
     "on": True,                             # on/off: write the logs below for every computed check (not cache hits). Off = no files written, no answer changes.
     "dir": "data/logs/stance_failures",     # folder: checks.jsonl (every computed check: its input, its generator state before it, its answer) and failures.jsonl (the failed ones, plus each check group run on its own)
     "independent_checks": True,             # on/off: after a failed check, run each check group alone from the same start state (clearance, body, ik, place, view, occlusion); costs extra time on failures only
+    "full_state": True,                     # on/off: save the whole simulation state in each record (MuJoCo's full-physics state: warm start, ctrl, act, time, mocap, plus the derived kinematics and mass matrix); about 2 to 3 KB more per record (M282)
 }
 
 # Navigation core (src/nav_*.py; overnight queue stage 2; navigation proposal docs/reports/20261021_2121_navigation_design.md). Names follow Nav2 where an equivalent exists (proposal section 11).

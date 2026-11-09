@@ -9,6 +9,7 @@ import subprocess
 import time
 from pathlib import Path
 
+import mujoco
 import numpy as np
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -50,3 +51,25 @@ def run_header(seed):
     """The generator state at the start of a run: the state of default_rng(seed) before any draw. Printed in the header of each pipeline or mock run's log."""
     return {"fullcheck_rng_seed": seed, "fullcheck_rng_state_at_start": np.random.default_rng(seed).bit_generator.state,
             "python_random": "not seeded (OS entropy); used only for the LLM retry delay (src/llm_gemini.py), never in a check", "time": time.strftime("%Y-%m-%d %H:%M:%S")}
+
+
+# The derived arrays of the simulation's data that a restore must also put back (M282): the kinematics of every body, joint, geom, site and camera, and the mass matrix.
+# They are saved with the physics state so that a replay starts from exactly the state the check saw, with no forward step of its own.
+DERIVED_ARRAYS = ("xpos", "xquat", "xmat", "xipos", "ximat", "xanchor", "xaxis", "geom_xpos", "geom_xmat", "site_xpos", "site_xmat", "cam_xpos", "cam_xmat",
+                  "subtree_com", "cdof", "cinert", "qM", "qLD", "qLDiagInv", "qacc", "actuator_force", "qfrc_bias", "qfrc_passive")
+
+
+def save_sim_state(model, data):
+    """The full physics state (MuJoCo's own state save, mjSTATE_FULLPHYSICS: time, qpos, qvel, act, ctrl, the solver's warm start, mocap, user data) and the derived arrays of `data`.
+    Plain numbers, so a JSON record holds them exactly."""
+    sig = mujoco.mjtState.mjSTATE_FULLPHYSICS
+    phys = np.zeros(mujoco.mj_stateSize(model, sig))
+    mujoco.mj_getState(model, data, phys, sig)
+    return {"signature": "mjSTATE_FULLPHYSICS", "physics": phys, "derived": {k: np.asarray(getattr(data, k), float).copy() for k in DERIVED_ARRAYS}}
+
+
+def restore_sim_state(model, data, saved):
+    """Puts back what `save_sim_state` saved: the physics state with MuJoCo's own state load, then the derived arrays as they were (no forward step, so a stale derived value is restored as it was)."""
+    mujoco.mj_setState(model, data, np.asarray(saved["physics"], float), mujoco.mjtState.mjSTATE_FULLPHYSICS)
+    for k, v in saved["derived"].items():
+        getattr(data, k)[...] = np.asarray(v, float)

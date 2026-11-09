@@ -25,6 +25,7 @@ Contents:
 import copy
 import hashlib
 import math
+import os
 import time
 
 import mujoco
@@ -42,12 +43,16 @@ from src.stance_finder import robot_geometry
 from src.task_beaker_hotplate import bench_top_z, load_task
 from src.robot_specs import EAGLE_MOUNT
 from src.task_points import task_points  # noqa: F401  (moved to src/task_points.py; kept importable from here)
-from src.task_config import BEAKER_CFG, FULLCHECK_CFG, PICK_PLACE_CFG, STAGING_CFG, STANCE_REQUIREMENTS, TASK_CFG
+from src import stance_failure_log as sfl
+from src.task_config import BEAKER_CFG, FULLCHECK_CFG, PICK_PLACE_CFG, STAGING_CFG, STANCE_LOG_CFG, STANCE_REQUIREMENTS, TASK_CFG
 from src.task_points import expand_pick_points
 
 SIDE = "left"
 SLOT_PARK = (0.0, 0.0, -5.0)
 HAND_BODIES = ("openarm_left_hand", "openarm_left_right_finger", "openarm_left_left_finger")
+# The check groups, in the order check() runs them, and the group that answers each failed-check name (M281: a failed check also gets every group run on its own)
+GROUPS = ("clearance", "body", "ik", "place", "view", "occlusion")
+GROUP_OF = {"home_clearance": "clearance", "placed_beaker": "clearance", "body": "body", "ik": "ik", "place_angle_window": "place", "view": "view", "occlusion": "occlusion"}
 
 
 def add_object_slots(spec, n):
@@ -230,7 +235,7 @@ class FullCheck:
         seconds (dict): Seconds spent per part in the last check.
     """
 
-    def __init__(self, cfg=FULLCHECK_CFG, maps=None, task_cfg=TASK_CFG, say=print):
+    def __init__(self, cfg=FULLCHECK_CFG, maps=None, task_cfg=TASK_CFG, say=print, maps_dir=None, failure_log_dir=STANCE_LOG_CFG["dir"]):
         """Loads the simulation (once), builds the checks.
 
         Args:
@@ -238,6 +243,8 @@ class FullCheck:
             maps (dict or None): {("left", bin): ReachMap} (src/reach_map.load_map), used to order the approach directions of a point without a required one. Defaults to None: ordered by the angle only.
             task_cfg (dict): TASK_CFG (the scene). Defaults to it.
             say (callable): Where progress lines go. Defaults to print.
+            maps_dir (str or None): The folder the maps were read from, saved in each log record so a replay can load the same maps. Defaults to None.
+            failure_log_dir (str or None): Where the stance check logs go (M281, STANCE_LOG_CFG). None writes nothing (the replay uses this). Defaults to the configured folder, if logging is on.
         """
         self.cfg, self.maps, self.say = cfg, maps or {}, say
         self.pose_ik_log = []                                  # one entry per IK batch of a skill stop (see _log_ik)
@@ -267,12 +274,23 @@ class FullCheck:
         self._slots = [g for g in range(m.ngeom) if (m.geom(g).name or "").startswith("fc_slot")]
         self._checkers = {}
         self.rng = np.random.default_rng(11)
+        self.maps_dir = maps_dir
+        self.failure_log_dir = failure_log_dir if STANCE_LOG_CFG["on"] else None      # M281: logs only, see _log_computed
+        self.run_id = f"{os.getpid()}-{time.strftime('%Y%m%d%H%M%S')}"
+        self.check_n = 0
+        self._measure = {}                                          # the measured values of the last check's group (read by _log_computed)
         self.zombie_q = np.array(TASK_CFG[f"home_q_{SIDE}"], float)    # the arm's start pose (the zombie pose): where the robot's own solver starts a skill
         self.start_log = []                                         # one entry per solved stop (see _log_stop): how it was started, whether a random rescue was used
         self.cache = {}
         self.stats, self.seconds = {}, {}
         self.start_log = []
         self.load_seconds = time.perf_counter() - t0
+        if self.failure_log_dir is not None:                        # the run header: the generator state at the start of this run (M281)
+            self.commit, self.dirty = sfl.git_commit()
+            self.checks_path = os.path.join(self.failure_log_dir, "checks.jsonl")
+            self.failures_path = os.path.join(self.failure_log_dir, "failures.jsonl")
+            sfl.append(self.checks_path, {"event": "run_start", "run": self.run_id, "time": time.strftime("%Y-%m-%d %H:%M:%S"), "commit": self.commit, "dirty": self.dirty,
+                                          "generator_state_at_start": self.rng.bit_generator.state, "maps_dir": self.maps_dir, "config": self._config_in_force()})
         self.objects = []
         self._beaker_free = m.joint("task_beaker_free").qposadr[0]
 
@@ -567,8 +585,64 @@ class FullCheck:
         the error stances, on the "place" points only. Returns the `_place_window` dict ("theta_deg" None and "reason" when there is no window)."""
         return self._place_window(self._error_stances(tuple(stance)), place_pts)
 
+    # ------------------------------------------------------------------ logs (M281)
+    def _config_in_force(self):
+        """The settings a check's answer depends on, saved with each log run (the replay compares them with the current ones)."""
+        return {"FULLCHECK_CFG": self.cfg, "STANCE_REQUIREMENTS": STANCE_REQUIREMENTS, "PICK_PLACE_CFG": {"tol_m": PICK_PLACE_CFG["tol_m"], "tol_rad": PICK_PLACE_CFG["tol_rad"]},
+                "STANCE_LOG_CFG": STANCE_LOG_CFG, "TASK_CFG_home": {"home_q_left": TASK_CFG["home_q_left"], "home_q_right": TASK_CFG["home_q_right"]}}
+
+    def _snapshot(self):
+        """What a check reads at its start: the generator's state, the simulation's whole data (copied, so the restore is exact) and the check's scene copy of the object poses."""
+        d = mujoco.MjData(self.model)
+        mujoco.mj_copyData(d, self.model, self.scene_data)
+        return {"rng": copy.deepcopy(self.rng.bit_generator.state), "data": d, "q_scene": self.chk.q_scene.copy(), "start_log": list(self.start_log), "pose_ik_log": list(self.pose_ik_log)}
+
+    def _restore(self, snap):
+        """Puts back a `_snapshot` (the generator, the simulation's data, the object poses, the logs of the stops and IK batches). The log lists are restored in place, entries and all."""
+        self.rng.bit_generator.state = copy.deepcopy(snap["rng"])
+        mujoco.mj_copyData(self.scene_data, self.model, snap["data"])
+        self.chk.q_scene = snap["q_scene"].copy()
+        self.start_log[:] = snap["start_log"]
+        self.pose_ik_log[:] = snap["pose_ik_log"]
+
+    def _log_computed(self, stance, points, objects, approach_bin, all_angles, key, res, start):
+        """The log lines of one computed check (M281, STANCE_LOG_CFG). Every computed check gets a line in checks.jsonl: its input, the generator state before it, and its answer.
+        A failed check also gets a line in failures.jsonl: every check group run on its own from the same start (`independent`), and the measured value against its limit.
+        Only reads and writes files. The state is put back afterwards and the answer is already cached and returned, so nothing here changes a result."""
+        self.check_n += 1
+        end = self._snapshot()
+        x, y, th, q0 = stance
+        heights = [float(np.clip(q0 + off, 0.0, robot_specs.PEDESTAL_SPECS["range"][1])) for off in self.cfg["height_offsets"]]
+        hp = self.model.body("task_hotplate").id
+        beaker_free = self._beaker_free
+        rec = {"id": f"{self.run_id}-{self.check_n}", "run": self.run_id, "n": self.check_n, "time": time.strftime("%Y-%m-%d %H:%M:%S"), "commit": self.commit, "dirty": self.dirty,
+               "stance": {"x": x, "y": y, "heading_deg": math.degrees(th), "pedestal": q0}, "stance_raw": [x, y, th, q0], "arm": SIDE,
+               "tasks": _ordered_tasks(points), "approach_bin": approach_bin, "all_angles": all_angles,
+               "points": points, "objects": list(objects), "pedestal_heights": heights,
+               "object_positions": {"beaker_free_joint_q": start["q_scene"][beaker_free:beaker_free + 7], "hotplate_body_pos": self.model.body_pos[hp]},
+               "generator_state_before": start["rng"], "scene_before": {"qpos": start["data"].qpos, "qvel": start["data"].qvel, "q_scene": start["q_scene"]},
+               "maps_dir": self.maps_dir, "cache_key": key[:12], "result": {"ok": res["ok"], "failed": res["failed"], "reason": res["reason"]},
+               "approach_angles_passing": res.get("task_angle_lists", []), "config": self._config_in_force()}
+        sfl.append(self.checks_path, rec)
+        if res["ok"]:
+            return
+        groups = {}
+        if STANCE_LOG_CFG["independent_checks"]:
+            saved_stats, saved_seconds = self.stats, self.seconds
+            for g in GROUPS:
+                self._restore(start)
+                r = self.check(stance, points, objects, approach_bin=approach_bin, all_angles=all_angles, only=g)
+                groups[g] = {"ok": r["ok"], "failed": r["failed"], "reason": r["reason"], "measured": self._measure.get(g)}
+            self.stats, self.seconds = saved_stats, saved_seconds
+            self._restore(end)
+        first = GROUP_OF.get(res["failed"][0]) if res["failed"] else None
+        rec["first_failed_group"] = first
+        rec["independent"] = groups
+        rec["independent_matches_check"] = None if first is None or first not in groups else (groups[first]["failed"] == res["failed"] and groups[first]["reason"] == res["reason"])
+        sfl.append(self.failures_path, rec)
+
     # ------------------------------------------------------------------ the check
-    def check(self, stance, points, objects=(), source_data=None, approach_bin=None, use_cache=True, all_angles=False):
+    def check(self, stance, points, objects=(), source_data=None, approach_bin=None, use_cache=True, all_angles=False, only=None):
         """The full check of a stance candidate.
 
         Args:
@@ -578,6 +652,9 @@ class FullCheck:
             source_data (mujoco.MjData or None): A running simulation's data, read for the object poses (never changed). Defaults to None: the check's own scene.
             approach_bin (int or None): A required approach direction for every point that has none of its own. Defaults to None.
             use_cache (bool): Reuse the answer if nothing it depends on has changed. Defaults to True.
+            all_angles (bool): Part of the cache key (the caller's choice of the angles). Defaults to False.
+            only (str or None): None runs the whole check (it stops at its first failing item, and is cached and logged). A group name ("clearance", "body", "ik", "place", "view", "occlusion")
+                runs that one check alone: every item of the group is evaluated, with no cache and no log (the diagnostic that `_log_computed` runs after a failure, M281).
 
         Returns:
             dict: "ok", "failed" (names), "reason", "heights" (per height: the clearances, the view margin and the occlusion numbers), "ik" (per error stance: ok, the failed point, sources), "seconds"
@@ -588,12 +665,15 @@ class FullCheck:
             self.sync(source_data)
         self.set_objects(list(objects))
         key = self._key(stance, points, objects, (approach_bin, all_angles))
-        if use_cache and key in self.cache:
+        if only is None and use_cache and key in self.cache:
             r = dict(self.cache[key])
             r.update(cached=True, seconds={"total": round(time.perf_counter() - t_all, 4)})
             return r
         cfg, chk = self.cfg, self.chk
         self.stats, self.seconds = {}, {}
+        self._measure = {}
+        start = self._snapshot() if only is None and self.failure_log_dir is not None else None
+        early = only is None                 # the whole check stops at its first failing item (as it always did); a single group runs every item, for the diagnostic
         x, y, th, q0 = stance
         heights = [float(np.clip(q0 + off, 0.0, robot_specs.PEDESTAL_SPECS["range"][1])) for off in cfg["height_offsets"]]
         res = {"ok": False, "failed": [], "reason": "", "heights": [], "ik": [], "cached": False, "key": key[:12], "stance": [float(v) for v in stance]}
@@ -602,7 +682,10 @@ class FullCheck:
             res.update(ok=not failed, failed=failed, reason=reason, stats=dict(self.stats))
             self.seconds["total"] = time.perf_counter() - t_all
             res["seconds"] = {k: round(v, 3) for k, v in self.seconds.items()}
-            self.cache[key] = res
+            if only is None:
+                self.cache[key] = res
+                if start is not None:
+                    self._log_computed(stance, points, objects, approach_bin, all_angles, key, res, start)
             return res
 
         def timed(name, fn, *a, **k):
@@ -610,88 +693,149 @@ class FullCheck:
             out = fn(*a, **k)
             self.seconds[name] = self.seconds.get(name, 0.0) + time.perf_counter() - t0
             return out
+        fails = []                           # a single group: its failing items in order (the first one is its answer)
         # 1. clearances at the heights
-        for h in heights:
-            st = (x, y, th, h)
-            hc = timed("clearance", chk.home_clearance, st)
-            pb = timed("clearance", chk.beaker_on_hotplate_clearance, st)
-            row = {"q": h, "home_clearance_mm": 1000 * hc["arms"], "home_pair": hc["arms_pair"], "placed_beaker_mm": None if pb is None else 1000 * pb}
-            res["heights"].append(row)
-            if hc["arms"] < STANCE_REQUIREMENTS["home_min_clearance"]:
-                return finish(["home_clearance"], f"at pedestal {h:.3f} the arms at home are {1000 * hc['arms']:.0f} mm from {hc['arms_pair']} (the limit is {1000 * STANCE_REQUIREMENTS['home_min_clearance']:.0f} mm)")
-            if pb is not None and pb < STANCE_REQUIREMENTS["placed_beaker_min_clearance"]:
-                return finish(["placed_beaker"], f"at pedestal {h:.3f} the arms at home are {1000 * pb:.0f} mm from a beaker placed on the hotplate")
+        if only in (None, "clearance"):
+            meas = []
+            for h in heights:
+                st = (x, y, th, h)
+                hc = timed("clearance", chk.home_clearance, st)
+                pb = timed("clearance", chk.beaker_on_hotplate_clearance, st)
+                row = {"q": h, "home_clearance_mm": 1000 * hc["arms"], "home_pair": hc["arms_pair"], "placed_beaker_mm": None if pb is None else 1000 * pb}
+                res["heights"].append(row)
+                meas.append({"q": h, "home_clearance_mm": row["home_clearance_mm"], "home_pair": hc["arms_pair"], "limit_mm": 1000 * STANCE_REQUIREMENTS["home_min_clearance"],
+                             "placed_beaker_mm": row["placed_beaker_mm"], "placed_limit_mm": 1000 * STANCE_REQUIREMENTS["placed_beaker_min_clearance"]})
+                if hc["arms"] < STANCE_REQUIREMENTS["home_min_clearance"]:
+                    f = (["home_clearance"], f"at pedestal {h:.3f} the arms at home are {1000 * hc['arms']:.0f} mm from {hc['arms_pair']} (the limit is {1000 * STANCE_REQUIREMENTS['home_min_clearance']:.0f} mm)")
+                    if early:
+                        return finish(*f)
+                    fails.append(f)
+                if pb is not None and pb < STANCE_REQUIREMENTS["placed_beaker_min_clearance"]:
+                    f = (["placed_beaker"], f"at pedestal {h:.3f} the arms at home are {1000 * pb:.0f} mm from a beaker placed on the hotplate")
+                    if early:
+                        return finish(*f)
+                    fails.append(f)
+            self._measure["clearance"] = meas
+            if fails:
+                return finish(*fails[0])
         # 2. the IK path check: the nominal stance and each error on its own
         stances = self._error_stances((x, y, th, q0))
         place_pts = [pt for pt in points if pt.get("pose") == "place"]
         points = [pt for pt in points if pt.get("pose") != "place"]      # the place points are tested over the hand turns below (P3 part 5, M183)
-        for name, s in stances:
-            bd, pair = timed("body", self.clear.body_distance, s)
-            if bd <= cfg["body_clearance"]:
-                res["ik"].append({"stance": name, "ok": False, "failed_point": None})
-                return finish(["body"], f"at the stance '{name}' the robot touches {pair}")
+        if only in (None, "body"):
+            meas = []
+            for name, s in stances:
+                bd, pair = timed("body", self.clear.body_distance, s)
+                meas.append({"stance": name, "body_m": bd, "pair": pair, "limit_m": cfg["body_clearance"]})
+                if bd <= cfg["body_clearance"]:
+                    res["ik"].append({"stance": name, "ok": False, "failed_point": None})
+                    f = (["body"], f"at the stance '{name}' the robot touches {pair}")
+                    if early:
+                        return finish(*f)
+                    fails.append(f)
+            self._measure["body"] = meas
+            if fails:
+                return finish(*fails[0])
         # M279 (David, 2026-11-08): each task is solved on its own. A pick task (one pick step) is tried along every approach angle (the bins, or the one given); its
         # list is the bins that pass its whole path at every error stance (the nominal stance first; a later stance starts from the nominal solution, as before).
         # The stance passes only if every task has at least one passing angle (approach_angle.combine_task_lists). The lists go to the stance selection and to execution.
         bins = [approach_bin] if approach_bin is not None else list(range(self.C["n_bins"]))
         task_lists = []
         pick_tasks = _ordered_tasks(points)
-        for t in pick_tasks:
-            pts_t = [p for p in points if _task_of(p) == t]
-            passing, first_rows, furthest = [], None, None
-            for k in bins:
-                as_k = expand_pick_points(pts_t, th, k)          # the pick path of this task for this approach angle, from the stance's own heading (task_points, shared with plan_pick)
-                rows, nominal, fail = [], None, None
-                for name, s in stances:
-                    info = timed("ik", self._solve_stance, s, as_k, k, None if nominal is None else nominal["solution"])
-                    rows.append({"stance": name, "ok": info["ok"], "failed_point": info["failed_point"], "tried_bins": info["tried_bins"],
-                                 "sources": {kk: info["sources"].count(kk) for kk in set(info["sources"])}, "bin": k, "task": t})
-                    if not info["ok"]:
-                        fail = (name, info["failed_point"])
-                        break
-                    if nominal is None:
-                        nominal = info
-                if fail is None:
-                    passing.append(int(k))
-                    if first_rows is None:
-                        first_rows = rows
-                    continue
-                if furthest is None or fail[1] > furthest[2][1]:
-                    furthest = (k, rows, fail, as_k)
-            task_lists.append({"task": t, "kind": "pick", "angles": passing})
-            if passing:
-                res["ik"].extend(first_rows)
-            else:
-                k, rows, fail, as_k = furthest
-                res["ik"].extend(rows)
-                name, i_pt = fail
-                pt = as_k[i_pt]
-                res["task_angle_lists"] = task_lists
-                return finish(["ik"], f"task {t} (pick): at the stance '{name}' point {i_pt} ({pt.get('path')}, {np.round(pt['p'], 3).tolist()}) has no collision-free solution in any approach direction (furthest: bin {k}); the stance needs every task to pass")
+        if only in (None, "ik"):
+            ik_meas = {}
+            for t in pick_tasks:
+                pts_t = [p for p in points if _task_of(p) == t]
+                passing, first_rows, furthest = [], None, None
+                ik_meas[t] = {"bins_tried": bins, "fails_by_bin": {}}
+                for k in bins:
+                    as_k = expand_pick_points(pts_t, th, k)          # the pick path of this task for this approach angle, from the stance's own heading (task_points, shared with plan_pick)
+                    rows, nominal, fail = [], None, None
+                    for name, s in stances:
+                        info = timed("ik", self._solve_stance, s, as_k, k, None if nominal is None else nominal["solution"])
+                        rows.append({"stance": name, "ok": info["ok"], "failed_point": info["failed_point"], "tried_bins": info["tried_bins"],
+                                     "sources": {kk: info["sources"].count(kk) for kk in set(info["sources"])}, "bin": k, "task": t})
+                        if not info["ok"]:
+                            fail = (name, info["failed_point"])
+                            break
+                        if nominal is None:
+                            nominal = info
+                    if fail is None:
+                        passing.append(int(k))
+                        if first_rows is None:
+                            first_rows = rows
+                        continue
+                    ik_meas[t]["fails_by_bin"][int(k)] = {"stance": fail[0], "point": fail[1], "path": as_k[fail[1]].get("path"), "p": as_k[fail[1]]["p"]}
+                    if furthest is None or fail[1] > furthest[2][1]:
+                        furthest = (k, rows, fail, as_k)
+                ik_meas[t]["passing_bins"] = passing
+                task_lists.append({"task": t, "kind": "pick", "angles": passing})
+                if passing:
+                    res["ik"].extend(first_rows)
+                else:
+                    k, rows, fail, as_k = furthest
+                    res["ik"].extend(rows)
+                    name, i_pt = fail
+                    pt = as_k[i_pt]
+                    res["task_angle_lists"] = task_lists
+                    f = (["ik"], f"task {t} (pick): at the stance '{name}' point {i_pt} ({pt.get('path')}, {np.round(pt['p'], 3).tolist()}) has no collision-free solution in any approach direction (furthest: bin {k}); the stance needs every task to pass")
+                    if early:
+                        return finish(*f)
+                    fails.append(f)
+            self._measure["ik"] = ik_meas
+            if fails:
+                return finish(*fails[0])
+        # the place tasks: the hand turns (M183)
         place_tasks = _ordered_tasks(place_pts)
-        place_wins = {}
-        for t in place_tasks:
-            pp = [pt for pt in place_pts if _task_of(pt) == t]
-            win = timed("place_window", self._place_window, stances, pp)
-            place_wins[t] = win
-            task_lists.append({"task": t, "kind": "place", "angles": [float(d) for d in win["passing_deg"]]})
-            if win["theta_deg"] is None:
-                res["task_angle_lists"] = task_lists
-                res["place"] = win
-                return finish(["place_angle_window"], f"task {t} (place): {win['reason']}")
-        res["task_angle_lists"] = task_lists
-        if place_tasks:
-            res["place"] = place_wins[place_tasks[0]]
-        # 3. the fixed view and the occlusion at the heights
-        for h, row in zip(heights, res["heights"]):
-            st = (x, y, th, h)
-            vm = timed("view", chk.view_margin, st)
-            row["view_margin"] = vm["margin"]
-            if vm["margin"] < STANCE_REQUIREMENTS["view_min_margin"]:
-                return finish(["view"], f"at pedestal {h:.3f} {vm['limit']} is {100 * vm['margin']:.1f} % from the nearest edge of the eagle image (limit {100 * STANCE_REQUIREMENTS['view_min_margin']:.0f} %)")
-            oc = timed("occlusion", chk.occlusion, st)
-            row.update(beaker_hidden=oc["beaker_hidden_frac"], hotplate_hidden=oc["hotplate_hidden_frac"], arm_frac=oc["arm_frac"])
-            lim = STANCE_REQUIREMENTS["occlusion_max_hidden"]
-            if oc["beaker_hidden_frac"] > lim["beaker"] or oc["hotplate_hidden_frac"] > lim["hotplate"]:
-                return finish(["occlusion"], f"at pedestal {h:.3f} something hides {100 * oc['beaker_hidden_frac']:.1f} % of the beaker and {100 * oc['hotplate_hidden_frac']:.1f} % of the hotplate in the eagle image")
+        if only in (None, "place"):
+            place_wins = {}
+            meas = {}
+            for t in place_tasks:
+                pp = [pt for pt in place_pts if _task_of(pt) == t]
+                win = timed("place_window", self._place_window, stances, pp)
+                place_wins[t] = win
+                task_lists.append({"task": t, "kind": "place", "angles": [float(d) for d in win["passing_deg"]]})
+                meas[t] = {"width_deg": win["width_deg"], "limit_deg": cfg["place_turn_min_window_deg"], "passing_deg": win["passing_deg"], "failed_stop": win["failed_stop"]}
+                if win["theta_deg"] is None:
+                    res["task_angle_lists"] = task_lists
+                    res["place"] = win
+                    f = (["place_angle_window"], f"task {t} (place): {win['reason']}")
+                    if early:
+                        return finish(*f)
+                    fails.append(f)
+            self._measure["place"] = meas
+            res["task_angle_lists"] = task_lists
+            if place_tasks:
+                res["place"] = place_wins[place_tasks[0]]
+            if fails:
+                return finish(*fails[0])
+        # 3. the fixed view and the occlusion at the heights (each height: view, then occlusion, as always)
+        if only in (None, "view", "occlusion"):
+            rows = res["heights"] if only is None else [{"q": h} for h in heights]
+            vmeas, omeas = [], []
+            for h, row in zip(heights, rows):
+                st = (x, y, th, h)
+                if only in (None, "view"):
+                    vm = timed("view", chk.view_margin, st)
+                    row["view_margin"] = vm["margin"]
+                    vmeas.append({"q": h, "margin": vm["margin"], "limit": STANCE_REQUIREMENTS["view_min_margin"], "limit_what": vm["limit"]})
+                    if vm["margin"] < STANCE_REQUIREMENTS["view_min_margin"]:
+                        f = (["view"], f"at pedestal {h:.3f} {vm['limit']} is {100 * vm['margin']:.1f} % from the nearest edge of the eagle image (limit {100 * STANCE_REQUIREMENTS['view_min_margin']:.0f} %)")
+                        if early:
+                            return finish(*f)
+                        fails.append(f)
+                if only in (None, "occlusion"):
+                    oc = timed("occlusion", chk.occlusion, st)
+                    row.update(beaker_hidden=oc["beaker_hidden_frac"], hotplate_hidden=oc["hotplate_hidden_frac"], arm_frac=oc["arm_frac"])
+                    lim = STANCE_REQUIREMENTS["occlusion_max_hidden"]
+                    omeas.append({"q": h, "beaker_hidden": oc["beaker_hidden_frac"], "limit_beaker": lim["beaker"], "hotplate_hidden": oc["hotplate_hidden_frac"], "limit_hotplate": lim["hotplate"]})
+                    if oc["beaker_hidden_frac"] > lim["beaker"] or oc["hotplate_hidden_frac"] > lim["hotplate"]:
+                        f = (["occlusion"], f"at pedestal {h:.3f} something hides {100 * oc['beaker_hidden_frac']:.1f} % of the beaker and {100 * oc['hotplate_hidden_frac']:.1f} % of the hotplate in the eagle image")
+                        if early:
+                            return finish(*f)
+                        fails.append(f)
+            self._measure["view"] = vmeas
+            self._measure["occlusion"] = omeas
+            if fails:
+                return finish(*fails[0])
         return finish([], "")

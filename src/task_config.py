@@ -530,6 +530,14 @@ FULLCHECK_CFG = {
     "pose_ik_iterations": 150,              # count: iterations at most of the inverse kinematics of one skill stop at the exact pose (the grasp-bin IK uses ik_max_iter 40; an exact orientation needs more steps) [row M183 PENDING David: my choice]
 }
 
+# The stance check logs (M281, David 2026-11-09): what is saved from every computed check, for analysis and replay. Logging only: no answer, no random draw and no draw order changes.
+# Kept apart from FULLCHECK_CFG on purpose: that dict feeds the check's cache key, and the key is written into the check's output.
+STANCE_LOG_CFG = {
+    "on": True,                             # on/off: write the logs below for every computed check (not cache hits). Off = no files written, no answer changes.
+    "dir": "data/logs/stance_failures",     # folder: checks.jsonl (every computed check: its input, its generator state before it, its answer) and failures.jsonl (the failed ones, plus each check group run on its own)
+    "independent_checks": True,             # on/off: after a failed check, run each check group alone from the same start state (clearance, body, ik, place, view, occlusion); costs extra time on failures only
+}
+
 # Navigation core (src/nav_*.py; overnight queue stage 2; navigation proposal docs/reports/20261021_2121_navigation_design.md). Names follow Nav2 where an equivalent exists (proposal section 11).
 # The starting values that David did not set himself are in row M148 ([PENDING David]).
 NAV_CFG = {

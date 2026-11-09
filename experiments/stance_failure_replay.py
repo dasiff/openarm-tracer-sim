@@ -8,9 +8,12 @@ usage: python experiments/stance_failure_replay.py <checks.jsonl or failures.jso
 import json
 import sys
 import time
+from pathlib import Path
 
 import mujoco
 import numpy as np
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from src import bench_stance as bs
 from src import stance_failure_log as sfl
@@ -27,6 +30,8 @@ def load_record(path, rid):
 
 
 def main():
+    if len(sys.argv) != 3:
+        raise SystemExit(__doc__.strip().splitlines()[-1])
     path, rid = sys.argv[1], sys.argv[2]
     t0 = time.time()
     rec = load_record(path, rid)

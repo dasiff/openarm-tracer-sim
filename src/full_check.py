@@ -661,6 +661,7 @@ class FullCheck:
             (per part), "stats" (IK counters), "cached" (bool), "key" (the first 12 hex digits).
         """
         t_all = time.perf_counter()
+        points_all = points                  # the caller's points, all of them (the place points are split off below; the log keeps the whole list)
         if source_data is not None:
             self.sync(source_data)
         self.set_objects(list(objects))
@@ -685,7 +686,7 @@ class FullCheck:
             if only is None:
                 self.cache[key] = res
                 if start is not None:
-                    self._log_computed(stance, points, objects, approach_bin, all_angles, key, res, start)
+                    self._log_computed(stance, points_all, objects, approach_bin, all_angles, key, res, start)
             return res
 
         def timed(name, fn, *a, **k):

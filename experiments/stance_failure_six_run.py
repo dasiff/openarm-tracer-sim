@@ -10,8 +10,11 @@ import json
 import math
 import sys
 import time
+from pathlib import Path
 
-sys.path.insert(0, "experiments")
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(PROJECT_ROOT))
+sys.path.insert(0, str(PROJECT_ROOT / "experiments"))
 
 from src import bench_stance as bs  # noqa: E402
 from src import stance_failure_log as sfl  # noqa: E402

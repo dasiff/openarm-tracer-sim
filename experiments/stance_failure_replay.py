@@ -39,10 +39,19 @@ def main():
     fc = FullCheck(maps=bs.load_maps(rec["maps_dir"]), task_cfg=TASK_CFG, say=lambda *_: None, maps_dir=rec["maps_dir"], failure_log_dir=None)
     # the saved state: the generator, the simulation's data and the object poses, as they were before the check
     fc.rng.bit_generator.state = rec["generator_state_before"]
-    fc.scene_data.qpos[:] = np.asarray(rec["scene_before"]["qpos"], float)
-    fc.scene_data.qvel[:] = np.asarray(rec["scene_before"]["qvel"], float)
-    mujoco.mj_forward(fc.model, fc.scene_data)
     fc.chk.q_scene = np.asarray(rec["scene_before"]["q_scene"], float).copy()
+    if "sim_state" in rec["scene_before"]:                        # M282: the whole saved simulation state, restored exactly (no forward step)
+        saved = rec["scene_before"]["sim_state"]
+        sfl_saved = {"physics": np.asarray(saved["physics"], float), "derived": {k: np.asarray(v, float) for k, v in saved["derived"].items()}}
+        sfl.restore_sim_state(fc.model, fc.scene_data, sfl_saved)
+        again = sfl.save_sim_state(fc.model, fc.scene_data)
+        same = np.array_equal(again["physics"], sfl_saved["physics"]) and all(np.array_equal(again["derived"][k], sfl_saved["derived"][k]) for k in sfl_saved["derived"])
+        print(f"sim state restored from the record; round trip exact: {same}", flush=True)
+    else:                                                         # an older record: qpos and qvel only, then a forward step (the old restore)
+        fc.scene_data.qpos[:] = np.asarray(rec["scene_before"]["qpos"], float)
+        fc.scene_data.qvel[:] = np.asarray(rec["scene_before"]["qvel"], float)
+        mujoco.mj_forward(fc.model, fc.scene_data)
+        print("older record: qpos and qvel restored, then mj_forward", flush=True)
     start = fc._snapshot()
     print(f"loaded {rid} from {path} ({time.time() - t0:.1f} s); stance {stance}, arm {rec['arm']}, tasks {rec['tasks']}", flush=True)
 

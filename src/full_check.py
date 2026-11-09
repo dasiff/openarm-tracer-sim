@@ -621,8 +621,11 @@ class FullCheck:
                "points": points, "objects": list(objects), "pedestal_heights": heights,
                "object_positions": {"beaker_free_joint_q": start["q_scene"][beaker_free:beaker_free + 7], "hotplate_body_pos": self.model.body_pos[hp]},
                "generator_state_before": start["rng"], "scene_before": {"qpos": start["data"].qpos, "qvel": start["data"].qvel, "q_scene": start["q_scene"]},
+               "seconds": res.get("seconds"),
                "maps_dir": self.maps_dir, "cache_key": key[:12], "result": {"ok": res["ok"], "failed": res["failed"], "reason": res["reason"]},
                "approach_angles_passing": res.get("task_angle_lists", []), "config": self._config_in_force()}
+        if STANCE_LOG_CFG["full_state"]:                             # M282: the whole simulation state at the start (see stance_failure_log.save_sim_state)
+            rec["scene_before"]["sim_state"] = sfl.save_sim_state(self.model, start["data"])
         sfl.append(self.checks_path, rec)
         if res["ok"]:
             return
@@ -632,7 +635,7 @@ class FullCheck:
             for g in GROUPS:
                 self._restore(start)
                 r = self.check(stance, points, objects, approach_bin=approach_bin, all_angles=all_angles, only=g)
-                groups[g] = {"ok": r["ok"], "failed": r["failed"], "reason": r["reason"], "measured": self._measure.get(g)}
+                groups[g] = {"ok": r["ok"], "failed": r["failed"], "reason": r["reason"], "measured": self._measure.get(g), "seconds": r.get("seconds")}
             self.stats, self.seconds = saved_stats, saved_seconds
             self._restore(end)
         first = GROUP_OF.get(res["failed"][0]) if res["failed"] else None

@@ -47,7 +47,7 @@ import mink
 from src import held_mass_ramp as hmr
 from src.gravity_ff import ArmGravityFeedforward
 from src.task_points import approach_unit, pick_waypoints, plate_top_z
-from src.approach_angle import ApproachAngleError, choose_approach_angle, place_approach_xy, task_approach_angles
+from src.approach_angle import ApproachAngleError, choose_approach_angle, choose_place_angle, place_approach_xy, task_approach_angles
 from src.mink_arm import MinkArm, pad_rotation
 from src.rate_limit import min_jerk
 from src.sag_layer import PLAN_TRACE            # logging only: the step label and the planned pad pose of this tick (the sag layer's trace)
@@ -259,7 +259,7 @@ def make_scripted_manipulation(model, data, world, side, home_q, task_cfg=TASK_C
         a = forward()
         R = pad_rotation(a, R0[:, 0])
         off = p - b                                          # the pad centre relative to the beaker's bottom centre in the hand (measured now)
-        th = math.radians(float(choose_approach_angle(S["ctx"]["approach_angles"])))      # M279: this place's own approach angle, the one choice from its list
+        th = math.radians(float(choose_place_angle(S["ctx"]["approach_angles"])))      # M279, M299: this place's own approach angle, the middle of the window the check chose
         # M183/M184: th is the hand turn the stance selection chose or searched for this place (radians, counter-clockwise seen from above)
         co, si = math.cos(th), math.sin(th)
         Rz = np.array([[co, -si, 0.0], [si, co, 0.0], [0.0, 0.0, 1.0]])

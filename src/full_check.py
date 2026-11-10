@@ -180,12 +180,13 @@ def choose_place_window(passing_deg, step, need):
     if len(runs) > 1 and runs[0][0] == 0 and runs[-1][-1] == 360 - step:       # a window across 0 degrees
         runs[0] = runs[-1] + runs[0]
         runs.pop()
-    out = {"theta_deg": None, "window_deg": None, "width_deg": 0, "passing_deg": [_wrap_deg(d) for d in turns if d in ps], "windows": [[_wrap_deg(r[0]), _wrap_deg(r[-1])] for r in runs], "reason": ""}
+    out = {"theta_deg": None, "window_deg": None, "window_turns": [], "width_deg": 0, "passing_deg": [_wrap_deg(d) for d in turns if d in ps], "windows": [[_wrap_deg(r[0]), _wrap_deg(r[-1])] for r in runs], "reason": ""}
     if not runs:
         out["reason"] = "no place angle window: no hand turn works"
         return out
     best = max(runs, key=len)                          # max keeps the first of equals (see the tie rule above)
     out["window_deg"], out["width_deg"] = [_wrap_deg(best[0]), _wrap_deg(best[-1])], (len(best) - 1) * step
+    out["window_turns"] = [_wrap_deg(d) for d in best]  # the window's turns, first to last (circular): the task's list (M299)
     if out["width_deg"] < need:
         out["reason"] = f"no place angle window: the widest window of working hand turns is {out['width_deg']} degrees ({out['window_deg'][0]} to {out['window_deg'][1]}), under the {need} degrees minimum"
         return out
@@ -806,7 +807,7 @@ class FullCheck:
                 pp = [pt for pt in place_pts if _task_of(pt) == t]
                 win = timed("place_window", self._place_window, stances, pp)
                 place_wins[t] = win
-                task_lists.append({"task": t, "kind": "place", "angles": [float(d) for d in win["passing_deg"]]})
+                task_lists.append({"task": t, "kind": "place", "angles": [float(d) for d in win["window_turns"]]})      # M299: the chosen window's turns; the robot takes the middle one (approach_angle.choose_place_angle)
                 meas[t] = {"width_deg": win["width_deg"], "limit_deg": cfg["place_turn_min_window_deg"], "passing_deg": win["passing_deg"], "failed_stop": win["failed_stop"]}
                 if win["theta_deg"] is None:
                     res["task_angle_lists"] = task_lists

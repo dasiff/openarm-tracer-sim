@@ -53,6 +53,21 @@ def choose_approach_angle(angles):
     return angles[0]
 
 
+def choose_place_angle(angles):
+    """ONE choice from a place task's list: the middle turn of the chosen window (David 2026-11-10, M299).
+
+    The list is the window's turns from its first to its last (circular: a window across 0 deg is listed through 0, e.g. -15, -10, -5, 0, 5), tested every 5 deg.
+    With an odd count the exact middle turn; with an even count the two middle turns are equally near the window's midpoint, and the later one (counter-clockwise
+    of the midpoint) is taken. The robot uses exactly this angle; the full check chose it from the same window (choose_place_window, theta_deg).
+
+    Raises:
+        ApproachAngleError: if the list is empty.
+    """
+    if len(angles) == 0:
+        raise ApproachAngleError(REASON_EMPTY, "no place angle to choose from: the window list is empty")
+    return angles[len(angles) // 2]
+
+
 def combine_task_lists(task_lists):
     """A stance's verdict from its tasks' lists: the stance passes only if every task has at least one passing angle.
 

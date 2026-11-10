@@ -109,8 +109,8 @@ def make_pipeline_task(plan=BEAKER_ON_HOTPLATE_PLAN, task_cfg=TASK_CFG, staging_
                     loop_cfg={**loop_cfg, "auto_routes": {"arms.left": ("policy", "vla"), "gripper.left": ("policy", "vla")}})
     else:
         task.update(loop_cfg=loop_cfg)
-    from src.approach_angle import choose_approach_angle       # M279: the panel shows the place's chosen approach angle (the first of its list)
-    place_deg = next((float(choose_approach_angle(seg["approach_angles"])) for seg in tagged["segments"] if seg.get("primitive") == "place" and seg.get("approach_angles")), None)
+    from src.approach_angle import choose_approach_angle, choose_place_angle       # M279: the panel shows the place's chosen approach angle (the first of its list)
+    place_deg = next((float(choose_place_angle(seg["approach_angles"])) for seg in tagged["segments"] if seg.get("primitive") == "place" and seg.get("approach_angles")), None)
     first = (stance_report.get("chosen") or {})
     panel = {"instruction": instruction, "steps": [seg["description"] for seg in tagged["segments"]],      # what the status panel shows (src/viewer_layout.panel_from_status); the same text in the live window and the video
              "spot_xy": first.get("xy"), "pedestal_q": first.get("pedestal_q"), "place_theta_deg": place_deg}

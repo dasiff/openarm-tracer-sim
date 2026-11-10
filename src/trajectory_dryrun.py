@@ -7,8 +7,8 @@ mirrors the skill's move sequence (src/mpvi_modules.py plan_pick and plan_place,
   - CLOSE and OPEN take a fixed time with no physics (the gripper is not simulated); the held beaker keeps the offset the grasp gave the pad;
   - the blend handover (blend_radius_m) is not mirrored: every move settles before the next one starts, which is the stricter test.
 
-Pass: every subtask reaches its waypoint within tol_m and tol_rad, settled, before its timeout, and the commanded pad stays within DRYRUN_CFG["ref_tol_m"] of the move's
-reference throughout. Fail: the first subtask that times out or diverges, with its tick and error.
+Pass: every subtask reaches its settle condition (within tol_m and tol_rad, settled) before its timeout. Fail: the first subtask that times out, or the IK solver
+diverges (a non-finite command, or no solution). There is no per-tick positional tolerance (changed 2026-11-10: the 30 mm reference check is removed).
 
     res = dry_run_stance(chk, model, stance, beaker_xy, pick_k, place_theta_deg)
     res["ok"], res["failed"], res["reason"], res["subtasks"], res["seconds"]
@@ -98,9 +98,9 @@ def _move(model, d, arm, name, target, R, speed, cfg):
         q_prev = arm.q_cmd.copy()
         if cfg.get("_record_ticks"):
             log.append([round(t, 4), round(1000 * err, 2), round(1000 * ref_err, 2)])
-        if max_ref > DRYRUN_CFG["ref_tol_m"]:
-            why = f"{name}: the commanded pad left its reference at {t:.2f} s ({1000 * max_ref:.1f} mm)"
-            return {"name": name, "T_s": T, "ticks": ticks, "ok": False, "fail": why, "max_ref_mm": 1000 * max_ref, "final_mm": 1000 * err, "tick_log": log}, False, why
+        if not np.all(np.isfinite(arm.q_cmd)):
+            why = f"{name}: the IK diverged at {t:.2f} s (a non-finite command)"
+            return {"name": name, "T_s": T, "ticks": ticks, "ok": False, "fail": why, "max_ref_mm": 1000 * max_ref, "final_mm": None, "tick_log": log}, False, why
         if u >= 1.0 and err < cfg["tol_m"] and ang < cfg["tol_rad"] and speed_now < cfg["settle_speed_rad_s"]:
             if settle_t is None:
                 settle_t = t

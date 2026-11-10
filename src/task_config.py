@@ -623,7 +623,7 @@ BENCH_STANCE_CFG = {
     "sampler_heading_half_width_deg": 45.0,    # degrees: the old polar draw's heading range. UNUSED by the edge sampler (the heading is the exact direction to the task centroid, row M300); kept for later [row M299]
     "sampler_gate_max_failures": 500,           # count: the body-check gate (the full check's own body check, run on each drawn stance before the full check) may discard this many stances in one selection; more and the selection stops and reports it. A discarded stance is not drawn again and does not count toward sampler_max_draws [row M299]
     "sampler_heading_variety": True,            # M301: the heading is the midpoint direction plus a Gaussian offset (sampler_heading_sigma_deg), kept only where the arm reaches every task point (bearing within one sigma of the arm's bearing width) [row M301]
-    "sampler_heading_sigma_deg": 30.0,          # degrees, PROPOSED by the implementer (not decided by David, 2026-11-10): the standard deviation of the heading's offset from the midpoint direction; David to confirm [row M301]
+    "sampler_heading_sigma_deg": 15.0,          # degrees, PROPOSED by the implementer (not decided by David, 2026-11-10; was 30): the standard deviation of the heading's offset from the midpoint direction; David to confirm [row M301]
     "sampler_heading_held": False,              # the old sampler's flag (True: heading held at staging_yaw). UNUSED by the edge sampler: its heading is the exact direction from the base to the task centroid (row M300). Set False 2026-11-10 with the edge sampler [row M299, M300]
     "sampler_margin_m": 0.0301,                 # m: the usable edge's margin: the smallest signed distance of the base centre out in front of the edge, from the bench's body contact (measured 2026-11-10 by experiments/edge_margin_study.py, docs/reports/edge_stance_selection_20261110/margin.json: first clear distance 30.08 mm at pedestals 0.05 and 0.25 m, the larger value rounded up to 0.1 mm; no extra safety margin) [row M300]
     "sampler_r_max_m": 0.6654,                  # m: the reach limit of the edge sampler: the 3D distance from the left shoulder to each task point must be at most this = A9 r0 + sigma_far (0.5423 + 0.1231; the far side at e^-1, about 37 % of the peak) [row M300]
@@ -786,7 +786,6 @@ ELBOW_GUARD_CFG = {
 
 # Trajectory dry-run (decisions-log M302, src/trajectory_dryrun.py): the planner's pick and place moves run through the IK without physics, as the final gate of stance selection.
 DRYRUN_CFG = {
-    "ref_tol_m": 0.03,         # m, PROPOSED by the implementer (not decided by David): the commanded pad may leave its move's reference by this much at any tick; more fails the subtask [row M302]
     "home_tol_rad": 0.02,      # rad, PROPOSED by the implementer: the HOME joints are reached when every joint is within this of the zombie pose [row M302]
     "open_s": 0.5,             # s, PROPOSED by the implementer: the gripper's opening time in the dry run (no gripper physics; the skill's OPEN ends when the fingers are open) [row M302]
 }

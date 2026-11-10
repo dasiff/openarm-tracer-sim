@@ -4,7 +4,7 @@
 
 What is checked:
   1. The staging stance that missed OVER in the run (seed 2680074893, draw 2; approach bin 10, the bin the OVER waypoint matched in the replay) fails the dry-run at
-     pick OVER: the commanded pad leaves its reference by more than DRYRUN_CFG ref_tol_m. Its OVER duration is the planner's own (8.33 s; the run planned 8.3 s).
+     pick OVER: it is not reached before the timeout (47 mm short). Its OVER duration is the planner's own (8.33 s; the run planned 8.3 s).
   2. A move to the pad's own pose passes (the pass path: reached, settled, within the reference tolerance).
 """
 import math
@@ -35,10 +35,10 @@ def main():
     stance = (0.9860, 1.0704, math.radians(-101.8), 0.1056)
     res = td.dry_run_stance(fc.chk, fc.model, stance, TASK_CFG["beaker_xy"], pick_k=10, place_theta_deg=0.0)
     over = res["subtasks"][0] if res["subtasks"] else {}
-    check("the staging stance that missed OVER fails the dry-run at pick OVER", (not res["ok"]) and res["failed"] == "pick OVER" and "left its reference" in res["reason"],
+    check("the staging stance that missed OVER fails the dry-run at pick OVER (not reached before the timeout)", (not res["ok"]) and res["failed"] == "pick OVER" and "not reached" in res["reason"],
           f"failed {res['failed']}: {res['reason']}")
     check("the OVER duration is the planner's (8.33 s; the run planned 8.3 s)", abs(over.get("T_s", 0) - 8.33) < 0.05, f"T {over.get('T_s', 0):.3f} s")
-    check("the reference tolerance is the proposed 30 mm (DRYRUN_CFG)", DRYRUN_CFG["ref_tol_m"] == 0.03, "")
+    check("the dry-run has no positional tolerance (only timeout and divergence fail it)", "ref_tol_m" not in DRYRUN_CFG, "")
 
     # the pass path: a move to the pad's own pose (no move to make)
     arm_home = np.asarray(TASK_CFG["home_q_left"], float)

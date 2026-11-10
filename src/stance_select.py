@@ -804,6 +804,10 @@ def apply_stance_selection(tagged, task_cfg, maps_dir="data/reach_map", cfg=BENC
 
         def check(stance):
             """The full check of one drawn stance, its values unchanged (the M283 seed is the check's own)."""
+            fc.pose_ik_log.clear()                                             # memory (2026-11-10): the check's logs and the per-pedestal checkers grew with every candidate and hit the 6 GB cap
+            fc.start_log.clear()
+            if len(fc._checkers) > 4:
+                fc._checkers.clear()                                       # a cache: rebuilt when needed, results unchanged
             r = fc.check(stance, points_at_heading(pts, stance[2]))           # M300: the place's back-off point turns with the stance's heading (not the staging yaw)
             results.append(r)
             return {"ok": bool(r["ok"]), "failed": list(r.get("failed", [])), "reason": str(r.get("reason", "")), "seconds": (r.get("seconds") or {}).get("total"), "seed": r.get("seed"), "raw": r}

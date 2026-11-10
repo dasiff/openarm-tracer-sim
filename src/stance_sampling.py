@@ -163,7 +163,7 @@ def draw_batch(points, geom, arm, cfg, seed, held_heading=None):
     return cat
 
 
-def select_stance(points, geom, arm, held_heading, cfg, check, seed=None, say=print):
+def select_stance(points, geom, arm, held_heading, cfg, check, seed=None, say=print, gate=None):
     """The whole selection: draw, score, weight, draw again, check.
 
     Args:
@@ -177,6 +177,9 @@ def select_stance(points, geom, arm, held_heading, cfg, check, seed=None, say=pr
             stance is (x, y, heading, q) with float values, unchanged.
         seed (int or None): The sampling seed. None: taken from the clock (time.time_ns()).
         say (callable): Progress lines.
+        gate (callable or None): gate(stance) -> (ok (bool), pair (str), distance (m)): the full check's own body check (FullCheck.clear.body_distance against
+            FULLCHECK_CFG body_clearance), run on each drawn stance BEFORE the full check. A stance that fails is discarded (not put back) and does not count toward
+            sampler_max_draws; more than sampler_gate_max_failures of them stops the selection. None: no gate (unit tests only).
 
     Returns:
         dict: "ok", "stop" (the reason when not ok), "seed", "arm", "held_heading", "batch" (stances kept), "attempts", "drops", "pedestal_redraws", "cap_hit",
@@ -205,23 +208,36 @@ def select_stance(points, geom, arm, held_heading, cfg, check, seed=None, say=pr
         rec["stop"] = "every stance in the batch has a zero weight (A8 score zero): no stance to draw"
         return rec
     alive = np.ones(n, bool)
-    for k in range(int(cfg["sampler_max_draws"])):
+    k = 0                                                       # full-check draws so far (gate failures are not counted)
+    cap_gate = int(cfg["sampler_gate_max_failures"])
+    rec.update(gate_failures=0, gate_pairs={})
+    while k < int(cfg["sampler_max_draws"]):
         w = np.where(alive, weights, 0.0)
         if w.sum() <= 0.0:
-            rec["stop"] = f"no stance left with a positive weight after {k} draws"
+            rec["stop"] = f"no stance left with a positive weight after {k} full-check draws"
             return rec
         i = int(rng.choice(n, p=w / w.sum()))
         alive[i] = False
         stance = (float(xs[i]), float(ys[i]), float(headings[i]), float(qs[i]))
+        if gate is not None:
+            g_ok, g_pair, g_dist = gate(stance)
+            if not g_ok:                                        # the body check failed: discard the stance, no full check, not counted
+                rec["gate_failures"] += 1
+                rec["gate_pairs"][g_pair] = rec["gate_pairs"].get(g_pair, 0) + 1
+                if rec["gate_failures"] >= cap_gate:
+                    rec["stop"] = f"the body-check gate failed {rec['gate_failures']} times (cap {cap_gate}): selection stopped"
+                    return rec
+                continue
+        k += 1
         r = check(stance)
-        row = {"draw": k + 1, "index": i, "x": stance[0], "y": stance[1], "heading": stance[2], "facing": float(b["facing"][i]), "pedestal": stance[3],
+        row = {"draw": k, "index": i, "x": stance[0], "y": stance[1], "heading": stance[2], "facing": float(b["facing"][i]), "pedestal": stance[3],
                "shoulder": [float(v) for v in b["shoulder"][i]], "dz": float(b["dz"][i]), "d": float(b["d"][i]),
                "score": float(scores[i]), "weight": float(weights[i]),
                "ok": bool(r["ok"]), "failed": list(r.get("failed", [])), "reason": str(r.get("reason", ""))[:300], "seconds": r.get("seconds"), "seed": r.get("seed")}
         for j, pnt in enumerate(points):                        # the per-point counts (the score is the lower one)
             row[f"point_{j}_score"] = float(a8_scores(np.array([stance[0]]), np.array([stance[1]]), np.array([stance[3]]), np.array([stance[2]]), [pnt], geom, arm)[0])
         rec["draws"].append(row)
-        say(f"[sampler] draw {k + 1}: x {stance[0]:.4f} y {stance[1]:.4f} heading {math.degrees(stance[2]):.1f} pedestal {stance[3]:.4f} score {row['score']:.3f}: "
+        say(f"[sampler] draw {k}: x {stance[0]:.4f} y {stance[1]:.4f} heading {math.degrees(stance[2]):.1f} pedestal {stance[3]:.4f} score {row['score']:.3f}: "
             f"full check {'PASS' if row['ok'] else 'FAIL ' + str(row['failed'])}")
         if row["ok"]:
             rec.update(ok=True, chosen=row)

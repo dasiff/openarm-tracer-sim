@@ -41,7 +41,7 @@ def check(name, ok, detail=""):
 GEOM = {"shoulder": {"left": (0.1, 0.2, 0.3), "right": (0.1, -0.2, 0.3)}, "torso_z0": 0.5, "lift_factor": 1.0, "base_z": 0.15}
 R_IN = 0.0497                                                    # the measured inner limit (src/task_config.py sampler_r_in_m)
 CFG = {"sampler_batch": 400, "sampler_weight_power": 2, "sampler_max_draws": 10, "sampler_r_in_m": R_IN, "sampler_outer_sigmas": 2.0,
-       "sampler_redraw_factor": 20, "sampler_heading_half_width_deg": 45.0, "pedestal_range": (0.05, 0.25)}
+       "sampler_redraw_factor": 20, "sampler_heading_half_width_deg": 45.0, "pedestal_range": (0.05, 0.25), "sampler_gate_max_failures": 500}
 
 
 def a8_count_by_hand(r, theta, z):
@@ -173,6 +173,34 @@ def main():
     r1 = draw_batch(pts, GEOM, "left", CFG, seed=55)
     r2 = draw_batch(pts, GEOM, "left", CFG, seed=55)
     check("same seed: same x, y, pedestal, heading", np.array_equal(r1["xs"], r2["xs"]) and np.array_equal(r1["ys"], r2["ys"]) and np.array_equal(r1["qs"], r2["qs"]) and np.array_equal(r1["headings"], r2["headings"]), "")
+
+    print("11. the body-check gate: every stance passed to the full check has passed the body check; gate failures do not count toward the 10 draws")
+
+    def body_ok(stance):                                         # a stand-in body check: the stances with x above 0.75 "touch" the scene
+        ok = stance[0] <= 0.75
+        return ok, "" if ok else "fake_arm vs fake_bench", 0.0 if ok else -0.01
+
+    gate_calls = []
+
+    def gate_fn(stance):
+        r = body_ok(stance)
+        gate_calls.append((stance, r[0]))
+        return r
+
+    checked = []
+
+    def pass_all(stance):
+        checked.append(stance)
+        return {"ok": False, "failed": ["body"], "reason": "t", "seconds": 0.0, "seed": 1}
+
+    g = select_stance(pts, GEOM, "left", None, {**CFG, "sampler_batch": 2000, "sampler_max_draws": 10}, pass_all, seed=41, say=lambda s: None, gate=gate_fn)      # drawn headings: the held heading changes the scores
+    check("every stance the full check saw had passed the body check", len(checked) == 10 and all(body_ok(st)[0] for st in checked), f"checks {len(checked)}")
+    check("gate failures are counted, not drawn from the 10 full-check draws", g["gate_failures"] > 0 and len(checked) == 10 and sum(1 for _, ok in gate_calls if not ok) == g["gate_failures"],
+          f"gate failures {g['gate_failures']}, gate calls {len(gate_calls)}")
+    check("gate failures are not put back: no stance is seen twice by the gate", len({tuple(st) for st, _ in gate_calls}) == len(gate_calls), "")
+    cap_g = select_stance(pts, GEOM, "left", None, {**CFG, "sampler_batch": 2000, "sampler_gate_max_failures": 50}, pass_all, seed=42, say=lambda s: None,
+                          gate=lambda st: (False, "fake_arm vs fake_bench", -0.02))
+    check("the gate cap (50 here) stops the selection with a report", (not cap_g["ok"]) and cap_g["gate_failures"] == 50 and "gate failed 50 times" in str(cap_g["stop"]), f"stop: {cap_g['stop']}")
 
     print(f"\n{sum(results)}/{len(results)} checks passed")
     return all(results)

@@ -733,7 +733,12 @@ def apply_stance_selection(tagged, task_cfg, maps_dir="data/reach_map", cfg=BENC
             return {"ok": bool(r["ok"]), "failed": list(r.get("failed", [])), "reason": str(r.get("reason", "")), "seconds": (r.get("seconds") or {}).get("total"), "seed": r.get("seed")}
 
         held = yaw if cfg["sampler_heading_held"] else None          # M299: the staging yaw is held, or each stance draws its own heading (Revision 2)
-        rec = select_stance(task_points([targets[i] for i in steps]), robot_geometry(fc.model), cfg["arm"], held, cfg, check, say=say)
+        def gate(stance):
+            """The full check's own body check at the stance (FullCheck.clear.body_distance, the limit of its body group): a stance that touches the scene is discarded before the full check (M299)."""
+            bd, pair = fc.clear.body_distance(stance)
+            return bd > fc.cfg["body_clearance"], pair, bd
+
+        rec = select_stance(task_points([targets[i] for i in steps]), robot_geometry(fc.model), cfg["arm"], held, cfg, check, say=say, gate=gate)
         rep["sampler"] = rec
         if not rec["ok"]:
             out["stop"] = "stance sampler: " + str(rec["stop"])

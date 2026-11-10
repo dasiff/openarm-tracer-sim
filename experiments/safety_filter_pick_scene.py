@@ -28,7 +28,7 @@ def _jadr(m, name):
     return m.jnt_qposadr[mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_JOINT, name)]
 
 
-def setup(verbose=False):
+def setup(verbose=False, pedestal=None):
     sim = load_task(TASK_CFG, cameras=False)
     m, d = sim.model, sim.data
     apply_task_poses(m, d, TASK_CFG)
@@ -36,7 +36,8 @@ def setup(verbose=False):
     yaw = TASK_CFG["staging_yaw"]
     sx, sy = TASK_CFG["staging_xy"]
     d.qpos[base:base + 7] = [sx, sy, 0.0, math.cos(yaw / 2), 0.0, 0.0, math.sin(yaw / 2)]
-    d.qpos[m.joint("pedestal_joint").qposadr[0]] = TASK_CFG["pedestal_q"]
+    ped_m = TASK_CFG["pedestal_q"] if pedestal is None else pedestal
+    d.qpos[m.joint("pedestal_joint").qposadr[0]] = ped_m
     home_r = np.array(TASK_CFG["home_q_right"])
     for k in range(1, 8):
         d.qpos[_jadr(m, f"openarm_right_joint{k}")] = home_r[k - 1]
@@ -125,13 +126,13 @@ def setup(verbose=False):
         if q is not None:
             poses[name] = q
     if verbose:
-        print(f"bins: pick {k_pick}, place {k_place}")
+        print(f"pedestal {ped_m:.3f} m; bins: pick {k_pick}, place {k_place}")
         for n in status:
             print(" ", n, status[n])
     return {"sim": sim, "m": m, "d": d, "qadr": qadr, "home_r": home_r, "yaw": yaw, "sx": sx, "sy": sy,
             "top": top, "plate_top": plate_top, "h": h, "bx": bx, "by": by, "hx": hx, "hy": hy,
             "bottom": bottom, "f_mid": f_mid, "z_place": z_place, "moments": moments, "poses": poses,
-            "status": status, "k_pick": k_pick, "k_place": k_place}
+            "status": status, "k_pick": k_pick, "k_place": k_place, "pedestal": ped_m}
 
 
 def beaker_pose(ctx, name):

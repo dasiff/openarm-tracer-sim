@@ -2,7 +2,7 @@
 
 Reference note for the safety filter (design plan section 16, rows SF-1 to SF-7 and M285 to M298 in [mpvi_decisions.md](mpvi_decisions.md)). Written in our own words; no passages are copied.
 
-**How this was read (caveat):** the text was obtained from the arXiv HTML page through an automated summariser, in two passes. Section and algorithm numbers below come from that summary and have not been checked against the PDF. The Section VI-C numbers appeared in the first pass only; the second pass reported that section as absent. Treat every number here as unverified until David checks it against the paper. The note is not an excerpt: paper facts that are not in `mpvi_paper_excerpts.md` are marked as such (design plan section 0).
+**How this was read:** the section and algorithm numbers were first taken from an automated summary of the arXiv HTML page. The Section VI-C numbers in section 7 were checked against the PDF by David (2026-11-10). Any other number here still comes from the summary and should be checked against the PDF. The note is not an excerpt: paper facts that are not in `mpvi_paper_excerpts.md` are marked as such (design plan section 0).
 
 ## 1. Filter loop (Sec. V, Algorithm 4)
 
@@ -41,11 +41,13 @@ Reference note for the safety filter (design plan section 16, rows SF-1 to SF-7 
 - The paper gives RB-Y1 radii: torso 0.15 m, shoulder 0.12 m, upper arm 0.06 m, lower arm 0.065 m, wrist 0.07 m. Capsule lengths come from the keypoints of each link.
 - **Ours:** sizes come from our robot model by a build tool (SF-5), and the shapes must enclose the real geometry (M288: "never smaller"). The upper arm capsule is fat (about 9.7 cm, accepted, SF-3). The hand uses link 7 plus two palm capsules and one capsule per finger (SF-3). The paper's radii are for a different robot and are not used.
 
-## 7. Reported results (Sec. VI-C): unconfirmed
+## 7. Reported results (Sec. VI-C): checked against the PDF
 
-- The first pass reported a rolling punch on the RB-Y1 (both arms, 10 rotations in 10 seconds). Without the filter: alignment error 0, about 0.8 ms per solve, self-collision in nearly half the retargeted poses. With the filter: alignment error 0.019, about 4.0 ms per solve, self-collision in about 1.3% of poses.
-- The second pass did not find Section VI-C. The numbers are not confirmed. Not used for any decision.
-- **Our test plan** (M297 test list stands; stages per SF-7): the rolling punch is one of our Stage 2 and Stage 3 motions, scored against MuJoCo ground truth, not against the paper's numbers. Pass lines stay provisional (M297).
+Checked against the PDF by David (2026-11-10). The rolling-punch setup is the paper's; both arms make the motion.
+
+- Without the safety filter: about 0.8 ms per solve for both arms (about 1250 Hz), and self-collision in nearly half of the retargeted poses.
+- With the safety filter: about 4.0 ms per solve (about 250 Hz), and self-collision in about 1.3% of poses (10 of 765 frames, per the figure label). Mean alignment error 0.019 (their orientation-mismatch cost; 0 means unchanged).
+- **Our test plan** (M297 test list stands; stages per SF-7): the rolling punch is one of our Stage 2 and Stage 3 motions, scored against MuJoCo ground truth. Our numbers are not comparable with the paper's (different robot, different solver budget). Pass lines stay provisional (M297).
 
 ## Summary of what we follow and what we changed
 
@@ -57,6 +59,6 @@ Reference note for the safety filter (design plan section 16, rows SF-1 to SF-7 
 | tool re-aim (Alg. 12) | none | replaced by the commanded level hand | M295, SF-1 |
 | contact normal (App. E.1) | none | not used; direction from closest points | M293 |
 | capsule radii (App. I) | none | ours from our model, fat upper arm | M288, SF-3, SF-5 |
-| results (Sec. VI-C) | none | unconfirmed; not used | M297 |
+| results (Sec. VI-C) | the rolling punch as a test motion | our test plan scores against MuJoCo, not the paper's numbers | M297, SF-7 |
 
 Stage order and the rename: SF-7 and SF-6.

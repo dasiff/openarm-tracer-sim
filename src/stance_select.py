@@ -765,7 +765,9 @@ def apply_stance_selection(tagged, task_cfg, maps_dir="data/reach_map", cfg=BENC
     from src.full_check import FullCheck
     from src.stance_finder import robot_geometry
     from src.edge_sampling import select_edge_stance, pieces_for
-    from src.approach_angle import choose_place_angle
+    from src.approach_angle import ApproachAngleError, choose_approach_angle, choose_place_angle
+    from src.edge_sampling import iter_verified_stances
+    from src.trajectory_dryrun import dry_run_stance
     from src.world_model import SimGroundTruthSource, WorldModel
     from src.nav_footprint import obstacles_from_model
     from src.usable_edges import attach, base_length, furniture_tops, usable_segments
@@ -804,7 +806,21 @@ def apply_stance_selection(tagged, task_cfg, maps_dir="data/reach_map", cfg=BENC
             """The full check of one drawn stance, its values unchanged (the M283 seed is the check's own)."""
             r = fc.check(stance, points_at_heading(pts, stance[2]))           # M300: the place's back-off point turns with the stance's heading (not the staging yaw)
             results.append(r)
-            return {"ok": bool(r["ok"]), "failed": list(r.get("failed", [])), "reason": str(r.get("reason", "")), "seconds": (r.get("seconds") or {}).get("total"), "seed": r.get("seed")}
+            return {"ok": bool(r["ok"]), "failed": list(r.get("failed", [])), "reason": str(r.get("reason", "")), "seconds": (r.get("seconds") or {}).get("total"), "seed": r.get("seed"), "raw": r}
+
+        pick_i = next((i for i in steps if targets[i]["primitive"] == "pick"), steps[0])
+        place_i = next((i for i in steps if targets[i]["primitive"] == "place"), None)
+
+        def verify(stance, raw):
+            """The trajectory dry-run of one candidate that passed the full check (M302): the pick's approach bin and the place's hand turn are the ones the full check passed."""
+            lists = {int(t["task"]): list(t["angles"]) for t in ((raw or {}).get("task_angle_lists") or []) if t.get("task") is not None}
+            try:
+                k = choose_approach_angle(lists[int(pick_i)])
+                th = choose_place_angle(lists[int(place_i)]) if place_i is not None and lists.get(int(place_i)) else 0.0
+            except (KeyError, ApproachAngleError) as e:
+                return {"ok": False, "failed": "angles", "reason": f"approach angles missing: {e}", "seconds": 0.0, "subtasks": []}
+            res = dry_run_stance(fc.chk, fc.model, stance, task_cfg["beaker_xy"], k, math.degrees(th))
+            return {"ok": res["ok"], "failed": res["failed"], "reason": res["reason"], "seconds": res["seconds"], "subtasks": res["subtasks"], "pick_k": int(k), "place_theta_deg": math.degrees(th)}
 
         def gate(stance):
             """The full check's own body check at the stance (FullCheck.clear.body_distance, the limit of its body group): a stance that touches the scene is discarded before the full check (M299)."""
@@ -832,19 +848,21 @@ def apply_stance_selection(tagged, task_cfg, maps_dir="data/reach_map", cfg=BENC
             rep["notes"].append(out["stop"])
             rep["sampler"] = {"ok": False, "stop": out["stop"], "pieces": None}
             return out
-        rec = select_edge_stance(objects, pieces, geom, cfg["arm"], cfg, check, gate=gate, say=say, record_dir=record_dir, base_metric=base_metric, point_labels=labels)
+        rec = {}
+        gen = iter_verified_stances(objects, pieces, geom, cfg["arm"], cfg, check, verify, gate=gate, say=say, record_dir=record_dir, base_metric=base_metric, point_labels=labels, rec=rec)
+        got = next(gen, None)                                 # M301, M302: the first candidate that passes the full check and the dry-run; None when none does
         rep["sampler"] = rec
-        if not rec["ok"]:
-            out["stop"] = "stance sampler: " + str(rec["stop"])
+        if got is None:
+            out["stop"] = "stance sampler: " + str(rec.get("stop"))
             rep["notes"].append(out["stop"])
             return out
-        k = rec["chosen"]["draw"] - 1
-        passed = results[k]
-        x, y, q, yaw_c = rec["chosen"]["x"], rec["chosen"]["y"], rec["chosen"]["pedestal"], rec["chosen"]["heading"]      # the chosen stance's own heading (M299 Revision 2; the staging yaw when held)
+        passed = got["raw"]
+        x, y, q, yaw_c = got["stance"][0], got["stance"][1], got["stance"][3], got["stance"][2]      # the chosen stance's own heading (M299 Revision 2; M301: drawn around the midpoint direction)
         lists = {int(t["task"]): list(t["angles"]) for t in (passed.get("task_angle_lists") or []) if t.get("task") is not None}
         tries = [{"xy": [row["x"], row["y"]], "q": row["pedestal"], "full_check_ok": row["ok"], "failed": row["failed"], "reason": row["reason"], "place": res.get("place"),
                   "task_lists": res.get("task_angle_lists"), "score": row["score"], "weight": row["weight"], "sampler_draw": row["draw"]}
                  for row, res in zip(rec["draws"], results)]
+        rep["dryrun"] = got["dryrun"]
         nav = _nav_before(segs, steps[0])
         for i in steps[1:]:
             nj = _nav_before(segs, i)

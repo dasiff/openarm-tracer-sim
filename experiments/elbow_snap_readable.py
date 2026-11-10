@@ -24,7 +24,7 @@ sys.path.insert(0, str(PROJECT_ROOT))
 from experiments.elbow_snap_sweep import (J4_START, J4_STEP, POSES, WRIST_VARIANTS,  # noqa: E402
                                           find_snap, j4_values_down, joints_for_direction,
                                           run_sweep)
-from src.safety_filter import SafetyFilter  # noqa: E402
+from src.geo_kin_self_collision_filter import SafetyFilter  # noqa: E402
 
 ARM = "left"
 WRIST = WRIST_VARIANTS["wristB"]

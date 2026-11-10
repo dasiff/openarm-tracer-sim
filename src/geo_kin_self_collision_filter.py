@@ -47,7 +47,7 @@ CAVEATS (measured with experiments/safety_filter_roundtrip.py)
   * A solve takes about 0.05 ms.
 
 Usage
-    from src.safety_filter import SafetyFilter, filter_joints
+    from src.geo_kin_self_collision_filter import SafetyFilter, filter_joints
     q_left, q_right = filter_joints(q_left, q_right)         # shared instance
     sf = SafetyFilter(); ql, qr = sf.filter(ql, qr, q_current_left=..., reset=False)
 """
@@ -73,7 +73,7 @@ class SafetyFilter:
     """A geo_kin OpenArm session used as a joint-angle collision filter."""
 
     def __init__(self, collision_avoidance: bool = True):
-        # Imported here so `import src.safety_filter` needs neither package
+        # Imported here so `import src.geo_kin_self_collision_filter` needs neither package
         # until a filter is actually built.
         from openarm_teleop.session import make_session
         self.collision_avoidance = collision_avoidance

@@ -117,7 +117,7 @@ openarm-tracer-sim/
 │   ├── viewer_composite.py  # The live viewer's picture rendered offscreen from a state (replay --video viewer)
 │   ├── viewer_layout.py     # The viewer's layout as plain functions (follow camera, status panel, banner, camera tiles), shared by the live window and the offscreen renderer
 │   ├── robot_specs.py       # Rates, motor gains, camera specs (placeholders marked)
-│   ├── safety_filter.py     # Arm joint angles through geo_kin's collision filter (starting point for the planned safety filter)
+│   ├── geo_kin_self_collision_filter.py  # Arm joint angles through geo_kin's collision filter (starting point for the planned safety filter)
 │   └── logger.py            # Trajectory logging
 ├── legacy/                  # controller.py, actuator_mapping.py, joint_addressing.py: kept only for old experiments (see legacy/README.md)
 ├── models/

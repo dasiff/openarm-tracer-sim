@@ -22,7 +22,7 @@ What it does
      whether the output is contact-free and how far each joint moved.
   5. Times every solve() call.
 
-The conversion used for the tests is the shared helper src/safety_filter.py
+The conversion used for the tests is the shared helper src/geo_kin_self_collision_filter.py
 (solver FK for S, E, W; R_link7 @ C for the wrist). This script keeps its own
 MuJoCo-geometry conversion (Arms.frame, described below) as an independent
 cross-check: --cross-check-n configs (default 600) compare the two. Use
@@ -78,7 +78,7 @@ sys.path.insert(0, str(PROJECT_ROOT))
 
 from geo_kin_core.types import RetargetFrame, SEWPose  # noqa: E402
 from openarm_teleop import model_path  # noqa: E402
-from src.safety_filter import C_HAND, SafetyFilter  # noqa: E402
+from src.geo_kin_self_collision_filter import C_HAND, SafetyFilter  # noqa: E402
 
 SEW_ORIGIN = np.array([0.0, 0.0, 0.698])   # solver frame origin above link0
 ELBOW_SHIFT = 0.0315                       # m, along -joint4 axis
@@ -210,7 +210,7 @@ class Arms:
 
 # ---------------------------------------------------------------- solver
 class Solver:
-    """A src.safety_filter.SafetyFilter whose solve() calls are timed."""
+    """A src.geo_kin_self_collision_filter.SafetyFilter whose solve() calls are timed."""
 
     def __init__(self, filter_on):
         self.sf = SafetyFilter(collision_avoidance=filter_on)
@@ -290,7 +290,7 @@ def sample_configs(arms, rng, centre, spread, n_free, n_collide, max_draws):
 
 
 def cross_check(arms, sf, n=600, seed=123, tol=1e-9, label=""):
-    """Helper frame (solver FK, src.safety_filter) vs MuJoCo-geometry frame.
+    """Helper frame (solver FK, src.geo_kin_self_collision_filter) vs MuJoCo-geometry frame.
 
     Half the configs are within +-0.8 rad of the default pose, half uniform
     over the joint limits. Compares S, E, W and the wrist rotation (both arms).

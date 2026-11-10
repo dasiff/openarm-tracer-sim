@@ -22,7 +22,7 @@ What it does (headless, kinematic, no viewer)
     pose to a target (failure scenario: the solver's default pose to a failing config
     over --duration s, linear; reach scenario: a natural pose with the elbow bent
     90 degrees to a full forward reach at shoulder height over 4 s, smooth, then hold 2 s).
-  * At every 750 Hz sim step the commanded joints go through src/safety_filter.py twice:
+  * At every 750 Hz sim step the commanded joints go through src/geo_kin_self_collision_filter.py twice:
     filter ON (the real case) and OFF (control). The solver is streamed (not reset).
   * A jump is a step where an output joint moves by more than --jump-threshold
     (default 0.1 rad) while the command moves ~0.001 rad. Prints its time, the joints,
@@ -57,7 +57,7 @@ sys.path.insert(0, str(PROJECT_ROOT))
 
 from models.policies.branch_jump_policy import SOLVER_DEFAULT_Q, BranchJumpPolicy  # noqa: E402
 from src import robot_specs  # noqa: E402
-from src.safety_filter import SafetyFilter  # noqa: E402
+from src.geo_kin_self_collision_filter import SafetyFilter  # noqa: E402
 
 RATE_HZ = 750.0                           # policy / solver steps per sim second
 DT = 1.0 / RATE_HZ

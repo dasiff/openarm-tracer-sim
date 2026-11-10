@@ -4,7 +4,7 @@ Characterise the solver's "snap": near a straight elbow (joint 4 close to 0) the
 OpenArm retargeting solver can return joints that differ a lot from the ones the
 input pose was made from, with the wrist point off by centimetres.
 
-Headless, kinematic, no viewer. Uses the shared helper src/safety_filter.py
+Headless, kinematic, no viewer. Uses the shared helper src/geo_kin_self_collision_filter.py
 (joint angles -> robot FK -> RetargetFrame -> solve) and changes no existing file.
 
     python experiments/elbow_snap_sweep.py            # everything, writes the plot
@@ -35,7 +35,7 @@ import numpy as np
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from src.safety_filter import SafetyFilter  # noqa: E402
+from src.geo_kin_self_collision_filter import SafetyFilter  # noqa: E402
 
 SIDES = ("left", "right")
 J4_START, J4_END, J4_STEP = 0.6, 0.0, 0.002

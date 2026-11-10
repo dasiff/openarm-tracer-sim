@@ -1,0 +1,52 @@
+{
+ "stances_checked": 2000,
+ "time_checked": 2000,
+ "time_per_check_s": {
+  "mean": 0.03730856389272958,
+  "max": 0.07283051800914109,
+  "n": 200
+ },
+ "gate_failures": 1322,
+ "gate_fail_fraction": 0.661,
+ "limit_m": 0.0,
+ "top_pairs": [
+  [
+   "openarm_body_link0_collision vs bench_top",
+   1276
+  ],
+  [
+   "base_link_geom vs bench_leg_fr",
+   29
+  ],
+  [
+   "battery_geom vs stool_base_4",
+   9
+  ],
+  [
+   "openarm_left_right_finger_collision vs task_hotplate_top_plate",
+   2
+  ],
+  [
+   "openarm_right_left_finger_collision vs task_hotplate_top_plate",
+   2
+  ],
+  [
+   "openarm_right_link4_collision vs task_hotplate_base",
+   1
+  ],
+  [
+   "openarm_right_link5_collision vs task_hotplate_base",
+   1
+  ],
+  [
+   "battery_geom vs stool_base_1",
+   1
+  ],
+  [
+   "openarm_right_left_finger_collision vs task_hotplate_base",
+   1
+  ]
+ ],
+ "min_distance_m": -0.4348316776857443,
+ "wall_s": 64.1355333328247
+}

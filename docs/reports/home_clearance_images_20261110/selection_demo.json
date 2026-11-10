@@ -1,0 +1,225 @@
+{
+ "ok": false,
+ "stop": "stance sampler: all 10 draws failed the full check",
+ "seed": 381989416,
+ "batch": 10000,
+ "attempts": 10000,
+ "drops": 0,
+ "pedestal_redraws": 0,
+ "gate_failures": 16,
+ "gate_pairs": [
+  [
+   "openarm_body_link0_collision vs bench_top",
+   15
+  ],
+  [
+   "openarm_left_right_finger_collision vs task_hotplate_top_plate",
+   1
+  ]
+ ],
+ "score": {
+  "min": 0.0,
+  "median": 0.015060689161430926,
+  "max": 3.6110116466748283,
+  "zero_fraction": 0.0827
+ },
+ "draws": [
+  {
+   "draw": 1,
+   "x": 0.8909026743369752,
+   "y": 1.2107925053369495,
+   "heading": -1.5707963267948966,
+   "pedestal": 0.12031358222240424,
+   "score": 1.7394343707595632,
+   "weight": 3.0256319301797174,
+   "ok": false,
+   "failed": [
+    "ik"
+   ],
+   "reason": "task 1 (pick): at the stance 'nominal' point 2 (grasp, [1.0, 0.66, 1.005]) has no collision-free solution in any approach direction (furthest: bin 0); the stance needs every task to pass",
+   "seconds": 1.966,
+   "seed": 1794280853838800928,
+   "dz": 0.2283135822224045,
+   "d": 0.5512278213937184
+  },
+  {
+   "draw": 2,
+   "x": 0.6419556762427426,
+   "y": 1.018065257338282,
+   "heading": -1.5707963267948966,
+   "pedestal": 0.14914167333981487,
+   "score": 2.8538854978328843,
+   "weight": 8.14466243474085,
+   "ok": false,
+   "failed": [
+    "placed_beaker"
+   ],
+   "reason": "at pedestal 0.149 the arms at home are 29 mm from a beaker placed on the hotplate",
+   "seconds": 0.123,
+   "seed": 1794280887955092638,
+   "dz": 0.2571416733398151,
+   "d": 0.42398095884499387
+  },
+  {
+   "draw": 3,
+   "x": 0.8321440094739471,
+   "y": 0.8874128804164294,
+   "heading": -1.5707963267948966,
+   "pedestal": 0.22081440783180079,
+   "score": 2.2386026148770957,
+   "weight": 5.0113416673345705,
+   "ok": false,
+   "failed": [
+    "placed_beaker"
+   ],
+   "reason": "at pedestal 0.201 the arms at home are 35 mm from a beaker placed on the hotplate",
+   "seconds": 0.108,
+   "seed": 1794280926728438351,
+   "dz": 0.32881440783180116,
+   "d": 0.23038008207515184
+  },
+  {
+   "draw": 4,
+   "x": 0.5909601753579927,
+   "y": 1.1467233569590913,
+   "heading": -1.5707963267948966,
+   "pedestal": 0.10139742979807767,
+   "score": 1.4809309985670311,
+   "weight": 2.193156622516744,
+   "ok": false,
+   "failed": [
+    "ik"
+   ],
+   "reason": "task 1 (pick): at the stance 'nominal' point 2 (grasp, [1.0, 0.66, 1.005]) has no collision-free solution in any approach direction (furthest: bin 0); the stance needs every task to pass",
+   "seconds": 2.302,
+   "seed": 1794280968200719329,
+   "dz": 0.20939742979807785,
+   "d": 0.5605406053949038
+  },
+  {
+   "draw": 5,
+   "x": 0.6387527548611026,
+   "y": 0.960750025038082,
+   "heading": -1.5707963267948966,
+   "pedestal": 0.1528344304091997,
+   "score": 3.2336664980594128,
+   "weight": 10.456599020671826,
+   "ok": false,
+   "failed": [
+    "placed_beaker"
+   ],
+   "reason": "at pedestal 0.153 the arms at home are -2 mm from a beaker placed on the hotplate",
+   "seconds": 0.072,
+   "seed": 1794281009631253926,
+   "dz": 0.26083443040919985,
+   "d": 0.37876690913338573
+  },
+  {
+   "draw": 6,
+   "x": 0.8318080363753506,
+   "y": 1.0846816195679727,
+   "heading": -1.5707963267948966,
+   "pedestal": 0.07227404715662133,
+   "score": 3.1371605037622023,
+   "weight": 9.841776026365515,
+   "ok": false,
+   "failed": [
+    "home_clearance"
+   ],
+   "reason": "at pedestal 0.052 the arms at home are 28 mm from openarm_right_right_finger_collision vs task_hotplate_base (the limit is 40 mm)",
+   "seconds": 0.12,
+   "seed": 1794281052258692071,
+   "dz": 0.18027404715662154,
+   "d": 0.4263070726097956
+  },
+  {
+   "draw": 7,
+   "x": 0.5781878175253858,
+   "y": 0.9288569679190741,
+   "heading": -1.5707963267948966,
+   "pedestal": 0.10196761617990627,
+   "score": 3.2543868761111745,
+   "weight": 10.59103393940465,
+   "ok": false,
+   "failed": [
+    "home_clearance"
+   ],
+   "reason": "at pedestal 0.102 the arms at home are 33 mm from openarm_left_right_finger_collision vs task_hotplate_top_plate (the limit is 40 mm)",
+   "seconds": 0.062,
+   "seed": 1794281088327840883,
+   "dz": 0.20996761617990645,
+   "d": 0.39605024261359356
+  },
+  {
+   "draw": 8,
+   "x": 0.559691791392141,
+   "y": 0.9050576380702272,
+   "heading": -1.5707963267948966,
+   "pedestal": 0.15171453128445073,
+   "score": 2.9258585108772266,
+   "weight": 8.560648025672702,
+   "ok": false,
+   "failed": [
+    "placed_beaker"
+   ],
+   "reason": "at pedestal 0.152 the arms at home are -11 mm from a beaker placed on the hotplate",
+   "seconds": 0.037,
+   "seed": 1794281126645134991,
+   "dz": 0.2597145312844509,
+   "d": 0.3946198346367821
+  },
+  {
+   "draw": 9,
+   "x": 0.8640584059750447,
+   "y": 1.3458085844867083,
+   "heading": -1.5707963267948966,
+   "pedestal": 0.05821371562130298,
+   "score": 0.8155952868598527,
+   "weight": 0.6651956719480054,
+   "ok": false,
+   "failed": [
+    "ik"
+   ],
+   "reason": "task 1 (pick): at the stance 'nominal' point 2 (grasp, [1.0, 0.66, 1.005]) has no collision-free solution in any approach direction (furthest: bin 0); the stance needs every task to pass",
+   "seconds": 1.792,
+   "seed": 1794281165269493774,
+   "dz": 0.16621371562130305,
+   "d": 0.6858263875844746
+  },
+  {
+   "draw": 10,
+   "x": 0.8900504421381884,
+   "y": 0.8899547397131462,
+   "heading": -1.5707963267948966,
+   "pedestal": 0.20663674433686618,
+   "score": 0.9156967666533514,
+   "weight": 0.8385005684594024,
+   "ok": false,
+   "failed": [
+    "placed_beaker"
+   ],
+   "reason": "at pedestal 0.187 the arms at home are 22 mm from a beaker placed on the hotplate",
+   "seconds": 0.17,
+   "seed": 1794281192738742024,
+   "dz": 0.3146367443368665,
+   "d": 0.23091622600145273
+  }
+ ],
+ "chosen_draw": null,
+ "task_cfg": {
+  "staging_xy": [
+   0.765,
+   1.085
+  ],
+  "staging_yaw": -1.5707963267948966,
+  "pedestal_q": 0.155
+ },
+ "picture_stance": {
+  "x": 0.8900504421381884,
+  "y": 0.8899547397131462,
+  "heading_deg": -90.0,
+  "pedestal": 0.20663674433686618,
+  "which": "last tried"
+ },
+ "picture": "/home/vboxuser/projects/openarm-tracer-sim/docs/reports/home_clearance_images_20261110/selection_demo_top.png"
+}

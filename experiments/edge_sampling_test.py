@@ -253,6 +253,13 @@ def main():
     rec_d = {}
     none_dry = next(iter_verified_stances([obj], pcs, geom, "left", cfg_v, gen_check, verify_fail, seed=23, rec=rec_d, say=lambda *a, **k: None), "END")
     check("a full-check pass that fails the dry-run is not yielded (every candidate passing the check goes to the dry-run)", none_dry == "END" and len(dry_calls) == rec_d.get("full_passed") and len(dry_calls) > 0, f"{len(dry_calls)} dry-runs")
+    import tempfile  # noqa: E402
+    rec_w = {}
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        got_w = next(iter_verified_stances([obj], pcs, geom, "left", cfg_v, gen_check, None, seed=23, rec=rec_w, record_dir=Path(tmp_dir), say=lambda *a, **k: None), None)
+        written = sorted(Path(tmp_dir).glob("sampler_*.json"))
+        ok_rec = bool(written) and json.loads(written[0].read_text()).get("ok") is True
+    check("the record is written before the yield (a caller that takes the first stance does not resume the generator)", got_w is not None and ok_rec, f"{len(written)} record file(s)")
     rec_r1, rec_r2 = {}, {}
     g1 = [c["row"]["index"] for c in iter_verified_stances([obj], pcs, geom, "left", cfg_v, gen_check, None, seed=99, rec=rec_r1, say=lambda *a, **k: None)]
     g2 = [c["row"]["index"] for c in iter_verified_stances([obj], pcs, geom, "left", cfg_v, gen_check, None, seed=99, rec=rec_r2, say=lambda *a, **k: None)]

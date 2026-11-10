@@ -472,8 +472,8 @@ def iter_verified_stances(objects, pieces, geom, arm, cfg, check, verify, gate=N
             continue
         rec["dryrun_passed"] += 1
         rec.update(ok=True, chosen=row)
+        _finish_gen(rec, record_dir, t0)                         # written before the yield: the caller takes this stance and does not resume the generator (2026-11-10)
         yield {"stance": stance, "row": row, "raw": r.get("raw"), "dryrun": v}
-        _finish_gen(rec, record_dir, t0)
     if rec["chosen"] is None and rec["stop"] is None:
         rec["stop"] = f"no candidate passed both the full check and the dry-run ({len(cands)} candidates)"
     _finish_gen(rec, record_dir, t0)

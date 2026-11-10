@@ -20,6 +20,14 @@ SIDES = ("left", "right")
 ARM_JOINTS = 7
 
 
+_NEVER_CLOSE = frozenset()   # pairs of shape ids that can never come close (SF-23); set by the last RobotShapes built
+
+
+def never_close_pairs():
+    """The never-close pairs of the robot shapes last loaded: a frozenset of frozenset({id_a, id_b}) (SF-23)."""
+    return _NEVER_CLOSE
+
+
 class FingerprintMismatch(RuntimeError):
     """The robot model differs from the one the shapes were built from (SF-5)."""
 
@@ -78,9 +86,10 @@ def _quat_to_mat(q):
 class RobotShapes:
     """The shapes of one robot model. Built from the JSON file and the robot-only MjModel."""
 
-    def __init__(self, model, shapes_path):
+    def __init__(self, model, shapes_path, use_never_close=True):
         """Args: model (mujoco.MjModel): the robot-only model (src/safety_filter/robot_model.load_robot_only_model);
         shapes_path (str or Path): data/safety_filter/robot_shapes.json.
+        use_never_close (bool): load the never-close pair list of the file (SF-23); False checks every pair (comparison runs).
 
         Raises: FingerprintMismatch if the model's fingerprint is not the file's stamp.
         """
@@ -93,6 +102,12 @@ class RobotShapes:
                 f"robot model fingerprint {fp[:12]} differs from the shapes file's {str(doc.get('fingerprint'))[:12]}; "
                 "rebuild with tools/build_filter_shapes.py")
         self.doc = doc
+        global _NEVER_CLOSE
+        nc = doc.get("never_close", {})
+        if use_never_close and nc and nc.get("fingerprint") != fp:
+            raise FingerprintMismatch("the never-close list was built for another robot model")
+        self.never_close = frozenset(frozenset((p["a"], p["b"])) for p in nc.get("pairs", [])) if use_never_close else frozenset()
+        _NEVER_CLOSE = self.never_close
         self.specs = doc["shapes"]
         self._body = {s["id"]: mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, s["frame"]) for s in self.specs}
         self._body_ends = {}

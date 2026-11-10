@@ -330,6 +330,42 @@ def build_common(m, d, shapes):
                                 m.geom_size[g], [name], note="box geom, exact"))
 
 
+SWEEP_FILE = ROOT / "data" / "safety_filter" / "never_close_sweep.json"
+
+
+def load_never_close(fp, shapes):
+    """The never-close list (SF-23) for these shapes, from the sweep file made by tools/never_close_sweep.py.
+    A shape pair is listed when the sweep listed the two shapes' real-geom sets; an entry carries the sweep numbers.
+    A sweep made for another robot model is not used (empty list, with a warning)."""
+    empty = {"rule": "SF-23", "fingerprint": fp, "pairs": [], "swept": 0, "not_swept": 0}
+    if not SWEEP_FILE.exists():
+        print("warning: no never_close_sweep.json; the never-close list is empty")
+        return empty
+    sw = json.loads(SWEEP_FILE.read_text(encoding="utf-8"))
+    if sw["fingerprint"] != fp:
+        print("warning: never_close_sweep.json is for another robot model; the never-close list is empty")
+        return empty
+    by_key = {}
+    for e in sw["entries"]:
+        by_key[tuple(sorted([tuple(sorted(e["a_geoms"])), tuple(sorted(e["b_geoms"]))]))] = e
+    pairs, swept, not_swept = [], 0, 0
+    ids = {s["id"]: s for s in shapes}
+    for e in sw["entries"]:
+        for a, b in e["shape_pairs"]:
+            if a not in ids or b not in ids:
+                continue
+            if e["status"] == "not swept":
+                not_swept += 1
+                continue
+            swept += 1
+            if e["listed"]:
+                pairs.append({"a": a, "b": b, "variables": e["variables"], "steps": e["steps"],
+                              "step_units": e["step_units"], "bound_m": e["bound_m"], "min_gap_m": e["min_gap_m"],
+                              "min_pose": e["min_pose"], "margin_m": e["margin_m"]})
+    return {"rule": "SF-23", "fingerprint": fp, "pairs": pairs, "swept": swept, "not_swept": not_swept,
+            "note": "listed only if min real gap - step-size bound >= margin + 1 cm (hand-hand 2 cm, other 4 cm); tools/never_close_sweep.py"}
+
+
 def build(out_path, counts=None, cache=None):
     """Writes the shapes file. counts: {"left": {1..6: n}, "right": {...}} (default: SHAPE_BUILD link_capsules).
     cache: dict of per-link fits (key (side, link, count)) reused across calls."""
@@ -347,6 +383,7 @@ def build(out_path, counts=None, cache=None):
     for sp in shapes:
         if "segment" not in sp:
             sp["segment"] = SEGMENT_OF_PART.get(sp["part"], "body")
+    never_close = load_never_close(fp, shapes)
     doc = {
         "schema": 2,
         "robot_model": str(ROBOT_XML.relative_to(ROOT)),
@@ -355,6 +392,7 @@ def build(out_path, counts=None, cache=None):
         "build": {"tool": "tools/build_filter_shapes.py", "config": "src/safety_filter/config.py SHAPE_BUILD"},
         "link_fit": report,
         "shapes": shapes,
+        "never_close": never_close,
     }
     out_path = Path(out_path)
     out_path.parent.mkdir(parents=True, exist_ok=True)

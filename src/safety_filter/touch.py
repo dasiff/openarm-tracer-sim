@@ -10,6 +10,7 @@ Pair rules (first match wins):
              every other arm part and held object is checked against the torso.
   body-body  two robot body shapes: exempt (rigidly connected robot body); both shoulder mounts: exempt (fixed to the torso).
   hand-hand  palm, fingers or held object of one arm vs the same kinds of the other arm: hand_hand_m.
+  never-close a robot-vs-robot pair on the list in robot_shapes.json (SF-23) is exempt (checked after the rules above).
   robot-robot every other pair between the two arms, or an arm part vs another robot body part: robot_robot_m.
   Robot body vs world objects is not in the touch rules (no margin set): exempt, and flagged in the report.
 """
@@ -21,7 +22,7 @@ import numpy as np
 
 from src.safety_filter import config as cfg
 from src.safety_filter.geometry import (capsule_box, capsule_box_batch, capsule_capsule, capsule_capsule_batch)
-from src.safety_filter.shapes import PlacedShape
+from src.safety_filter.shapes import PlacedShape, never_close_pairs
 from src.safety_filter.world import WorldObject
 
 HAND_PARTS = ("palm", "finger", "held")
@@ -46,8 +47,16 @@ def _rule(kind, margin):
                 release=margin + cfg.PUSH_STOP_BEYOND_M)
 
 
-def pair_rule(a: PlacedShape, b: PlacedShape):
-    """The touch rule of a pair of placed shapes: a Rule (checked) or an Exempt (not checked, with the reason)."""
+def pair_rule(a: PlacedShape, b: PlacedShape, use_never_close=True):
+    """The touch rule of a pair of placed shapes: a Rule (checked) or an Exempt (not checked, with the reason).
+    A robot-vs-robot pair on the never-close list (SF-23) is exempt: its real geometry cannot come within margin + 1 cm."""
+    r = _pair_rule(a, b)
+    if use_never_close and isinstance(r, Rule) and frozenset((a.id, b.id)) in never_close_pairs():
+        return Exempt("never-close pair: swept over the full joint limits on the real geometry (SF-23)")
+    return r
+
+
+def _pair_rule(a: PlacedShape, b: PlacedShape):
     if a.arm == "world" and b.arm == "world":
         return Exempt("world against world is not a robot pair")
     if a.arm == "world" or b.arm == "world":

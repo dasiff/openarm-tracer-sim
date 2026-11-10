@@ -685,6 +685,72 @@ def _plan_for_runs(tagged, runs, moving_nav):
     return plan2
 
 
+def points_at_heading(points, heading):
+    """The task points with each place's back-off point turned to the stance's heading (M300).
+
+    The back-off point of a place (path "back") is the destination's centre `retreat_m` back along the robot's forward direction; step_target builds it along the staging yaw,
+    so the sampler and the full check rebuild it for each stance's own heading. Every other point is unchanged.
+
+    Args:
+        points (list of dict): The task points (step_target's "points").
+        heading (float): The stance's heading, radians.
+
+    Returns:
+        list of dict: New dicts for the back-off points, the same objects for the rest.
+    """
+    rt = PICK_PLACE_CFG["retreat_m"]
+    out = []
+    for p in points:
+        if p.get("path") == "back" and p.get("pivot") is not None:
+            px, py = p["pivot"]
+            out.append(dict(p, p=[px - rt * math.cos(heading), py - rt * math.sin(heading), float(p["p"][2])]))
+        else:
+            out.append(p)
+    return out
+
+
+def _sampler_objects(world, tagged, segs, steps, targets):
+    """The objects of the edge sampler (M300): the manipulated objects of the plan's steps, each with its task points, the usable edges of the furniture at the bottom of its
+    support chain, and its pick and place points.
+
+    The support root of a step is the root of its target's chain (the beaker for a pick, the hotplate for a place), so the beaker on the hotplate maps to the bench.
+
+    Returns:
+        tuple: (objects, labels, missing): missing is None, or the reason no usable edge was found.
+    """
+    objs, labels = {}, []
+    for i in steps:
+        t = targets[i]
+        target = world.get(t["entry"])
+        try:
+            root = support_chain(world, target, t["entry"])[-1]
+        except SupportError as e:
+            return None, None, str(e)
+        edges = root.properties.get("usable_edges") or []
+        if not edges:
+            return None, None, f"no usable edge: {root.id} (the furniture under {t['entry']}) has no open edge in front of it"
+        man = next((o for o in (segs[i].get("objects") or []) if o.get("role") == "manipulated"), None)
+        name = man["phrase"] if man else t["entry"]
+        o = objs.setdefault(name, {"name": name, "points": [], "edges": edges, "pick": None, "place": None, "mid": None})
+        for p in t["points"]:
+            if p.get("path") == "back" and p.get("pivot") is not None:
+                o["points"].append({"kind": "back", "pivot": [float(v) for v in p["pivot"]], "z": float(p["p"][2]), "rt": float(PICK_PLACE_CFG["retreat_m"])})
+            else:
+                o["points"].append({"kind": "fixed", "p": [float(v) for v in p["p"]]})
+            labels.append(f"{name}:{t['primitive']}:{p.get('path')}")
+        band = [p["p"] for p in t["points"] if p.get("path") in ("grasp", "setdown")]
+        if band:
+            mean = [float(v) for v in np.mean(np.asarray(band, float), axis=0)]
+            if t["primitive"] == "pick":
+                o["pick"] = mean
+            elif t["primitive"] == "place":
+                o["place"] = mean
+    for o in objs.values():
+        pts = [v for v in (o["pick"], o["place"]) if v is not None]
+        o["mid"] = [float(v) for v in np.mean(np.asarray(pts, float), axis=0)]
+    return list(objs.values()), labels, None
+
+
 def apply_stance_selection(tagged, task_cfg, maps_dir="data/reach_map", cfg=BENCH_STANCE_CFG, say=print):
     """What make_pipeline_task calls (2026-11-10, decisions-log M299): the Gaussian sampler only (src/stance_sampling.py). No overlay, no two-pass, no fallback.
 
@@ -698,21 +764,28 @@ def apply_stance_selection(tagged, task_cfg, maps_dir="data/reach_map", cfg=BENC
     from types import SimpleNamespace
     from src.full_check import FullCheck
     from src.stance_finder import robot_geometry
-    from src.stance_sampling import select_stance, task_points
+    from src.edge_sampling import select_edge_stance, pieces_for
     from src.approach_angle import choose_place_angle
     from src.world_model import SimGroundTruthSource, WorldModel
+    from src.nav_footprint import obstacles_from_model
+    from src.usable_edges import attach, base_length, furniture_tops, usable_segments
     yaw = float(task_cfg["staging_yaw"])
     fc = FullCheck(maps={**bs.load_maps(maps_dir)}, task_cfg=task_cfg, maps_dir=maps_dir)
     try:
         segs = tagged["segments"]
         steps = _manip_steps(tagged)
-        rep = {"runs": [], "null_nav": [], "tried": [], "notes": ["heading held at TASK_CFG staging_yaw (M299)"], "sampler": None}
+        rep = {"runs": [], "null_nav": [], "tried": [], "notes": ["edge sampler (M300): the heading is the direction from each stance to the task centroid"], "sampler": None}
         out = {"ok": False, "stop": None, "task_cfg": task_cfg, "plan": tagged, "report": rep}
         if not steps:
             out["stop"] = "the plan has no manipulation step"
             return out
         world = WorldModel([SimGroundTruthSource(fc.model, fc.scene_data, task_cfg)])
         world.refresh(fc.scene_data.time)
+        obstacles = obstacles_from_model(fc.model, fc.scene_data)                      # the scene's static geoms (walls, furniture, legs)
+        tops = furniture_tops(obstacles)                                              # M300: floor-standing rectangular tops
+        usable = usable_segments(tops, obstacles, base_length(fc.model, fc.scene_data))   # the open parts of their edges (the strip out from each edge, as deep as the base is long)
+        attach(world, tops, usable)                                                   # stored in the world model: the surface entry's properties["usable_edges"]
+        rep["usable_edges"] = [{k: (list(v) if isinstance(v, (tuple, np.ndarray)) else v) for k, v in s_.items()} for s_ in usable]
         g = fc.model.geom("bench_top")                       # the bench's near edge along the facing direction (as StanceContext computes it)
         c, hs = fc.scene_data.geom_xpos[g.id], fc.model.geom_size[g.id]
         n_face, _ = bs.bench_frame(yaw)
@@ -729,25 +802,37 @@ def apply_stance_selection(tagged, task_cfg, maps_dir="data/reach_map", cfg=BENC
 
         def check(stance):
             """The full check of one drawn stance, its values unchanged (the M283 seed is the check's own)."""
-            r = fc.check(stance, pts)
+            r = fc.check(stance, points_at_heading(pts, stance[2]))           # M300: the place's back-off point turns with the stance's heading (not the staging yaw)
             results.append(r)
             return {"ok": bool(r["ok"]), "failed": list(r.get("failed", [])), "reason": str(r.get("reason", "")), "seconds": (r.get("seconds") or {}).get("total"), "seed": r.get("seed")}
 
-        held = yaw if cfg["sampler_heading_held"] else None          # M299: the staging yaw is held, or each stance draws its own heading (Revision 2)
         def gate(stance):
             """The full check's own body check at the stance (FullCheck.clear.body_distance, the limit of its body group): a stance that touches the scene is discarded before the full check (M299)."""
             bd, pair = fc.clear.body_distance(stance)
             return bd > fc.cfg["body_clearance"], pair, bd
 
-        record_dir = Path(__file__).resolve().parents[1] / "data" / "logs" / "sampler_records"       # logging only: the selection record is written here (M299)
+        record_dir = Path(__file__).resolve().parents[1] / "data" / "logs" / "sampler_records"       # logging only: the selection record is written here (M299, M300)
         top = fc.model.geom("bench_top")                      # the bench top footprint: the base distance to its edge (negative: over it)
         tc, th_ = fc.scene_data.geom_xpos[top.id], fc.model.geom_size[top.id]
         def base_metric(x, y):
             dx, dy = abs(x - tc[0]) - th_[0], abs(y - tc[1]) - th_[1]
             outside = math.hypot(max(dx, 0.0), max(dy, 0.0))
             return outside if outside > 0 else max(dx, dy)
-        rec = select_stance(task_points([targets[i] for i in steps]), robot_geometry(fc.model), cfg["arm"], held, cfg, check, say=say, gate=gate, record_dir=record_dir,
-                            point_labels=[targets[i]["primitive"] for i in steps], base_metric=base_metric)
+        objects, labels, missing = _sampler_objects(world, tagged, segs, steps, targets)
+        if missing:
+            out["stop"] = missing
+            rep["notes"].append(missing)
+            return out
+        geom = robot_geometry(fc.model)
+        pieces = pieces_for(objects, geom, cfg["arm"], cfg)
+        if not any(p["feasible"] for p in pieces):
+            out["stop"] = "needs travel between stances: the objects' regions do not overlap"
+            rep["needs_travel"] = [{"object": o["name"], "edges": [{k: (list(v) if isinstance(v, (tuple, np.ndarray)) else v) for k, v in e.items()} for e in o["edges"]],
+                                    "pieces_feasible": sum(p["feasible"] for p in pieces_for([o], geom, cfg["arm"], cfg))} for o in objects]
+            rep["notes"].append(out["stop"])
+            rep["sampler"] = {"ok": False, "stop": out["stop"], "pieces": None}
+            return out
+        rec = select_edge_stance(objects, pieces, geom, cfg["arm"], cfg, check, gate=gate, say=say, record_dir=record_dir, base_metric=base_metric, point_labels=labels)
         rep["sampler"] = rec
         if not rec["ok"]:
             out["stop"] = "stance sampler: " + str(rec["stop"])

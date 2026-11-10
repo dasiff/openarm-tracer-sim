@@ -69,6 +69,30 @@ def predict_count_asym(r, theta, z, p, z_cut=None):
     return out if z_cut is None else np.where(z >= z_cut, out, 0.0)
 
 
+def predict_count_a9(r, theta, z, p, z_cut=None):
+    """A9 (fitted 2026-11-10, commit 05cc4b2; docs/reports/reach_model_fit_a9.json): A8 with the distance term split at r0.
+
+    count = C exp(-((r - r0)/sig_near)^2) for r < r0, C exp(-((r - r0)/sig_far)^2) for r >= r0, times the bearing term of A8 (sigma linear in z on each side of theta = 0);
+    zero below z_cut. The same arguments as predict_count_asym, with p = (C, r0, sig_near, sig_far, s_neg0, s_neg1, s_pos0, s_pos1).
+
+    Args:
+        r (array-like): 3D distance from the shoulder, metres.
+        theta (array-like): Bearing relative to the heading, radians, in (-pi, pi].
+        z (array-like): Vertical offset, metres.
+        p (sequence of float): The 8 parameters above.
+        z_cut (float or None): Below this vertical offset the count is 0.
+
+    Returns:
+        numpy.ndarray: The count, in [0, N_BINS].
+    """
+    r, theta, z = np.broadcast_arrays(np.asarray(r, float), np.asarray(theta, float), np.asarray(z, float))
+    C, r0, sn_d, sf_d, sn0, sn1, sp0, sp1 = p
+    dist = np.where(r < r0, np.exp(-((r - r0) / max(sn_d, MIN_WIDTH)) ** 2), np.exp(-((r - r0) / max(sf_d, MIN_WIDTH)) ** 2))
+    sig = np.maximum(np.where(theta < 0, sn0 + sn1 * z, sp0 + sp1 * z), MIN_WIDTH)
+    out = np.clip(C * dist * np.exp(-(theta / sig) ** 2), 0.0, N_BINS)
+    return out if z_cut is None else np.where(z >= z_cut, out, 0.0)
+
+
 # ---------------------------------------------------------------- A8 model: both arms and the analytic inverse
 # The A8 fit (docs/reports/reach_model_fit_asym.json, "A8 ..."; left arm, filtered maps). Not refitted here.
 # theta = atan2(y, x) in the shoulder frame: theta > 0 is the robot's left. For the left arm the theta < 0 side is the narrow one.

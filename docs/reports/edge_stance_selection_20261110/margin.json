@@ -1,0 +1,94 @@
+{
+ "date": "2026-11-10",
+ "edge": "staging bench +y edge (y = 0.8 m)",
+ "heading_deg": -90.0,
+ "scan_step_m": 0.01,
+ "rows": [
+  {
+   "pedestal_m": 0.05,
+   "x_m": -1.0,
+   "d_touch_m": 0.03,
+   "d_m": 0.030078124999999997,
+   "pair": "openarm_body_link0_collision vs bench_top",
+   "bench_distance_m": -6.705522803684971e-10,
+   "full_check_nearest_m": -6.705522803684971e-10,
+   "full_check_pair": "openarm_body_link0_collision vs bench_top"
+  },
+  {
+   "pedestal_m": 0.05,
+   "x_m": 0.0,
+   "d_touch_m": 0.03,
+   "d_m": 0.030078124999999997,
+   "pair": "openarm_body_link0_collision vs bench_top",
+   "bench_distance_m": 0.0,
+   "full_check_nearest_m": 0.0,
+   "full_check_pair": "openarm_body_link0_collision vs bench_top"
+  },
+  {
+   "pedestal_m": 0.05,
+   "x_m": 1.0,
+   "d_touch_m": 0.03,
+   "d_m": 0.030078124999999997,
+   "pair": "openarm_body_link0_collision vs bench_top",
+   "bench_distance_m": 0.0,
+   "full_check_nearest_m": -0.021110947254542427,
+   "full_check_pair": "openarm_right_link5_collision vs task_hotplate_top_plate"
+  },
+  {
+   "pedestal_m": 0.05,
+   "x_m": 1.6,
+   "d_touch_m": 0.03,
+   "d_m": 0.030078124999999997,
+   "pair": "openarm_body_link0_collision vs bench_top",
+   "bench_distance_m": 0.0,
+   "full_check_nearest_m": 0.0,
+   "full_check_pair": "openarm_body_link0_collision vs bench_top"
+  },
+  {
+   "pedestal_m": 0.25,
+   "x_m": -1.0,
+   "d_touch_m": 0.03,
+   "d_m": 0.030078124999999997,
+   "pair": "openarm_body_link0_collision vs bench_top",
+   "bench_distance_m": 0.0,
+   "full_check_nearest_m": 0.0,
+   "full_check_pair": "openarm_body_link0_collision vs bench_top"
+  },
+  {
+   "pedestal_m": 0.25,
+   "x_m": 0.0,
+   "d_touch_m": 0.03,
+   "d_m": 0.030078124999999997,
+   "pair": "openarm_body_link0_collision vs bench_top",
+   "bench_distance_m": 0.0,
+   "full_check_nearest_m": 0.0,
+   "full_check_pair": "openarm_body_link0_collision vs bench_top"
+  },
+  {
+   "pedestal_m": 0.25,
+   "x_m": 1.0,
+   "d_touch_m": 0.03,
+   "d_m": 0.030078124999999997,
+   "pair": "openarm_body_link0_collision vs bench_top",
+   "bench_distance_m": 0.0,
+   "full_check_nearest_m": 0.0,
+   "full_check_pair": "openarm_body_link0_collision vs bench_top"
+  },
+  {
+   "pedestal_m": 0.25,
+   "x_m": 1.6,
+   "d_touch_m": 0.03,
+   "d_m": 0.030078124999999997,
+   "pair": "openarm_body_link0_collision vs bench_top",
+   "bench_distance_m": 0.0,
+   "full_check_nearest_m": 0.0,
+   "full_check_pair": "openarm_body_link0_collision vs bench_top"
+  }
+ ],
+ "per_pedestal_larger_m": {
+  "0.05": 0.030078124999999997,
+  "0.25": 0.030078124999999997
+ },
+ "measured_margin_m": 0.030078124999999997,
+ "stored_margin_m": 0.0301
+}

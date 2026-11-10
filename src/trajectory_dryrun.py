@@ -34,9 +34,14 @@ SIDE = "left"
 TICK_S = 1.0 / 150.0            # the control tick (src/control_loop: 150 Hz)
 
 
+_SCRATCH = {}                   # one scratch state per model: a new MjData per call filled the memory cap (the run was killed, 2026-11-10)
+
+
 def _commanded_pad(model, d, arm, q):
     """The pad centre and rotation with the arm at command q (FK on a scratch copy; the state d is not changed)."""
-    d2 = mujoco.MjData(model)
+    d2 = _SCRATCH.get(id(model))
+    if d2 is None:
+        d2 = _SCRATCH[id(model)] = mujoco.MjData(model)
     d2.qpos[:] = d.qpos
     d2.qpos[arm.qadr] = q
     mujoco.mj_kinematics(model, d2)

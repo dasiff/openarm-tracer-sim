@@ -243,9 +243,9 @@ def main():
         beaker_shape = as_placed(catalog_object("beaker", (bxy[0], bxy[1], bottom_now)))
         held_shape = as_placed(catalog_object("beaker", (bxy[0], bxy[1], bottom_now))) if held else None
         shapes = {
-            "upper arm": [placed["left_upper_arm"]],
-            "forearm": [placed[k] for k in sorted(k for k in placed if k.startswith("left_forearm_"))],
-            "link 7": [placed[k] for k in sorted(k for k in placed if k.startswith("left_link7"))],
+            "upper arm": [p for p in placed.values() if p.arm == "left" and p.segment == "upper_arm"],
+            "forearm": [p for p in placed.values() if p.arm == "left" and p.segment == "forearm"],
+            "link 7": [p for p in placed.values() if p.arm == "left" and p.part == "link7"],
             "palm": [placed["left_palm_1"], placed["left_palm_2"]],
             "fingers": [placed["left_finger_right"], placed["left_finger_left"]],
         }

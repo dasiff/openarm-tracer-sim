@@ -56,6 +56,7 @@ class PlacedShape:
     rot: np.ndarray = None
     half: np.ndarray = None
     geoms: tuple = ()
+    segment: str = ""  # the resolver's segment (SF-20): upper_arm (links 1-3: contacts move the elbow only), forearm (links 4-6), hand (link 7, palm, fingers), shoulder, body
 
     def aabb(self):
         """Axis-aligned box around the shape (lo, hi)."""
@@ -169,14 +170,16 @@ class RobotShapes:
             for n, k in enumerate(self._cap_idx):
                 sp = self.specs[k]
                 out[k] = PlacedShape(id=sp["id"], arm=sp["arm"], part=sp["part"], kind="capsule", body=sp["frame"],
-                                     a=A[n], b=B[n], r=float(self._cap_r[n]), geoms=tuple(sp["geoms"]))
+                                     a=A[n], b=B[n], r=float(self._cap_r[n]), geoms=tuple(sp["geoms"]),
+                                     segment=sp.get("segment", ""))
         if len(self._box_idx):
             C = xpos[self._box_b] + np.einsum("kij,kj->ki", xmat[self._box_b], self._box_c)
             Rw = np.einsum("kij,kjl->kil", xmat[self._box_b], self._box_rl)
             for n, k in enumerate(self._box_idx):
                 sp = self.specs[k]
                 out[k] = PlacedShape(id=sp["id"], arm=sp["arm"], part=sp["part"], kind="box", body=sp["frame"],
-                                     centre=C[n], rot=Rw[n], half=self._box_h[n], geoms=tuple(sp["geoms"]))
+                                     centre=C[n], rot=Rw[n], half=self._box_h[n], geoms=tuple(sp["geoms"]),
+                                     segment=sp.get("segment", ""))
         return out
 
     def hand_frame(self, side):

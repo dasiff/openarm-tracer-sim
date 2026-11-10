@@ -53,10 +53,9 @@ def table():
         ("held object vs world: exempt", cap("lh", "left", "held"), box("bench", "world", "world"), None, None),
         ("same arm: link 7 vs own palm: exempt", cap("l7", "left", "link7"), cap("lp", "left", "palm"), None, None),
         ("held vs own hand: exempt (SF-4)", cap("lh", "left", "held"), cap("lp", "left", "palm"), None, None),
-        ("torso vs the left upper arm (touches by construction): exempt", cap("t", "common", "torso"), cap("left_upper_arm", "left", "upper_arm"), None, None),
+        ("torso vs the left upper arm (link 1): checked (real gap 64 mm, not by construction)", cap("t", "common", "torso"), cap("left_link1", "left", "link1"), "robot-robot", cfg.MARGINS["robot_robot_m"]),
         ("torso vs the left shoulder mount: exempt", cap("t", "common", "torso"), cap("left_shoulder_mount", "left", "shoulder_mount"), None, None),
-        ("torso vs the right upper arm: checked (it is +18 mm at the zero pose)", cap("t", "common", "torso"), cap("right_upper_arm", "right", "upper_arm"), "robot-robot", cfg.MARGINS["robot_robot_m"]),
-        ("torso vs the left forearm: checked", cap("t", "common", "torso"), cap("left_forearm", "left", "forearm"), "robot-robot", cfg.MARGINS["robot_robot_m"]),
+        ("torso vs the right link 4 (forearm): checked", cap("t", "common", "torso"), cap("right_link4", "right", "link4"), "robot-robot", cfg.MARGINS["robot_robot_m"]),
         ("torso vs a held object: checked", cap("t", "common", "torso"), cap("left_held", "left", "held"), "robot-robot", cfg.MARGINS["robot_robot_m"]),
         ("robot body vs robot body: exempt", cap("eb", "common", "pedestal_base"), box("pt", "common", "pedestal_top"), None, None),
         ("shoulder mount vs the other mount: exempt", cap("lm", "left", "shoulder_mount"), cap("rm", "right", "shoulder_mount"), None, None),
@@ -205,10 +204,10 @@ def catalog_and_config():
           len(objs) == 1 and np.allclose(objs[0].centre, [0.1, 0.2, 0.95]))
     check("adapter: unknown entries are skipped and listed", ad.skipped == ["unknown_thing"])
 
-    print("torso exemption (SF-9, re-checked after the forearm and link 7 pieces: docs/reports/20261110_1359_safety_filter_shape_refinement.md)")
-    from src.safety_filter.config import TORSO_TOUCHING_IDS
-    check("torso list is the decided three", tuple(sorted(TORSO_TOUCHING_IDS)) == ("left_shoulder_mount", "left_upper_arm", "right_shoulder_mount"))
-    check("no forearm or link 7 piece is exempt from the torso", not any(("forearm" in i or "link7" in i) for i in TORSO_TOUCHING_IDS))
+    print("torso exemption (SF-19: by real geometry, docs/reports/20261110_1904_safety_filter_per_link.md)")
+    from src.safety_filter.config import TORSO_EXEMPT_PARTS
+    check("torso exemption is by real geometry: only the shoulder mounts (SF-19)", tuple(TORSO_EXEMPT_PARTS) == ("shoulder_mount",))
+    check("no link 1-6 or hand part is exempt from the torso", not any(p.startswith("link") or p in ("palm", "finger", "held") for p in TORSO_EXEMPT_PARTS))
 
     print("margins and settings (config)")
     check("margins: hand-hand 1 cm, robot-robot 3 cm, arm-world 1 cm",

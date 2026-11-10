@@ -27,7 +27,7 @@ from src.safety_filter.geometry import closest_points_segments  # noqa: E402
 
 SHAPES = ROOT / "data" / "safety_filter" / "robot_shapes.json"
 POSES_PER_ARM = 200
-MULTI_PARTS = ("palm", "forearm", "link7")  # parts that may have several capsules (checked as a union)
+MULTI_PARTS = ("palm", "link1", "link2", "link3", "link4", "link5", "link6", "link7")  # parts that may have several capsules (checked as a union)
 TOL = 1e-12  # m: a shape must contain its geometry (stick-out <= 0); 1e-12 m is floating-point noise, not a gap
 
 
@@ -72,7 +72,7 @@ def main():
     print(f"shapes loaded: {len(rs.specs)}; fingerprint matches the file")
 
     worst = defaultdict(lambda: -np.inf)
-    anchor_err = {"upper": 0.0, "fore": 0.0}
+    anchor_err = {"upper": 0.0, "fore": 0.0}  # kept for the report line; the per-link shapes have no joint-line ends now
     joint_ids = {s: [mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_JOINT, f"openarm_{s}_joint{k}") for k in range(1, 8)]
                  for s in ("left", "right")}
     lo = {j: m.jnt_range[j] for s in joint_ids for j in joint_ids[s]}
@@ -119,26 +119,13 @@ def main():
                 per_cap = np.array([seg_dist_per_point(P, c.a, c.b) - c.r for c in caps])
                 key = f"{arm_} {part_} (union of {len(caps)})"
                 worst[key] = max(worst[key], float(per_cap.min(axis=0).max()))
-            # the arm segments sit on MuJoCo's joint anchors
-            for s in ("left", "right"):
-                ua = placed[f"{s}_upper_arm"]
-                j2 = mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_JOINT, f"openarm_{s}_joint2")
-                j4 = mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_JOINT, f"openarm_{s}_joint4")
-                j7 = mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_JOINT, f"openarm_{s}_joint7")
-                anchor_err["upper"] = max(anchor_err["upper"], np.linalg.norm(ua.a - d.xanchor[j2]),
-                                          np.linalg.norm(ua.b - d.xanchor[j4]))
-                fo = sorted([p for p in placed.values() if p.arm == s and p.part == "forearm"], key=lambda p: p.id)
-                anchor_err["fore"] = max(anchor_err["fore"], np.linalg.norm(fo[0].a - d.xanchor[j4]),
-                                         np.linalg.norm(fo[-1].b - d.xanchor[j7]),
-                                         max(np.linalg.norm(fo[k].b - fo[k + 1].a) for k in range(len(fo) - 1)))
     print(f"poses: {POSES_PER_ARM} per arm, both arms placed in each pose")
     print("largest stick-out per shape (m; <= 0 means the shape contains the geometry):")
     for sid in sorted(worst):
         print(f"  {sid:24s} {worst[sid]: .3e}")
     overall = max(worst.values())
     print(f"overall largest stick-out: {overall:.3e} m")
-    print(f"anchor error (placed segment ends vs MuJoCo joint anchors): upper {anchor_err['upper']:.3e} m, "
-          f"forearm {anchor_err['fore']:.3e} m")
+    print("per-link shapes: each link's capsules are fitted in the link's own frame (no joint-line ends to check)")
 
     # fingerprint: the robot model as built passes; a changed model is refused
     m2 = load_robot_only_model()
@@ -150,7 +137,7 @@ def main():
         refused = True
     print(f"fingerprint refusal on a changed model: {'refused' if refused else 'NOT refused'}")
 
-    ok = overall <= TOL and anchor_err["upper"] < 1e-9 and anchor_err["fore"] < 1e-9 and refused
+    ok = overall <= TOL and refused
     print("PASS" if ok else "FAIL")
     return 0 if ok else 1
 

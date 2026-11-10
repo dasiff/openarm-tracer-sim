@@ -175,32 +175,6 @@ def box_entry(sid, arm, part, body, center, quat, half, geoms, note=""):
 
 # ---------- arm segments: sampled over joint limits ----------
 
-def pose_samples(m, joint_ids, rng, n_first, n_second):
-    """Joint-limit corners of the given joints, then random poses within their limits.
-    Returns (first set = corners + n_first random, second set = n_second more random)."""
-    lim = np.array([m.jnt_range[j] for j in joint_ids], float)
-    corners = np.array([[lim[i, b] for i, b in enumerate(bits)] for bits in
-                        np.array(np.meshgrid(*([[0, 1]] * len(joint_ids)))).T.reshape(-1, len(joint_ids))])
-    first = rng.uniform(lim[:, 0], lim[:, 1], size=(n_first, len(joint_ids)))
-    second = rng.uniform(lim[:, 0], lim[:, 1], size=(n_second, len(joint_ids)))
-    return np.vstack([corners, first]), second
-
-
-def segment_radius(m, d, seg_ends, geoms, joint_ids, samples):
-    """Largest distance of the geoms' vertices from the segment, over the sampled poses.
-    seg_ends: ((joint id for end A), (joint id for end B)); the ends are the joint anchors (world, from the pose)."""
-    ja, jb = seg_ends
-    worst = []
-    for q in samples:
-        d.qpos[:] = m.qpos0
-        d.qpos[[m.jnt_qposadr[j] for j in joint_ids]] = q
-        mujoco.mj_kinematics(m, d)
-        A, B = d.xanchor[ja].copy(), d.xanchor[jb].copy()
-        P = np.vstack([world_verts(m, d, g) for g in geoms])
-        worst.append(float(seg_dist(P, A, B).max()))
-    return float(np.max(worst)) if worst else 0.0
-
-
 def convex_hull_vertices(m, g):
     """Vertices of a mesh geom's convex hull in the geom frame (MuJoCo collides with the hull; the hull encloses all)."""
     from scipy.spatial import ConvexHull
@@ -208,109 +182,75 @@ def convex_hull_vertices(m, g):
     return V[ConvexHull(V).vertices]
 
 
-def forearm_line_pieces(m, d, side, count, n_poses, seed):
-    """Forearm (links 4-6 hulls) split into `count` capsules on the joint 4 -> joint 7 line (SF-14).
-
-    Poses: joints 4, 5, 6 at their limit corners (8) and random within the limits. For a split (fractions t along the
-    line, 0 = joint 4 anchor, 1 = joint 7 anchor) a piece covers the hull vertices whose position along the line is
-    in its range; its radius is the largest distance from its vertices to its own segment over all poses. The split
-    minimises the total volume sum(pi r^2 (L + 4/3 r)). Returns ([(t0, t1, r)], report)."""
+def fit_three_capsules(P, steps):
+    """Three capsules, each enclosing its own share of the points (consecutive groups along the principal axis).
+    Two cut fractions on a 0.1 grid; the split with the least total volume wins."""
     import itertools
-    j = {k: joint_by_name(m, f"openarm_{side}_joint{k}") for k in (4, 5, 6, 7)}
-    geoms_ = [geom_by_name(m, f"openarm_{side}_link{k}_collision") for k in (4, 5, 6)]
-    hulls = [convex_hull_vertices(m, g) for g in geoms_]
-    joints = [j[4], j[5], j[6]]
-    lim = np.array([m.jnt_range[q] for q in joints], float)
-    corners = np.array([[lim[i, bb] for i, bb in enumerate(bits)] for bits in itertools.product([0, 1], repeat=3)])
-    rng = np.random.default_rng(seed)
-    samples = np.vstack([corners, rng.uniform(lim[:, 0], lim[:, 1], size=(n_poses - 8, 3))])
-    rows = []
-    for q in samples:
-        d.qpos[:] = m.qpos0
-        d.qpos[[m.jnt_qposadr[x] for x in joints]] = q
-        mujoco.mj_kinematics(m, d)
-        A, B = d.xanchor[j[4]].copy(), d.xanchor[j[7]].copy()
-        V = np.vstack([H @ d.geom_xmat[g].reshape(3, 3).T + d.geom_xpos[g] for H, g in zip(hulls, geoms_)])
-        AB = B - A
-        L = float(np.linalg.norm(AB))
-        u = AB / L
-        rel = V - A
-        rows.append((L, rel @ u / L, np.linalg.norm(rel - np.outer(rel @ u, u), axis=1), rel @ u))
-    Lmean = float(np.mean([r[0] for r in rows]))
+    c = P.mean(axis=0)
+    _, _, Vt = np.linalg.svd(P - c, full_matrices=False)
+    order = np.argsort((P - c) @ Vt[0])
+    n = len(P)
+    best = None
+    for f1, f2 in itertools.combinations(np.round(np.arange(0.1, 1.0, 0.1), 3), 2):
+        k1, k2 = int(round(f1 * n)), int(round(f2 * n))
+        parts = [P[order[:k1]], P[order[k1:k2]], P[order[k2:]]]
+        if any(len(p) < 4 for p in parts):
+            continue
+        caps = [fit_capsule(p, steps) for p in parts]
+        vol = sum(np.pi * r ** 2 * (np.linalg.norm(B - A) + 4.0 / 3.0 * r) for A, B, r in caps)
+        if best is None or vol < best[0]:
+            best = (vol, caps)
+    return best[1]
 
-    def piece_r(t0, t1, first, last):
-        best = 0.0
-        for L, t, perp, _ in rows:
-            sel = (t >= (-np.inf if first else t0)) & (t < (np.inf if last else t1)) if not last else (t >= (-np.inf if first else t0))
-            if not sel.any():
-                continue
-            tc = np.clip(t[sel], t0, t1)
-            best = max(best, float(np.sqrt(perp[sel] ** 2 + ((t[sel] - tc) * L) ** 2).max()))
-        return best
 
+def fit_link_pieces(P, count, steps):
+    """The capsules (A, B, r) in the body frame that enclose the points P with `count` capsules (minimum total volume)."""
     if count == 1:
-        pieces = [(0.0, 1.0, piece_r(0.0, 1.0, True, True))]
-    else:
-        step = 0.005 if count == 2 else 0.02
-        grid = np.round(np.arange(step, 1.0, step), 6)
-        combos = [(x,) for x in grid] if count == 2 else list(itertools.combinations(grid, 2))
-        best = None
-        for splits in combos:
-            bounds = [0.0] + [float(x) for x in splits] + [1.0]
-            radii = [piece_r(bounds[k], bounds[k + 1], k == 0, k == count - 1) for k in range(count)]
-            vol = sum(np.pi * r ** 2 * ((bounds[k + 1] - bounds[k]) * Lmean + 4.0 / 3.0 * r) for k, r in enumerate(radii))
-            if best is None or vol < best[0]:
-                best = (vol, bounds, radii)
-        vol, bounds, radii = best
-        pieces = [(bounds[k], bounds[k + 1], radii[k]) for k in range(count)]
-    vol = sum(np.pi * r ** 2 * ((t1 - t0) * Lmean + 4.0 / 3.0 * r) for t0, t1, r in pieces)
-    report = {"count": count, "pieces": [{"t0": t0, "t1": t1, "radius": r} for t0, t1, r in pieces],
-              "volume_m3": vol, "line_mean_m": Lmean, "poses": len(rows)}
-    return pieces, report
+        return [fit_capsule(P, steps)]
+    if count == 2:
+        return fit_two_capsules(P, steps)
+    if count == 3:
+        return fit_three_capsules(P, steps)
+    raise ValueError("count must be 1, 2 or 3")
+
+
+def link_body_points(m, g):
+    """Hull vertices of a link's collision mesh in the link's own body frame (rigid to the body: exact for every pose)."""
+    H = convex_hull_vertices(m, g)
+    return H @ quat_to_mat(m.geom_quat[g]).T + m.geom_pos[g]
+
+
+LINK_SEGMENT = {1: "upper_arm", 2: "upper_arm", 3: "upper_arm", 4: "forearm", 5: "forearm", 6: "forearm"}
+SEGMENT_OF_PART = {"shoulder_mount": "shoulder", "link7": "hand", "palm": "hand", "finger": "hand"}
 
 
 def build_arm(m, d, side, cfg, rng, shapes, report):
+    """The arm's shapes: links 1 to 6 per rigid body (SF-18, the count per link from SHAPE_BUILD link_capsules),
+    the shoulder mount (link 0), link 7, the palm and the fingers (unchanged from SF-3 and SF-15)."""
     S = SHAPE_BUILD
     steps = S["fit_steps"]
     report.setdefault(side, {})
     d.qpos[:] = m.qpos0
     mujoco.mj_kinematics(m, d)
-
-    # Upper arm: joint 2 anchor (body link2, local jnt_pos) to joint 4 anchor (body link4).
-    j = {k: joint_by_name(m, f"openarm_{side}_joint{k}") for k in range(1, 8)}
     b = {k: body_by_name(m, f"openarm_{side}_link{k}") for k in range(0, 8)}
-    geoms = lambda ks: [f"openarm_{side}_link{k}_collision" for k in ks]
-
-    def anchor_local(k):
-        return np.asarray(m.jnt_pos[j[k]], float)
-
-    # ends at the joint anchors at the reference pose (for the stored local coordinates)
-    seg_up = (j[2], j[4])
-    up_geoms = [geom_by_name(m, g) for g in geoms((1, 2, 3))]
-    up_joints = [j[1], j[2], j[3]]
-    up_first, up_second = pose_samples(m, up_joints, rng, S["random_poses_first_set"], S["random_poses_second_set"])
-    up_r1000 = segment_radius(m, d, seg_up, up_geoms, up_joints, up_first)
-    up_r2000 = max(up_r1000, segment_radius(m, d, seg_up, up_geoms, up_joints, up_second))
-    report[side] = {
-        "upper_arm": {"radius_at_1000": up_r1000, "radius_at_2000": up_r2000,
-                      "still_grows": bool(up_r2000 > up_r1000 + 1e-9), "poses": len(up_first) + len(up_second)},
-    }
-    # Reference pose verts for the stored ends: at zero pose, the ends are body-local jnt_pos.
-    shapes.append(capsule_entry2(f"{side}_upper_arm", side, "upper_arm", (b[2], b[4]),
-                                 anchor_local(2), anchor_local(4), up_r2000, geoms((1, 2, 3)),
-                                 note="ends: joint 2 anchor (body link2) and joint 4 anchor (body link4); radius over 2000 sampled poses"))
-    shapes[-1]["ends_body"] = [f"openarm_{side}_link2", f"openarm_{side}_link4"]
-    shapes[-1]["radius_at_1000"] = float(up_r1000)
-    # Forearm: N capsules on the joint 4 -> joint 7 line, split points minimising the volume (SF-14). Each piece is a
-    # fraction range [t0, t1] of the line (the line's ends are on the joint axes of links 4 and 7).
-    fore_pieces, fore_report = forearm_line_pieces(m, d, side, S["forearm_capsules"], S["forearm_fit_poses"], S["seed"])
-    report[side]["forearm"] = fore_report
-    for k, (t0, t1, r) in enumerate(fore_pieces, start=1):
-        shapes.append({"id": f"{side}_forearm_{k}", "arm": side, "part": "forearm", "kind": "capsule", "frame": "per end",
-                       "ends_body": [f"openarm_{side}_link4", f"openarm_{side}_link7"],
-                       "ends_local": [[float(v) for v in anchor_local(4)], [float(v) for v in anchor_local(7)]],
-                       "t_range": [float(t0), float(t1)], "radius": float(r), "geoms": geoms((4, 5, 6)),
-                       "note": f"piece {k} of {len(fore_pieces)} on the joint 4 -> joint 7 line, fraction {t0:.3f} to {t1:.3f} (SF-14)"})
+    counts = S["link_capsules"][side]
+    cache = cfg if isinstance(cfg, dict) else {}
+    for k in range(1, 7):
+        n = int(counts[k])
+        g = geom_by_name(m, f"openarm_{side}_link{k}_collision")
+        key = (side, k, n)
+        if key not in cache:
+            cache[key] = fit_link_pieces(link_body_points(m, g), n, steps)
+        pieces = cache[key]
+        report[side][f"link{k}"] = {"count": n, "radii": [float(r) for _, _, r in pieces],
+                                    "volume_m3": float(sum(np.pi * r ** 2 * (np.linalg.norm(B - A) + 4 / 3 * r) for A, B, r in pieces))}
+        for j, (A, B, r) in enumerate(pieces, start=1):
+            sid = f"{side}_link{k}" if n == 1 else f"{side}_link{k}_{j}"
+            e = capsule_entry(sid, side, f"link{k}", f"openarm_{side}_link{k}", A, B, r,
+                              [f"openarm_{side}_link{k}_collision"],
+                              note=f"capsule {j} of {n} on link {k} (own frame, SF-18)")
+            e["segment"] = LINK_SEGMENT[k]
+            shapes.append(e)
 
     # Shoulder mount (link 0, fixed to the torso): free capsule in the link 0 frame.
     g0 = geom_by_name(m, f"openarm_{side}_link0_collision")
@@ -346,6 +286,7 @@ def build_arm(m, d, side, cfg, rng, shapes, report):
         A, B, r = fit_capsule(verts_in_body(m, d, gf, body_by_name(m, body)), steps)
         shapes.append(capsule_entry(f"{side}_finger_{finger}", side, "finger", body, A, B, r,
                                     [f"{body}_collision"], note="one capsule, the finger body's frame (SF-3)"))
+    return cache
 
 
 def build_common(m, d, shapes):
@@ -389,22 +330,30 @@ def build_common(m, d, shapes):
                                 m.geom_size[g], [name], note="box geom, exact"))
 
 
-def build(out_path):
+def build(out_path, counts=None, cache=None):
+    """Writes the shapes file. counts: {"left": {1..6: n}, "right": {...}} (default: SHAPE_BUILD link_capsules).
+    cache: dict of per-link fits (key (side, link, count)) reused across calls."""
     m = load_robot_only_model()
     d = mujoco.MjData(m)
     fp = robot_fingerprint(m)
     rng = np.random.default_rng(SHAPE_BUILD["seed"])
+    if counts is not None:
+        SHAPE_BUILD["link_capsules"] = counts
+    cache = {} if cache is None else cache
     shapes, report = [], {}
     for side in SIDES:
-        build_arm(m, d, side, None, rng, shapes, report)
+        cache = build_arm(m, d, side, cache, rng, shapes, report)
     build_common(m, d, shapes)
+    for sp in shapes:
+        if "segment" not in sp:
+            sp["segment"] = SEGMENT_OF_PART.get(sp["part"], "body")
     doc = {
-        "schema": 1,
+        "schema": 2,
         "robot_model": str(ROBOT_XML.relative_to(ROOT)),
         "robot_model_includes": ["battery (src/battery.py)", "eagle camera body (src/cameras.py)"],
         "fingerprint": fp,
         "build": {"tool": "tools/build_filter_shapes.py", "config": "src/safety_filter/config.py SHAPE_BUILD"},
-        "arm_segment_sampling": report,
+        "link_fit": report,
         "shapes": shapes,
     }
     out_path = Path(out_path)
@@ -412,22 +361,18 @@ def build(out_path):
     tmp = out_path.with_suffix(".json.tmp")
     tmp.write_text(json.dumps(doc, indent=2) + "\n", encoding="utf-8")
     os.replace(tmp, out_path)
-    return doc
+    return doc, cache
 
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--out", default=str(DEFAULT_OUT))
     args = ap.parse_args()
-    doc = build(args.out)
+    doc, _ = build(args.out)
     print(f"wrote {args.out}: {len(doc['shapes'])} shapes, fingerprint {doc['fingerprint'][:16]}")
-    for side, r in doc["arm_segment_sampling"].items():
-        for part, v in r.items():
-            if "radius_at_1000" in v:
-                print(f"  {side} {part}: r@1000 {v['radius_at_1000']:.6f} r@2000 {v['radius_at_2000']:.6f} "
-                      f"grows {v['still_grows']} poses {v['poses']}")
-            else:
-                print(f"  {side} {part}: {v}")
+    for side, parts in doc["link_fit"].items():
+        for part, v in parts.items():
+            print(f"  {side} {part}: {v}")
 
 
 if __name__ == "__main__":

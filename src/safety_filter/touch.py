@@ -6,8 +6,8 @@ they have, which world objects are near an arm, and which object a hand holds.
 Pair rules (first match wins):
   world      an arm part vs a world object: checked with arm_world_m; fingers and held objects are exempt (M289).
   same arm   any two shapes of one arm (including the arm's held object against its own hand, SF-4): exempt.
-  torso      only the shapes that touch the torso by construction (TORSO_TOUCHING_IDS: both shoulder mounts, the left upper arm)
-             are exempt; every other arm part and held object is checked against the torso (SF-8).
+  torso      only the parts in TORSO_EXEMPT_PARTS (real geometry within 1 mm of the torso at home, SF-19) are exempt;
+             every other arm part and held object is checked against the torso.
   body-body  two robot body shapes: exempt (rigidly connected robot body); both shoulder mounts: exempt (fixed to the torso).
   hand-hand  palm, fingers or held object of one arm vs the same kinds of the other arm: hand_hand_m.
   robot-robot every other pair between the two arms, or an arm part vs another robot body part: robot_robot_m.
@@ -62,12 +62,12 @@ def pair_rule(a: PlacedShape, b: PlacedShape):
     if a.part == "shoulder_mount" and b.part == "shoulder_mount":
         return Exempt("both shoulder mounts are fixed to the torso: they never move relative to each other")
     if a.arm == b.arm and a.arm in SIDES:
-        return Exempt("same arm (held object vs its own hand: SF-4)")
+        return Exempt("same arm (SF-4 and SF-10 for the held object; no pair check inside one arm)")
     if "common" in (a.arm, b.arm):
         robot = b if a.arm == "common" else a
         body = a if a.arm == "common" else b
-        if body.part == "torso" and robot.id in cfg.TORSO_TOUCHING_IDS:
-            return Exempt("touches the torso by construction (overlaps it at the zero pose, SF-8)")
+        if body.part == "torso" and robot.part in cfg.TORSO_EXEMPT_PARTS:
+            return Exempt("touches the torso by construction (real geometry within 1 mm of the torso at home, SF-19)")
         if robot.arm == "common":
             return Exempt("robot body against itself")
         return _rule("robot-robot", cfg.MARGINS["robot_robot_m"])

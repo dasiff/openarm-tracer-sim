@@ -10,8 +10,10 @@ SHAPE_BUILD = {
     "random_poses_second_set": 1000,  # count: random poses added in the second set, so the total is 2000 (plus corners) [SF-5]
     "seed": 0,                        # the random generator seed for the pose samples (fixed so the build is repeatable) [SF-5]
     "fit_steps": 20000,               # count: the largest number of Nelder-Mead steps in each capsule fit [SF-5]
-    "forearm_capsules": 2,            # count: capsules on the forearm's joint 4 -> joint 7 line (SF-14; fewest that meet the SF-16 rule)
-    "forearm_fit_poses": 2000,        # count: forearm fit poses (8 limit corners + random), joints 4 to 6 [SF-14]
+    "link_capsules": {                # count per link, per arm (SF-18): the fewest capsules that meet SF-16 (1 to 3); set by experiments/safety_filter_link_counts.py
+        "left": {1: 1, 2: 1, 3: 1, 4: 1, 5: 1, 6: 1},
+        "right": {1: 1, 2: 1, 3: 1, 4: 1, 5: 1, 6: 1},
+    },
     "link7_capsules": 2,              # count: capsules for link 7 in the link 7 frame (SF-15)
 }
 
@@ -36,13 +38,9 @@ MARGINS = {
 PUSH_START_BEYOND_M = 0.01      # m, PROVISIONAL [M288]
 PUSH_STOP_BEYOND_M = 0.02       # m, PROVISIONAL [M288]
 
-# The torso is the parent of both shoulder mounts; arm and held-object pairs with it are not checked
-# (the mounts touch it by construction). Decided in Stage 1 by the touch table; flagged in the report.
-# Torso exemption, narrowed (SF-8): the torso is exempt only from the arm shapes that touch it by construction, i.e. shapes
-# that overlap the torso capsule at the zero pose (measured, 2026-11-10: docs/reports/20261110_safety_filter_fixup.md section 3):
-# both shoulder mounts (overlap in 200 of 200 random poses, fixed to the torso) and the LEFT upper arm (overlap -16 mm at the zero
-# pose; the right upper arm is +18 mm there and is checked). Forearm, link 7, palm, fingers and held objects are checked.
-TORSO_TOUCHING_IDS = ("left_shoulder_mount", "right_shoulder_mount", "left_upper_arm")
+# Torso exemption by REAL geometry (SF-19): an arm shape is exempt from the torso only if its link's real geometry is
+# within 1 mm of the real torso mesh at home (it touches the torso by construction). Parts listed here (provisional; see the report).
+TORSO_EXEMPT_PARTS = ("shoulder_mount",)
 
 # Held objects (M289, SF-4): match radius beyond an object's own radius, and the fallback capsule.
 HELD_MATCH_EXTRA_M = 0.01       # m, PROVISIONAL [M289]: the nearest graspable object within its radius + 1 cm of the finger pad midpoint

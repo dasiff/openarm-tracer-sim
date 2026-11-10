@@ -156,21 +156,21 @@ def joint_by_name(m, name):
 
 def capsule_entry(sid, arm, part, body, A, B, r, geoms, note=""):
     return {"id": sid, "arm": arm, "part": part, "kind": "capsule", "frame": body,
-            "ends_local": [[round(float(v), 9) for v in A], [round(float(v), 9) for v in B]],
-            "ends_body": [body, body], "radius": round(float(r), 9), "geoms": geoms, "note": note}
+            "ends_local": [[float(v) for v in A], [float(v) for v in B]],
+            "ends_body": [body, body], "radius": float(r), "geoms": geoms, "note": note}
 
 
 def capsule_entry2(sid, arm, part, bodies, A, B, r, geoms, note=""):
     """A capsule whose two ends are in different bodies (the arm segments)."""
     return {"id": sid, "arm": arm, "part": part, "kind": "capsule", "frame": "per end",
-            "ends_local": [[round(float(v), 9) for v in A], [round(float(v), 9) for v in B]],
-            "ends_body": list(bodies), "radius": round(float(r), 9), "geoms": geoms, "note": note}
+            "ends_local": [[float(v) for v in A], [float(v) for v in B]],
+            "ends_body": list(bodies), "radius": float(r), "geoms": geoms, "note": note}
 
 
 def box_entry(sid, arm, part, body, center, quat, half, geoms, note=""):
     return {"id": sid, "arm": arm, "part": part, "kind": "box", "frame": body,
-            "center_local": [round(float(v), 9) for v in center], "quat_local": [round(float(v), 9) for v in quat],
-            "half": [round(float(v), 9) for v in half], "geoms": geoms, "note": note}
+            "center_local": [float(v) for v in center], "quat_local": [float(v) for v in quat],
+            "half": [float(v) for v in half], "geoms": geoms, "note": note}
 
 
 # ---------- arm segments: sampled over joint limits ----------
@@ -240,12 +240,12 @@ def build_arm(m, d, side, cfg, rng, shapes, report):
                                  anchor_local(2), anchor_local(4), up_r2000, geoms((1, 2, 3)),
                                  note="ends: joint 2 anchor (body link2) and joint 4 anchor (body link4); radius over 2000 sampled poses"))
     shapes[-1]["ends_body"] = [f"openarm_{side}_link2", f"openarm_{side}_link4"]
-    shapes[-1]["radius_at_1000"] = round(up_r1000, 9)
+    shapes[-1]["radius_at_1000"] = float(up_r1000)
     shapes.append(capsule_entry2(f"{side}_forearm", side, "forearm", (b[4], b[7]),
                                  anchor_local(4), anchor_local(7), fo_r2000, geoms((4, 5, 6)),
                                  note="ends: joint 4 anchor (body link4) and joint 7 anchor (body link7); radius over 2000 sampled poses"))
     shapes[-1]["ends_body"] = [f"openarm_{side}_link4", f"openarm_{side}_link7"]
-    shapes[-1]["radius_at_1000"] = round(fo_r1000, 9)
+    shapes[-1]["radius_at_1000"] = float(fo_r1000)
 
     # Shoulder mount (link 0, fixed to the torso): free capsule in the link 0 frame.
     g0 = geom_by_name(m, f"openarm_{side}_link0_collision")

@@ -14,3 +14,66 @@ SHAPE_BUILD = {
 
 # Lab map (tools/survey_lab_map.py): which scene file to survey (the task scene, src/task_config.py TASK_CFG) [M290].
 LAB_MAP_SCENE = "models/scenes/chemistry_lab_beaker_hotplate.xml"
+
+# ---- Filter settings (Stage 1: shared layer). Units in the comments. ----
+
+# Where the filter's files are (relative to the project root). [SF-5]
+SHAPES_FILE = "data/safety_filter/robot_shapes.json"
+LAB_MAP_FILE = "data/safety_filter/lab_map.json"
+
+# Touch margins per pair kind (M288). A pair is checked when its gap comes within the margin.
+MARGINS = {
+    "hand_hand_m": 0.01,        # m, PROVISIONAL [M288]: palm, fingers or held object of one arm vs the same of the other arm
+    "robot_robot_m": 0.03,      # m, PROVISIONAL [M288]: every other robot vs robot pair (arm parts of one arm vs the other arm, held vs robot body)
+    "arm_world_m": 0.01,        # m, PROVISIONAL [M288]: arm parts (not fingers) vs world objects; must stay below the palm-to-beaker gap at a normal grasp
+}
+# Pushing starts this far beyond a pair's margin and stops this far beyond it (M288). Stage 2 uses them.
+PUSH_START_BEYOND_M = 0.01      # m, PROVISIONAL [M288]
+PUSH_STOP_BEYOND_M = 0.02       # m, PROVISIONAL [M288]
+
+# The torso is the parent of both shoulder mounts; arm and held-object pairs with it are not checked
+# (the mounts touch it by construction). Decided in Stage 1 by the touch table; flagged in the report.
+EXEMPT_TORSO_PAIRS = True       # on/off, [no decision row yet: Stage 1 choice, ask David]
+
+# Held objects (M289, SF-4): match radius beyond an object's own radius, and the fallback capsule.
+HELD_MATCH_EXTRA_M = 0.01       # m, PROVISIONAL [M289]: the nearest graspable object within its radius + 1 cm of the finger pad midpoint
+HELD_FALLBACK_HEIGHT_M = 0.08   # m, PROVISIONAL [M289]: height of the fallback capsule when no object matches (default height; open)
+
+# Broad phase (M291): padding added to the arm's key-point box: the largest capsule radius plus the
+# activation distance plus the world margin, and at least the release distance.
+BROAD_WORLD_MARGIN_M = 0.01     # m, PROVISIONAL [M291]: the world margin added to the broad-phase box
+
+# Conversion and checks after a push (M295, SF-2). Stage 2 uses them; listed here so all settings live in one file.
+BRANCH_GUARD_RAD = 0.25         # rad, PROVISIONAL [M295]: no joint more than this from the last filtered command
+FK_CHECK_ELBOW_HAND_M = 0.002   # m, PROVISIONAL [SF-2]: forward kinematics of the converted joints must reproduce the elbow and hand within this
+FK_CHECK_ANGLE_DEG = 0.5        # deg, PROVISIONAL [SF-2]: and the hand orientation within this
+
+# Gap rule (M294, PROVISIONAL). Stage 2 uses it; on/off setting for the paper's plain behaviour.
+GAP_RULE = {
+    "on": True,                  # on/off [M294]: False gives the paper's plain behaviour for comparison
+    "approach_per_s": 30.0,      # 1/s [M294]: allowed approach speed = this x the gap above the margin
+    "shrink_fraction": 0.2,      # fraction [M294]: per tick the gap may shrink by at most this share of what is left
+    "max_grow_speed_m_s": 0.05,  # m/s [M294]: inside the margin the gap must grow at 30 /s x the violation, capped here
+}
+
+# Resolver (M293, Stage 2): rounds of the push and when it stops.
+RESOLVER = {
+    "rounds": 10,                # count [M293]: most rounds of the push per tick
+    "stop_m": 0.0005,            # m [M293]: stop when every pair is within this of its target
+}
+
+# Object catalog (M290): shape and tags of each object type. Sizes are taken from the object model files
+# (models/objects/beaker.xml, hotplate.xml), checked by experiments/safety_filter_touch_test.py, not taken from scene positions.
+# centre_above_bottom_m: the shape centre relative to the entry's position (its bottom centre).
+OBJECT_CATALOG = {
+    "beaker": {
+        "shape": "cylinder", "radius_m": 0.035, "half_height_m": 0.05,
+        "centre_above_bottom_m": 0.05, "graspable": True, "round": True,
+        "source": "models/objects/beaker.xml geom task_beaker_glass: cylinder radius 0.035, half height 0.05 at z 0.05",
+    },
+    "hotplate": {
+        "shape": "box", "half_m": (0.09, 0.09, 0.03),
+        "centre_above_bottom_m": 0.03, "graspable": False, "round": False,
+        "source": "models/objects/hotplate.xml geom task_hotplate_base: box half sizes 0.09 0.09 0.03 at z 0.03",
+    },
+}

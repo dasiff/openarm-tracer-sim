@@ -23,4 +23,8 @@ for t in arm_kinematics_test elbow_guard_test grasp_rules_test arm_collision_tes
     *) run "$t" python experiments/$t.py;; esac
 done
 run safety_filter_model_check python experiments/safety_filter_roundtrip.py --model-check
+run safety_filter_distance_test python experiments/safety_filter_distance_test.py
+run safety_filter_shapes_test python experiments/safety_filter_shapes_test.py
+run safety_filter_touch_test python experiments/safety_filter_touch_test.py
+run safety_filter_structure_test python experiments/safety_filter_structure_test.py
 echo ALL_DONE >> "$SUM"

@@ -24,3 +24,21 @@ Runs: `scratch/edge_stance/run_layout.py` (the pipeline's own selection, generat
 Reading: the dry-run gate rejected 8 of 8 full-check passes that reached it. Its two commonest failures are the 30 mm reference tolerance at place OVER and pick OVER; the tolerance is a proposed value (DRYRUN_CFG ref_tol_m), not decided. Most full-check failures are the eagle image occlusion and the arm-to-hotplate-beaker clearances, not the dry-run.
 
 Caveats: the first attempts were killed by the system's memory limit, caused by a concurrent job of another session (not by this code). The dry-run memory leak was fixed in the commit before these runs, and the check's logs are now cleared per candidate.
+
+## Results after the criterion and sigma change (sigma 15 deg; dry-run fails only on timeout or IK divergence)
+
+Logs: `data/logs/gen5_staging_20261110_195401.log`, `data/logs/gen5_moved_20261110_195401.log`. One clock seed per layout.
+
+| | staging (seed 2409916947) | moved (seed 3342821395) |
+|---|---|---|
+| candidates generated (passed the body-check gate) | 50 (4 gate failures) | 50 (2 gate failures) |
+| candidates checked (full check) | 5 | 50 |
+| passed full check | 1 (candidate 5) | 9 (9, 14, 16, 21, 25, 28, 38, 39, plus one more on the list) |
+| passed dry-run | 1 (candidate 5) | 0 |
+| yielded stance | x 0.6785, y 1.0696, heading -84.6 deg, pedestal 0.1132 m, A9 score 3.199 | none: "no candidate passed both the full check and the dry-run" |
+| dry-run wall time | 19.3 s (1 run) | 175.9 s total (9 runs) |
+| full-check wall time | 34.7 s of the yielded candidate's check; the five checks total about 160 s | 836.5 s total (50 checks) |
+| end-to-end | SUCCESS, 14,391 ticks, 95.9 s sim | not run (no stance) |
+
+Comparison with the previous criterion run: the yielded candidate moved from 21 to 5. Under the new criterion the staging dry-run passed on its first attempt.
+Moved: dry-run failures are timeouts at place OVER (up to 678 mm from the waypoint, candidate 38) and at pick IN (3.6 to 4.9 mm short). The earlier 30 mm reference check had been catching these as divergence.

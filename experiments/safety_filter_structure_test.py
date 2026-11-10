@@ -98,7 +98,7 @@ def main():
     check("no public parameter is named for a simulator, a scene, a data object or a spec", not offenders,
           f"{offenders}" if offenders else "")
     rsig = inspect.signature(__import__("src.safety_filter.shapes", fromlist=["RobotShapes"]).RobotShapes.__init__)
-    check("RobotShapes takes the robot-only model and the shapes file", list(rsig.parameters)[1:] == ["model", "shapes_path"],
+    check("RobotShapes takes the robot-only model, the shapes file and the never-close switch (SF-23)", list(rsig.parameters)[1:] == ["model", "shapes_path", "use_never_close"],
           f"{list(rsig.parameters)[1:]}")
 
     print("4. the world adapter")

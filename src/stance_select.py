@@ -823,8 +823,8 @@ def apply_stance_selection(tagged, task_cfg, maps_dir="data/reach_map", cfg=BENC
                 th = choose_place_angle(lists[int(place_i)]) if place_i is not None and lists.get(int(place_i)) else 0.0
             except (KeyError, ApproachAngleError) as e:
                 return {"ok": False, "failed": "angles", "reason": f"approach angles missing: {e}", "seconds": 0.0, "subtasks": []}
-            res = dry_run_stance(fc.chk, fc.model, stance, task_cfg["beaker_xy"], k, math.degrees(th))
-            return {"ok": res["ok"], "failed": res["failed"], "reason": res["reason"], "seconds": res["seconds"], "subtasks": res["subtasks"], "pick_k": int(k), "place_theta_deg": math.degrees(th)}
+            res = dry_run_stance(fc.chk, fc.model, stance, task_cfg["beaker_xy"], k, th)
+            return {"ok": res["ok"], "failed": res["failed"], "reason": res["reason"], "seconds": res["seconds"], "subtasks": res["subtasks"], "pick_k": int(k), "place_theta_deg": th}
 
         def gate(stance):
             """The full check's own body check at the stance (FullCheck.clear.body_distance, the limit of its body group): a stance that touches the scene is discarded before the full check (M299)."""

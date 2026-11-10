@@ -1416,5 +1416,3299 @@
       "note": "box geom, exact",
       "segment": "body"
     }
-  ]
+  ],
+  "never_close": {
+    "rule": "SF-23",
+    "fingerprint": "781198f99c7e46e8e1f9c90414e4407575cb53a1b92e89d0530e162c02ecb75c",
+    "pairs": [
+      {
+        "a": "left_link1_1",
+        "b": "right_link1_1",
+        "variables": [
+          "left_joint1",
+          "right_joint1"
+        ],
+        "steps": {
+          "left_joint1": 1.0,
+          "right_joint1": 1.0
+        },
+        "step_units": {
+          "left_joint1": "deg",
+          "right_joint1": "deg"
+        },
+        "bound_m": 0.0010444744282072564,
+        "min_gap_m": 0.18799944395800267,
+        "min_pose": {
+          "left_joint1": 1.396263,
+          "right_joint1": -1.396263
+        },
+        "margin_m": 0.03
+      },
+      {
+        "a": "left_link1_1",
+        "b": "right_link1_2",
+        "variables": [
+          "left_joint1",
+          "right_joint1"
+        ],
+        "steps": {
+          "left_joint1": 1.0,
+          "right_joint1": 1.0
+        },
+        "step_units": {
+          "left_joint1": "deg",
+          "right_joint1": "deg"
+        },
+        "bound_m": 0.0010444744282072564,
+        "min_gap_m": 0.18799944395800267,
+        "min_pose": {
+          "left_joint1": 1.396263,
+          "right_joint1": -1.396263
+        },
+        "margin_m": 0.03
+      },
+      {
+        "a": "left_link1_1",
+        "b": "right_link1_3",
+        "variables": [
+          "left_joint1",
+          "right_joint1"
+        ],
+        "steps": {
+          "left_joint1": 1.0,
+          "right_joint1": 1.0
+        },
+        "step_units": {
+          "left_joint1": "deg",
+          "right_joint1": "deg"
+        },
+        "bound_m": 0.0010444744282072564,
+        "min_gap_m": 0.18799944395800267,
+        "min_pose": {
+          "left_joint1": 1.396263,
+          "right_joint1": -1.396263
+        },
+        "margin_m": 0.03
+      },
+      {
+        "a": "left_link1_2",
+        "b": "right_link1_1",
+        "variables": [
+          "left_joint1",
+          "right_joint1"
+        ],
+        "steps": {
+          "left_joint1": 1.0,
+          "right_joint1": 1.0
+        },
+        "step_units": {
+          "left_joint1": "deg",
+          "right_joint1": "deg"
+        },
+        "bound_m": 0.0010444744282072564,
+        "min_gap_m": 0.18799944395800267,
+        "min_pose": {
+          "left_joint1": 1.396263,
+          "right_joint1": -1.396263
+        },
+        "margin_m": 0.03
+      },
+      {
+        "a": "left_link1_2",
+        "b": "right_link1_2",
+        "variables": [
+          "left_joint1",
+          "right_joint1"
+        ],
+        "steps": {
+          "left_joint1": 1.0,
+          "right_joint1": 1.0
+        },
+        "step_units": {
+          "left_joint1": "deg",
+          "right_joint1": "deg"
+        },
+        "bound_m": 0.0010444744282072564,
+        "min_gap_m": 0.18799944395800267,
+        "min_pose": {
+          "left_joint1": 1.396263,
+          "right_joint1": -1.396263
+        },
+        "margin_m": 0.03
+      },
+      {
+        "a": "left_link1_2",
+        "b": "right_link1_3",
+        "variables": [
+          "left_joint1",
+          "right_joint1"
+        ],
+        "steps": {
+          "left_joint1": 1.0,
+          "right_joint1": 1.0
+        },
+        "step_units": {
+          "left_joint1": "deg",
+          "right_joint1": "deg"
+        },
+        "bound_m": 0.0010444744282072564,
+        "min_gap_m": 0.18799944395800267,
+        "min_pose": {
+          "left_joint1": 1.396263,
+          "right_joint1": -1.396263
+        },
+        "margin_m": 0.03
+      },
+      {
+        "a": "left_link1_3",
+        "b": "right_link1_1",
+        "variables": [
+          "left_joint1",
+          "right_joint1"
+        ],
+        "steps": {
+          "left_joint1": 1.0,
+          "right_joint1": 1.0
+        },
+        "step_units": {
+          "left_joint1": "deg",
+          "right_joint1": "deg"
+        },
+        "bound_m": 0.0010444744282072564,
+        "min_gap_m": 0.18799944395800267,
+        "min_pose": {
+          "left_joint1": 1.396263,
+          "right_joint1": -1.396263
+        },
+        "margin_m": 0.03
+      },
+      {
+        "a": "left_link1_3",
+        "b": "right_link1_2",
+        "variables": [
+          "left_joint1",
+          "right_joint1"
+        ],
+        "steps": {
+          "left_joint1": 1.0,
+          "right_joint1": 1.0
+        },
+        "step_units": {
+          "left_joint1": "deg",
+          "right_joint1": "deg"
+        },
+        "bound_m": 0.0010444744282072564,
+        "min_gap_m": 0.18799944395800267,
+        "min_pose": {
+          "left_joint1": 1.396263,
+          "right_joint1": -1.396263
+        },
+        "margin_m": 0.03
+      },
+      {
+        "a": "left_link1_3",
+        "b": "right_link1_3",
+        "variables": [
+          "left_joint1",
+          "right_joint1"
+        ],
+        "steps": {
+          "left_joint1": 1.0,
+          "right_joint1": 1.0
+        },
+        "step_units": {
+          "left_joint1": "deg",
+          "right_joint1": "deg"
+        },
+        "bound_m": 0.0010444744282072564,
+        "min_gap_m": 0.18799944395800267,
+        "min_pose": {
+          "left_joint1": 1.396263,
+          "right_joint1": -1.396263
+        },
+        "margin_m": 0.03
+      },
+      {
+        "a": "left_link1_1",
+        "b": "right_link2",
+        "variables": [
+          "left_joint1",
+          "right_joint1",
+          "right_joint2"
+        ],
+        "steps": {
+          "left_joint1": 3.0000000000000004,
+          "right_joint1": 3.0000000000000004,
+          "right_joint2": 3.0000000000000004
+        },
+        "step_units": {
+          "left_joint1": "deg",
+          "right_joint1": "deg",
+          "right_joint2": "deg"
+        },
+        "bound_m": 0.006759290281766653,
+        "min_gap_m": 0.19814042580646912,
+        "min_pose": {
+          "left_joint1": 0.7256053933781033,
+          "right_joint1": 1.638848317434982,
+          "right_joint2": -0.1032578165333072
+        },
+        "margin_m": 0.03
+      },
+      {
+        "a": "left_link1_2",
+        "b": "right_link2",
+        "variables": [
+          "left_joint1",
+          "right_joint1",
+          "right_joint2"
+        ],
+        "steps": {
+          "left_joint1": 3.0000000000000004,
+          "right_joint1": 3.0000000000000004,
+          "right_joint2": 3.0000000000000004
+        },
+        "step_units": {
+          "left_joint1": "deg",
+          "right_joint1": "deg",
+          "right_joint2": "deg"
+        },
+        "bound_m": 0.006759290281766653,
+        "min_gap_m": 0.19814042580646912,
+        "min_pose": {
+          "left_joint1": 0.7256053933781033,
+          "right_joint1": 1.638848317434982,
+          "right_joint2": -0.1032578165333072
+        },
+        "margin_m": 0.03
+      },
+      {
+        "a": "left_link1_3",
+        "b": "right_link2",
+        "variables": [
+          "left_joint1",
+          "right_joint1",
+          "right_joint2"
+        ],
+        "steps": {
+          "left_joint1": 3.0000000000000004,
+          "right_joint1": 3.0000000000000004,
+          "right_joint2": 3.0000000000000004
+        },
+        "step_units": {
+          "left_joint1": "deg",
+          "right_joint1": "deg",
+          "right_joint2": "deg"
+        },
+        "bound_m": 0.006759290281766653,
+        "min_gap_m": 0.19814042580646912,
+        "min_pose": {
+          "left_joint1": 0.7256053933781033,
+          "right_joint1": 1.638848317434982,
+          "right_joint2": -0.1032578165333072
+        },
+        "margin_m": 0.03
+      },
+      {
+        "a": "left_link1_1",
+        "b": "right_shoulder_mount",
+        "variables": [
+          "left_joint1"
+        ],
+        "steps": {
+          "left_joint1": 0.5
+        },
+        "step_units": {
+          "left_joint1": "deg"
+        },
+        "bound_m": 0.0002611186070518141,
+        "min_gap_m": 0.1249993046735107,
+        "min_pose": {
+          "left_joint1": 1.396263
+        },
+        "margin_m": 0.03
+      },
+      {
+        "a": "left_link1_2",
+        "b": "right_shoulder_mount",
+        "variables": [
+          "left_joint1"
+        ],
+        "steps": {
+          "left_joint1": 0.5
+        },
+        "step_units": {
+          "left_joint1": "deg"
+        },
+        "bound_m": 0.0002611186070518141,
+        "min_gap_m": 0.1249993046735107,
+        "min_pose": {
+          "left_joint1": 1.396263
+        },
+        "margin_m": 0.03
+      },
+      {
+        "a": "left_link1_3",
+        "b": "right_shoulder_mount",
+        "variables": [
+          "left_joint1"
+        ],
+        "steps": {
+          "left_joint1": 0.5
+        },
+        "step_units": {
+          "left_joint1": "deg"
+        },
+        "bound_m": 0.0002611186070518141,
+        "min_gap_m": 0.1249993046735107,
+        "min_pose": {
+          "left_joint1": 1.396263
+        },
+        "margin_m": 0.03
+      },
+      {
+        "a": "left_link1_1",
+        "b": "base_base_link_geom",
+        "variables": [
+          "left_joint1",
+          "pedestal"
+        ],
+        "steps": {
+          "left_joint1": 1.0,
+          "pedestal": 2.0
+        },
+        "step_units": {
+          "left_joint1": "deg",
+          "pedestal": "mm"
+        },
+        "bound_m": 0.0015222372141036281,
+        "min_gap_m": 0.5,
+        "min_pose": {
+          "left_joint1": -3.490659,
+          "pedestal": 0.0
+        },
+        "margin_m": 0.03
+      },
+      {
+        "a": "left_link1_2",
+        "b": "base_base_link_geom",
+        "variables": [
+          "left_joint1",
+          "pedestal"
+        ],
+        "steps": {
+          "left_joint1": 1.0,
+          "pedestal": 2.0
+        },
+        "step_units": {
+          "left_joint1": "deg",
+          "pedestal": "mm"
+        },
+        "bound_m": 0.0015222372141036281,
+        "min_gap_m": 0.5,
+        "min_pose": {
+          "left_joint1": -3.490659,
+          "pedestal": 0.0
+        },
+        "margin_m": 0.03
+      },
+      {
+        "a": "left_link1_3",
+        "b": "base_base_link_geom",
+        "variables": [
+          "left_joint1",
+          "pedestal"
+        ],
+        "steps": {
+          "left_joint1": 1.0,
+          "pedestal": 2.0
+        },
+        "step_units": {
+          "left_joint1": "deg",
+          "pedestal": "mm"
+        },
+        "bound_m": 0.0015222372141036281,
+        "min_gap_m": 0.5,
+        "min_pose": {
+          "left_joint1": -3.490659,
+          "pedestal": 0.0
+        },
+        "margin_m": 0.03
+      },
+      {
+        "a": "left_link1_1",
+        "b": "base_right_link_geom",
+        "variables": [
+          "left_joint1",
+          "pedestal"
+        ],
+        "steps": {
+          "left_joint1": 1.0,
+          "pedestal": 2.0
+        },
+        "step_units": {
+          "left_joint1": "deg",
+          "pedestal": "mm"
+        },
+        "bound_m": 0.0015222372141036281,
+        "min_gap_m": 0.5,
+        "min_pose": {
+          "left_joint1": -3.490659,
+          "pedestal": 0.0
+        },
+        "margin_m": 0.03
+      },
+      {
+        "a": "left_link1_2",
+        "b": "base_right_link_geom",
+        "variables": [
+          "left_joint1",
+          "pedestal"
+        ],
+        "steps": {
+          "left_joint1": 1.0,
+          "pedestal": 2.0
+        },
+        "step_units": {
+          "left_joint1": "deg",
+          "pedestal": "mm"
+        },
+        "bound_m": 0.0015222372141036281,
+        "min_gap_m": 0.5,
+        "min_pose": {
+          "left_joint1": -3.490659,
+          "pedestal": 0.0
+        },
+        "margin_m": 0.03
+      },
+      {
+        "a": "left_link1_3",
+        "b": "base_right_link_geom",
+        "variables": [
+          "left_joint1",
+          "pedestal"
+        ],
+        "steps": {
+          "left_joint1": 1.0,
+          "pedestal": 2.0
+        },
+        "step_units": {
+          "left_joint1": "deg",
+          "pedestal": "mm"
+        },
+        "bound_m": 0.0015222372141036281,
+        "min_gap_m": 0.5,
+        "min_pose": {
+          "left_joint1": -3.490659,
+          "pedestal": 0.0
+        },
+        "margin_m": 0.03
+      },
+      {
+        "a": "left_link1_1",
+        "b": "base_left_Link_geom",
+        "variables": [
+          "left_joint1",
+          "pedestal"
+        ],
+        "steps": {
+          "left_joint1": 1.0,
+          "pedestal": 2.0
+        },
+        "step_units": {
+          "left_joint1": "deg",
+          "pedestal": "mm"
+        },
+        "bound_m": 0.0015222372141036281,
+        "min_gap_m": 0.5,
+        "min_pose": {
+          "left_joint1": -3.490659,
+          "pedestal": 0.0
+        },
+        "margin_m": 0.03
+      },
+      {
+        "a": "left_link1_2",
+        "b": "base_left_Link_geom",
+        "variables": [
+          "left_joint1",
+          "pedestal"
+        ],
+        "steps": {
+          "left_joint1": 1.0,
+          "pedestal": 2.0
+        },
+        "step_units": {
+          "left_joint1": "deg",
+          "pedestal": "mm"
+        },
+        "bound_m": 0.0015222372141036281,
+        "min_gap_m": 0.5,
+        "min_pose": {
+          "left_joint1": -3.490659,
+          "pedestal": 0.0
+        },
+        "margin_m": 0.03
+      },
+      {
+        "a": "left_link1_3",
+        "b": "base_left_Link_geom",
+        "variables": [
+          "left_joint1",
+          "pedestal"
+        ],
+        "steps": {
+          "left_joint1": 1.0,
+          "pedestal": 2.0
+        },
+        "step_units": {
+          "left_joint1": "deg",
+          "pedestal": "mm"
+        },
+        "bound_m": 0.0015222372141036281,
+        "min_gap_m": 0.5,
+        "min_pose": {
+          "left_joint1": -3.490659,
+          "pedestal": 0.0
+        },
+        "margin_m": 0.03
+      },
+      {
+        "a": "left_link1_1",
+        "b": "base_right_front_link_geom",
+        "variables": [
+          "left_joint1",
+          "pedestal"
+        ],
+        "steps": {
+          "left_joint1": 1.0,
+          "pedestal": 2.0
+        },
+        "step_units": {
+          "left_joint1": "deg",
+          "pedestal": "mm"
+        },
+        "bound_m": 0.0015222372141036281,
+        "min_gap_m": 0.5,
+        "min_pose": {
+          "left_joint1": -3.490659,
+          "pedestal": 0.0
+        },
+        "margin_m": 0.03
+      },
+      {
+        "a": "left_link1_2",
+        "b": "base_right_front_link_geom",
+        "variables": [
+          "left_joint1",
+          "pedestal"
+        ],
+        "steps": {
+          "left_joint1": 1.0,
+          "pedestal": 2.0
+        },
+        "step_units": {
+          "left_joint1": "deg",
+          "pedestal": "mm"
+        },
+        "bound_m": 0.0015222372141036281,
+        "min_gap_m": 0.5,
+        "min_pose": {
+          "left_joint1": -3.490659,
+          "pedestal": 0.0
+        },
+        "margin_m": 0.03
+      },
+      {
+        "a": "left_link1_3",
+        "b": "base_right_front_link_geom",
+        "variables": [
+          "left_joint1",
+          "pedestal"
+        ],
+        "steps": {
+          "left_joint1": 1.0,
+          "pedestal": 2.0
+        },
+        "step_units": {
+          "left_joint1": "deg",
+          "pedestal": "mm"
+        },
+        "bound_m": 0.0015222372141036281,
+        "min_gap_m": 0.5,
+        "min_pose": {
+          "left_joint1": -3.490659,
+          "pedestal": 0.0
+        },
+        "margin_m": 0.03
+      },
+      {
+        "a": "left_link1_1",
+        "b": "base_right_rear_link_geom",
+        "variables": [
+          "left_joint1",
+          "pedestal"
+        ],
+        "steps": {
+          "left_joint1": 1.0,
+          "pedestal": 2.0
+        },
+        "step_units": {
+          "left_joint1": "deg",
+          "pedestal": "mm"
+        },
+        "bound_m": 0.0015222372141036281,
+        "min_gap_m": 0.5,
+        "min_pose": {
+          "left_joint1": -3.490659,
+          "pedestal": 0.0
+        },
+        "margin_m": 0.03
+      },
+      {
+        "a": "left_link1_2",
+        "b": "base_right_rear_link_geom",
+        "variables": [
+          "left_joint1",
+          "pedestal"
+        ],
+        "steps": {
+          "left_joint1": 1.0,
+          "pedestal": 2.0
+        },
+        "step_units": {
+          "left_joint1": "deg",
+          "pedestal": "mm"
+        },
+        "bound_m": 0.0015222372141036281,
+        "min_gap_m": 0.5,
+        "min_pose": {
+          "left_joint1": -3.490659,
+          "pedestal": 0.0
+        },
+        "margin_m": 0.03
+      },
+      {
+        "a": "left_link1_3",
+        "b": "base_right_rear_link_geom",
+        "variables": [
+          "left_joint1",
+          "pedestal"
+        ],
+        "steps": {
+          "left_joint1": 1.0,
+          "pedestal": 2.0
+        },
+        "step_units": {
+          "left_joint1": "deg",
+          "pedestal": "mm"
+        },
+        "bound_m": 0.0015222372141036281,
+        "min_gap_m": 0.5,
+        "min_pose": {
+          "left_joint1": -3.490659,
+          "pedestal": 0.0
+        },
+        "margin_m": 0.03
+      },
+      {
+        "a": "left_link1_1",
+        "b": "base_left_front_link_geom",
+        "variables": [
+          "left_joint1",
+          "pedestal"
+        ],
+        "steps": {
+          "left_joint1": 1.0,
+          "pedestal": 2.0
+        },
+        "step_units": {
+          "left_joint1": "deg",
+          "pedestal": "mm"
+        },
+        "bound_m": 0.0015222372141036281,
+        "min_gap_m": 0.5,
+        "min_pose": {
+          "left_joint1": -3.490659,
+          "pedestal": 0.0
+        },
+        "margin_m": 0.03
+      },
+      {
+        "a": "left_link1_2",
+        "b": "base_left_front_link_geom",
+        "variables": [
+          "left_joint1",
+          "pedestal"
+        ],
+        "steps": {
+          "left_joint1": 1.0,
+          "pedestal": 2.0
+        },
+        "step_units": {
+          "left_joint1": "deg",
+          "pedestal": "mm"
+        },
+        "bound_m": 0.0015222372141036281,
+        "min_gap_m": 0.5,
+        "min_pose": {
+          "left_joint1": -3.490659,
+          "pedestal": 0.0
+        },
+        "margin_m": 0.03
+      },
+      {
+        "a": "left_link1_3",
+        "b": "base_left_front_link_geom",
+        "variables": [
+          "left_joint1",
+          "pedestal"
+        ],
+        "steps": {
+          "left_joint1": 1.0,
+          "pedestal": 2.0
+        },
+        "step_units": {
+          "left_joint1": "deg",
+          "pedestal": "mm"
+        },
+        "bound_m": 0.0015222372141036281,
+        "min_gap_m": 0.5,
+        "min_pose": {
+          "left_joint1": -3.490659,
+          "pedestal": 0.0
+        },
+        "margin_m": 0.03
+      },
+      {
+        "a": "left_link1_1",
+        "b": "base_left_rear_link_geom",
+        "variables": [
+          "left_joint1",
+          "pedestal"
+        ],
+        "steps": {
+          "left_joint1": 1.0,
+          "pedestal": 2.0
+        },
+        "step_units": {
+          "left_joint1": "deg",
+          "pedestal": "mm"
+        },
+        "bound_m": 0.0015222372141036281,
+        "min_gap_m": 0.5,
+        "min_pose": {
+          "left_joint1": -3.490659,
+          "pedestal": 0.0
+        },
+        "margin_m": 0.03
+      },
+      {
+        "a": "left_link1_2",
+        "b": "base_left_rear_link_geom",
+        "variables": [
+          "left_joint1",
+          "pedestal"
+        ],
+        "steps": {
+          "left_joint1": 1.0,
+          "pedestal": 2.0
+        },
+        "step_units": {
+          "left_joint1": "deg",
+          "pedestal": "mm"
+        },
+        "bound_m": 0.0015222372141036281,
+        "min_gap_m": 0.5,
+        "min_pose": {
+          "left_joint1": -3.490659,
+          "pedestal": 0.0
+        },
+        "margin_m": 0.03
+      },
+      {
+        "a": "left_link1_3",
+        "b": "base_left_rear_link_geom",
+        "variables": [
+          "left_joint1",
+          "pedestal"
+        ],
+        "steps": {
+          "left_joint1": 1.0,
+          "pedestal": 2.0
+        },
+        "step_units": {
+          "left_joint1": "deg",
+          "pedestal": "mm"
+        },
+        "bound_m": 0.0015222372141036281,
+        "min_gap_m": 0.5,
+        "min_pose": {
+          "left_joint1": -3.490659,
+          "pedestal": 0.0
+        },
+        "margin_m": 0.03
+      },
+      {
+        "a": "left_link1_1",
+        "b": "pedestal_base",
+        "variables": [
+          "left_joint1",
+          "pedestal"
+        ],
+        "steps": {
+          "left_joint1": 1.0,
+          "pedestal": 2.0
+        },
+        "step_units": {
+          "left_joint1": "deg",
+          "pedestal": "mm"
+        },
+        "bound_m": 0.0015222372141036281,
+        "min_gap_m": 0.5,
+        "min_pose": {
+          "left_joint1": -3.490659,
+          "pedestal": 0.0
+        },
+        "margin_m": 0.03
+      },
+      {
+        "a": "left_link1_2",
+        "b": "pedestal_base",
+        "variables": [
+          "left_joint1",
+          "pedestal"
+        ],
+        "steps": {
+          "left_joint1": 1.0,
+          "pedestal": 2.0
+        },
+        "step_units": {
+          "left_joint1": "deg",
+          "pedestal": "mm"
+        },
+        "bound_m": 0.0015222372141036281,
+        "min_gap_m": 0.5,
+        "min_pose": {
+          "left_joint1": -3.490659,
+          "pedestal": 0.0
+        },
+        "margin_m": 0.03
+      },
+      {
+        "a": "left_link1_3",
+        "b": "pedestal_base",
+        "variables": [
+          "left_joint1",
+          "pedestal"
+        ],
+        "steps": {
+          "left_joint1": 1.0,
+          "pedestal": 2.0
+        },
+        "step_units": {
+          "left_joint1": "deg",
+          "pedestal": "mm"
+        },
+        "bound_m": 0.0015222372141036281,
+        "min_gap_m": 0.5,
+        "min_pose": {
+          "left_joint1": -3.490659,
+          "pedestal": 0.0
+        },
+        "margin_m": 0.03
+      },
+      {
+        "a": "left_link1_1",
+        "b": "pedestal_top",
+        "variables": [
+          "left_joint1"
+        ],
+        "steps": {
+          "left_joint1": 0.5
+        },
+        "step_units": {
+          "left_joint1": "deg"
+        },
+        "bound_m": 0.0002611186070518141,
+        "min_gap_m": 0.5,
+        "min_pose": {
+          "left_joint1": -3.490659
+        },
+        "margin_m": 0.03
+      },
+      {
+        "a": "left_link1_2",
+        "b": "pedestal_top",
+        "variables": [
+          "left_joint1"
+        ],
+        "steps": {
+          "left_joint1": 0.5
+        },
+        "step_units": {
+          "left_joint1": "deg"
+        },
+        "bound_m": 0.0002611186070518141,
+        "min_gap_m": 0.5,
+        "min_pose": {
+          "left_joint1": -3.490659
+        },
+        "margin_m": 0.03
+      },
+      {
+        "a": "left_link1_3",
+        "b": "pedestal_top",
+        "variables": [
+          "left_joint1"
+        ],
+        "steps": {
+          "left_joint1": 0.5
+        },
+        "step_units": {
+          "left_joint1": "deg"
+        },
+        "bound_m": 0.0002611186070518141,
+        "min_gap_m": 0.5,
+        "min_pose": {
+          "left_joint1": -3.490659
+        },
+        "margin_m": 0.03
+      },
+      {
+        "a": "left_link1_1",
+        "b": "torso",
+        "variables": [
+          "left_joint1"
+        ],
+        "steps": {
+          "left_joint1": 0.5
+        },
+        "step_units": {
+          "left_joint1": "deg"
+        },
+        "bound_m": 0.0002611186070518141,
+        "min_gap_m": 0.06399972265075976,
+        "min_pose": {
+          "left_joint1": 1.396263
+        },
+        "margin_m": 0.03
+      },
+      {
+        "a": "left_link1_2",
+        "b": "torso",
+        "variables": [
+          "left_joint1"
+        ],
+        "steps": {
+          "left_joint1": 0.5
+        },
+        "step_units": {
+          "left_joint1": "deg"
+        },
+        "bound_m": 0.0002611186070518141,
+        "min_gap_m": 0.06399972265075976,
+        "min_pose": {
+          "left_joint1": 1.396263
+        },
+        "margin_m": 0.03
+      },
+      {
+        "a": "left_link1_3",
+        "b": "torso",
+        "variables": [
+          "left_joint1"
+        ],
+        "steps": {
+          "left_joint1": 0.5
+        },
+        "step_units": {
+          "left_joint1": "deg"
+        },
+        "bound_m": 0.0002611186070518141,
+        "min_gap_m": 0.06399972265075976,
+        "min_pose": {
+          "left_joint1": 1.396263
+        },
+        "margin_m": 0.03
+      },
+      {
+        "a": "left_link1_1",
+        "b": "eagle_cam_body",
+        "variables": [
+          "left_joint1"
+        ],
+        "steps": {
+          "left_joint1": 0.5
+        },
+        "step_units": {
+          "left_joint1": "deg"
+        },
+        "bound_m": 0.0002611186070518141,
+        "min_gap_m": 0.15166182410847392,
+        "min_pose": {
+          "left_joint1": -2.5394545576630905
+        },
+        "margin_m": 0.03
+      },
+      {
+        "a": "left_link1_2",
+        "b": "eagle_cam_body",
+        "variables": [
+          "left_joint1"
+        ],
+        "steps": {
+          "left_joint1": 0.5
+        },
+        "step_units": {
+          "left_joint1": "deg"
+        },
+        "bound_m": 0.0002611186070518141,
+        "min_gap_m": 0.15166182410847392,
+        "min_pose": {
+          "left_joint1": -2.5394545576630905
+        },
+        "margin_m": 0.03
+      },
+      {
+        "a": "left_link1_3",
+        "b": "eagle_cam_body",
+        "variables": [
+          "left_joint1"
+        ],
+        "steps": {
+          "left_joint1": 0.5
+        },
+        "step_units": {
+          "left_joint1": "deg"
+        },
+        "bound_m": 0.0002611186070518141,
+        "min_gap_m": 0.15166182410847392,
+        "min_pose": {
+          "left_joint1": -2.5394545576630905
+        },
+        "margin_m": 0.03
+      },
+      {
+        "a": "left_link1_1",
+        "b": "battery",
+        "variables": [
+          "left_joint1",
+          "pedestal"
+        ],
+        "steps": {
+          "left_joint1": 1.0,
+          "pedestal": 2.0
+        },
+        "step_units": {
+          "left_joint1": "deg",
+          "pedestal": "mm"
+        },
+        "bound_m": 0.0015222372141036281,
+        "min_gap_m": 0.5,
+        "min_pose": {
+          "left_joint1": -3.490659,
+          "pedestal": 0.0
+        },
+        "margin_m": 0.03
+      },
+      {
+        "a": "left_link1_2",
+        "b": "battery",
+        "variables": [
+          "left_joint1",
+          "pedestal"
+        ],
+        "steps": {
+          "left_joint1": 1.0,
+          "pedestal": 2.0
+        },
+        "step_units": {
+          "left_joint1": "deg",
+          "pedestal": "mm"
+        },
+        "bound_m": 0.0015222372141036281,
+        "min_gap_m": 0.5,
+        "min_pose": {
+          "left_joint1": -3.490659,
+          "pedestal": 0.0
+        },
+        "margin_m": 0.03
+      },
+      {
+        "a": "left_link1_3",
+        "b": "battery",
+        "variables": [
+          "left_joint1",
+          "pedestal"
+        ],
+        "steps": {
+          "left_joint1": 1.0,
+          "pedestal": 2.0
+        },
+        "step_units": {
+          "left_joint1": "deg",
+          "pedestal": "mm"
+        },
+        "bound_m": 0.0015222372141036281,
+        "min_gap_m": 0.5,
+        "min_pose": {
+          "left_joint1": -3.490659,
+          "pedestal": 0.0
+        },
+        "margin_m": 0.03
+      },
+      {
+        "a": "left_link2",
+        "b": "right_link1_1",
+        "variables": [
+          "left_joint1",
+          "left_joint2",
+          "right_joint1"
+        ],
+        "steps": {
+          "left_joint1": 3.0000000000000004,
+          "left_joint2": 3.0000000000000004,
+          "right_joint1": 3.0000000000000004
+        },
+        "step_units": {
+          "left_joint1": "deg",
+          "left_joint2": "deg",
+          "right_joint1": "deg"
+        },
+        "bound_m": 0.006759290281766651,
+        "min_gap_m": 0.19814044945939954,
+        "min_pose": {
+          "left_joint1": -1.675192000181537,
+          "left_joint2": 0.10243856079110447,
+          "right_joint1": -1.1224732394431378
+        },
+        "margin_m": 0.03
+      },
+      {
+        "a": "left_link2",
+        "b": "right_link1_2",
+        "variables": [
+          "left_joint1",
+          "left_joint2",
+          "right_joint1"
+        ],
+        "steps": {
+          "left_joint1": 3.0000000000000004,
+          "left_joint2": 3.0000000000000004,
+          "right_joint1": 3.0000000000000004
+        },
+        "step_units": {
+          "left_joint1": "deg",
+          "left_joint2": "deg",
+          "right_joint1": "deg"
+        },
+        "bound_m": 0.006759290281766651,
+        "min_gap_m": 0.19814044945939954,
+        "min_pose": {
+          "left_joint1": -1.675192000181537,
+          "left_joint2": 0.10243856079110447,
+          "right_joint1": -1.1224732394431378
+        },
+        "margin_m": 0.03
+      },
+      {
+        "a": "left_link2",
+        "b": "right_link1_3",
+        "variables": [
+          "left_joint1",
+          "left_joint2",
+          "right_joint1"
+        ],
+        "steps": {
+          "left_joint1": 3.0000000000000004,
+          "left_joint2": 3.0000000000000004,
+          "right_joint1": 3.0000000000000004
+        },
+        "step_units": {
+          "left_joint1": "deg",
+          "left_joint2": "deg",
+          "right_joint1": "deg"
+        },
+        "bound_m": 0.006759290281766651,
+        "min_gap_m": 0.19814044945939954,
+        "min_pose": {
+          "left_joint1": -1.675192000181537,
+          "left_joint2": 0.10243856079110447,
+          "right_joint1": -1.1224732394431378
+        },
+        "margin_m": 0.03
+      },
+      {
+        "a": "left_link2",
+        "b": "right_shoulder_mount",
+        "variables": [
+          "left_joint1",
+          "left_joint2"
+        ],
+        "steps": {
+          "left_joint1": 1.0,
+          "left_joint2": 1.0
+        },
+        "step_units": {
+          "left_joint1": "deg",
+          "left_joint2": "deg"
+        },
+        "bound_m": 0.0017308595464852552,
+        "min_gap_m": 0.135140298686544,
+        "min_pose": {
+          "left_joint1": -1.605703407846124,
+          "left_joint2": 0.10472000690888583
+        },
+        "margin_m": 0.03
+      },
+      {
+        "a": "left_link2",
+        "b": "base_base_link_geom",
+        "variables": [
+          "left_joint1",
+          "left_joint2",
+          "pedestal"
+        ],
+        "steps": {
+          "left_joint1": 3.0000000000000004,
+          "left_joint2": 3.0000000000000004,
+          "pedestal": 2.0
+        },
+        "step_units": {
+          "left_joint1": "deg",
+          "left_joint2": "deg",
+          "pedestal": "mm"
+        },
+        "bound_m": 0.006192578639455766,
+        "min_gap_m": 0.5,
+        "min_pose": {
+          "left_joint1": -3.490659,
+          "left_joint2": -3.316125327,
+          "pedestal": 0.0
+        },
+        "margin_m": 0.03
+      },
+      {
+        "a": "left_link2",
+        "b": "base_right_link_geom",
+        "variables": [
+          "left_joint1",
+          "left_joint2",
+          "pedestal"
+        ],
+        "steps": {
+          "left_joint1": 3.0000000000000004,
+          "left_joint2": 3.0000000000000004,
+          "pedestal": 2.0
+        },
+        "step_units": {
+          "left_joint1": "deg",
+          "left_joint2": "deg",
+          "pedestal": "mm"
+        },
+        "bound_m": 0.006192578639455766,
+        "min_gap_m": 0.5,
+        "min_pose": {
+          "left_joint1": -3.490659,
+          "left_joint2": -3.316125327,
+          "pedestal": 0.0
+        },
+        "margin_m": 0.03
+      },
+      {
+        "a": "left_link2",
+        "b": "base_left_Link_geom",
+        "variables": [
+          "left_joint1",
+          "left_joint2",
+          "pedestal"
+        ],
+        "steps": {
+          "left_joint1": 3.0000000000000004,
+          "left_joint2": 3.0000000000000004,
+          "pedestal": 2.0
+        },
+        "step_units": {
+          "left_joint1": "deg",
+          "left_joint2": "deg",
+          "pedestal": "mm"
+        },
+        "bound_m": 0.006192578639455766,
+        "min_gap_m": 0.5,
+        "min_pose": {
+          "left_joint1": -3.490659,
+          "left_joint2": -3.316125327,
+          "pedestal": 0.0
+        },
+        "margin_m": 0.03
+      },
+      {
+        "a": "left_link2",
+        "b": "base_right_front_link_geom",
+        "variables": [
+          "left_joint1",
+          "left_joint2",
+          "pedestal"
+        ],
+        "steps": {
+          "left_joint1": 3.0000000000000004,
+          "left_joint2": 3.0000000000000004,
+          "pedestal": 2.0
+        },
+        "step_units": {
+          "left_joint1": "deg",
+          "left_joint2": "deg",
+          "pedestal": "mm"
+        },
+        "bound_m": 0.006192578639455766,
+        "min_gap_m": 0.5,
+        "min_pose": {
+          "left_joint1": -3.490659,
+          "left_joint2": -3.316125327,
+          "pedestal": 0.0
+        },
+        "margin_m": 0.03
+      },
+      {
+        "a": "left_link2",
+        "b": "base_right_rear_link_geom",
+        "variables": [
+          "left_joint1",
+          "left_joint2",
+          "pedestal"
+        ],
+        "steps": {
+          "left_joint1": 3.0000000000000004,
+          "left_joint2": 3.0000000000000004,
+          "pedestal": 2.0
+        },
+        "step_units": {
+          "left_joint1": "deg",
+          "left_joint2": "deg",
+          "pedestal": "mm"
+        },
+        "bound_m": 0.006192578639455766,
+        "min_gap_m": 0.5,
+        "min_pose": {
+          "left_joint1": -3.490659,
+          "left_joint2": -3.316125327,
+          "pedestal": 0.0
+        },
+        "margin_m": 0.03
+      },
+      {
+        "a": "left_link2",
+        "b": "base_left_front_link_geom",
+        "variables": [
+          "left_joint1",
+          "left_joint2",
+          "pedestal"
+        ],
+        "steps": {
+          "left_joint1": 3.0000000000000004,
+          "left_joint2": 3.0000000000000004,
+          "pedestal": 2.0
+        },
+        "step_units": {
+          "left_joint1": "deg",
+          "left_joint2": "deg",
+          "pedestal": "mm"
+        },
+        "bound_m": 0.006192578639455766,
+        "min_gap_m": 0.5,
+        "min_pose": {
+          "left_joint1": -3.490659,
+          "left_joint2": -3.316125327,
+          "pedestal": 0.0
+        },
+        "margin_m": 0.03
+      },
+      {
+        "a": "left_link2",
+        "b": "base_left_rear_link_geom",
+        "variables": [
+          "left_joint1",
+          "left_joint2",
+          "pedestal"
+        ],
+        "steps": {
+          "left_joint1": 3.0000000000000004,
+          "left_joint2": 3.0000000000000004,
+          "pedestal": 2.0
+        },
+        "step_units": {
+          "left_joint1": "deg",
+          "left_joint2": "deg",
+          "pedestal": "mm"
+        },
+        "bound_m": 0.006192578639455766,
+        "min_gap_m": 0.5,
+        "min_pose": {
+          "left_joint1": -3.490659,
+          "left_joint2": -3.316125327,
+          "pedestal": 0.0
+        },
+        "margin_m": 0.03
+      },
+      {
+        "a": "left_link2",
+        "b": "pedestal_base",
+        "variables": [
+          "left_joint1",
+          "left_joint2",
+          "pedestal"
+        ],
+        "steps": {
+          "left_joint1": 3.0000000000000004,
+          "left_joint2": 3.0000000000000004,
+          "pedestal": 2.0
+        },
+        "step_units": {
+          "left_joint1": "deg",
+          "left_joint2": "deg",
+          "pedestal": "mm"
+        },
+        "bound_m": 0.006192578639455766,
+        "min_gap_m": 0.5,
+        "min_pose": {
+          "left_joint1": -3.490659,
+          "left_joint2": -3.316125327,
+          "pedestal": 0.0
+        },
+        "margin_m": 0.03
+      },
+      {
+        "a": "left_link2",
+        "b": "pedestal_top",
+        "variables": [
+          "left_joint1",
+          "left_joint2"
+        ],
+        "steps": {
+          "left_joint1": 1.0,
+          "left_joint2": 1.0
+        },
+        "step_units": {
+          "left_joint1": "deg",
+          "left_joint2": "deg"
+        },
+        "bound_m": 0.0017308595464852552,
+        "min_gap_m": 0.5,
+        "min_pose": {
+          "left_joint1": -3.490659,
+          "left_joint2": -3.316125327
+        },
+        "margin_m": 0.03
+      },
+      {
+        "a": "left_link2",
+        "b": "torso",
+        "variables": [
+          "left_joint1",
+          "left_joint2"
+        ],
+        "steps": {
+          "left_joint1": 1.0,
+          "left_joint2": 1.0
+        },
+        "step_units": {
+          "left_joint1": "deg",
+          "left_joint2": "deg"
+        },
+        "bound_m": 0.0017308595464852552,
+        "min_gap_m": 0.07414066995210934,
+        "min_pose": {
+          "left_joint1": -1.5707968228062374,
+          "left_joint2": 0.10472000690888583
+        },
+        "margin_m": 0.03
+      },
+      {
+        "a": "left_link2",
+        "b": "eagle_cam_body",
+        "variables": [
+          "left_joint1",
+          "left_joint2"
+        ],
+        "steps": {
+          "left_joint1": 1.0,
+          "left_joint2": 1.0
+        },
+        "step_units": {
+          "left_joint1": "deg",
+          "left_joint2": "deg"
+        },
+        "bound_m": 0.0017308595464852552,
+        "min_gap_m": 0.13905548997257922,
+        "min_pose": {
+          "left_joint1": -3.490659,
+          "left_joint2": 0.1745326732
+        },
+        "margin_m": 0.03
+      },
+      {
+        "a": "left_link2",
+        "b": "battery",
+        "variables": [
+          "left_joint1",
+          "left_joint2",
+          "pedestal"
+        ],
+        "steps": {
+          "left_joint1": 3.0000000000000004,
+          "left_joint2": 3.0000000000000004,
+          "pedestal": 2.0
+        },
+        "step_units": {
+          "left_joint1": "deg",
+          "left_joint2": "deg",
+          "pedestal": "mm"
+        },
+        "bound_m": 0.006192578639455766,
+        "min_gap_m": 0.5,
+        "min_pose": {
+          "left_joint1": -3.490659,
+          "left_joint2": -3.316125327,
+          "pedestal": 0.0
+        },
+        "margin_m": 0.03
+      },
+      {
+        "a": "left_link3_1",
+        "b": "right_shoulder_mount",
+        "variables": [
+          "left_joint1",
+          "left_joint2",
+          "left_joint3"
+        ],
+        "steps": {
+          "left_joint1": 3.0000000000000004,
+          "left_joint2": 3.0000000000000004,
+          "left_joint3": 3.0000000000000004
+        },
+        "step_units": {
+          "left_joint1": "deg",
+          "left_joint2": "deg",
+          "left_joint3": "deg"
+        },
+        "bound_m": 0.015370311529296764,
+        "min_gap_m": 0.12732315931295657,
+        "min_pose": {
+          "left_joint1": -0.4014262239700366,
+          "left_joint2": -3.316125327,
+          "left_joint3": 0.9948380004316646
+        },
+        "margin_m": 0.03
+      },
+      {
+        "a": "left_link3_2",
+        "b": "right_shoulder_mount",
+        "variables": [
+          "left_joint1",
+          "left_joint2",
+          "left_joint3"
+        ],
+        "steps": {
+          "left_joint1": 3.0000000000000004,
+          "left_joint2": 3.0000000000000004,
+          "left_joint3": 3.0000000000000004
+        },
+        "step_units": {
+          "left_joint1": "deg",
+          "left_joint2": "deg",
+          "left_joint3": "deg"
+        },
+        "bound_m": 0.015370311529296764,
+        "min_gap_m": 0.12732315931295657,
+        "min_pose": {
+          "left_joint1": -0.4014262239700366,
+          "left_joint2": -3.316125327,
+          "left_joint3": 0.9948380004316646
+        },
+        "margin_m": 0.03
+      },
+      {
+        "a": "left_link3_1",
+        "b": "pedestal_top",
+        "variables": [
+          "left_joint1",
+          "left_joint2",
+          "left_joint3"
+        ],
+        "steps": {
+          "left_joint1": 3.0000000000000004,
+          "left_joint2": 3.0000000000000004,
+          "left_joint3": 3.0000000000000004
+        },
+        "step_units": {
+          "left_joint1": "deg",
+          "left_joint2": "deg",
+          "left_joint3": "deg"
+        },
+        "bound_m": 0.015370311529296764,
+        "min_gap_m": 0.4522892241177224,
+        "min_pose": {
+          "left_joint1": -3.019420101961531,
+          "left_joint2": -3.316125327,
+          "left_joint3": 1.1519176331111542
+        },
+        "margin_m": 0.03
+      },
+      {
+        "a": "left_link3_2",
+        "b": "pedestal_top",
+        "variables": [
+          "left_joint1",
+          "left_joint2",
+          "left_joint3"
+        ],
+        "steps": {
+          "left_joint1": 3.0000000000000004,
+          "left_joint2": 3.0000000000000004,
+          "left_joint3": 3.0000000000000004
+        },
+        "step_units": {
+          "left_joint1": "deg",
+          "left_joint2": "deg",
+          "left_joint3": "deg"
+        },
+        "bound_m": 0.015370311529296764,
+        "min_gap_m": 0.4522892241177224,
+        "min_pose": {
+          "left_joint1": -3.019420101961531,
+          "left_joint2": -3.316125327,
+          "left_joint3": 1.1519176331111542
+        },
+        "margin_m": 0.03
+      },
+      {
+        "a": "left_shoulder_mount",
+        "b": "right_link1_1",
+        "variables": [
+          "right_joint1"
+        ],
+        "steps": {
+          "right_joint1": 0.5
+        },
+        "step_units": {
+          "right_joint1": "deg"
+        },
+        "bound_m": 0.0002611186070518141,
+        "min_gap_m": 0.1249993046735107,
+        "min_pose": {
+          "right_joint1": -1.396263
+        },
+        "margin_m": 0.03
+      },
+      {
+        "a": "left_shoulder_mount",
+        "b": "right_link1_2",
+        "variables": [
+          "right_joint1"
+        ],
+        "steps": {
+          "right_joint1": 0.5
+        },
+        "step_units": {
+          "right_joint1": "deg"
+        },
+        "bound_m": 0.0002611186070518141,
+        "min_gap_m": 0.1249993046735107,
+        "min_pose": {
+          "right_joint1": -1.396263
+        },
+        "margin_m": 0.03
+      },
+      {
+        "a": "left_shoulder_mount",
+        "b": "right_link1_3",
+        "variables": [
+          "right_joint1"
+        ],
+        "steps": {
+          "right_joint1": 0.5
+        },
+        "step_units": {
+          "right_joint1": "deg"
+        },
+        "bound_m": 0.0002611186070518141,
+        "min_gap_m": 0.1249993046735107,
+        "min_pose": {
+          "right_joint1": -1.396263
+        },
+        "margin_m": 0.03
+      },
+      {
+        "a": "left_shoulder_mount",
+        "b": "right_link2",
+        "variables": [
+          "right_joint1",
+          "right_joint2"
+        ],
+        "steps": {
+          "right_joint1": 1.0,
+          "right_joint2": 1.0
+        },
+        "step_units": {
+          "right_joint1": "deg",
+          "right_joint2": "deg"
+        },
+        "bound_m": 0.0017308595464852559,
+        "min_gap_m": 0.13514029865785976,
+        "min_pose": {
+          "right_joint1": 1.605703313430247,
+          "right_joint2": -0.1047195031202268
+        },
+        "margin_m": 0.03
+      },
+      {
+        "a": "left_shoulder_mount",
+        "b": "right_link3",
+        "variables": [
+          "right_joint1",
+          "right_joint2",
+          "right_joint3"
+        ],
+        "steps": {
+          "right_joint1": 3.0000000000000004,
+          "right_joint2": 3.0000000000000004,
+          "right_joint3": 3.0000000000000004
+        },
+        "step_units": {
+          "right_joint1": "deg",
+          "right_joint2": "deg",
+          "right_joint3": "deg"
+        },
+        "bound_m": 0.015370311529296764,
+        "min_gap_m": 0.1273221938036666,
+        "min_pose": {
+          "right_joint1": -0.40142532636323214,
+          "right_joint2": -0.1745326732,
+          "right_joint3": 0.9948380004316646
+        },
+        "margin_m": 0.03
+      },
+      {
+        "a": "left_shoulder_mount",
+        "b": "base_base_link_geom",
+        "variables": [
+          "pedestal"
+        ],
+        "steps": {
+          "pedestal": 2.0
+        },
+        "step_units": {
+          "pedestal": "mm"
+        },
+        "bound_m": 0.001,
+        "min_gap_m": 0.5,
+        "min_pose": {
+          "pedestal": 0.0
+        },
+        "margin_m": 0.03
+      },
+      {
+        "a": "left_shoulder_mount",
+        "b": "base_right_link_geom",
+        "variables": [
+          "pedestal"
+        ],
+        "steps": {
+          "pedestal": 2.0
+        },
+        "step_units": {
+          "pedestal": "mm"
+        },
+        "bound_m": 0.001,
+        "min_gap_m": 0.5,
+        "min_pose": {
+          "pedestal": 0.0
+        },
+        "margin_m": 0.03
+      },
+      {
+        "a": "left_shoulder_mount",
+        "b": "base_left_Link_geom",
+        "variables": [
+          "pedestal"
+        ],
+        "steps": {
+          "pedestal": 2.0
+        },
+        "step_units": {
+          "pedestal": "mm"
+        },
+        "bound_m": 0.001,
+        "min_gap_m": 0.5,
+        "min_pose": {
+          "pedestal": 0.0
+        },
+        "margin_m": 0.03
+      },
+      {
+        "a": "left_shoulder_mount",
+        "b": "base_right_front_link_geom",
+        "variables": [
+          "pedestal"
+        ],
+        "steps": {
+          "pedestal": 2.0
+        },
+        "step_units": {
+          "pedestal": "mm"
+        },
+        "bound_m": 0.001,
+        "min_gap_m": 0.5,
+        "min_pose": {
+          "pedestal": 0.0
+        },
+        "margin_m": 0.03
+      },
+      {
+        "a": "left_shoulder_mount",
+        "b": "base_right_rear_link_geom",
+        "variables": [
+          "pedestal"
+        ],
+        "steps": {
+          "pedestal": 2.0
+        },
+        "step_units": {
+          "pedestal": "mm"
+        },
+        "bound_m": 0.001,
+        "min_gap_m": 0.5,
+        "min_pose": {
+          "pedestal": 0.0
+        },
+        "margin_m": 0.03
+      },
+      {
+        "a": "left_shoulder_mount",
+        "b": "base_left_front_link_geom",
+        "variables": [
+          "pedestal"
+        ],
+        "steps": {
+          "pedestal": 2.0
+        },
+        "step_units": {
+          "pedestal": "mm"
+        },
+        "bound_m": 0.001,
+        "min_gap_m": 0.5,
+        "min_pose": {
+          "pedestal": 0.0
+        },
+        "margin_m": 0.03
+      },
+      {
+        "a": "left_shoulder_mount",
+        "b": "base_left_rear_link_geom",
+        "variables": [
+          "pedestal"
+        ],
+        "steps": {
+          "pedestal": 2.0
+        },
+        "step_units": {
+          "pedestal": "mm"
+        },
+        "bound_m": 0.001,
+        "min_gap_m": 0.5,
+        "min_pose": {
+          "pedestal": 0.0
+        },
+        "margin_m": 0.03
+      },
+      {
+        "a": "left_shoulder_mount",
+        "b": "pedestal_base",
+        "variables": [
+          "pedestal"
+        ],
+        "steps": {
+          "pedestal": 2.0
+        },
+        "step_units": {
+          "pedestal": "mm"
+        },
+        "bound_m": 0.001,
+        "min_gap_m": 0.5,
+        "min_pose": {
+          "pedestal": 0.0
+        },
+        "margin_m": 0.03
+      },
+      {
+        "a": "left_shoulder_mount",
+        "b": "pedestal_top",
+        "variables": [],
+        "steps": {},
+        "step_units": {},
+        "bound_m": 0.0,
+        "min_gap_m": 0.5,
+        "min_pose": {},
+        "margin_m": 0.03
+      },
+      {
+        "a": "left_shoulder_mount",
+        "b": "eagle_cam_body",
+        "variables": [],
+        "steps": {},
+        "step_units": {},
+        "bound_m": 0.0,
+        "min_gap_m": 0.12707551874150888,
+        "min_pose": {},
+        "margin_m": 0.03
+      },
+      {
+        "a": "left_shoulder_mount",
+        "b": "battery",
+        "variables": [
+          "pedestal"
+        ],
+        "steps": {
+          "pedestal": 2.0
+        },
+        "step_units": {
+          "pedestal": "mm"
+        },
+        "bound_m": 0.001,
+        "min_gap_m": 0.5,
+        "min_pose": {
+          "pedestal": 0.0
+        },
+        "margin_m": 0.03
+      },
+      {
+        "a": "right_link1_1",
+        "b": "base_base_link_geom",
+        "variables": [
+          "pedestal",
+          "right_joint1"
+        ],
+        "steps": {
+          "pedestal": 2.0,
+          "right_joint1": 1.0
+        },
+        "step_units": {
+          "pedestal": "mm",
+          "right_joint1": "deg"
+        },
+        "bound_m": 0.0015222372141036281,
+        "min_gap_m": 0.5,
+        "min_pose": {
+          "pedestal": 0.0,
+          "right_joint1": -1.396263
+        },
+        "margin_m": 0.03
+      },
+      {
+        "a": "right_link1_2",
+        "b": "base_base_link_geom",
+        "variables": [
+          "pedestal",
+          "right_joint1"
+        ],
+        "steps": {
+          "pedestal": 2.0,
+          "right_joint1": 1.0
+        },
+        "step_units": {
+          "pedestal": "mm",
+          "right_joint1": "deg"
+        },
+        "bound_m": 0.0015222372141036281,
+        "min_gap_m": 0.5,
+        "min_pose": {
+          "pedestal": 0.0,
+          "right_joint1": -1.396263
+        },
+        "margin_m": 0.03
+      },
+      {
+        "a": "right_link1_3",
+        "b": "base_base_link_geom",
+        "variables": [
+          "pedestal",
+          "right_joint1"
+        ],
+        "steps": {
+          "pedestal": 2.0,
+          "right_joint1": 1.0
+        },
+        "step_units": {
+          "pedestal": "mm",
+          "right_joint1": "deg"
+        },
+        "bound_m": 0.0015222372141036281,
+        "min_gap_m": 0.5,
+        "min_pose": {
+          "pedestal": 0.0,
+          "right_joint1": -1.396263
+        },
+        "margin_m": 0.03
+      },
+      {
+        "a": "right_link1_1",
+        "b": "base_right_link_geom",
+        "variables": [
+          "pedestal",
+          "right_joint1"
+        ],
+        "steps": {
+          "pedestal": 2.0,
+          "right_joint1": 1.0
+        },
+        "step_units": {
+          "pedestal": "mm",
+          "right_joint1": "deg"
+        },
+        "bound_m": 0.0015222372141036281,
+        "min_gap_m": 0.5,
+        "min_pose": {
+          "pedestal": 0.0,
+          "right_joint1": -1.396263
+        },
+        "margin_m": 0.03
+      },
+      {
+        "a": "right_link1_2",
+        "b": "base_right_link_geom",
+        "variables": [
+          "pedestal",
+          "right_joint1"
+        ],
+        "steps": {
+          "pedestal": 2.0,
+          "right_joint1": 1.0
+        },
+        "step_units": {
+          "pedestal": "mm",
+          "right_joint1": "deg"
+        },
+        "bound_m": 0.0015222372141036281,
+        "min_gap_m": 0.5,
+        "min_pose": {
+          "pedestal": 0.0,
+          "right_joint1": -1.396263
+        },
+        "margin_m": 0.03
+      },
+      {
+        "a": "right_link1_3",
+        "b": "base_right_link_geom",
+        "variables": [
+          "pedestal",
+          "right_joint1"
+        ],
+        "steps": {
+          "pedestal": 2.0,
+          "right_joint1": 1.0
+        },
+        "step_units": {
+          "pedestal": "mm",
+          "right_joint1": "deg"
+        },
+        "bound_m": 0.0015222372141036281,
+        "min_gap_m": 0.5,
+        "min_pose": {
+          "pedestal": 0.0,
+          "right_joint1": -1.396263
+        },
+        "margin_m": 0.03
+      },
+      {
+        "a": "right_link1_1",
+        "b": "base_left_Link_geom",
+        "variables": [
+          "pedestal",
+          "right_joint1"
+        ],
+        "steps": {
+          "pedestal": 2.0,
+          "right_joint1": 1.0
+        },
+        "step_units": {
+          "pedestal": "mm",
+          "right_joint1": "deg"
+        },
+        "bound_m": 0.0015222372141036281,
+        "min_gap_m": 0.5,
+        "min_pose": {
+          "pedestal": 0.0,
+          "right_joint1": -1.396263
+        },
+        "margin_m": 0.03
+      },
+      {
+        "a": "right_link1_2",
+        "b": "base_left_Link_geom",
+        "variables": [
+          "pedestal",
+          "right_joint1"
+        ],
+        "steps": {
+          "pedestal": 2.0,
+          "right_joint1": 1.0
+        },
+        "step_units": {
+          "pedestal": "mm",
+          "right_joint1": "deg"
+        },
+        "bound_m": 0.0015222372141036281,
+        "min_gap_m": 0.5,
+        "min_pose": {
+          "pedestal": 0.0,
+          "right_joint1": -1.396263
+        },
+        "margin_m": 0.03
+      },
+      {
+        "a": "right_link1_3",
+        "b": "base_left_Link_geom",
+        "variables": [
+          "pedestal",
+          "right_joint1"
+        ],
+        "steps": {
+          "pedestal": 2.0,
+          "right_joint1": 1.0
+        },
+        "step_units": {
+          "pedestal": "mm",
+          "right_joint1": "deg"
+        },
+        "bound_m": 0.0015222372141036281,
+        "min_gap_m": 0.5,
+        "min_pose": {
+          "pedestal": 0.0,
+          "right_joint1": -1.396263
+        },
+        "margin_m": 0.03
+      },
+      {
+        "a": "right_link1_1",
+        "b": "base_right_front_link_geom",
+        "variables": [
+          "pedestal",
+          "right_joint1"
+        ],
+        "steps": {
+          "pedestal": 2.0,
+          "right_joint1": 1.0
+        },
+        "step_units": {
+          "pedestal": "mm",
+          "right_joint1": "deg"
+        },
+        "bound_m": 0.0015222372141036281,
+        "min_gap_m": 0.5,
+        "min_pose": {
+          "pedestal": 0.0,
+          "right_joint1": -1.396263
+        },
+        "margin_m": 0.03
+      },
+      {
+        "a": "right_link1_2",
+        "b": "base_right_front_link_geom",
+        "variables": [
+          "pedestal",
+          "right_joint1"
+        ],
+        "steps": {
+          "pedestal": 2.0,
+          "right_joint1": 1.0
+        },
+        "step_units": {
+          "pedestal": "mm",
+          "right_joint1": "deg"
+        },
+        "bound_m": 0.0015222372141036281,
+        "min_gap_m": 0.5,
+        "min_pose": {
+          "pedestal": 0.0,
+          "right_joint1": -1.396263
+        },
+        "margin_m": 0.03
+      },
+      {
+        "a": "right_link1_3",
+        "b": "base_right_front_link_geom",
+        "variables": [
+          "pedestal",
+          "right_joint1"
+        ],
+        "steps": {
+          "pedestal": 2.0,
+          "right_joint1": 1.0
+        },
+        "step_units": {
+          "pedestal": "mm",
+          "right_joint1": "deg"
+        },
+        "bound_m": 0.0015222372141036281,
+        "min_gap_m": 0.5,
+        "min_pose": {
+          "pedestal": 0.0,
+          "right_joint1": -1.396263
+        },
+        "margin_m": 0.03
+      },
+      {
+        "a": "right_link1_1",
+        "b": "base_right_rear_link_geom",
+        "variables": [
+          "pedestal",
+          "right_joint1"
+        ],
+        "steps": {
+          "pedestal": 2.0,
+          "right_joint1": 1.0
+        },
+        "step_units": {
+          "pedestal": "mm",
+          "right_joint1": "deg"
+        },
+        "bound_m": 0.0015222372141036281,
+        "min_gap_m": 0.5,
+        "min_pose": {
+          "pedestal": 0.0,
+          "right_joint1": -1.396263
+        },
+        "margin_m": 0.03
+      },
+      {
+        "a": "right_link1_2",
+        "b": "base_right_rear_link_geom",
+        "variables": [
+          "pedestal",
+          "right_joint1"
+        ],
+        "steps": {
+          "pedestal": 2.0,
+          "right_joint1": 1.0
+        },
+        "step_units": {
+          "pedestal": "mm",
+          "right_joint1": "deg"
+        },
+        "bound_m": 0.0015222372141036281,
+        "min_gap_m": 0.5,
+        "min_pose": {
+          "pedestal": 0.0,
+          "right_joint1": -1.396263
+        },
+        "margin_m": 0.03
+      },
+      {
+        "a": "right_link1_3",
+        "b": "base_right_rear_link_geom",
+        "variables": [
+          "pedestal",
+          "right_joint1"
+        ],
+        "steps": {
+          "pedestal": 2.0,
+          "right_joint1": 1.0
+        },
+        "step_units": {
+          "pedestal": "mm",
+          "right_joint1": "deg"
+        },
+        "bound_m": 0.0015222372141036281,
+        "min_gap_m": 0.5,
+        "min_pose": {
+          "pedestal": 0.0,
+          "right_joint1": -1.396263
+        },
+        "margin_m": 0.03
+      },
+      {
+        "a": "right_link1_1",
+        "b": "base_left_front_link_geom",
+        "variables": [
+          "pedestal",
+          "right_joint1"
+        ],
+        "steps": {
+          "pedestal": 2.0,
+          "right_joint1": 1.0
+        },
+        "step_units": {
+          "pedestal": "mm",
+          "right_joint1": "deg"
+        },
+        "bound_m": 0.0015222372141036281,
+        "min_gap_m": 0.5,
+        "min_pose": {
+          "pedestal": 0.0,
+          "right_joint1": -1.396263
+        },
+        "margin_m": 0.03
+      },
+      {
+        "a": "right_link1_2",
+        "b": "base_left_front_link_geom",
+        "variables": [
+          "pedestal",
+          "right_joint1"
+        ],
+        "steps": {
+          "pedestal": 2.0,
+          "right_joint1": 1.0
+        },
+        "step_units": {
+          "pedestal": "mm",
+          "right_joint1": "deg"
+        },
+        "bound_m": 0.0015222372141036281,
+        "min_gap_m": 0.5,
+        "min_pose": {
+          "pedestal": 0.0,
+          "right_joint1": -1.396263
+        },
+        "margin_m": 0.03
+      },
+      {
+        "a": "right_link1_3",
+        "b": "base_left_front_link_geom",
+        "variables": [
+          "pedestal",
+          "right_joint1"
+        ],
+        "steps": {
+          "pedestal": 2.0,
+          "right_joint1": 1.0
+        },
+        "step_units": {
+          "pedestal": "mm",
+          "right_joint1": "deg"
+        },
+        "bound_m": 0.0015222372141036281,
+        "min_gap_m": 0.5,
+        "min_pose": {
+          "pedestal": 0.0,
+          "right_joint1": -1.396263
+        },
+        "margin_m": 0.03
+      },
+      {
+        "a": "right_link1_1",
+        "b": "base_left_rear_link_geom",
+        "variables": [
+          "pedestal",
+          "right_joint1"
+        ],
+        "steps": {
+          "pedestal": 2.0,
+          "right_joint1": 1.0
+        },
+        "step_units": {
+          "pedestal": "mm",
+          "right_joint1": "deg"
+        },
+        "bound_m": 0.0015222372141036281,
+        "min_gap_m": 0.5,
+        "min_pose": {
+          "pedestal": 0.0,
+          "right_joint1": -1.396263
+        },
+        "margin_m": 0.03
+      },
+      {
+        "a": "right_link1_2",
+        "b": "base_left_rear_link_geom",
+        "variables": [
+          "pedestal",
+          "right_joint1"
+        ],
+        "steps": {
+          "pedestal": 2.0,
+          "right_joint1": 1.0
+        },
+        "step_units": {
+          "pedestal": "mm",
+          "right_joint1": "deg"
+        },
+        "bound_m": 0.0015222372141036281,
+        "min_gap_m": 0.5,
+        "min_pose": {
+          "pedestal": 0.0,
+          "right_joint1": -1.396263
+        },
+        "margin_m": 0.03
+      },
+      {
+        "a": "right_link1_3",
+        "b": "base_left_rear_link_geom",
+        "variables": [
+          "pedestal",
+          "right_joint1"
+        ],
+        "steps": {
+          "pedestal": 2.0,
+          "right_joint1": 1.0
+        },
+        "step_units": {
+          "pedestal": "mm",
+          "right_joint1": "deg"
+        },
+        "bound_m": 0.0015222372141036281,
+        "min_gap_m": 0.5,
+        "min_pose": {
+          "pedestal": 0.0,
+          "right_joint1": -1.396263
+        },
+        "margin_m": 0.03
+      },
+      {
+        "a": "right_link1_1",
+        "b": "pedestal_base",
+        "variables": [
+          "pedestal",
+          "right_joint1"
+        ],
+        "steps": {
+          "pedestal": 2.0,
+          "right_joint1": 1.0
+        },
+        "step_units": {
+          "pedestal": "mm",
+          "right_joint1": "deg"
+        },
+        "bound_m": 0.0015222372141036281,
+        "min_gap_m": 0.5,
+        "min_pose": {
+          "pedestal": 0.0,
+          "right_joint1": -1.396263
+        },
+        "margin_m": 0.03
+      },
+      {
+        "a": "right_link1_2",
+        "b": "pedestal_base",
+        "variables": [
+          "pedestal",
+          "right_joint1"
+        ],
+        "steps": {
+          "pedestal": 2.0,
+          "right_joint1": 1.0
+        },
+        "step_units": {
+          "pedestal": "mm",
+          "right_joint1": "deg"
+        },
+        "bound_m": 0.0015222372141036281,
+        "min_gap_m": 0.5,
+        "min_pose": {
+          "pedestal": 0.0,
+          "right_joint1": -1.396263
+        },
+        "margin_m": 0.03
+      },
+      {
+        "a": "right_link1_3",
+        "b": "pedestal_base",
+        "variables": [
+          "pedestal",
+          "right_joint1"
+        ],
+        "steps": {
+          "pedestal": 2.0,
+          "right_joint1": 1.0
+        },
+        "step_units": {
+          "pedestal": "mm",
+          "right_joint1": "deg"
+        },
+        "bound_m": 0.0015222372141036281,
+        "min_gap_m": 0.5,
+        "min_pose": {
+          "pedestal": 0.0,
+          "right_joint1": -1.396263
+        },
+        "margin_m": 0.03
+      },
+      {
+        "a": "right_link1_1",
+        "b": "pedestal_top",
+        "variables": [
+          "right_joint1"
+        ],
+        "steps": {
+          "right_joint1": 0.5
+        },
+        "step_units": {
+          "right_joint1": "deg"
+        },
+        "bound_m": 0.0002611186070518141,
+        "min_gap_m": 0.5,
+        "min_pose": {
+          "right_joint1": -1.396263
+        },
+        "margin_m": 0.03
+      },
+      {
+        "a": "right_link1_2",
+        "b": "pedestal_top",
+        "variables": [
+          "right_joint1"
+        ],
+        "steps": {
+          "right_joint1": 0.5
+        },
+        "step_units": {
+          "right_joint1": "deg"
+        },
+        "bound_m": 0.0002611186070518141,
+        "min_gap_m": 0.5,
+        "min_pose": {
+          "right_joint1": -1.396263
+        },
+        "margin_m": 0.03
+      },
+      {
+        "a": "right_link1_3",
+        "b": "pedestal_top",
+        "variables": [
+          "right_joint1"
+        ],
+        "steps": {
+          "right_joint1": 0.5
+        },
+        "step_units": {
+          "right_joint1": "deg"
+        },
+        "bound_m": 0.0002611186070518141,
+        "min_gap_m": 0.5,
+        "min_pose": {
+          "right_joint1": -1.396263
+        },
+        "margin_m": 0.03
+      },
+      {
+        "a": "right_link1_1",
+        "b": "torso",
+        "variables": [
+          "right_joint1"
+        ],
+        "steps": {
+          "right_joint1": 0.5
+        },
+        "step_units": {
+          "right_joint1": "deg"
+        },
+        "bound_m": 0.0002611186070518141,
+        "min_gap_m": 0.06399972264834743,
+        "min_pose": {
+          "right_joint1": -1.396263
+        },
+        "margin_m": 0.03
+      },
+      {
+        "a": "right_link1_2",
+        "b": "torso",
+        "variables": [
+          "right_joint1"
+        ],
+        "steps": {
+          "right_joint1": 0.5
+        },
+        "step_units": {
+          "right_joint1": "deg"
+        },
+        "bound_m": 0.0002611186070518141,
+        "min_gap_m": 0.06399972264834743,
+        "min_pose": {
+          "right_joint1": -1.396263
+        },
+        "margin_m": 0.03
+      },
+      {
+        "a": "right_link1_3",
+        "b": "torso",
+        "variables": [
+          "right_joint1"
+        ],
+        "steps": {
+          "right_joint1": 0.5
+        },
+        "step_units": {
+          "right_joint1": "deg"
+        },
+        "bound_m": 0.0002611186070518141,
+        "min_gap_m": 0.06399972264834743,
+        "min_pose": {
+          "right_joint1": -1.396263
+        },
+        "margin_m": 0.03
+      },
+      {
+        "a": "right_link1_1",
+        "b": "eagle_cam_body",
+        "variables": [
+          "right_joint1"
+        ],
+        "steps": {
+          "right_joint1": 0.5
+        },
+        "step_units": {
+          "right_joint1": "deg"
+        },
+        "bound_m": 0.0002611186070518141,
+        "min_gap_m": 0.15166182411121806,
+        "min_pose": {
+          "right_joint1": 2.539454463247213
+        },
+        "margin_m": 0.03
+      },
+      {
+        "a": "right_link1_2",
+        "b": "eagle_cam_body",
+        "variables": [
+          "right_joint1"
+        ],
+        "steps": {
+          "right_joint1": 0.5
+        },
+        "step_units": {
+          "right_joint1": "deg"
+        },
+        "bound_m": 0.0002611186070518141,
+        "min_gap_m": 0.15166182411121806,
+        "min_pose": {
+          "right_joint1": 2.539454463247213
+        },
+        "margin_m": 0.03
+      },
+      {
+        "a": "right_link1_3",
+        "b": "eagle_cam_body",
+        "variables": [
+          "right_joint1"
+        ],
+        "steps": {
+          "right_joint1": 0.5
+        },
+        "step_units": {
+          "right_joint1": "deg"
+        },
+        "bound_m": 0.0002611186070518141,
+        "min_gap_m": 0.15166182411121806,
+        "min_pose": {
+          "right_joint1": 2.539454463247213
+        },
+        "margin_m": 0.03
+      },
+      {
+        "a": "right_link1_1",
+        "b": "battery",
+        "variables": [
+          "pedestal",
+          "right_joint1"
+        ],
+        "steps": {
+          "pedestal": 2.0,
+          "right_joint1": 1.0
+        },
+        "step_units": {
+          "pedestal": "mm",
+          "right_joint1": "deg"
+        },
+        "bound_m": 0.0015222372141036281,
+        "min_gap_m": 0.5,
+        "min_pose": {
+          "pedestal": 0.0,
+          "right_joint1": -1.396263
+        },
+        "margin_m": 0.03
+      },
+      {
+        "a": "right_link1_2",
+        "b": "battery",
+        "variables": [
+          "pedestal",
+          "right_joint1"
+        ],
+        "steps": {
+          "pedestal": 2.0,
+          "right_joint1": 1.0
+        },
+        "step_units": {
+          "pedestal": "mm",
+          "right_joint1": "deg"
+        },
+        "bound_m": 0.0015222372141036281,
+        "min_gap_m": 0.5,
+        "min_pose": {
+          "pedestal": 0.0,
+          "right_joint1": -1.396263
+        },
+        "margin_m": 0.03
+      },
+      {
+        "a": "right_link1_3",
+        "b": "battery",
+        "variables": [
+          "pedestal",
+          "right_joint1"
+        ],
+        "steps": {
+          "pedestal": 2.0,
+          "right_joint1": 1.0
+        },
+        "step_units": {
+          "pedestal": "mm",
+          "right_joint1": "deg"
+        },
+        "bound_m": 0.0015222372141036281,
+        "min_gap_m": 0.5,
+        "min_pose": {
+          "pedestal": 0.0,
+          "right_joint1": -1.396263
+        },
+        "margin_m": 0.03
+      },
+      {
+        "a": "right_link2",
+        "b": "base_base_link_geom",
+        "variables": [
+          "pedestal",
+          "right_joint1",
+          "right_joint2"
+        ],
+        "steps": {
+          "pedestal": 2.0,
+          "right_joint1": 3.0000000000000004,
+          "right_joint2": 3.0000000000000004
+        },
+        "step_units": {
+          "pedestal": "mm",
+          "right_joint1": "deg",
+          "right_joint2": "deg"
+        },
+        "bound_m": 0.0061925786394557685,
+        "min_gap_m": 0.5,
+        "min_pose": {
+          "pedestal": 0.0,
+          "right_joint1": -1.396263,
+          "right_joint2": -0.1745326732
+        },
+        "margin_m": 0.03
+      },
+      {
+        "a": "right_link2",
+        "b": "base_right_link_geom",
+        "variables": [
+          "pedestal",
+          "right_joint1",
+          "right_joint2"
+        ],
+        "steps": {
+          "pedestal": 2.0,
+          "right_joint1": 3.0000000000000004,
+          "right_joint2": 3.0000000000000004
+        },
+        "step_units": {
+          "pedestal": "mm",
+          "right_joint1": "deg",
+          "right_joint2": "deg"
+        },
+        "bound_m": 0.0061925786394557685,
+        "min_gap_m": 0.5,
+        "min_pose": {
+          "pedestal": 0.0,
+          "right_joint1": -1.396263,
+          "right_joint2": -0.1745326732
+        },
+        "margin_m": 0.03
+      },
+      {
+        "a": "right_link2",
+        "b": "base_left_Link_geom",
+        "variables": [
+          "pedestal",
+          "right_joint1",
+          "right_joint2"
+        ],
+        "steps": {
+          "pedestal": 2.0,
+          "right_joint1": 3.0000000000000004,
+          "right_joint2": 3.0000000000000004
+        },
+        "step_units": {
+          "pedestal": "mm",
+          "right_joint1": "deg",
+          "right_joint2": "deg"
+        },
+        "bound_m": 0.0061925786394557685,
+        "min_gap_m": 0.5,
+        "min_pose": {
+          "pedestal": 0.0,
+          "right_joint1": -1.396263,
+          "right_joint2": -0.1745326732
+        },
+        "margin_m": 0.03
+      },
+      {
+        "a": "right_link2",
+        "b": "base_right_front_link_geom",
+        "variables": [
+          "pedestal",
+          "right_joint1",
+          "right_joint2"
+        ],
+        "steps": {
+          "pedestal": 2.0,
+          "right_joint1": 3.0000000000000004,
+          "right_joint2": 3.0000000000000004
+        },
+        "step_units": {
+          "pedestal": "mm",
+          "right_joint1": "deg",
+          "right_joint2": "deg"
+        },
+        "bound_m": 0.0061925786394557685,
+        "min_gap_m": 0.5,
+        "min_pose": {
+          "pedestal": 0.0,
+          "right_joint1": -1.396263,
+          "right_joint2": -0.1745326732
+        },
+        "margin_m": 0.03
+      },
+      {
+        "a": "right_link2",
+        "b": "base_right_rear_link_geom",
+        "variables": [
+          "pedestal",
+          "right_joint1",
+          "right_joint2"
+        ],
+        "steps": {
+          "pedestal": 2.0,
+          "right_joint1": 3.0000000000000004,
+          "right_joint2": 3.0000000000000004
+        },
+        "step_units": {
+          "pedestal": "mm",
+          "right_joint1": "deg",
+          "right_joint2": "deg"
+        },
+        "bound_m": 0.0061925786394557685,
+        "min_gap_m": 0.5,
+        "min_pose": {
+          "pedestal": 0.0,
+          "right_joint1": -1.396263,
+          "right_joint2": -0.1745326732
+        },
+        "margin_m": 0.03
+      },
+      {
+        "a": "right_link2",
+        "b": "base_left_front_link_geom",
+        "variables": [
+          "pedestal",
+          "right_joint1",
+          "right_joint2"
+        ],
+        "steps": {
+          "pedestal": 2.0,
+          "right_joint1": 3.0000000000000004,
+          "right_joint2": 3.0000000000000004
+        },
+        "step_units": {
+          "pedestal": "mm",
+          "right_joint1": "deg",
+          "right_joint2": "deg"
+        },
+        "bound_m": 0.0061925786394557685,
+        "min_gap_m": 0.5,
+        "min_pose": {
+          "pedestal": 0.0,
+          "right_joint1": -1.396263,
+          "right_joint2": -0.1745326732
+        },
+        "margin_m": 0.03
+      },
+      {
+        "a": "right_link2",
+        "b": "base_left_rear_link_geom",
+        "variables": [
+          "pedestal",
+          "right_joint1",
+          "right_joint2"
+        ],
+        "steps": {
+          "pedestal": 2.0,
+          "right_joint1": 3.0000000000000004,
+          "right_joint2": 3.0000000000000004
+        },
+        "step_units": {
+          "pedestal": "mm",
+          "right_joint1": "deg",
+          "right_joint2": "deg"
+        },
+        "bound_m": 0.0061925786394557685,
+        "min_gap_m": 0.5,
+        "min_pose": {
+          "pedestal": 0.0,
+          "right_joint1": -1.396263,
+          "right_joint2": -0.1745326732
+        },
+        "margin_m": 0.03
+      },
+      {
+        "a": "right_link2",
+        "b": "pedestal_base",
+        "variables": [
+          "pedestal",
+          "right_joint1",
+          "right_joint2"
+        ],
+        "steps": {
+          "pedestal": 2.0,
+          "right_joint1": 3.0000000000000004,
+          "right_joint2": 3.0000000000000004
+        },
+        "step_units": {
+          "pedestal": "mm",
+          "right_joint1": "deg",
+          "right_joint2": "deg"
+        },
+        "bound_m": 0.0061925786394557685,
+        "min_gap_m": 0.5,
+        "min_pose": {
+          "pedestal": 0.0,
+          "right_joint1": -1.396263,
+          "right_joint2": -0.1745326732
+        },
+        "margin_m": 0.03
+      },
+      {
+        "a": "right_link2",
+        "b": "pedestal_top",
+        "variables": [
+          "right_joint1",
+          "right_joint2"
+        ],
+        "steps": {
+          "right_joint1": 1.0,
+          "right_joint2": 1.0
+        },
+        "step_units": {
+          "right_joint1": "deg",
+          "right_joint2": "deg"
+        },
+        "bound_m": 0.0017308595464852559,
+        "min_gap_m": 0.5,
+        "min_pose": {
+          "right_joint1": -1.396263,
+          "right_joint2": -0.1745326732
+        },
+        "margin_m": 0.03
+      },
+      {
+        "a": "right_link2",
+        "b": "torso",
+        "variables": [
+          "right_joint1",
+          "right_joint2"
+        ],
+        "steps": {
+          "right_joint1": 1.0,
+          "right_joint2": 1.0
+        },
+        "step_units": {
+          "right_joint1": "deg",
+          "right_joint2": "deg"
+        },
+        "bound_m": 0.0017308595464852559,
+        "min_gap_m": 0.0741406699210074,
+        "min_pose": {
+          "right_joint1": 1.5707967283903603,
+          "right_joint2": -0.1047195031202268
+        },
+        "margin_m": 0.03
+      },
+      {
+        "a": "right_link2",
+        "b": "eagle_cam_body",
+        "variables": [
+          "right_joint1",
+          "right_joint2"
+        ],
+        "steps": {
+          "right_joint1": 1.0,
+          "right_joint2": 1.0
+        },
+        "step_units": {
+          "right_joint1": "deg",
+          "right_joint2": "deg"
+        },
+        "bound_m": 0.0017308595464852559,
+        "min_gap_m": 0.13905548997257905,
+        "min_pose": {
+          "right_joint1": 3.490659,
+          "right_joint2": -0.1745326732
+        },
+        "margin_m": 0.03
+      },
+      {
+        "a": "right_link2",
+        "b": "battery",
+        "variables": [
+          "pedestal",
+          "right_joint1",
+          "right_joint2"
+        ],
+        "steps": {
+          "pedestal": 2.0,
+          "right_joint1": 3.0000000000000004,
+          "right_joint2": 3.0000000000000004
+        },
+        "step_units": {
+          "pedestal": "mm",
+          "right_joint1": "deg",
+          "right_joint2": "deg"
+        },
+        "bound_m": 0.0061925786394557685,
+        "min_gap_m": 0.5,
+        "min_pose": {
+          "pedestal": 0.0,
+          "right_joint1": -1.396263,
+          "right_joint2": -0.1745326732
+        },
+        "margin_m": 0.03
+      },
+      {
+        "a": "right_link3",
+        "b": "pedestal_top",
+        "variables": [
+          "right_joint1",
+          "right_joint2",
+          "right_joint3"
+        ],
+        "steps": {
+          "right_joint1": 3.0000000000000004,
+          "right_joint2": 3.0000000000000004,
+          "right_joint3": 3.0000000000000004
+        },
+        "step_units": {
+          "right_joint1": "deg",
+          "right_joint2": "deg",
+          "right_joint3": "deg"
+        },
+        "bound_m": 0.015370311529296764,
+        "min_gap_m": 0.4522892246522573,
+        "min_pose": {
+          "right_joint1": 0.12217344923506679,
+          "right_joint2": -0.1745326732,
+          "right_joint3": 1.1519176331111542
+        },
+        "margin_m": 0.03
+      },
+      {
+        "a": "right_shoulder_mount",
+        "b": "base_base_link_geom",
+        "variables": [
+          "pedestal"
+        ],
+        "steps": {
+          "pedestal": 2.0
+        },
+        "step_units": {
+          "pedestal": "mm"
+        },
+        "bound_m": 0.001,
+        "min_gap_m": 0.5,
+        "min_pose": {
+          "pedestal": 0.0
+        },
+        "margin_m": 0.03
+      },
+      {
+        "a": "right_shoulder_mount",
+        "b": "base_right_link_geom",
+        "variables": [
+          "pedestal"
+        ],
+        "steps": {
+          "pedestal": 2.0
+        },
+        "step_units": {
+          "pedestal": "mm"
+        },
+        "bound_m": 0.001,
+        "min_gap_m": 0.5,
+        "min_pose": {
+          "pedestal": 0.0
+        },
+        "margin_m": 0.03
+      },
+      {
+        "a": "right_shoulder_mount",
+        "b": "base_left_Link_geom",
+        "variables": [
+          "pedestal"
+        ],
+        "steps": {
+          "pedestal": 2.0
+        },
+        "step_units": {
+          "pedestal": "mm"
+        },
+        "bound_m": 0.001,
+        "min_gap_m": 0.5,
+        "min_pose": {
+          "pedestal": 0.0
+        },
+        "margin_m": 0.03
+      },
+      {
+        "a": "right_shoulder_mount",
+        "b": "base_right_front_link_geom",
+        "variables": [
+          "pedestal"
+        ],
+        "steps": {
+          "pedestal": 2.0
+        },
+        "step_units": {
+          "pedestal": "mm"
+        },
+        "bound_m": 0.001,
+        "min_gap_m": 0.5,
+        "min_pose": {
+          "pedestal": 0.0
+        },
+        "margin_m": 0.03
+      },
+      {
+        "a": "right_shoulder_mount",
+        "b": "base_right_rear_link_geom",
+        "variables": [
+          "pedestal"
+        ],
+        "steps": {
+          "pedestal": 2.0
+        },
+        "step_units": {
+          "pedestal": "mm"
+        },
+        "bound_m": 0.001,
+        "min_gap_m": 0.5,
+        "min_pose": {
+          "pedestal": 0.0
+        },
+        "margin_m": 0.03
+      },
+      {
+        "a": "right_shoulder_mount",
+        "b": "base_left_front_link_geom",
+        "variables": [
+          "pedestal"
+        ],
+        "steps": {
+          "pedestal": 2.0
+        },
+        "step_units": {
+          "pedestal": "mm"
+        },
+        "bound_m": 0.001,
+        "min_gap_m": 0.5,
+        "min_pose": {
+          "pedestal": 0.0
+        },
+        "margin_m": 0.03
+      },
+      {
+        "a": "right_shoulder_mount",
+        "b": "base_left_rear_link_geom",
+        "variables": [
+          "pedestal"
+        ],
+        "steps": {
+          "pedestal": 2.0
+        },
+        "step_units": {
+          "pedestal": "mm"
+        },
+        "bound_m": 0.001,
+        "min_gap_m": 0.5,
+        "min_pose": {
+          "pedestal": 0.0
+        },
+        "margin_m": 0.03
+      },
+      {
+        "a": "right_shoulder_mount",
+        "b": "pedestal_base",
+        "variables": [
+          "pedestal"
+        ],
+        "steps": {
+          "pedestal": 2.0
+        },
+        "step_units": {
+          "pedestal": "mm"
+        },
+        "bound_m": 0.001,
+        "min_gap_m": 0.5,
+        "min_pose": {
+          "pedestal": 0.0
+        },
+        "margin_m": 0.03
+      },
+      {
+        "a": "right_shoulder_mount",
+        "b": "pedestal_top",
+        "variables": [],
+        "steps": {},
+        "step_units": {},
+        "bound_m": 0.0,
+        "min_gap_m": 0.5,
+        "min_pose": {},
+        "margin_m": 0.03
+      },
+      {
+        "a": "right_shoulder_mount",
+        "b": "eagle_cam_body",
+        "variables": [],
+        "steps": {},
+        "step_units": {},
+        "bound_m": 0.0,
+        "min_gap_m": 0.12707551874150888,
+        "min_pose": {},
+        "margin_m": 0.03
+      },
+      {
+        "a": "right_shoulder_mount",
+        "b": "battery",
+        "variables": [
+          "pedestal"
+        ],
+        "steps": {
+          "pedestal": 2.0
+        },
+        "step_units": {
+          "pedestal": "mm"
+        },
+        "bound_m": 0.001,
+        "min_gap_m": 0.5,
+        "min_pose": {
+          "pedestal": 0.0
+        },
+        "margin_m": 0.03
+      }
+    ],
+    "swept": 153,
+    "not_swept": 512,
+    "note": "listed only if min real gap - step-size bound >= margin + 1 cm (hand-hand 2 cm, other 4 cm); tools/never_close_sweep.py"
+  }
 }

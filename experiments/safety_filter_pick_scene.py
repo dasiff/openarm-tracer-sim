@@ -161,3 +161,18 @@ def set_moment(ctx, name):
     d.qpos[_jadr(m, "openarm_left_finger_joint2")] = fing
     mujoco.mj_kinematics(m, d)
     return bxy, bz, held
+
+
+def set_scene(ctx, q_l, q_r, f_l, f_r, held_xyz=None):
+    """Puts the scene in one pose (kinematics only). held_xyz: beaker bottom-centre (x, y, z) when held, else the beaker stays on the bench."""
+    m, d = ctx["m"], ctx["d"]
+    d.qpos[ctx["qadr"]] = q_l
+    for k, v in enumerate(q_r, start=1):
+        d.qpos[_jadr(m, f"openarm_right_joint{k}")] = v
+    for side, f in (("left", f_l), ("right", f_r)):
+        d.qpos[_jadr(m, f"openarm_{side}_finger_joint1")] = f
+        d.qpos[_jadr(m, f"openarm_{side}_finger_joint2")] = f
+    if held_xyz is not None:
+        free = m.joint("task_beaker_free").qposadr[0]
+        d.qpos[free:free + 7] = [held_xyz[0], held_xyz[1], held_xyz[2], 1, 0, 0, 0]
+    mujoco.mj_kinematics(m, d)

@@ -39,7 +39,7 @@ Verdict: the link 7 capsule causes all of the over-coverage. Per the brief, the 
 
 ## 3. Forearm: 2 and 3 capsules (step 2)
 
-Script: experiments/safety_filter_forearm_fit.py (fit set: 2000 poses, 8 limit corners plus random, joints 4 to 6; the line is the joint 4 to joint 7 anchor line; convex-hull vertices of links 4 to 6). Independent check: 500 new random poses (seed 99); max stick-out at each capsule: +0.000 mm (within rounding).
+Script (deleted 2026-11-10, superseded by the per-link and rule-check scripts; results are in this report): safety_filter_forearm_fit.py (fit set: 2000 poses, 8 limit corners plus random, joints 4 to 6; the line is the joint 4 to joint 7 anchor line; convex-hull vertices of links 4 to 6). Independent check: 500 new random poses (seed 99); max stick-out at each capsule: +0.000 mm (within rounding).
 
 | count | split points (fraction of line) | radii (cm) | volume (cm^3) |
 |---|---|---|---|
@@ -143,7 +143,7 @@ The rule is met at every pose of M1 to M9.
 
 ## 7. Torso exemption re-evaluated (SF-9 method)
 
-Script: experiments/safety_filter_torso_evidence.py (zero pose: pedestal 0.15 m, fingers 0.02 m, as in SF-9; 200 random poses, both arms random in each pose). Gap in mm to the torso capsule.
+Script (deleted 2026-11-10, superseded by the per-link and rule-check scripts; results are in this report): safety_filter_torso_evidence.py (zero pose: pedestal 0.15 m, fingers 0.02 m, as in SF-9; 200 random poses, both arms random in each pose). Gap in mm to the torso capsule.
 
 | shape | zero pose | min over 200 poses | poses overlapping |
 |---|---|---|---|

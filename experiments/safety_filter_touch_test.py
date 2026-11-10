@@ -215,8 +215,65 @@ def catalog_and_config():
     check("push: starts 1 cm and stops 2 cm beyond the margin", (cfg.PUSH_START_BEYOND_M, cfg.PUSH_STOP_BEYOND_M) == (0.01, 0.02))
 
 
+def never_close_list():
+    """SF-23: the never-close list in robot_shapes.json: its entries obey the rule, the touch rules skip them, and
+    random joint states never bring a listed pair's real geoms within margin + 1 cm (independent spot check)."""
+    import mujoco
+    print("never-close list (SF-23)")
+    m = load_robot_only_model()
+    rs = RobotShapes(m, SHAPES)
+    nc = rs.doc.get("never_close")
+    check("never_close block present, stamped with the robot fingerprint", bool(nc) and nc["fingerprint"] == rs.doc["fingerprint"])
+    pairs = nc["pairs"]
+    check("never_close lists at least one pair", len(pairs) > 0, f"({len(pairs)} pairs, {nc['swept']} swept, {nc['not_swept']} not swept)")
+    ok_rule = all(p["min_gap_m"] - p["bound_m"] >= p["margin_m"] + 0.01 - 1e-12 for p in pairs)
+    check("every listed pair: min real gap - step-size bound >= margin + 1 cm", ok_rule)
+    check("every listed pair depends on at most 3 variables", all(len(p["variables"]) <= 3 for p in pairs))
+    by_id = {sp["id"]: sp for sp in rs.specs}
+    stub = lambda sid: PlacedShape(id=sid, arm=by_id[sid]["arm"], part=by_id[sid]["part"], kind=by_id[sid]["kind"], body=by_id[sid]["frame"])
+    bad_exempt, bad_checked = [], []
+    for p in pairs:
+        a, b = stub(p["a"]), stub(p["b"])
+        if not isinstance(pair_rule(a, b), Exempt):
+            bad_exempt.append((p["a"], p["b"]))
+        if not isinstance(pair_rule(a, b, use_never_close=False), Rule):
+            bad_checked.append((p["a"], p["b"]))
+    check("the touch rules exempt every listed pair", not bad_exempt, str(bad_exempt[:3]))
+    check("every listed pair is a checked robot-vs-robot pair without the list", not bad_checked, str(bad_checked[:3]))
+    listed = {frozenset((p["a"], p["b"])) for p in pairs}
+    unlisted = [(a, b) for a in rs.specs for b in rs.specs if a["id"] < b["id"] and frozenset((a["id"], b["id"])) not in listed
+                and isinstance(pair_rule(stub(a["id"]), stub(b["id"]), use_never_close=False), Rule)]
+    check("pairs not on the list keep their rule", all(isinstance(pair_rule(stub(a["id"]), stub(b["id"])), Rule) for a, b in unlisted[:200]))
+    rs_off = RobotShapes(m, SHAPES, use_never_close=False)
+    check("use_never_close=False checks every pair", not rs_off.never_close)
+    rs = RobotShapes(m, SHAPES)   # restores the registry
+    # random states: the real gap of the listed pairs stays above margin + 1 cm
+    d = rs.data
+    rng = np.random.default_rng(5)
+    fr = np.zeros(6)
+    gid = lambda n: mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_GEOM, n)
+    rows = []
+    for p in pairs:
+        ga, gb = by_id[p["a"]]["geoms"], by_id[p["b"]]["geoms"]
+        rows.append(([gid(x) for x in ga], [gid(x) for x in gb], p["margin_m"]))
+    uniq = {(tuple(a), tuple(b)): mg for a, b, mg in rows}
+    worst = np.inf
+    for _ in range(300):
+        st = RobotState(pedestal_m=float(rng.uniform(0, 0.418)),
+                        q_left=tuple(float(rng.uniform(*m.jnt_range[rs._joint["left"][k]])) for k in range(7)),
+                        q_right=tuple(float(rng.uniform(*m.jnt_range[rs._joint["right"][k]])) for k in range(7)),
+                        finger_left=float(rng.uniform(0, 0.044)), finger_right=float(rng.uniform(0, 0.044)))
+        rs.set_state(st)
+        for (ga, gb), mg in uniq.items():
+            g = min(mujoco.mj_geomDistance(m, d, a, b, 0.5, fr) for a in ga for b in gb)
+            worst = min(worst, g - mg - 0.01)
+    check("300 random joint states: no listed pair's real gap falls below margin + 1 cm", worst >= -1e-9,
+          f"(smallest real gap minus (margin + 1 cm): {worst * 1e3:+.1f} mm)")
+
+
 def main():
     table()
+    never_close_list()
     held_and_broad()
     catalog_and_config()
     print("PASS" if not FAILS else f"FAIL: {len(FAILS)} check(s): {FAILS}")

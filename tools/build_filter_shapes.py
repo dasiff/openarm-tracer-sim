@@ -405,7 +405,19 @@ def build(out_path, counts=None, cache=None):
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--out", default=str(DEFAULT_OUT))
+    ap.add_argument("--merge-never-close", action="store_true",
+                    help="keep the shapes of the existing file and only replace its never-close list from the sweep file (SF-23)")
     args = ap.parse_args()
+    if args.merge_never_close:
+        path = Path(args.out)
+        doc = json.loads(path.read_text(encoding="utf-8"))
+        doc["never_close"] = load_never_close(doc["fingerprint"], doc["shapes"])
+        tmp = path.with_suffix(".json.tmp")
+        tmp.write_text(json.dumps(doc, indent=2) + "\n", encoding="utf-8")
+        os.replace(tmp, path)
+        nc = doc["never_close"]
+        print(f"merged: {len(nc['pairs'])} never-close shape pairs ({nc['swept']} swept, {nc['not_swept']} not swept)")
+        return
     doc, _ = build(args.out)
     print(f"wrote {args.out}: {len(doc['shapes'])} shapes, fingerprint {doc['fingerprint'][:16]}")
     for side, parts in doc["link_fit"].items():

@@ -25,7 +25,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from safety_filter_pick_scene import setup, FINGER_OPEN, FINGER_HELD  # noqa: E402
-from safety_filter_robot_pairs_check import set_scene  # noqa: E402
+from safety_filter_pick_scene import set_scene  # noqa: E402
 from src.task_config import TASK_CFG  # noqa: E402
 from src.safety_filter.robot_model import load_robot_only_model  # noqa: E402
 from src.safety_filter.shapes import RobotShapes, RobotState  # noqa: E402

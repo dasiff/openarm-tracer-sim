@@ -1,11 +1,11 @@
-"""Per-tick timing of the filter (place, broad phase, pair checks) on 200 random states (kinematics only; no stepping)."""
+"""Per-tick timing (add --no-list to time the filter without the never-close list) of the filter (place, broad phase, pair checks) on 200 random states (kinematics only; no stepping)."""
 import sys, time; sys.path.insert(0,'.')
 import numpy as np
 from src.safety_filter.robot_model import load_robot_only_model
 from src.safety_filter.shapes import RobotShapes, RobotState
 from src.safety_filter.world import LabMapSource, catalog_object
 from src.safety_filter.touch import evaluate_pairs, broad_phase
-m=load_robot_only_model(); rs=RobotShapes(m,'data/safety_filter/robot_shapes.json')
+m=load_robot_only_model(); rs=RobotShapes(m,'data/safety_filter/robot_shapes.json',use_never_close='--no-list' not in sys.argv)  # --no-list: check every pair (before the never-close list, SF-23)
 lab=LabMapSource('data/safety_filter/lab_map.json')
 rng=np.random.default_rng(0)
 objs=lab.objects()+[catalog_object('beaker', np.array([0.3,0.0,0.9]))]

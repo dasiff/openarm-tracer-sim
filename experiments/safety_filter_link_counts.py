@@ -16,6 +16,7 @@ import itertools
 import json
 import re
 import sys
+import time
 from pathlib import Path
 
 import mujoco
@@ -100,6 +101,14 @@ def _candidates(P, n, steps):
         out.append([B.fit_capsule(g, steps) for g in groups])
     out.sort(key=pieces_volume)
     return out
+
+
+T0 = time.time()
+
+
+def say(msg):
+    """Progress line (flushed, with the elapsed time) so a log shows what the search is doing."""
+    print(f"[{time.time() - T0:7.0f} s] {msg}", flush=True)
 
 
 def margin_rows_for(viol, ids):
@@ -220,8 +229,10 @@ def main():
         for side, k in LINKS:
             ids_now = ids_of(side, k, counts[side][k])
             viol = None
+            say(f"sweep {sweep} link {side} {k}: checking count {counts[side][k]}")
             doc, viol = build_eval(only=ids_now)
             if not margin_rows_for(viol, ids_now):
+                say(f"sweep {sweep} link {side} {k}: count {counts[side][k]} ok (no SF-16 MARGIN row)")
                 record["decisions"].append({"sweep": sweep, "link": f"{side}{k}", "count": counts[side][k], "status": "ok"})
                 continue
             done = False
@@ -236,11 +247,16 @@ def main():
                     doc, viol = build_eval(only=ids)
                     record["candidates_tried"] += 1
                     bad = margin_rows_for(viol, ids)
+                    if ci % 10 == 0:
+                        say(f"link {side} {k}: count {n}, candidate {ci + 1} of {len(cands[(side, k)][n])}, "
+                            f"{len(bad)} MARGIN rows")
                     if best_bad is None or len(bad) < len(best_bad[1]):
                         best_bad = (ci, bad, cand)
                     if not bad:
                         done = True
                         break
+                say(f"sweep {sweep} link {side} {k}: count {n} -> "
+                    + (f"passes with candidate {ci}" if done else f"no passing candidate (fewest MARGIN rows {len(best_bad[1])})"))
                 if done:
                     record["decisions"].append({"sweep": sweep, "link": f"{side}{k}", "count": n,
                                                 "candidate": ci, "volume_m3": pieces_volume(cand), "status": "ok"})

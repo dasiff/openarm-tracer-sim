@@ -1,6 +1,6 @@
 # Safety filter study: robot-vs-robot pairs at the poses we use (2026-11-10)
 
-Read-only: robot_shapes.json, config and margins unchanged. Kinematics only (no stepping). Script: experiments/safety_filter_robot_pairs_check.py (log data/logs/robot_pairs3_141501.log). Scene setup shared with the pick-and-place check (experiments/safety_filter_pick_scene.py, now takes a pedestal height).
+Read-only: robot_shapes.json, config and margins unchanged. Kinematics only (no stepping). Script (deleted 2026-11-10, superseded by the per-link and rule-check scripts; results are in this report): safety_filter_robot_pairs_check.py (log data/logs/robot_pairs3_141501.log). Scene setup shared with the pick-and-place check (experiments/safety_filter_pick_scene.py, now takes a pedestal height).
 
 ## 0. Location check
 - /home/vboxuser/projects/openarm-tracer-sim-safety-filter, branch safety-filter.

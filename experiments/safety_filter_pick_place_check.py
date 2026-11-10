@@ -295,8 +295,6 @@ def main():
             print(f"{row['moment']} | {part} | {fmt(sg['bench'])} / {fmt(sg['hotplate'])} / {fmt(sg['beaker'])} | "
                   f"{fmt(rg['bench'])} / {fmt(rg['hotplate'])} / {fmt(rg['beaker'])} | {','.join(flags)}")
 
-    # The forearm and link 7 capsules are now the shipped pieces (SF-14, SF-15); the looseness profile and the
-    # two-capsule fit are in experiments/safety_filter_forearm_fit.py.
     print("\nJSON " + json.dumps({"k_pick": k_pick, "k_place": k_place}))
     return 0
 

@@ -616,7 +616,7 @@ BENCH_STANCE_CFG = {
     # Gaussian sampling (David 2026-11-10, decisions-log M299; src/stance_sampling.py): the stance is drawn at random from the A8 reach model's score, not from a grid.
     "sampler_batch": 10000,                     # count: stances drawn at random for each selection (x, y, pedestal; the heading is held at staging_yaw for now) [row M299]
     "sampler_weight_power": 2,                  # the weight of a stance is its A8 score to this power (2: the score squared; 0 would be a uniform draw) [row M299]
-    "sampler_max_draws": 10,                    # count: the most full checks in one selection; a stance that fails is not drawn again [row M299]
+    "sampler_max_draws": 50,                    # count: the most full checks in one selection (raised from 10 on 2026-11-10); a stance that fails the full check is not drawn again. Gate failures do not count [row M299]
     "sampler_r_in_m": 0.0497,                  # m: the INNER reach limit of the draw: the smallest 3D distance from the left shoulder to a reachable cell of the filtered reach maps (data/reach_map_before_bench, all 12 bins, measured 2026-11-10; the cell is 25 mm from the joint, one of 35 cells under 0.10 m; the histogram is in docs/reports/home_clearance_images_20261110/r_in_histogram.json) [row M299]
     "sampler_outer_sigmas": 2.0,               # widths: the OUTER limit r_out = A8 r0 + this x sr (0.4527 + 2 x 0.2186 = 0.89 m): the furthest 3D shoulder-to-centre distance the draw uses [row M299]
     "sampler_redraw_factor": 20,               # count: the attempts at a stance (pedestal and inner-limit redraws included) are capped at this many times the batch size; if the cap is hit the stances kept are the batch [row M299]

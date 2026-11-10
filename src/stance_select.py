@@ -31,6 +31,7 @@ import time
 
 import mujoco
 import numpy as np
+from pathlib import Path
 
 from src import bench_stance as bs
 from src.grounding import resolve
@@ -738,7 +739,8 @@ def apply_stance_selection(tagged, task_cfg, maps_dir="data/reach_map", cfg=BENC
             bd, pair = fc.clear.body_distance(stance)
             return bd > fc.cfg["body_clearance"], pair, bd
 
-        rec = select_stance(task_points([targets[i] for i in steps]), robot_geometry(fc.model), cfg["arm"], held, cfg, check, say=say, gate=gate)
+        record_dir = Path(__file__).resolve().parents[1] / "data" / "logs" / "sampler_records"       # logging only: the selection record is written here (M299)
+        rec = select_stance(task_points([targets[i] for i in steps]), robot_geometry(fc.model), cfg["arm"], held, cfg, check, say=say, gate=gate, record_dir=record_dir)
         rep["sampler"] = rec
         if not rec["ok"]:
             out["stop"] = "stance sampler: " + str(rec["stop"])

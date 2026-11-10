@@ -115,7 +115,7 @@ def make_pipeline_task(plan=BEAKER_ON_HOTPLATE_PLAN, task_cfg=TASK_CFG, staging_
     panel = {"instruction": instruction, "steps": [seg["description"] for seg in tagged["segments"]],      # what the status panel shows (src/viewer_layout.panel_from_status); the same text in the live window and the video
              "spot_xy": first.get("xy"), "pedestal_q": first.get("pedestal_q"), "place_theta_deg": place_deg}
     passed_try = next((t for t in stance_report["runs"][0]["full_check"] if t.get("full_check_ok")), None)      # M284: the pedestal the stance was selected at, and the height the full check passed at (the run record keeps both)
-    task["meta"] = {**task["meta"], "plan": plan, "panel": panel,
+    task["meta"] = {**task["meta"], "plan": plan, "panel": panel, "sampler_record": (stance_report.get("sampler") or {}).get("record_path"),
                     "pedestal": {"selected_m": float(task_cfg["pedestal_q"]), "checked_m": None if passed_try is None else float(passed_try["q"])}}
     task["tagged_plan"] = tagged
     task["stance_selection"] = stance_report

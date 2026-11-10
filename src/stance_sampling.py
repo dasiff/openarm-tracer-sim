@@ -17,6 +17,7 @@ The arm used for scoring is BENCH_STANCE_CFG["arm"] (left). The right arm would 
 """
 import math
 import time
+from pathlib import Path
 
 import numpy as np
 
@@ -163,7 +164,30 @@ def draw_batch(points, geom, arm, cfg, seed, held_heading=None):
     return cat
 
 
-def select_stance(points, geom, arm, held_heading, cfg, check, seed=None, say=print, gate=None):
+def write_record(rec, path):
+    """Writes the selection record as JSON, through a temporary file renamed over the old one (CLAUDE.md rule 4). Logging only."""
+    import json
+    import os
+    from pathlib import Path
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps(rec, indent=1, default=lambda o: o.tolist() if hasattr(o, "tolist") else str(o)))
+    os.replace(tmp, path)
+    return str(path)
+
+
+def select_stance(points, geom, arm, held_heading, cfg, check, seed=None, say=print, gate=None, record_dir=None):
+    """The selection (see _select_stance), then the record is written to record_dir/sampler_<seed>.json (also when it stops or fails). The record is logging only."""
+    rec = _select_stance(points, geom, arm, held_heading, cfg, check, seed, say, gate)
+    if record_dir is not None:
+        rec["record_path"] = write_record(dict(rec, settings={k: cfg.get(k) for k in ("sampler_batch", "sampler_weight_power", "sampler_max_draws", "sampler_gate_max_failures", "sampler_r_in_m",
+                                                                                      "sampler_outer_sigmas", "sampler_redraw_factor", "sampler_heading_half_width_deg", "sampler_heading_held", "pedestal_range")}),
+                                          Path(record_dir) / f"sampler_{rec['seed']}.json")
+    return rec
+
+
+def _select_stance(points, geom, arm, held_heading, cfg, check, seed=None, say=print, gate=None):
     """The whole selection: draw, score, weight, draw again, check.
 
     Args:
@@ -224,6 +248,8 @@ def select_stance(points, geom, arm, held_heading, cfg, check, seed=None, say=pr
             if not g_ok:                                        # the body check failed: discard the stance, no full check, not counted
                 rec["gate_failures"] += 1
                 rec["gate_pairs"][g_pair] = rec["gate_pairs"].get(g_pair, 0) + 1
+                rec.setdefault("gate_rows", []).append({"n": rec["gate_failures"], "x": stance[0], "y": stance[1], "heading": stance[2], "pedestal": stance[3], "pair": g_pair, "distance_m": float(g_dist)})
+                say(f"[gate] failure {rec['gate_failures']}: x {stance[0]:.4f} y {stance[1]:.4f} pedestal {stance[3]:.4f}: touches {g_pair} ({1000 * float(g_dist):.1f} mm)")
                 if rec["gate_failures"] >= cap_gate:
                     rec["stop"] = f"the body-check gate failed {rec['gate_failures']} times (cap {cap_gate}): selection stopped"
                     return rec
@@ -233,12 +259,13 @@ def select_stance(points, geom, arm, held_heading, cfg, check, seed=None, say=pr
         row = {"draw": k, "index": i, "x": stance[0], "y": stance[1], "heading": stance[2], "facing": float(b["facing"][i]), "pedestal": stance[3],
                "shoulder": [float(v) for v in b["shoulder"][i]], "dz": float(b["dz"][i]), "d": float(b["d"][i]),
                "score": float(scores[i]), "weight": float(weights[i]),
-               "ok": bool(r["ok"]), "failed": list(r.get("failed", [])), "reason": str(r.get("reason", ""))[:300], "seconds": r.get("seconds"), "seed": r.get("seed")}
+               "ok": bool(r["ok"]), "failed": list(r.get("failed", [])), "reason": str(r.get("reason", "")), "seconds": r.get("seconds"), "seed": r.get("seed")}
         for j, pnt in enumerate(points):                        # the per-point counts (the score is the lower one)
             row[f"point_{j}_score"] = float(a8_scores(np.array([stance[0]]), np.array([stance[1]]), np.array([stance[3]]), np.array([stance[2]]), [pnt], geom, arm)[0])
         rec["draws"].append(row)
         say(f"[sampler] draw {k}: x {stance[0]:.4f} y {stance[1]:.4f} heading {math.degrees(stance[2]):.1f} pedestal {stance[3]:.4f} score {row['score']:.3f}: "
-            f"full check {'PASS' if row['ok'] else 'FAIL ' + str(row['failed'])}")
+            f"full check {'PASS' if row['ok'] else 'FAIL'} ({row['seconds'] if row['seconds'] is not None else float('nan'):.2f} s)"
+            + ("" if row["ok"] else f" reason: {row['reason']}"))
         if row["ok"]:
             rec.update(ok=True, chosen=row)
             return rec

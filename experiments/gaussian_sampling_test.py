@@ -202,6 +202,21 @@ def main():
                           gate=lambda st: (False, "fake_arm vs fake_bench", -0.02))
     check("the gate cap (50 here) stops the selection with a report", (not cap_g["ok"]) and cap_g["gate_failures"] == 50 and "gate failed 50 times" in str(cap_g["stop"]), f"stop: {cap_g['stop']}")
 
+    print("12. logging: the selection record is written to disk on a pass and on a stop, with the full reason text; the draws do not change")
+    import json as _json
+    import tempfile
+    long_reason = "at pedestal 0.120 the arms at home are 29 mm from openarm_left_hand_collision vs bench_top (the limit is 40 mm) " * 4
+    with tempfile.TemporaryDirectory() as td:
+        rp = select_stance(pts, GEOM, "left", None, {**CFG, "sampler_max_draws": 3}, lambda st: {"ok": False, "failed": ["home_clearance"], "reason": long_reason, "seconds": 0.5, "seed": 1},
+                           seed=77, say=lambda s: None, record_dir=td)
+        files = list(Path(td).glob("sampler_77.json"))
+        rec_file = _json.loads(files[0].read_text()) if files else {}
+        check("the record is written when the selection stops (3 failed draws)", len(files) == 1 and rec_file.get("stop") and rp["record_path"] == str(files[0]), f"stop: {rp['stop']}")
+        check("the record keeps the full reason text (no cut at 300 characters)", rec_file.get("draws", [{}])[0].get("reason") == long_reason, "")
+        plain = select_stance(pts, GEOM, "left", None, CFG, always_pass, seed=77, say=lambda s: None)
+        check("logging does not change the draws: the same seed gives the same first draws with and without a record", [r["index"] for r in plain["draws"]] == [r["index"] for r in rp["draws"][:len(plain["draws"])]]
+              or [r["index"] for r in plain["draws"]][:1] == [r["index"] for r in rp["draws"]][:1], "")
+
     print(f"\n{sum(results)}/{len(results)} checks passed")
     return all(results)
 

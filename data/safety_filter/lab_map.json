@@ -1,0 +1,715 @@
+{
+  "schema": 1,
+  "scene": "models/scenes/chemistry_lab_beaker_hotplate.xml",
+  "scene_sha256": "ada206db631ff2e3a7d29a5312c4f916192e02e1866910f5f2d3ce43ef1f5aea",
+  "frame": "scene world (the robot base at its zero pose)",
+  "included_fixtures": [
+    "back_counter",
+    "bench",
+    "fume_hood",
+    "safety_station",
+    "sink",
+    "storage_cabinet",
+    "walls"
+  ],
+  "fixtures": [
+    {
+      "name": "bench_top",
+      "fixture": "bench",
+      "body": "bench",
+      "geom": "bench_top",
+      "shape": "box",
+      "source": "box",
+      "center": [
+        0.0,
+        0.0,
+        0.9
+      ],
+      "quat": [
+        1.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "half": [
+        2.2,
+        0.8,
+        0.06
+      ]
+    },
+    {
+      "name": "bench_frame_front",
+      "fixture": "bench",
+      "body": "bench",
+      "geom": "bench_frame_front",
+      "shape": "box",
+      "source": "box",
+      "center": [
+        0.0,
+        0.78,
+        0.45
+      ],
+      "quat": [
+        1.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "half": [
+        2.18,
+        0.02,
+        0.45
+      ]
+    },
+    {
+      "name": "bench_frame_back",
+      "fixture": "bench",
+      "body": "bench",
+      "geom": "bench_frame_back",
+      "shape": "box",
+      "source": "box",
+      "center": [
+        0.0,
+        -0.78,
+        0.45
+      ],
+      "quat": [
+        1.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "half": [
+        2.18,
+        0.02,
+        0.45
+      ]
+    },
+    {
+      "name": "bench_frame_left",
+      "fixture": "bench",
+      "body": "bench",
+      "geom": "bench_frame_left",
+      "shape": "box",
+      "source": "box",
+      "center": [
+        -2.18,
+        0.0,
+        0.45
+      ],
+      "quat": [
+        1.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "half": [
+        0.02,
+        0.78,
+        0.45
+      ]
+    },
+    {
+      "name": "bench_frame_right",
+      "fixture": "bench",
+      "body": "bench",
+      "geom": "bench_frame_right",
+      "shape": "box",
+      "source": "box",
+      "center": [
+        2.18,
+        0.0,
+        0.45
+      ],
+      "quat": [
+        1.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "half": [
+        0.02,
+        0.78,
+        0.45
+      ]
+    },
+    {
+      "name": "bench_leg_fl",
+      "fixture": "bench",
+      "body": "bench",
+      "geom": "bench_leg_fl",
+      "shape": "box",
+      "source": "box",
+      "center": [
+        -2.0,
+        0.7,
+        0.45
+      ],
+      "quat": [
+        1.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "half": [
+        0.06,
+        0.06,
+        0.45
+      ]
+    },
+    {
+      "name": "bench_leg_fr",
+      "fixture": "bench",
+      "body": "bench",
+      "geom": "bench_leg_fr",
+      "shape": "box",
+      "source": "box",
+      "center": [
+        2.0,
+        0.7,
+        0.45
+      ],
+      "quat": [
+        1.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "half": [
+        0.06,
+        0.06,
+        0.45
+      ]
+    },
+    {
+      "name": "bench_leg_bl",
+      "fixture": "bench",
+      "body": "bench",
+      "geom": "bench_leg_bl",
+      "shape": "box",
+      "source": "box",
+      "center": [
+        -2.0,
+        -0.7,
+        0.45
+      ],
+      "quat": [
+        1.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "half": [
+        0.06,
+        0.06,
+        0.45
+      ]
+    },
+    {
+      "name": "bench_leg_br",
+      "fixture": "bench",
+      "body": "bench",
+      "geom": "bench_leg_br",
+      "shape": "box",
+      "source": "box",
+      "center": [
+        2.0,
+        -0.7,
+        0.45
+      ],
+      "quat": [
+        1.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "half": [
+        0.06,
+        0.06,
+        0.45
+      ]
+    },
+    {
+      "name": "sink_basin_outer",
+      "fixture": "sink",
+      "body": "bench",
+      "geom": "sink_basin_outer",
+      "shape": "box",
+      "source": "box",
+      "center": [
+        -1.35,
+        -0.15,
+        0.885
+      ],
+      "quat": [
+        1.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "half": [
+        0.35,
+        0.25,
+        0.03
+      ]
+    },
+    {
+      "name": "faucet_post",
+      "fixture": "sink",
+      "body": "bench",
+      "geom": "faucet_post",
+      "shape": "box",
+      "source": "cylinder",
+      "center": [
+        -1.55,
+        -0.15,
+        0.97
+      ],
+      "quat": [
+        1.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "half": [
+        0.025,
+        0.025,
+        0.1
+      ]
+    },
+    {
+      "name": "faucet_spout",
+      "fixture": "sink",
+      "body": "bench",
+      "geom": "faucet_spout",
+      "shape": "box",
+      "source": "capsule",
+      "center": [
+        -1.45,
+        -0.15,
+        1.05
+      ],
+      "quat": [
+        0.707106781,
+        0.0,
+        -0.707106781,
+        0.0
+      ],
+      "half": [
+        0.015,
+        0.015,
+        0.115
+      ]
+    },
+    {
+      "name": "wall_n",
+      "fixture": "walls",
+      "body": "world",
+      "geom": "wall_n",
+      "shape": "box",
+      "source": "box",
+      "center": [
+        0.0,
+        6.0,
+        1.5
+      ],
+      "quat": [
+        1.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "half": [
+        6.0,
+        0.08,
+        1.5
+      ]
+    },
+    {
+      "name": "wall_s",
+      "fixture": "walls",
+      "body": "world",
+      "geom": "wall_s",
+      "shape": "box",
+      "source": "box",
+      "center": [
+        0.0,
+        -6.0,
+        1.5
+      ],
+      "quat": [
+        1.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "half": [
+        6.0,
+        0.08,
+        1.5
+      ]
+    },
+    {
+      "name": "wall_e",
+      "fixture": "walls",
+      "body": "world",
+      "geom": "wall_e",
+      "shape": "box",
+      "source": "box",
+      "center": [
+        6.0,
+        0.0,
+        1.5
+      ],
+      "quat": [
+        1.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "half": [
+        0.08,
+        6.0,
+        1.5
+      ]
+    },
+    {
+      "name": "wall_w",
+      "fixture": "walls",
+      "body": "world",
+      "geom": "wall_w",
+      "shape": "box",
+      "source": "box",
+      "center": [
+        -6.0,
+        0.0,
+        1.5
+      ],
+      "quat": [
+        1.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "half": [
+        0.08,
+        6.0,
+        1.5
+      ]
+    },
+    {
+      "name": "back_counter_top",
+      "fixture": "back_counter",
+      "body": "back_counter",
+      "geom": "back_counter_top",
+      "shape": "box",
+      "source": "box",
+      "center": [
+        0.0,
+        -3.8,
+        0.92
+      ],
+      "quat": [
+        1.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "half": [
+        2.6,
+        0.55,
+        0.06
+      ]
+    },
+    {
+      "name": "back_counter_base",
+      "fixture": "back_counter",
+      "body": "back_counter",
+      "geom": "back_counter_base",
+      "shape": "box",
+      "source": "box",
+      "center": [
+        0.0,
+        -3.8,
+        0.45
+      ],
+      "quat": [
+        1.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "half": [
+        2.6,
+        0.55,
+        0.45
+      ]
+    },
+    {
+      "name": "hood_base",
+      "fixture": "fume_hood",
+      "body": "fume_hood",
+      "geom": "hood_base",
+      "shape": "box",
+      "source": "box",
+      "center": [
+        4.0,
+        -2.0,
+        0.45
+      ],
+      "quat": [
+        1.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "half": [
+        1.2,
+        0.9,
+        0.45
+      ]
+    },
+    {
+      "name": "hood_worktop",
+      "fixture": "fume_hood",
+      "body": "fume_hood",
+      "geom": "hood_worktop",
+      "shape": "box",
+      "source": "box",
+      "center": [
+        4.0,
+        -2.0,
+        0.92
+      ],
+      "quat": [
+        1.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "half": [
+        1.2,
+        0.9,
+        0.05
+      ]
+    },
+    {
+      "name": "cab_body",
+      "fixture": "storage_cabinet",
+      "body": "storage_cabinet",
+      "geom": "cab_body",
+      "shape": "box",
+      "source": "box",
+      "center": [
+        -4.4,
+        2.2,
+        1.0
+      ],
+      "quat": [
+        1.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "half": [
+        0.7,
+        0.6,
+        1.0
+      ]
+    },
+    {
+      "name": "safety_post",
+      "fixture": "safety_station",
+      "body": "safety_station",
+      "geom": "safety_post",
+      "shape": "box",
+      "source": "cylinder",
+      "center": [
+        -4.5,
+        -2.5,
+        1.1
+      ],
+      "quat": [
+        1.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "half": [
+        0.06,
+        0.06,
+        1.1
+      ]
+    },
+    {
+      "name": "eyewash_bowl",
+      "fixture": "safety_station",
+      "body": "safety_station",
+      "geom": "eyewash_bowl",
+      "shape": "box",
+      "source": "cylinder",
+      "center": [
+        -4.5,
+        -2.5,
+        1.0
+      ],
+      "quat": [
+        1.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "half": [
+        0.2,
+        0.2,
+        0.05
+      ]
+    }
+  ],
+  "excluded": [
+    {
+      "fixture": "back_counter",
+      "body": "back_counter",
+      "geom": "shelf_1",
+      "reason": "contype 0 (visual or hole only; no collision in the simulator)"
+    },
+    {
+      "fixture": "back_counter",
+      "body": "back_counter",
+      "geom": "shelf_2",
+      "reason": "contype 0 (visual or hole only; no collision in the simulator)"
+    },
+    {
+      "fixture": "back_counter",
+      "body": "back_counter",
+      "geom": "shelf_3",
+      "reason": "contype 0 (visual or hole only; no collision in the simulator)"
+    },
+    {
+      "fixture": "back_counter",
+      "body": "back_counter",
+      "geom": "pegboard",
+      "reason": "contype 0 (visual or hole only; no collision in the simulator)"
+    },
+    {
+      "fixture": "fume_hood",
+      "body": "fume_hood",
+      "geom": "hood_back",
+      "reason": "contype 0 (visual or hole only; no collision in the simulator)"
+    },
+    {
+      "fixture": "fume_hood",
+      "body": "fume_hood",
+      "geom": "hood_sides_l",
+      "reason": "contype 0 (visual or hole only; no collision in the simulator)"
+    },
+    {
+      "fixture": "fume_hood",
+      "body": "fume_hood",
+      "geom": "hood_sides_r",
+      "reason": "contype 0 (visual or hole only; no collision in the simulator)"
+    },
+    {
+      "fixture": "fume_hood",
+      "body": "fume_hood",
+      "geom": "hood_top",
+      "reason": "contype 0 (visual or hole only; no collision in the simulator)"
+    },
+    {
+      "fixture": "fume_hood",
+      "body": "fume_hood",
+      "geom": "hood_sash",
+      "reason": "contype 0 (visual or hole only; no collision in the simulator)"
+    },
+    {
+      "fixture": "fume_hood",
+      "body": "fume_hood",
+      "geom": "hood_duct",
+      "reason": "contype 0 (visual or hole only; no collision in the simulator)"
+    },
+    {
+      "fixture": "storage_cabinet",
+      "body": "storage_cabinet",
+      "geom": "cab_door_left",
+      "reason": "contype 0 (visual or hole only; no collision in the simulator)"
+    },
+    {
+      "fixture": "storage_cabinet",
+      "body": "storage_cabinet",
+      "geom": "cab_door_right",
+      "reason": "contype 0 (visual or hole only; no collision in the simulator)"
+    },
+    {
+      "fixture": "storage_cabinet",
+      "body": "storage_cabinet",
+      "geom": "cab_handle_l",
+      "reason": "contype 0 (visual or hole only; no collision in the simulator)"
+    },
+    {
+      "fixture": "storage_cabinet",
+      "body": "storage_cabinet",
+      "geom": "cab_handle_r",
+      "reason": "contype 0 (visual or hole only; no collision in the simulator)"
+    },
+    {
+      "fixture": "storage_cabinet",
+      "body": "storage_cabinet",
+      "geom": "cab_top",
+      "reason": "contype 0 (visual or hole only; no collision in the simulator)"
+    },
+    {
+      "fixture": "safety_station",
+      "body": "safety_station",
+      "geom": "shower_head",
+      "reason": "contype 0 (visual or hole only; no collision in the simulator)"
+    },
+    {
+      "fixture": "safety_station",
+      "body": "safety_station",
+      "geom": "eyewash_nozzle_l",
+      "reason": "contype 0 (visual or hole only; no collision in the simulator)"
+    },
+    {
+      "fixture": "safety_station",
+      "body": "safety_station",
+      "geom": "eyewash_nozzle_r",
+      "reason": "contype 0 (visual or hole only; no collision in the simulator)"
+    },
+    {
+      "fixture": "safety_station",
+      "body": "safety_station",
+      "geom": "pull_handle",
+      "reason": "contype 0 (visual or hole only; no collision in the simulator)"
+    },
+    {
+      "fixture": null,
+      "body": "bench",
+      "geom": "gas_manifold",
+      "reason": "collidable, not in the fixture list"
+    },
+    {
+      "fixture": null,
+      "body": "bench",
+      "geom": "gas_knob_1",
+      "reason": "collidable, not in the fixture list"
+    },
+    {
+      "fixture": null,
+      "body": "bench",
+      "geom": "gas_knob_2",
+      "reason": "collidable, not in the fixture list"
+    },
+    {
+      "fixture": null,
+      "body": "bench",
+      "geom": "gas_knob_3",
+      "reason": "collidable, not in the fixture list"
+    },
+    {
+      "fixture": null,
+      "body": "world",
+      "geom": "floor",
+      "reason": "collidable, not in the fixture list"
+    }
+  ]
+}

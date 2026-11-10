@@ -1,0 +1,1 @@
+"""Safety filter (SF rows in docs/mpvi_decisions.md): shapes, distances, broad phase, world sources, touch rules and the config. The package never receives the simulator, the scene or world data (M290)."""

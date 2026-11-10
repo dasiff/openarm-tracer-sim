@@ -667,19 +667,99 @@ def _best_stance(ctx, targets, cand, cfg, say):
     return None
 
 
+def _plan_for_runs(tagged, runs, moving_nav):
+    """The plan the robot runs, with the stance runs' navigation and approach angles written in (M074, M279; shared by the selection paths)."""
+    plan2 = copy.deepcopy(tagged)
+    for j, seg in enumerate(plan2["segments"]):                       # M074: a pick returns to the zombie pose unless the next navigation step is null
+        nxt = plan2["segments"][j + 1] if j + 1 < len(plan2["segments"]) else None
+        if seg["type"] == "manipulation" and seg.get("primitive") == "pick" and nxt is not None and nxt["type"] == "navigation" and (j + 1) in moving_nav and (j + 1) != min(moving_nav):
+            seg["end_at_zombie"] = True
+    for r in runs:                                                    # M279: each task's own list of passing approach angles goes to its step: pick angles as bin indices, place angles as turns in degrees
+        for i in r["steps"]:
+            lst = r.get("approach_angles", {}).get(i)
+            if lst is None:
+                continue
+            prim = plan2["segments"][i].get("primitive")
+            plan2["segments"][i]["approach_angles"] = [int(x) for x in lst] if prim == "pick" else [float(x) for x in lst]
+    return plan2
+
+
 def apply_stance_selection(tagged, task_cfg, maps_dir="data/reach_map", cfg=BENCH_STANCE_CFG, say=print):
-    """What make_pipeline_task calls: builds the scene's context and the full check once, selects, frees them.
+    """What make_pipeline_task calls (2026-11-10, decisions-log M299): the Gaussian sampler only (src/stance_sampling.py). No overlay, no two-pass, no fallback.
+
+    The heading is held at TASK_CFG's staging_yaw. One stance serves every manipulation step of the plan (the scripted staging parks one stance per plan).
 
     Returns:
-        dict: select_bench_stance's result.
+        dict: "ok", "stop" (the reason when not ok), "task_cfg" (staging_xy, staging_yaw, pedestal_q = the drawn stance's values, unchanged), "plan", "report"
+        (runs, the sampler record under "sampler", chosen).
     """
     import gc
+    from types import SimpleNamespace
     from src.full_check import FullCheck
-    maps = bs.load_maps(maps_dir, sides=(cfg["arm"],))
+    from src.stance_finder import robot_geometry
+    from src.stance_sampling import select_stance, task_points
+    from src.approach_angle import choose_place_angle
+    from src.world_model import SimGroundTruthSource, WorldModel
+    yaw = float(task_cfg["staging_yaw"])
     fc = FullCheck(maps={**bs.load_maps(maps_dir)}, task_cfg=task_cfg, maps_dir=maps_dir)
-    ctx = make_context(fc.model, fc.scene_data, maps, task_cfg, cfg, chk=fc.chk, say=say)
     try:
-        return select_bench_stance(tagged, ctx.world, task_cfg, ctx, cfg, full_check=fc, say=say)
+        segs = tagged["segments"]
+        steps = _manip_steps(tagged)
+        rep = {"runs": [], "null_nav": [], "tried": [], "notes": ["heading held at TASK_CFG staging_yaw (M299)"], "sampler": None}
+        out = {"ok": False, "stop": None, "task_cfg": task_cfg, "plan": tagged, "report": rep}
+        if not steps:
+            out["stop"] = "the plan has no manipulation step"
+            return out
+        world = WorldModel([SimGroundTruthSource(fc.model, fc.scene_data, task_cfg)])
+        world.refresh(fc.scene_data.time)
+        ctx = SimpleNamespace(model=fc.model, data=fc.scene_data, cfg=cfg, yaw=yaw)
+        try:
+            targets = {i: step_target(ctx, world, segs[i], i, say) for i in steps}
+        except SupportError as e:
+            out["stop"] = str(e)
+            rep["notes"].append(str(e))
+            return out
+        pts = [p for i in steps for p in targets[i]["points"]]
+        results = []
+
+        def check(stance):
+            """The full check of one drawn stance, its values unchanged (the M283 seed is the check's own)."""
+            r = fc.check(stance, pts)
+            results.append(r)
+            return {"ok": bool(r["ok"]), "failed": list(r.get("failed", [])), "reason": str(r.get("reason", "")), "seconds": (r.get("seconds") or {}).get("total"), "seed": r.get("seed")}
+
+        rec = select_stance(task_points([targets[i] for i in steps]), robot_geometry(fc.model), cfg["arm"], yaw, cfg, check, say=say)
+        rep["sampler"] = rec
+        if not rec["ok"]:
+            out["stop"] = "stance sampler: " + str(rec["stop"])
+            rep["notes"].append(out["stop"])
+            return out
+        k = rec["chosen"]["draw"] - 1
+        passed = results[k]
+        x, y, q = rec["chosen"]["x"], rec["chosen"]["y"], rec["chosen"]["pedestal"]
+        lists = {int(t["task"]): list(t["angles"]) for t in (passed.get("task_angle_lists") or []) if t.get("task") is not None}
+        tries = [{"xy": [row["x"], row["y"]], "q": row["pedestal"], "full_check_ok": row["ok"], "failed": row["failed"], "reason": row["reason"], "place": res.get("place"),
+                  "task_lists": res.get("task_angle_lists"), "score": row["score"], "weight": row["weight"], "sampler_draw": row["draw"]}
+                 for row, res in zip(rec["draws"], results)]
+        nav = _nav_before(segs, steps[0])
+        for i in steps[1:]:
+            nj = _nav_before(segs, i)
+            if nj is not None:
+                rep["null_nav"].append(nj)
+        place_theta = next((choose_place_angle(lists[int(i)]) for i in steps if targets[i]["primitive"] == "place" and lists.get(int(i))), None)
+        run = {"stance": {"xy": (x, y), "q": q, "yaw": yaw}, "steps": list(steps), "nav": [nav] if nav is not None else [], "approach_angles": lists,
+               "place_theta_deg": place_theta, "surface": targets[steps[0]]["surface"], "counts": None, "score": rec["chosen"]["score"], "full_check": tries,
+               "ranked": [], "overlay_run_q": [], "seconds": None}
+        rep["runs"].append(run)
+        out["task_cfg"] = dict(task_cfg, staging_xy=(float(x), float(y)), staging_yaw=yaw, pedestal_q=float(q))      # M284: the pedestal the check passed is the one the staging parks at
+        out["plan"] = _plan_for_runs(tagged, rep["runs"], {n for r in rep["runs"] for n in r["nav"]})
+        if getattr(fc, "pose_ik_log", None):
+            from src.full_check import pose_ik_summary
+            rep["pose_ik"] = pose_ik_summary(fc.pose_ik_log, fc.cfg["pose_ik_iterations"])
+            say(f"[stance] pose IK iterations: {rep['pose_ik']}")
+        rep["chosen"] = {"xy": [float(x), float(y)], "yaw": yaw, "pedestal_q": float(q), "task_cfg_xy": list(task_cfg["staging_xy"]), "task_cfg_q": task_cfg["pedestal_q"]}
+        out.update(ok=True)
+        return out
     finally:
-        del fc, ctx
+        del fc
         gc.collect()

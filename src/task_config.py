@@ -613,6 +613,11 @@ BENCH_STANCE_CFG = {
     # grasp point (the pre-grasp point is `hand_standoff_m` back from the grasp point along the approach direction) thickened by `arm_radius_m`. A bin whose chain meets any cylinder is removed.
     "obstacle_margin_m": 0.03,                  # m [row M170: David: start with 3 cm]
     "arm_radius_m": 0.06,                       # m, half the arm's cross-section (conservative: the forearm and hand are about 8 cm wide) [row M170 PENDING David: placeholder]
+    # Gaussian sampling (David 2026-11-10, decisions-log M299; src/stance_sampling.py): the stance is drawn at random from the A8 reach model's score, not from a grid.
+    "sampler_batch": 10000,                     # count: stances drawn at random for each selection (x, y, pedestal; the heading is held at staging_yaw for now) [row M299]
+    "sampler_weight_power": 2,                  # the weight of a stance is its A8 score to this power (2: the score squared; 0 would be a uniform draw) [row M299]
+    "sampler_max_draws": 10,                    # count: the most full checks in one selection; a stance that fails is not drawn again [row M299]
+    "sampler_margin_sigmas": 2.0,               # widths: the sampling rectangle grows on every side by the A8 radial centre r0 plus this many radial widths sr (about 0.89 m) [row M299]
     "stance_check_mode": os.environ.get("OPENARM_STANCE_CHECK_MODE", "current"),             # "current": the stance search as before (the overlay ranking, rank_keep and full_check_fallbacks); "two_pass": the cheap pass (reach score and nominal IK, any bin), then the slow pass (hand, fingers and forearm box clearance per object, bench included), then the full check on the top two_pass_full_check_cap survivors (David 2026-11-06; rows M272 and M274). Default stays "current".
     "two_pass_full_check_cap": 8,               # count: "two_pass" only: the full check is run on at most this many slow-pass survivors, no deeper (David 2026-11-06, row M274)
     "two_pass_tol_m": 0.003,                    # m, the slow pass's IK tolerance per pose (src/stance_passes.py evaluate_cell; the stage 3 value, world_model_build_stage3 report section 1) [row M274]

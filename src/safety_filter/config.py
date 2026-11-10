@@ -10,6 +10,9 @@ SHAPE_BUILD = {
     "random_poses_second_set": 1000,  # count: random poses added in the second set, so the total is 2000 (plus corners) [SF-5]
     "seed": 0,                        # the random generator seed for the pose samples (fixed so the build is repeatable) [SF-5]
     "fit_steps": 20000,               # count: the largest number of Nelder-Mead steps in each capsule fit [SF-5]
+    "forearm_capsules": 2,            # count: capsules on the forearm's joint 4 -> joint 7 line (SF-14; fewest that meet the SF-16 rule)
+    "forearm_fit_poses": 2000,        # count: forearm fit poses (8 limit corners + random), joints 4 to 6 [SF-14]
+    "link7_capsules": 2,              # count: capsules for link 7 in the link 7 frame (SF-15)
 }
 
 # Lab map (tools/survey_lab_map.py): which scene file to survey (the task scene, src/task_config.py TASK_CFG) [M290].

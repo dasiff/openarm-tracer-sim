@@ -145,6 +145,9 @@ class RobotShapes:
             self._cap_la = np.array([self.specs[k]["ends_local"][0] for k in cap_idx], float)
             self._cap_lb = np.array([self.specs[k]["ends_local"][1] for k in cap_idx], float)
             self._cap_r = np.array([self.specs[k]["radius"] for k in cap_idx], float)
+            # a capsule may cover only a fraction range [t0, t1] of the segment between its two body-local ends (SF-14)
+            self._cap_t0 = np.array([self.specs[k].get("t_range", [0.0, 1.0])[0] for k in cap_idx], float)
+            self._cap_t1 = np.array([self.specs[k].get("t_range", [0.0, 1.0])[1] for k in cap_idx], float)
         if len(box_idx):
             self._box_b = np.array([mb(self.specs[k]["frame"]) for k in box_idx])
             self._box_c = np.array([self.specs[k]["center_local"] for k in box_idx], float)
@@ -159,8 +162,10 @@ class RobotShapes:
         xmat = d.xmat.reshape(-1, 3, 3)
         out = [None] * len(self.specs)
         if len(self._cap_idx):
-            A = xpos[self._cap_ba] + np.einsum("kij,kj->ki", xmat[self._cap_ba], self._cap_la)
-            B = xpos[self._cap_bb] + np.einsum("kij,kj->ki", xmat[self._cap_bb], self._cap_lb)
+            A0 = xpos[self._cap_ba] + np.einsum("kij,kj->ki", xmat[self._cap_ba], self._cap_la)
+            B0 = xpos[self._cap_bb] + np.einsum("kij,kj->ki", xmat[self._cap_bb], self._cap_lb)
+            A = A0 + self._cap_t0[:, None] * (B0 - A0)
+            B = A0 + self._cap_t1[:, None] * (B0 - A0)
             for n, k in enumerate(self._cap_idx):
                 sp = self.specs[k]
                 out[k] = PlacedShape(id=sp["id"], arm=sp["arm"], part=sp["part"], kind="capsule", body=sp["frame"],

@@ -205,6 +205,11 @@ def catalog_and_config():
           len(objs) == 1 and np.allclose(objs[0].centre, [0.1, 0.2, 0.95]))
     check("adapter: unknown entries are skipped and listed", ad.skipped == ["unknown_thing"])
 
+    print("torso exemption (SF-9, re-checked after the forearm and link 7 pieces: docs/reports/20261110_1359_safety_filter_shape_refinement.md)")
+    from src.safety_filter.config import TORSO_TOUCHING_IDS
+    check("torso list is the decided three", tuple(sorted(TORSO_TOUCHING_IDS)) == ("left_shoulder_mount", "left_upper_arm", "right_shoulder_mount"))
+    check("no forearm or link 7 piece is exempt from the torso", not any(("forearm" in i or "link7" in i) for i in TORSO_TOUCHING_IDS))
+
     print("margins and settings (config)")
     check("margins: hand-hand 1 cm, robot-robot 3 cm, arm-world 1 cm",
           (cfg.MARGINS["hand_hand_m"], cfg.MARGINS["robot_robot_m"], cfg.MARGINS["arm_world_m"]) == (0.01, 0.03, 0.01))

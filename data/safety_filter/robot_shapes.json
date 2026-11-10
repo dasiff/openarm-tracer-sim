@@ -19,24 +19,62 @@
         "poses": 2008
       },
       "forearm": {
-        "radius_at_1000": 0.0761354781050649,
-        "radius_at_2000": 0.07613547810506491,
-        "still_grows": false,
-        "poses": 2008
+        "count": 2,
+        "pieces": [
+          {
+            "t0": 0.0,
+            "t1": 0.73,
+            "radius": 0.0761354781050649
+          },
+          {
+            "t0": 0.73,
+            "t1": 1.0,
+            "radius": 0.04524091066931941
+          }
+        ],
+        "volume_m3": 0.005517281107244884,
+        "line_mean_m": 0.21828479104142837,
+        "poses": 2000
+      },
+      "link7": {
+        "count": 2,
+        "radii": [
+          0.03292584213710512,
+          0.017077828773775432
+        ]
       }
     },
     "right": {
       "upper_arm": {
-        "radius_at_1000": 0.09668569911644109,
-        "radius_at_2000": 0.09668569911644109,
+        "radius_at_1000": 0.09668569911644107,
+        "radius_at_2000": 0.09668569911644108,
         "still_grows": false,
         "poses": 2008
       },
       "forearm": {
-        "radius_at_1000": 0.0761354781050649,
-        "radius_at_2000": 0.07613547810506491,
-        "still_grows": false,
-        "poses": 2008
+        "count": 2,
+        "pieces": [
+          {
+            "t0": 0.0,
+            "t1": 0.73,
+            "radius": 0.0761354781050649
+          },
+          {
+            "t0": 0.73,
+            "t1": 1.0,
+            "radius": 0.04524091066931935
+          }
+        ],
+        "volume_m3": 0.005517281107244881,
+        "line_mean_m": 0.21828479104142837,
+        "poses": 2000
+      },
+      "link7": {
+        "count": 2,
+        "radii": [
+          0.032925842137046045,
+          0.017077828773967622
+        ]
       }
     }
   },
@@ -73,11 +111,15 @@
       "radius_at_1000": 0.09668569911644107
     },
     {
-      "id": "left_forearm",
+      "id": "left_forearm_1",
       "arm": "left",
       "part": "forearm",
       "kind": "capsule",
       "frame": "per end",
+      "ends_body": [
+        "openarm_left_link4",
+        "openarm_left_link7"
+      ],
       "ends_local": [
         [
           0.0,
@@ -90,18 +132,51 @@
           0.0
         ]
       ],
-      "ends_body": [
-        "openarm_left_link4",
-        "openarm_left_link7"
+      "t_range": [
+        0.0,
+        0.73
       ],
-      "radius": 0.07613547810506491,
+      "radius": 0.0761354781050649,
       "geoms": [
         "openarm_left_link4_collision",
         "openarm_left_link5_collision",
         "openarm_left_link6_collision"
       ],
-      "note": "ends: joint 4 anchor (body link4) and joint 7 anchor (body link7); radius over 2000 sampled poses",
-      "radius_at_1000": 0.0761354781050649
+      "note": "piece 1 of 2 on the joint 4 -> joint 7 line, fraction 0.000 to 0.730 (SF-14)"
+    },
+    {
+      "id": "left_forearm_2",
+      "arm": "left",
+      "part": "forearm",
+      "kind": "capsule",
+      "frame": "per end",
+      "ends_body": [
+        "openarm_left_link4",
+        "openarm_left_link7"
+      ],
+      "ends_local": [
+        [
+          0.0,
+          0.0,
+          0.0
+        ],
+        [
+          0.0,
+          0.0,
+          0.0
+        ]
+      ],
+      "t_range": [
+        0.73,
+        1.0
+      ],
+      "radius": 0.04524091066931941,
+      "geoms": [
+        "openarm_left_link4_collision",
+        "openarm_left_link5_collision",
+        "openarm_left_link6_collision"
+      ],
+      "note": "piece 2 of 2 on the joint 4 -> joint 7 line, fraction 0.730 to 1.000 (SF-14)"
     },
     {
       "id": "left_shoulder_mount",
@@ -132,32 +207,60 @@
       "note": "fitted to the link 0 collision mesh; fixed to the torso"
     },
     {
-      "id": "left_link7",
+      "id": "left_link7_1",
       "arm": "left",
       "part": "link7",
       "kind": "capsule",
       "frame": "openarm_left_link7",
       "ends_local": [
         [
-          2.0880200226457544e-06,
-          0.011989267009840824,
-          0.13242848351929987
+          1.7470338035975096e-06,
+          0.00781436281390904,
+          0.10981453803768959
         ],
         [
-          -1.9055324726713153e-08,
-          -0.0235533535409684,
-          -0.06009191916514092
+          9.292357442251234e-07,
+          -0.010136114159509754,
+          0.012584172969340073
         ]
       ],
       "ends_body": [
         "openarm_left_link7",
         "openarm_left_link7"
       ],
-      "radius": 0.032925828991297285,
+      "radius": 0.03292584213710512,
       "geoms": [
         "openarm_left_link7_collision"
       ],
-      "note": "one capsule, link 7 frame (SF-3)"
+      "note": "capsule 1 of 2 in the link 7 frame (SF-15)"
+    },
+    {
+      "id": "left_link7_2",
+      "arm": "left",
+      "part": "link7",
+      "kind": "capsule",
+      "frame": "openarm_left_link7",
+      "ends_local": [
+        [
+          -0.012572983143208141,
+          -0.031541882095652875,
+          -0.0006947126891357487
+        ],
+        [
+          0.00753867828111655,
+          -0.03148155825534195,
+          -0.0006839638508811859
+        ]
+      ],
+      "ends_body": [
+        "openarm_left_link7",
+        "openarm_left_link7"
+      ],
+      "radius": 0.017077828773775432,
+      "geoms": [
+        "openarm_left_link7_collision"
+      ],
+      "note": "capsule 2 of 2 in the link 7 frame (SF-15)"
     },
     {
       "id": "left_palm_1",
@@ -167,21 +270,21 @@
       "frame": "openarm_left_link7",
       "ends_local": [
         [
-          0.0003759653048523374,
-          0.08097938091041383,
-          0.1130867475044553
+          0.00037595957980207114,
+          0.0809735018738337,
+          0.11308419504500775
         ],
         [
-          -0.00048308688408634957,
-          0.026078152831605673,
-          0.09574064502626664
+          -0.00048308043385935685,
+          0.02607662365583955,
+          0.09573994114528206
         ]
       ],
       "ends_body": [
         "openarm_left_link7",
         "openarm_left_link7"
       ],
-      "radius": 0.009412612015064777,
+      "radius": 0.009412611910638951,
       "geoms": [
         "openarm_left_hand_collision"
       ],
@@ -195,21 +298,21 @@
       "frame": "openarm_left_link7",
       "ends_local": [
         [
-          -0.0012002948898634951,
-          -0.058098274495093305,
-          0.10040423856050419
+          -0.0012002949256918918,
+          -0.058098274453906404,
+          0.10040423868911005
         ],
         [
-          0.0005111428566956329,
-          0.02459586973112204,
-          0.09410517480888729
+          0.0005111428418630743,
+          0.024595868269983896,
+          0.09410517486671387
         ]
       ],
       "ends_body": [
         "openarm_left_link7",
         "openarm_left_link7"
       ],
-      "radius": 0.028535528700827966,
+      "radius": 0.028535528700586538,
       "geoms": [
         "openarm_left_hand_collision"
       ],
@@ -223,21 +326,21 @@
       "frame": "openarm_left_right_finger",
       "ends_local": [
         [
-          -0.012831725372229406,
-          0.0037336024234616827,
-          0.06443869153138983
+          -0.012831726186984006,
+          0.0037336022324315305,
+          0.06443869214219732
         ],
         [
-          0.007396887948466064,
-          -0.0280191531380906,
-          -0.005063865671751803
+          0.007396888754315225,
+          -0.028019154621487505,
+          -0.005063864575468782
         ]
       ],
       "ends_body": [
         "openarm_left_right_finger",
         "openarm_left_right_finger"
       ],
-      "radius": 0.031790227178119475,
+      "radius": 0.031790227172814746,
       "geoms": [
         "openarm_left_right_finger_collision"
       ],
@@ -251,21 +354,21 @@
       "frame": "openarm_left_left_finger",
       "ends_local": [
         [
-          -0.012831725831283537,
-          -0.003733602281153364,
-          0.06443869187110228
+          -0.012831725722624737,
+          -0.003733602419544703,
+          0.06443869180262875
         ],
         [
-          0.007396888493149702,
-          0.028019154187493015,
-          -0.005063865122693996
+          0.007396888192821921,
+          0.028019153519232613,
+          -0.005063865223459153
         ]
       ],
       "ends_body": [
         "openarm_left_left_finger",
         "openarm_left_left_finger"
       ],
-      "radius": 0.031790227176369396,
+      "radius": 0.031790227174192796,
       "geoms": [
         "openarm_left_left_finger_collision"
       ],
@@ -293,21 +396,25 @@
         "openarm_right_link2",
         "openarm_right_link4"
       ],
-      "radius": 0.09668569911644109,
+      "radius": 0.09668569911644108,
       "geoms": [
         "openarm_right_link1_collision",
         "openarm_right_link2_collision",
         "openarm_right_link3_collision"
       ],
       "note": "ends: joint 2 anchor (body link2) and joint 4 anchor (body link4); radius over 2000 sampled poses",
-      "radius_at_1000": 0.09668569911644109
+      "radius_at_1000": 0.09668569911644107
     },
     {
-      "id": "right_forearm",
+      "id": "right_forearm_1",
       "arm": "right",
       "part": "forearm",
       "kind": "capsule",
       "frame": "per end",
+      "ends_body": [
+        "openarm_right_link4",
+        "openarm_right_link7"
+      ],
       "ends_local": [
         [
           0.0,
@@ -320,18 +427,51 @@
           0.0
         ]
       ],
-      "ends_body": [
-        "openarm_right_link4",
-        "openarm_right_link7"
+      "t_range": [
+        0.0,
+        0.73
       ],
-      "radius": 0.07613547810506491,
+      "radius": 0.0761354781050649,
       "geoms": [
         "openarm_right_link4_collision",
         "openarm_right_link5_collision",
         "openarm_right_link6_collision"
       ],
-      "note": "ends: joint 4 anchor (body link4) and joint 7 anchor (body link7); radius over 2000 sampled poses",
-      "radius_at_1000": 0.0761354781050649
+      "note": "piece 1 of 2 on the joint 4 -> joint 7 line, fraction 0.000 to 0.730 (SF-14)"
+    },
+    {
+      "id": "right_forearm_2",
+      "arm": "right",
+      "part": "forearm",
+      "kind": "capsule",
+      "frame": "per end",
+      "ends_body": [
+        "openarm_right_link4",
+        "openarm_right_link7"
+      ],
+      "ends_local": [
+        [
+          0.0,
+          0.0,
+          0.0
+        ],
+        [
+          0.0,
+          0.0,
+          0.0
+        ]
+      ],
+      "t_range": [
+        0.73,
+        1.0
+      ],
+      "radius": 0.04524091066931935,
+      "geoms": [
+        "openarm_right_link4_collision",
+        "openarm_right_link5_collision",
+        "openarm_right_link6_collision"
+      ],
+      "note": "piece 2 of 2 on the joint 4 -> joint 7 line, fraction 0.730 to 1.000 (SF-14)"
     },
     {
       "id": "right_shoulder_mount",
@@ -362,32 +502,60 @@
       "note": "fitted to the link 0 collision mesh; fixed to the torso"
     },
     {
-      "id": "right_link7",
+      "id": "right_link7_1",
       "arm": "right",
       "part": "link7",
       "kind": "capsule",
       "frame": "openarm_right_link7",
       "ends_local": [
         [
-          2.088020022610945e-06,
-          -0.011989267009842448,
-          0.13242848351926867
+          1.7470338048700409e-06,
+          -0.007814362796552418,
+          0.10981453793000448
         ],
         [
-          -1.9055324726664945e-08,
-          0.02355335354097171,
-          -0.0600919191651397
+          9.292357448598983e-07,
+          0.010136114159331307,
+          0.012584172977333295
         ]
       ],
       "ends_body": [
         "openarm_right_link7",
         "openarm_right_link7"
       ],
-      "radius": 0.03292582899129957,
+      "radius": 0.032925842137046045,
       "geoms": [
         "openarm_right_link7_collision"
       ],
-      "note": "one capsule, link 7 frame (SF-3)"
+      "note": "capsule 1 of 2 in the link 7 frame (SF-15)"
+    },
+    {
+      "id": "right_link7_2",
+      "arm": "right",
+      "part": "link7",
+      "kind": "capsule",
+      "frame": "openarm_right_link7",
+      "ends_local": [
+        [
+          -0.012572982132823027,
+          0.03154188266971808,
+          -0.0006947127907164967
+        ],
+        [
+          0.007538683601415169,
+          0.0314815583537853,
+          -0.0006839638687788206
+        ]
+      ],
+      "ends_body": [
+        "openarm_right_link7",
+        "openarm_right_link7"
+      ],
+      "radius": 0.017077828773967622,
+      "geoms": [
+        "openarm_right_link7_collision"
+      ],
+      "note": "capsule 2 of 2 in the link 7 frame (SF-15)"
     },
     {
       "id": "right_palm_1",
@@ -397,21 +565,21 @@
       "frame": "openarm_right_link7",
       "ends_local": [
         [
-          0.00046542367350177726,
-          -0.1028711484144257,
-          0.12507669894350718
+          -0.00026481044835139505,
+          -0.02145478920879908,
+          0.09440709091422823
         ],
         [
-          -0.0002548440709834558,
-          -0.021961400819099065,
-          0.09460277045277814
+          0.0007239891565949448,
+          -0.12023492478511337,
+          0.13156997086902594
         ]
       ],
       "ends_body": [
         "openarm_right_link7",
         "openarm_right_link7"
       ],
-      "radius": 0.012394089271278419,
+      "radius": 0.012394427353699632,
       "geoms": [
         "openarm_right_hand_collision"
       ],
@@ -425,21 +593,21 @@
       "frame": "openarm_right_link7",
       "ends_local": [
         [
-          -0.0015376635340123733,
-          0.05741019279650335,
-          0.10267003002979701
+          -0.0015376641073864075,
+          0.057410195284338245,
+          0.10267002205879423
         ],
         [
-          0.0006049313120773253,
-          -0.02244366367255992,
-          0.09334755463586951
+          0.0006049316090679983,
+          -0.02244365449294261,
+          0.0933475526668008
         ]
       ],
       "ends_body": [
         "openarm_right_link7",
         "openarm_right_link7"
       ],
-      "radius": 0.02853347265341374,
+      "radius": 0.028533472648613466,
       "geoms": [
         "openarm_right_hand_collision"
       ],
@@ -453,21 +621,21 @@
       "frame": "openarm_right_right_finger",
       "ends_local": [
         [
-          -0.012831725714108455,
-          0.003733602237854427,
-          0.06443869177759695
+          -0.012831725845163188,
+          0.003733602172275196,
+          0.06443869187426013
         ],
         [
-          0.007396888394271219,
-          -0.028019153995468046,
-          -0.005063865249009844
+          0.007396888578474703,
+          -0.028019154263536614,
+          -0.005063865359922487
         ]
       ],
       "ends_body": [
         "openarm_right_right_finger",
         "openarm_right_right_finger"
       ],
-      "radius": 0.031790227176972066,
+      "radius": 0.03179022717508622,
       "geoms": [
         "openarm_right_right_finger_collision"
       ],
@@ -481,21 +649,21 @@
       "frame": "openarm_right_left_finger",
       "ends_local": [
         [
-          -0.012831725774013503,
-          -0.0037336022574825985,
-          0.06443869182507336
+          -0.012831725740839623,
+          -0.003733602333792171,
+          0.06443869180681096
         ],
         [
-          0.007396888440555907,
-          0.02801915409243133,
-          -0.00506386515132374
+          0.0073968883239854365,
+          0.02801915385560464,
+          -0.0050638651300143845
         ]
       ],
       "ends_body": [
         "openarm_right_left_finger",
         "openarm_right_left_finger"
       ],
-      "radius": 0.03179022717675945,
+      "radius": 0.031790227176237,
       "geoms": [
         "openarm_right_left_finger_collision"
       ],

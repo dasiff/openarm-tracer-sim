@@ -244,8 +244,8 @@ def main():
         held_shape = as_placed(catalog_object("beaker", (bxy[0], bxy[1], bottom_now))) if held else None
         shapes = {
             "upper arm": [placed["left_upper_arm"]],
-            "forearm": [placed["left_forearm"]],
-            "link 7": [placed["left_link7"]],
+            "forearm": [placed[k] for k in sorted(k for k in placed if k.startswith("left_forearm_"))],
+            "link 7": [placed[k] for k in sorted(k for k in placed if k.startswith("left_link7"))],
             "palm": [placed["left_palm_1"], placed["left_palm_2"]],
             "fingers": [placed["left_finger_right"], placed["left_finger_left"]],
         }
@@ -295,100 +295,9 @@ def main():
             print(f"{row['moment']} | {part} | {fmt(sg['bench'])} / {fmt(sg['hotplate'])} / {fmt(sg['beaker'])} | "
                   f"{fmt(rg['bench'])} / {fmt(rg['hotplate'])} / {fmt(rg['beaker'])} | {','.join(flags)}")
 
-    # ---- forearm looseness profile (10 points from elbow to wrist, max over the poses) and the two-capsule forearm ----
-    j4 = m.joint("openarm_left_joint4").id
-    j7 = m.joint("openarm_left_joint7").id
-    fore_geoms = [geom_id(m, g) for g in ARM_PARTS["forearm"]]
-    prof = np.full(10, -np.inf)
-    prof_min = np.full(10, np.inf)
-    per_pose = []   # (A, B, verts in world)
-    for name, q in poses.items():
-        d.qpos[qadr] = q
-        mujoco.mj_kinematics(m, d)
-        A, B = d.xanchor[j4].copy(), d.xanchor[j7].copy()
-        # real vertices (mesh) in world
-        Vw = []
-        for g in fore_geoms:
-            did = m.geom_dataid[g]
-            Vm = m.mesh_vert[m.mesh_vertadr[did]:m.mesh_vertadr[did] + m.mesh_vertnum[did]].astype(float)
-            Vw.append(Vm @ d.geom_xmat[g].reshape(3, 3).T + d.geom_xpos[g])
-        Vw = np.vstack(Vw)
-        per_pose.append((name, A, B, Vw))
-    r_single = {}
-    for name, A, B, Vw in per_pose:
-        AB = B - A
-        L = np.linalg.norm(AB)
-        u = AB / L
-        t = (Vw - A) @ u / L
-        perp = np.linalg.norm((Vw - A) - np.outer((Vw - A) @ u, u), axis=1)
-        # the current forearm capsule's radius at this pose (from the filter's placement)
-        r_cap = next(sp["radius"] for sp in rs.specs if sp["id"] == "left_forearm")
-        for i in range(10):
-            s_i = i / 9.0
-            sel = np.abs(t - s_i) <= 1.0 / 18.0
-            ext = perp[sel].max() if sel.any() else 0.0
-            prof[i] = max(prof[i], r_cap - ext)
-            prof_min[i] = min(prof_min[i], r_cap - ext)
-        r_single[name] = float(perp.max())
-    lengths = [np.linalg.norm(B - A) for _, A, B, _ in per_pose]
-    Lmean = float(np.mean(lengths))
-    # two capsules on the elbow-wrist line, each with its own radius (max over poses of the vertices it covers)
-    best = None
-    for s_star in np.linspace(0.05, 0.95, 91):
-        r1 = r2 = 0.0
-        for name, A, B, Vw in per_pose:
-            AB = B - A
-            L = np.linalg.norm(AB)
-            u = AB / L
-            t = (Vw - A) @ u / L
-            perp = np.linalg.norm((Vw - A) - np.outer((Vw - A) @ u, u), axis=1)
-            r1 = max(r1, perp[t <= s_star].max() if (t <= s_star).any() else 0.0)
-            r2 = max(r2, perp[t > s_star].max() if (t > s_star).any() else 0.0)
-        L1, L2 = s_star * Lmean, (1 - s_star) * Lmean
-        vol = math.pi * r1 ** 2 * (L1 + 4 / 3 * r1) + math.pi * r2 ** 2 * (L2 + 4 / 3 * r2)
-        if best is None or vol < best[0]:
-            best = (vol, s_star, r1, r2)
-    vol_s, s_star, r1, r2 = best
-    if not per_pose:
-        raise SystemExit("no pose converged: nothing to measure")
-    r_one = max(r_single.values())
-    vol_one = math.pi * r_one ** 2 * (Lmean + 4 / 3 * r_one)
-    print("\nforearm looseness: gap between the capsule surface and the real forearm geometry (mm), 10 points elbow -> wrist, max over the poses")
-    print("  loosest (max over poses): " + "  ".join(f"{i / 9:.2f}:{v * 1e3:+.1f}" for i, v in enumerate(prof)))
-    print("  tightest (min over poses): " + "  ".join(f"{i / 9:.2f}:{v * 1e3:+.1f}" for i, v in enumerate(prof_min)))
-    print(f"two-capsule forearm: split at {s_star:.2f} of the elbow-wrist line (length {Lmean * 100:.1f} cm), radii {r1 * 100:.2f} cm (elbow) and {r2 * 100:.2f} cm (wrist); "
-          f"volume {vol_s * 1e6:.1f} cm^3 vs one capsule {vol_one * 1e6:.1f} cm^3 (radius {r_one * 100:.2f} cm)")
-
-    # two-capsule forearm gaps at the same moments
-    print("\ntwo-capsule forearm gaps (mm): moment | capsule elbow / wrist | shape to bench / hotplate / beaker (min of the two) | flags")
-    for row in rows:
-        if "items" not in row:
-            continue
-        q = poses[row["moment"]]
-        d.qpos[qadr] = q
-        mujoco.mj_kinematics(m, d)
-        A, B = d.xanchor[j4].copy(), d.xanchor[j7].copy()
-        AB = B - A
-        L = np.linalg.norm(AB)
-        u = AB / L
-        P = A + s_star * AB
-        caps = [PlacedShape(id="fore_elbow", arm="left", part="forearm", kind="capsule", body="", a=A, b=P, r=r1),
-                PlacedShape(id="fore_wrist", arm="left", part="forearm", kind="capsule", body="", a=P, b=B, r=r2)]
-        held = row["held"]
-        bxy = (row["pos"][0], row["pos"][1]) if held else ((hx, hy) if row["phase"] == "plate" else (bx, by))
-        bz = (row["pos"][2] - f_mid * h) if held else (plate_top + PICK_PLACE_CFG["setdown_gap_m"] if row["phase"] == "plate" else bottom)
-        bshape = as_placed(catalog_object("beaker", (bxy[0], bxy[1], bz)))
-        sb = min(shape_gap(c, bench) for c in caps)
-        sh = min(shape_gap(c, t) for c in caps for t in hot)
-        sbe = min(shape_gap(c, bshape) for c in caps)
-        fl = [f"{flag(v)}({nm})" for nm, v in (("bench", sb), ("plate", sh), ("beaker", sbe)) if flag(v)]
-        ge, gw = shape_gap(caps[0], bench), shape_gap(caps[1], bench)
-        print(f"{row['moment']} | {ge * 1e3:+.1f} / {gw * 1e3:+.1f} | {sb * 1e3:+.1f} / {sh * 1e3:+.1f} / {sbe * 1e3:+.1f} | {','.join(fl)}")
-
-    out = {"k_pick": k_pick, "k_place": k_place, "forearm_profile_max_mm": (prof * 1e3).tolist(), "forearm_profile_min_mm": (prof_min * 1e3).tolist(),
-           "two_capsule": {"split": s_star, "r_elbow": r1, "r_wrist": r2, "length_m": Lmean},
-           "one_capsule_radius": r_one}
-    print("\nJSON " + json.dumps(out))
+    # The forearm and link 7 capsules are now the shipped pieces (SF-14, SF-15); the looseness profile and the
+    # two-capsule fit are in experiments/safety_filter_forearm_fit.py.
+    print("\nJSON " + json.dumps({"k_pick": k_pick, "k_place": k_place}))
     return 0
 
 

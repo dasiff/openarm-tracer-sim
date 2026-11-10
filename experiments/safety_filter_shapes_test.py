@@ -27,6 +27,7 @@ from src.safety_filter.geometry import closest_points_segments  # noqa: E402
 
 SHAPES = ROOT / "data" / "safety_filter" / "robot_shapes.json"
 POSES_PER_ARM = 200
+MULTI_PARTS = ("palm", "forearm", "link7")  # parts that may have several capsules (checked as a union)
 TOL = 1e-12  # m: a shape must contain its geometry (stick-out <= 0); 1e-12 m is floating-point noise, not a gap
 
 
@@ -39,6 +40,14 @@ def geom_world_verts(m, d, g):
         s = m.geom_size[g]
         V = np.array([[a * s[0], b * s[1], c * s[2]] for a in (-1, 1) for b in (-1, 1) for c in (-1, 1)], float)
     return V @ d.geom_xmat[g].reshape(3, 3).T + d.geom_xpos[g]
+
+
+def seg_dist_per_point(P, A, B):
+    """Distance of each point of P from the segment AB (vector)."""
+    AB = B - A
+    L2 = max(float(AB @ AB), 1e-18)
+    t = np.clip((P - A) @ AB / L2, 0.0, 1.0)
+    return np.linalg.norm(P - (A + t[:, None] * AB), axis=1)
 
 
 def seg_stick_out(P, A, B, r):
@@ -91,9 +100,11 @@ def main():
                 for k in (1, 2):
                     d.qpos[m.jnt_qposadr[mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_JOINT, f"openarm_{s}_finger_joint{k}")]] = f
             mujoco.mj_kinematics(m, d)
+            multi = {}
             for p in placed.values():
-                if p.part == "palm":
-                    continue  # the two palm capsules together must cover the hand: checked below as a union
+                if p.part in MULTI_PARTS:
+                    multi.setdefault((p.arm, p.part), []).append(p)
+                    continue  # a part with several capsules must cover its geometry together: checked as a union below
                 verts = [geom_world_verts(m, d, mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_GEOM, g)) for g in p.geoms]
                 P = np.vstack(verts)
                 if p.kind == "capsule":
@@ -101,13 +112,13 @@ def main():
                 else:
                     so = box_stick_out(P, p.centre, p.rot, p.half)
                 worst[p.id] = max(worst[p.id], so)
-            # the two palm capsules together: each hand vertex must lie in at least one of them
-            for s_ in ("left", "right"):
-                pal = [placed[f"{s_}_palm_1"], placed[f"{s_}_palm_2"]]
-                P = geom_world_verts(m, d, mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_GEOM, f"openarm_{s_}_hand_collision"))
-                per_cap = np.array([[seg_stick_out(P[i:i + 1], c.a, c.b, c.r) for i in range(len(P))] for c in pal])
-                union = per_cap.min(axis=0)
-                worst[f"{s_}_palm (union of 2)"] = max(worst[f"{s_}_palm (union of 2)"], float(union.max()))
+            # the capsules of a multi-capsule part together: each geometry vertex must lie in at least one of them
+            for (arm_, part_), caps in multi.items():
+                geoms_ = caps[0].geoms
+                P = np.vstack([geom_world_verts(m, d, mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_GEOM, g)) for g in geoms_])
+                per_cap = np.array([seg_dist_per_point(P, c.a, c.b) - c.r for c in caps])
+                key = f"{arm_} {part_} (union of {len(caps)})"
+                worst[key] = max(worst[key], float(per_cap.min(axis=0).max()))
             # the arm segments sit on MuJoCo's joint anchors
             for s in ("left", "right"):
                 ua = placed[f"{s}_upper_arm"]
@@ -116,9 +127,10 @@ def main():
                 j7 = mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_JOINT, f"openarm_{s}_joint7")
                 anchor_err["upper"] = max(anchor_err["upper"], np.linalg.norm(ua.a - d.xanchor[j2]),
                                           np.linalg.norm(ua.b - d.xanchor[j4]))
-                fa = placed[f"{s}_forearm"]
-                anchor_err["fore"] = max(anchor_err["fore"], np.linalg.norm(fa.a - d.xanchor[j4]),
-                                         np.linalg.norm(fa.b - d.xanchor[j7]))
+                fo = sorted([p for p in placed.values() if p.arm == s and p.part == "forearm"], key=lambda p: p.id)
+                anchor_err["fore"] = max(anchor_err["fore"], np.linalg.norm(fo[0].a - d.xanchor[j4]),
+                                         np.linalg.norm(fo[-1].b - d.xanchor[j7]),
+                                         max(np.linalg.norm(fo[k].b - fo[k + 1].a) for k in range(len(fo) - 1)))
     print(f"poses: {POSES_PER_ARM} per arm, both arms placed in each pose")
     print("largest stick-out per shape (m; <= 0 means the shape contains the geometry):")
     for sid in sorted(worst):

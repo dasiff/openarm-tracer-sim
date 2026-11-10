@@ -33,6 +33,7 @@ def check(name, ok, detail=""):
     print(f"  {'PASS' if ok else 'FAIL'}  {name}  {detail}")
 
 
+CFG_HEAD = {"sampler_heading_half_width_deg": 45.0, "sampler_heading_held": True}
 CFG = {"sampler_batch": 400, "sampler_weight_power": 2, "sampler_max_draws": 10, "sampler_margin_sigmas": 2.0, "pedestal_range": (0.05, 0.25)}
 # a synthetic robot: the left shoulder 0.1 m forward and 0.2 m left of the torso origin, 0.3 m up; the torso 0.5 m above the base origin at pedestal 0
 GEOM = {"shoulder": {"left": (0.1, 0.2, 0.3), "right": (0.1, -0.2, 0.3)}, "torso_z0": 0.5, "lift_factor": 1.0, "base_z": 0.15}
@@ -139,6 +140,24 @@ def main():
     wrap = choose_place_window([345, 350, 355, 0, 5], 5, 10)
     check("a window across 0 (345..5, one window): theta -5 (midpoint 355)", wrap["theta_deg"] == -5 and wrap["window_turns"] == [-15, -10, -5, 0, 5], f"theta {wrap['theta_deg']}, turns {wrap['window_turns']}")
     check("the robot's angle is the check's angle (wrapped window)", choose_place_angle(wrap["window_turns"]) == wrap["theta_deg"], "")
+
+    print("8. the heading rule (Revision 2): every stance in a drawn batch faces the task midpoint within 45 deg; the held heading is one value")
+    from src.stance_sampling import draw_batch, facing_heading
+    half = CFG_HEAD["sampler_heading_half_width_deg"]
+    b = draw_batch(far_pts + [(0.5, 0.9, 0.1)], {**CFG, "sampler_batch": 10000, **CFG_HEAD}, seed=21)
+    mid = np.mean([[p[0], p[1]] for p in far_pts + [(0.5, 0.9, 0.1)]], axis=0)
+    facing = np.arctan2(mid[1] - b["ys"], mid[0] - b["xs"])
+    dev = np.degrees(np.abs((b["headings"] - facing + np.pi) % (2 * np.pi) - np.pi))
+    check("all 10000 stances: |heading - facing| <= 45 deg", float(dev.max()) <= half + 1e-9, f"max deviation {dev.max():.6f} deg")
+    check("the facing direction is the one from each stance to the midpoint", np.allclose(b["facing"], facing, atol=1e-12), "")
+    check("the headings are spread across the 90 deg window (not constant)", float(np.std(b["headings"])) > 0.1, f"std {np.std(b['headings']):.3f} rad")
+    held = draw_batch(far_pts, {**CFG, **CFG_HEAD}, seed=21, held_heading=math.radians(-90.0))
+    check("held heading: every stance has the held value, no heading drawn", np.all(held["headings"] == math.radians(-90.0)), "")
+
+    print("9. replay with drawn headings: the same seed gives the same stances and draws")
+    d1 = select_stance(far_pts, GEOM, "left", None, {**CFG, **CFG_HEAD}, always_pass, seed=77, say=lambda s: None)
+    d2 = select_stance(far_pts, GEOM, "left", None, {**CFG, **CFG_HEAD}, always_pass, seed=77, say=lambda s: None)
+    check("same seed, drawn headings: same x, y, heading, pedestal in the draws", [(r["x"], r["y"], r["heading"], r["pedestal"]) for r in d1["draws"]] == [(r["x"], r["y"], r["heading"], r["pedestal"]) for r in d2["draws"]] and len(d1["draws"]) > 0, "")
 
     print(f"\n{sum(results)}/{len(results)} checks passed")
     return all(results)

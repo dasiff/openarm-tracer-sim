@@ -712,7 +712,11 @@ def apply_stance_selection(tagged, task_cfg, maps_dir="data/reach_map", cfg=BENC
             return out
         world = WorldModel([SimGroundTruthSource(fc.model, fc.scene_data, task_cfg)])
         world.refresh(fc.scene_data.time)
-        ctx = SimpleNamespace(model=fc.model, data=fc.scene_data, cfg=cfg, yaw=yaw)
+        g = fc.model.geom("bench_top")                       # the bench's near edge along the facing direction (as StanceContext computes it)
+        c, hs = fc.scene_data.geom_xpos[g.id], fc.model.geom_size[g.id]
+        n_face, _ = bs.bench_frame(yaw)
+        corners = np.array([[c[0] + sx * hs[0], c[1] + sy * hs[1]] for sx in (-1, 1) for sy in (-1, 1)])
+        ctx = SimpleNamespace(model=fc.model, data=fc.scene_data, cfg=cfg, yaw=yaw, near=float((corners @ n_face).min()))
         try:
             targets = {i: step_target(ctx, world, segs[i], i, say) for i in steps}
         except SupportError as e:
@@ -728,7 +732,8 @@ def apply_stance_selection(tagged, task_cfg, maps_dir="data/reach_map", cfg=BENC
             results.append(r)
             return {"ok": bool(r["ok"]), "failed": list(r.get("failed", [])), "reason": str(r.get("reason", "")), "seconds": (r.get("seconds") or {}).get("total"), "seed": r.get("seed")}
 
-        rec = select_stance(task_points([targets[i] for i in steps]), robot_geometry(fc.model), cfg["arm"], yaw, cfg, check, say=say)
+        held = yaw if cfg["sampler_heading_held"] else None          # M299: the staging yaw is held, or each stance draws its own heading (Revision 2)
+        rec = select_stance(task_points([targets[i] for i in steps]), robot_geometry(fc.model), cfg["arm"], held, cfg, check, say=say)
         rep["sampler"] = rec
         if not rec["ok"]:
             out["stop"] = "stance sampler: " + str(rec["stop"])
@@ -736,7 +741,7 @@ def apply_stance_selection(tagged, task_cfg, maps_dir="data/reach_map", cfg=BENC
             return out
         k = rec["chosen"]["draw"] - 1
         passed = results[k]
-        x, y, q = rec["chosen"]["x"], rec["chosen"]["y"], rec["chosen"]["pedestal"]
+        x, y, q, yaw_c = rec["chosen"]["x"], rec["chosen"]["y"], rec["chosen"]["pedestal"], rec["chosen"]["heading"]      # the chosen stance's own heading (M299 Revision 2; the staging yaw when held)
         lists = {int(t["task"]): list(t["angles"]) for t in (passed.get("task_angle_lists") or []) if t.get("task") is not None}
         tries = [{"xy": [row["x"], row["y"]], "q": row["pedestal"], "full_check_ok": row["ok"], "failed": row["failed"], "reason": row["reason"], "place": res.get("place"),
                   "task_lists": res.get("task_angle_lists"), "score": row["score"], "weight": row["weight"], "sampler_draw": row["draw"]}
@@ -747,17 +752,17 @@ def apply_stance_selection(tagged, task_cfg, maps_dir="data/reach_map", cfg=BENC
             if nj is not None:
                 rep["null_nav"].append(nj)
         place_theta = next((choose_place_angle(lists[int(i)]) for i in steps if targets[i]["primitive"] == "place" and lists.get(int(i))), None)
-        run = {"stance": {"xy": (x, y), "q": q, "yaw": yaw}, "steps": list(steps), "nav": [nav] if nav is not None else [], "approach_angles": lists,
+        run = {"stance": {"xy": (x, y), "q": q, "yaw": yaw_c}, "steps": list(steps), "nav": [nav] if nav is not None else [], "approach_angles": lists,
                "place_theta_deg": place_theta, "surface": targets[steps[0]]["surface"], "counts": None, "score": rec["chosen"]["score"], "full_check": tries,
                "ranked": [], "overlay_run_q": [], "seconds": None}
         rep["runs"].append(run)
-        out["task_cfg"] = dict(task_cfg, staging_xy=(float(x), float(y)), staging_yaw=yaw, pedestal_q=float(q))      # M284: the pedestal the check passed is the one the staging parks at
+        out["task_cfg"] = dict(task_cfg, staging_xy=(float(x), float(y)), staging_yaw=float(yaw_c), pedestal_q=float(q))      # M284: the pedestal the check passed is the one the staging parks at
         out["plan"] = _plan_for_runs(tagged, rep["runs"], {n for r in rep["runs"] for n in r["nav"]})
         if getattr(fc, "pose_ik_log", None):
             from src.full_check import pose_ik_summary
             rep["pose_ik"] = pose_ik_summary(fc.pose_ik_log, fc.cfg["pose_ik_iterations"])
             say(f"[stance] pose IK iterations: {rep['pose_ik']}")
-        rep["chosen"] = {"xy": [float(x), float(y)], "yaw": yaw, "pedestal_q": float(q), "task_cfg_xy": list(task_cfg["staging_xy"]), "task_cfg_q": task_cfg["pedestal_q"]}
+        rep["chosen"] = {"xy": [float(x), float(y)], "yaw": float(yaw_c), "pedestal_q": float(q), "task_cfg_xy": list(task_cfg["staging_xy"]), "task_cfg_q": task_cfg["pedestal_q"]}
         out.update(ok=True)
         return out
     finally:

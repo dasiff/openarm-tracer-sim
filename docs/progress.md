@@ -745,3 +745,4 @@ RUN 20:58 never-close sweep: tmux nc_sweep, log data/logs/nc_sweep_20261110_2058
 PROGRESS 21:02: sweep done (data/logs/nc_sweep_20261110_205804.log: 382 geom-set pairs, 85 swept, 81 listed, 297 not swept; shape pairs 665: 153 swept, 147 listed, 512 not swept); merged into robot_shapes.json; list ON removes all 40 MARGIN rows. Housekeeping done (3 scripts deleted, set_scene moved to pick_scene, link_counts prints progress). NEXT: tests + timing in tmux (nc_tests), SF rows, design plan, report, commit.
 PROGRESS 21:05: tests/timing done, SF-23..26 rows, plan marker, report docs/reports/20261110_2112_safety_filter_never_close.md. NEXT: commit; final message. Not pushed.
 DOC 2026-11-10: divide-and-conquer never-close design added (SF-27, design plan section 16 PENDING); docs only.
+PUSH 2026-11-10: safety-filter pushed to origin/safety-filter through 90b6177 (new branch, main untouched).

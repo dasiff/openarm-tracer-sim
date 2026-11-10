@@ -1,0 +1,255 @@
+{
+ "table": [
+  {
+   "source": "selection record seed 2986646089",
+   "draw": 1,
+   "x": 0.8125492535140361,
+   "y": 1.1151458378825034,
+   "pedestal": 0.09194708971711801,
+   "pick_m": 0.5355695144277025,
+   "place_m": 0.4860677047794297,
+   "result": "PASS",
+   "failing": "",
+   "A8_score_recomputed": 3.235982128715008,
+   "A8_score_stored": 3.2359821287150092,
+   "A9_score": 3.1810855018718467,
+   "reason": "",
+   "check_s": 50.727
+  },
+  {
+   "source": "selection demo seed 381989416",
+   "draw": 1,
+   "x": 0.8909026743369752,
+   "y": 1.2107925053369495,
+   "pedestal": 0.12031358222240424,
+   "pick_m": 0.6154718667769187,
+   "place_m": 0.596324397469631,
+   "result": "FAIL",
+   "failing": "ik",
+   "A8_score_recomputed": 1.7394343707595632,
+   "A8_score_stored": 1.7394343707595632,
+   "A9_score": 1.9671433004176555,
+   "reason": "task 1 (pick): at the stance 'nominal' point 2 (grasp, [1.0, 0.66, 1.005]) has no collision-free solution in any approach direction (furthest: bin 0); the stance needs every task to pass",
+   "check_s": 1.966
+  },
+  {
+   "source": "selection demo seed 381989416",
+   "draw": 2,
+   "x": 0.6419556762427426,
+   "y": 1.018065257338282,
+   "pedestal": 0.14914167333981487,
+   "pick_m": 0.5661408619030772,
+   "place_m": 0.44011124928349876,
+   "result": "FAIL",
+   "failing": "placed_beaker",
+   "A8_score_recomputed": 2.8538854978328843,
+   "A8_score_stored": 2.8538854978328843,
+   "A9_score": 3.3045507984798514,
+   "reason": "at pedestal 0.149 the arms at home are 29 mm from a beaker placed on the hotplate",
+   "check_s": 0.123
+  },
+  {
+   "source": "selection demo seed 381989416",
+   "draw": 3,
+   "x": 0.8321440094739471,
+   "y": 0.8874128804164294,
+   "pedestal": 0.22081440783180079,
+   "pick_m": 0.45034109702332137,
+   "place_m": 0.37686959330953596,
+   "result": "FAIL",
+   "failing": "placed_beaker",
+   "A8_score_recomputed": 2.2386026148770957,
+   "A8_score_stored": 2.2386026148770957,
+   "A9_score": 1.8942905339988771,
+   "reason": "at pedestal 0.201 the arms at home are 35 mm from a beaker placed on the hotplate",
+   "check_s": 0.108
+  },
+  {
+   "source": "selection demo seed 381989416",
+   "draw": 4,
+   "x": 0.5909601753579927,
+   "y": 1.1467233569590913,
+   "pedestal": 0.10139742979807767,
+   "pick_m": 0.6629810245525833,
+   "place_m": 0.5468201430893518,
+   "result": "FAIL",
+   "failing": "ik",
+   "A8_score_recomputed": 1.48093099856703,
+   "A8_score_stored": 1.4809309985670311,
+   "A9_score": 1.3450165377056178,
+   "reason": "task 1 (pick): at the stance 'nominal' point 2 (grasp, [1.0, 0.66, 1.005]) has no collision-free solution in any approach direction (furthest: bin 0); the stance needs every task to pass",
+   "check_s": 2.302
+  },
+  {
+   "source": "selection demo seed 381989416",
+   "draw": 5,
+   "x": 0.6387527548611026,
+   "y": 0.960750025038082,
+   "pedestal": 0.1528344304091997,
+   "pick_m": 0.5357535167385966,
+   "place_m": 0.3980152162731051,
+   "result": "FAIL",
+   "failing": "placed_beaker",
+   "A8_score_recomputed": 3.2336664980594128,
+   "A8_score_stored": 3.2336664980594128,
+   "A9_score": 3.1088663523979214,
+   "reason": "at pedestal 0.153 the arms at home are -2 mm from a beaker placed on the hotplate",
+   "check_s": 0.072
+  },
+  {
+   "source": "selection demo seed 381989416",
+   "draw": 6,
+   "x": 0.8318080363753506,
+   "y": 1.0846816195679727,
+   "pedestal": 0.07227404715662133,
+   "pick_m": 0.4954987671642128,
+   "place_m": 0.45321504411202845,
+   "result": "FAIL",
+   "failing": "home_clearance",
+   "A8_score_recomputed": 3.1371605037622023,
+   "A8_score_stored": 3.1371605037622023,
+   "A9_score": 2.735654594526379,
+   "reason": "at pedestal 0.052 the arms at home are 28 mm from openarm_right_right_finger_collision vs task_hotplate_base (the limit is 40 mm)",
+   "check_s": 0.12
+  },
+  {
+   "source": "selection demo seed 381989416",
+   "draw": 7,
+   "x": 0.5781878175253858,
+   "y": 0.9288569679190741,
+   "pedestal": 0.10196761617990627,
+   "pick_m": 0.5338795408573691,
+   "place_m": 0.3732385629741955,
+   "result": "FAIL",
+   "failing": "home_clearance",
+   "A8_score_recomputed": 3.2543868761111745,
+   "A8_score_stored": 3.2543868761111745,
+   "A9_score": 2.969967234675569,
+   "reason": "at pedestal 0.102 the arms at home are 33 mm from openarm_left_right_finger_collision vs task_hotplate_top_plate (the limit is 40 mm)",
+   "check_s": 0.062
+  },
+  {
+   "source": "selection demo seed 381989416",
+   "draw": 8,
+   "x": 0.559691791392141,
+   "y": 0.9050576380702272,
+   "pedestal": 0.15171453128445073,
+   "pick_m": 0.5607522720065847,
+   "place_m": 0.3928864883621984,
+   "result": "FAIL",
+   "failing": "placed_beaker",
+   "A8_score_recomputed": 2.9258585108772257,
+   "A8_score_stored": 2.9258585108772266,
+   "A9_score": 3.081293312716464,
+   "reason": "at pedestal 0.152 the arms at home are -11 mm from a beaker placed on the hotplate",
+   "check_s": 0.037
+  },
+  {
+   "source": "selection demo seed 381989416",
+   "draw": 9,
+   "x": 0.8640584059750447,
+   "y": 1.3458085844867083,
+   "pedestal": 0.05821371562130298,
+   "pick_m": 0.7223801714238091,
+   "place_m": 0.7046889769744713,
+   "result": "FAIL",
+   "failing": "ik",
+   "A8_score_recomputed": 0.8155952868598518,
+   "A8_score_stored": 0.8155952868598527,
+   "A9_score": 0.4139140322159363,
+   "reason": "task 1 (pick): at the stance 'nominal' point 2 (grasp, [1.0, 0.66, 1.005]) has no collision-free solution in any approach direction (furthest: bin 0); the stance needs every task to pass",
+   "check_s": 1.792
+  },
+  {
+   "source": "selection demo seed 381989416",
+   "draw": 10,
+   "x": 0.8900504421381884,
+   "y": 0.8899547397131462,
+   "pedestal": 0.20663674433686618,
+   "pick_m": 0.42586155965712585,
+   "place_m": 0.381744810890356,
+   "result": "FAIL",
+   "failing": "placed_beaker",
+   "A8_score_recomputed": 0.9156967666533514,
+   "A8_score_stored": 0.9156967666533514,
+   "A9_score": 0.6627740451665832,
+   "reason": "at pedestal 0.187 the arms at home are 22 mm from a beaker placed on the hotplate",
+   "check_s": 0.17
+  }
+ ],
+ "boundaries": {
+  "placed_beaker_failures_place_m_range": [
+   0.37686959330953596,
+   0.44011124928349876
+  ],
+  "placed_beaker_largest_failing_place_m": 0.44011124928349876,
+  "ik_smallest_failing_pick_m": 0.6154718667769187,
+  "ik_smallest_failing_place_m": 0.5468201430893518,
+  "ik_failing_place_m": [
+   0.5468,
+   0.5963,
+   0.7047
+  ],
+  "passes_pick_m": [
+   0.5356
+  ],
+  "passes_place_m": [
+   0.4861
+  ],
+  "home_clearance_failing_place_m": [
+   0.3732,
+   0.4532
+  ]
+ },
+ "near_side": {
+  "A9_50pct_r_m": 0.19901670389335263,
+  "A9_10pct_r_m": null,
+  "A9_fraction_at_r0_minus_r_at_r_0": 0.17734990638244363,
+  "A8_50pct_r_m": 0.2706824911314125,
+  "A8_10pct_r_m": 0.12096178467320035
+ },
+ "A9": {
+  "C_bins": 3.5140937710063582,
+  "r0_m": 0.5423495020639975,
+  "sigma_near_m": 0.41238471755411693,
+  "sigma_far_m": 0.12309879127472458,
+  "sigma_theta_neg_rad": 0.25164425478069913,
+  "sigma_theta_neg_per_m_rad": -0.5072348499981071,
+  "sigma_theta_pos_rad": 54.56863224200311,
+  "sigma_theta_pos_per_m_rad": -126.60794779115575,
+  "z_cut_m": -0.395,
+  "rmse_fit_bins": 1.0742887700181742,
+  "fitted_slices": {
+   "precision": 0.8465852049450707,
+   "recall": 0.7437286598042057,
+   "within_1_bin": 0.5372500598470435,
+   "cells": 796518,
+   "truly_reachable": 317476,
+   "predicted_reachable": 278904
+  },
+  "held_out_slices": {
+   "precision": 0.8433673813316682,
+   "recall": 0.7484139702849658,
+   "within_1_bin": 0.5400686990935624,
+   "cells": 796518,
+   "truly_reachable": 317617,
+   "predicted_reachable": 281857
+  }
+ },
+ "A8_held_out": {
+  "precision": 0.8234320002217234,
+  "recall": 0.7483289622406861,
+  "within_1_bin": 0.513265977576767,
+  "cells": 796518,
+  "truly_reachable": 317617,
+  "predicted_reachable": 288648
+ },
+ "A9_held_out": {
+  "precision": 0.8433673813316682,
+  "recall": 0.7484139702849658,
+  "within_1_bin": 0.5400686990935624,
+  "cells": 796518,
+  "truly_reachable": 317617,
+  "predicted_reachable": 281857
+ }
+}

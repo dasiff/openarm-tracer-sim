@@ -1,0 +1,201 @@
+{
+ "rows": [
+  {
+   "source": "selection record seed 2986646089",
+   "draw": 1,
+   "x": 0.8125492535140361,
+   "y": 1.1151458378825034,
+   "heading": -1.5707963267948966,
+   "pedestal": 0.09194708971711801,
+   "shoulder_to_pick_m": 0.5355695144277025,
+   "shoulder_to_place_m": 0.4860677047794297,
+   "base_to_bench_edge_m": 0.3151458378825034,
+   "A8_score": 3.2359821287150092,
+   "ok": true,
+   "failed": [],
+   "reason": "",
+   "check_s": 50.727
+  },
+  {
+   "source": "selection demo seed 381989416",
+   "draw": 1,
+   "x": 0.8909026743369752,
+   "y": 1.2107925053369495,
+   "heading": -1.5707963267948966,
+   "pedestal": 0.12031358222240424,
+   "shoulder_to_pick_m": 0.6154718667769187,
+   "shoulder_to_place_m": 0.596324397469631,
+   "base_to_bench_edge_m": 0.41079250533694944,
+   "A8_score": 1.7394343707595632,
+   "ok": false,
+   "failed": [
+    "ik"
+   ],
+   "reason": "task 1 (pick): at the stance 'nominal' point 2 (grasp, [1.0, 0.66, 1.005]) has no collision-free solution in any approach direction (furthest: bin 0); the stance needs every task to pass",
+   "check_s": 1.966
+  },
+  {
+   "source": "selection demo seed 381989416",
+   "draw": 2,
+   "x": 0.6419556762427426,
+   "y": 1.018065257338282,
+   "heading": -1.5707963267948966,
+   "pedestal": 0.14914167333981487,
+   "shoulder_to_pick_m": 0.5661408619030772,
+   "shoulder_to_place_m": 0.44011124928349876,
+   "base_to_bench_edge_m": 0.21806525733828197,
+   "A8_score": 2.8538854978328843,
+   "ok": false,
+   "failed": [
+    "placed_beaker"
+   ],
+   "reason": "at pedestal 0.149 the arms at home are 29 mm from a beaker placed on the hotplate",
+   "check_s": 0.123
+  },
+  {
+   "source": "selection demo seed 381989416",
+   "draw": 3,
+   "x": 0.8321440094739471,
+   "y": 0.8874128804164294,
+   "heading": -1.5707963267948966,
+   "pedestal": 0.22081440783180079,
+   "shoulder_to_pick_m": 0.45034109702332137,
+   "shoulder_to_place_m": 0.37686959330953596,
+   "base_to_bench_edge_m": 0.08741288041642936,
+   "A8_score": 2.2386026148770957,
+   "ok": false,
+   "failed": [
+    "placed_beaker"
+   ],
+   "reason": "at pedestal 0.201 the arms at home are 35 mm from a beaker placed on the hotplate",
+   "check_s": 0.108
+  },
+  {
+   "source": "selection demo seed 381989416",
+   "draw": 4,
+   "x": 0.5909601753579927,
+   "y": 1.1467233569590913,
+   "heading": -1.5707963267948966,
+   "pedestal": 0.10139742979807767,
+   "shoulder_to_pick_m": 0.6629810245525833,
+   "shoulder_to_place_m": 0.5468201430893518,
+   "base_to_bench_edge_m": 0.3467233569590913,
+   "A8_score": 1.4809309985670311,
+   "ok": false,
+   "failed": [
+    "ik"
+   ],
+   "reason": "task 1 (pick): at the stance 'nominal' point 2 (grasp, [1.0, 0.66, 1.005]) has no collision-free solution in any approach direction (furthest: bin 0); the stance needs every task to pass",
+   "check_s": 2.302
+  },
+  {
+   "source": "selection demo seed 381989416",
+   "draw": 5,
+   "x": 0.6387527548611026,
+   "y": 0.960750025038082,
+   "heading": -1.5707963267948966,
+   "pedestal": 0.1528344304091997,
+   "shoulder_to_pick_m": 0.5357535167385966,
+   "shoulder_to_place_m": 0.3980152162731051,
+   "base_to_bench_edge_m": 0.160750025038082,
+   "A8_score": 3.2336664980594128,
+   "ok": false,
+   "failed": [
+    "placed_beaker"
+   ],
+   "reason": "at pedestal 0.153 the arms at home are -2 mm from a beaker placed on the hotplate",
+   "check_s": 0.072
+  },
+  {
+   "source": "selection demo seed 381989416",
+   "draw": 6,
+   "x": 0.8318080363753506,
+   "y": 1.0846816195679727,
+   "heading": -1.5707963267948966,
+   "pedestal": 0.07227404715662133,
+   "shoulder_to_pick_m": 0.4954987671642128,
+   "shoulder_to_place_m": 0.45321504411202845,
+   "base_to_bench_edge_m": 0.28468161956797267,
+   "A8_score": 3.1371605037622023,
+   "ok": false,
+   "failed": [
+    "home_clearance"
+   ],
+   "reason": "at pedestal 0.052 the arms at home are 28 mm from openarm_right_right_finger_collision vs task_hotplate_base (the limit is 40 mm)",
+   "check_s": 0.12
+  },
+  {
+   "source": "selection demo seed 381989416",
+   "draw": 7,
+   "x": 0.5781878175253858,
+   "y": 0.9288569679190741,
+   "heading": -1.5707963267948966,
+   "pedestal": 0.10196761617990627,
+   "shoulder_to_pick_m": 0.5338795408573691,
+   "shoulder_to_place_m": 0.3732385629741955,
+   "base_to_bench_edge_m": 0.12885696791907408,
+   "A8_score": 3.2543868761111745,
+   "ok": false,
+   "failed": [
+    "home_clearance"
+   ],
+   "reason": "at pedestal 0.102 the arms at home are 33 mm from openarm_left_right_finger_collision vs task_hotplate_top_plate (the limit is 40 mm)",
+   "check_s": 0.062
+  },
+  {
+   "source": "selection demo seed 381989416",
+   "draw": 8,
+   "x": 0.559691791392141,
+   "y": 0.9050576380702272,
+   "heading": -1.5707963267948966,
+   "pedestal": 0.15171453128445073,
+   "shoulder_to_pick_m": 0.5607522720065847,
+   "shoulder_to_place_m": 0.3928864883621984,
+   "base_to_bench_edge_m": 0.10505763807022717,
+   "A8_score": 2.9258585108772266,
+   "ok": false,
+   "failed": [
+    "placed_beaker"
+   ],
+   "reason": "at pedestal 0.152 the arms at home are -11 mm from a beaker placed on the hotplate",
+   "check_s": 0.037
+  },
+  {
+   "source": "selection demo seed 381989416",
+   "draw": 9,
+   "x": 0.8640584059750447,
+   "y": 1.3458085844867083,
+   "heading": -1.5707963267948966,
+   "pedestal": 0.05821371562130298,
+   "shoulder_to_pick_m": 0.7223801714238091,
+   "shoulder_to_place_m": 0.7046889769744713,
+   "base_to_bench_edge_m": 0.5458085844867082,
+   "A8_score": 0.8155952868598527,
+   "ok": false,
+   "failed": [
+    "ik"
+   ],
+   "reason": "task 1 (pick): at the stance 'nominal' point 2 (grasp, [1.0, 0.66, 1.005]) has no collision-free solution in any approach direction (furthest: bin 0); the stance needs every task to pass",
+   "check_s": 1.792
+  },
+  {
+   "source": "selection demo seed 381989416",
+   "draw": 10,
+   "x": 0.8900504421381884,
+   "y": 0.8899547397131462,
+   "heading": -1.5707963267948966,
+   "pedestal": 0.20663674433686618,
+   "shoulder_to_pick_m": 0.42586155965712585,
+   "shoulder_to_place_m": 0.381744810890356,
+   "base_to_bench_edge_m": 0.08995473971314616,
+   "A8_score": 0.9156967666533514,
+   "ok": false,
+   "failed": [
+    "placed_beaker"
+   ],
+   "reason": "at pedestal 0.187 the arms at home are 22 mm from a beaker placed on the hotplate",
+   "check_s": 0.17
+  }
+ ],
+ "note": "distances from the saved stances (shoulder from base + offset turned by heading; points from stance_points); logging backfill, no draws"
+}

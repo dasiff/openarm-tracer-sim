@@ -1,0 +1,8 @@
+{
+ "maps_peak_r_m": 0.31,
+ "maps_peak_bins": 2.7795353435491843,
+ "maps_near_50pct_r_m": 0.15000000000000002,
+ "maps_near_10pct_r_m": null,
+ "maps_far_50pct_r_m": 0.5700000000000001,
+ "maps_far_10pct_r_m": 0.67
+}

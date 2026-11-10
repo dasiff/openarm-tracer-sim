@@ -52,6 +52,53 @@ def met(form):
     return all(s[k] >= TARGET for k in ("precision", "recall", "within_1_bin"))
 
 
+def count_a9(r, theta, z, p, z_cut):
+    """A9 (2026-11-10): A8 with the distance term split at r0: exp(-((r - r0)/sig_near)^2) for r < r0 and exp(-((r - r0)/sig_far)^2) for r >= r0;
+    the bearing term as A8 (sigma linear in z on each side of theta = 0); zero below z_cut. p = (C, r0, sig_near, sig_far, sn0, sn1, sp0, sp1)."""
+    C, r0, sn_d, sf_d, sn0, sn1, sp0, sp1 = p
+    dist = np.where(r < r0, np.exp(-((r - r0) / max(sn_d, 1e-3)) ** 2), np.exp(-((r - r0) / max(sf_d, 1e-3)) ** 2))
+    sig = np.maximum(np.where(theta < 0, sn0 + sn1 * z, sp0 + sp1 * z), 1e-3)
+    out = np.clip(C * dist * np.exp(-(theta / sig) ** 2), 0.0, 12.0)
+    return np.where(z >= z_cut, out, 0.0)
+
+
+def fit_form_a9(r, th, z, y, fit_set, test_set, cuts):
+    best = None
+    starts = [[3.7, 0.45, 0.22, 0.22, 0.27, -0.55, 50.7, -117.6], [3.0, 0.45, 0.15, 0.30, 0.3, -0.3, 10.0, -20.0], [4.0, 0.40, 0.25, 0.20, 0.2, -0.2, 5.0, -10.0]]
+    for zc in cuts:
+        def res(v, zc=zc):
+            return count_a9(r[fit_set], th[fit_set], z[fit_set], v, zc) - y[fit_set]
+        for v0 in starts:
+            f = least_squares(res, np.array(v0, float), x_scale="jac", max_nfev=400)
+            rmse = float(np.sqrt(np.mean(f.fun ** 2)))
+            if best is None or rmse < best[2]:
+                best = (f.x, zc, rmse)
+    p, zc, rmse = best
+    pf = count_a9(r[fit_set], th[fit_set], z[fit_set], p, zc)
+    pt = count_a9(r[test_set], th[test_set], z[test_set], p, zc)
+    return {"C_bins": float(p[0]), "r0_m": float(p[1]), "sigma_near_m": float(p[2]), "sigma_far_m": float(p[3]), "sigma_theta_neg_rad": float(p[4]), "sigma_theta_neg_per_m_rad": float(p[5]),
+            "sigma_theta_pos_rad": float(p[6]), "sigma_theta_pos_per_m_rad": float(p[7]), "z_cut_m": zc, "rmse_fit_bins": rmse, "fitted_slices": scores(pf, y[fit_set].astype(int)),
+            "held_out_slices": scores(pt, y[test_set].astype(int))}
+
+
+def main_a9():
+    """A9 only (the same data, split and cuts as main()); writes docs/reports/reach_model_fit_a9.json. A8's numbers are read from reach_model_fit_asym.json (unchanged)."""
+    cnt, origin = load_counts()
+    d, th, z, iz = cell_coords(cnt, origin)
+    y = cnt.ravel().astype(float)
+    r = np.hypot(d, z)
+    fit_set, test_set = iz % 2 == 0, iz % 2 == 1
+    zs = origin[2] + CUBE * (np.arange(cnt.shape[2]) + 0.5)
+    reach_z = zs[(cnt >= 1).sum(axis=(0, 1)) > 0]
+    cuts = [float(v) for v in reach_z[3:9]]
+    out = {"A9_near_far_distance_term": fit_form_a9(r, th, z, y, fit_set, test_set, cuts)}
+    out["A8_reference"] = json.loads(Path("docs/reports/reach_model_fit_asym.json").read_text())["forms"]["A8 asymmetric bearing, widths linear in z (8 parameters)"]
+    print(json.dumps(out, indent=1), flush=True)
+    path = "docs/reports/reach_model_fit_a9.json"
+    Path(path + ".tmp").write_text(json.dumps(out, indent=1))
+    os.replace(path + ".tmp", path)
+
+
 def main():
     cnt, origin = load_counts()
     d, th, z, iz = cell_coords(cnt, origin)
@@ -73,4 +120,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    main_a9() if "--a9" in sys.argv else main()

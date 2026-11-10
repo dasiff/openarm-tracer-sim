@@ -105,6 +105,7 @@ class RobotShapes:
             self._finger[side] = [self._jid(f"openarm_{side}_finger_joint{k}") for k in (1, 2)]
         self._base = self._jid("base_float")
         self._pedestal = self._jid("pedestal_joint")
+        self._prepare_arrays()
         self.largest_radius = max((s["radius"] for s in self.specs if s["kind"] == "capsule"), default=0.0)
 
     def _jid(self, name):
@@ -131,26 +132,46 @@ class RobotShapes:
                 d.qpos[m.jnt_qposadr[j]] = f
         mujoco.mj_kinematics(m, d)
 
+    def _prepare_arrays(self):
+        """Index arrays so that place() is one vectorised pass (built once)."""
+        cap_idx, box_idx = [], []
+        for k, sp in enumerate(self.specs):
+            (cap_idx if sp["kind"] == "capsule" else box_idx).append(k)
+        self._cap_idx, self._box_idx = np.array(cap_idx, int), np.array(box_idx, int)
+        mb = lambda n: mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_BODY, n)
+        if len(cap_idx):
+            self._cap_ba = np.array([mb(self.specs[k]["ends_body"][0]) for k in cap_idx])
+            self._cap_bb = np.array([mb(self.specs[k]["ends_body"][1]) for k in cap_idx])
+            self._cap_la = np.array([self.specs[k]["ends_local"][0] for k in cap_idx], float)
+            self._cap_lb = np.array([self.specs[k]["ends_local"][1] for k in cap_idx], float)
+            self._cap_r = np.array([self.specs[k]["radius"] for k in cap_idx], float)
+        if len(box_idx):
+            self._box_b = np.array([mb(self.specs[k]["frame"]) for k in box_idx])
+            self._box_c = np.array([self.specs[k]["center_local"] for k in box_idx], float)
+            self._box_rl = np.array([_quat_to_mat(self.specs[k]["quat_local"]) for k in box_idx])
+            self._box_h = np.array([self.specs[k]["half"] for k in box_idx], float)
+
     def place(self, state: RobotState):
-        """All shapes in the world for this joint state. Returns a list of PlacedShape."""
+        """All shapes in the world for this joint state (one vectorised pass). Returns a list of PlacedShape in spec order."""
         self.set_state(state)
         d = self.data
-        out = []
-        for s in self.specs:
-            if s["kind"] == "capsule":
-                ba, bb = self._body_ends[s["id"]]
-                ends = []
-                for body, local in zip((ba, bb), s["ends_local"]):
-                    ends.append(d.xpos[body] + d.xmat[body].reshape(3, 3) @ np.asarray(local, float))
-                out.append(PlacedShape(id=s["id"], arm=s["arm"], part=s["part"], kind="capsule", body=s["frame"],
-                                       a=ends[0], b=ends[1], r=float(s["radius"]), geoms=tuple(s["geoms"])))
-            else:
-                b = self._body[s["id"]]
-                R, p = d.xmat[b].reshape(3, 3), d.xpos[b]
-                Rl = _quat_to_mat(s["quat_local"])
-                out.append(PlacedShape(id=s["id"], arm=s["arm"], part=s["part"], kind="box", body=s["frame"],
-                                       centre=p + R @ np.asarray(s["center_local"], float), rot=R @ Rl,
-                                       half=np.asarray(s["half"], float), geoms=tuple(s["geoms"])))
+        xpos = d.xpos
+        xmat = d.xmat.reshape(-1, 3, 3)
+        out = [None] * len(self.specs)
+        if len(self._cap_idx):
+            A = xpos[self._cap_ba] + np.einsum("kij,kj->ki", xmat[self._cap_ba], self._cap_la)
+            B = xpos[self._cap_bb] + np.einsum("kij,kj->ki", xmat[self._cap_bb], self._cap_lb)
+            for n, k in enumerate(self._cap_idx):
+                sp = self.specs[k]
+                out[k] = PlacedShape(id=sp["id"], arm=sp["arm"], part=sp["part"], kind="capsule", body=sp["frame"],
+                                     a=A[n], b=B[n], r=float(self._cap_r[n]), geoms=tuple(sp["geoms"]))
+        if len(self._box_idx):
+            C = xpos[self._box_b] + np.einsum("kij,kj->ki", xmat[self._box_b], self._box_c)
+            Rw = np.einsum("kij,kjl->kil", xmat[self._box_b], self._box_rl)
+            for n, k in enumerate(self._box_idx):
+                sp = self.specs[k]
+                out[k] = PlacedShape(id=sp["id"], arm=sp["arm"], part=sp["part"], kind="box", body=sp["frame"],
+                                     centre=C[n], rot=Rw[n], half=self._box_h[n], geoms=tuple(sp["geoms"]))
         return out
 
     def hand_frame(self, side):

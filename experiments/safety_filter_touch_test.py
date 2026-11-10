@@ -53,7 +53,11 @@ def table():
         ("held object vs world: exempt", cap("lh", "left", "held"), box("bench", "world", "world"), None, None),
         ("same arm: link 7 vs own palm: exempt", cap("l7", "left", "link7"), cap("lp", "left", "palm"), None, None),
         ("held vs own hand: exempt (SF-4)", cap("lh", "left", "held"), cap("lp", "left", "palm"), None, None),
-        ("torso vs an arm: exempt", cap("t", "common", "torso"), cap("lu", "left", "upper_arm"), None, None),
+        ("torso vs the left upper arm (touches by construction): exempt", cap("t", "common", "torso"), cap("left_upper_arm", "left", "upper_arm"), None, None),
+        ("torso vs the left shoulder mount: exempt", cap("t", "common", "torso"), cap("left_shoulder_mount", "left", "shoulder_mount"), None, None),
+        ("torso vs the right upper arm: checked (it is +18 mm at the zero pose)", cap("t", "common", "torso"), cap("right_upper_arm", "right", "upper_arm"), "robot-robot", cfg.MARGINS["robot_robot_m"]),
+        ("torso vs the left forearm: checked", cap("t", "common", "torso"), cap("left_forearm", "left", "forearm"), "robot-robot", cfg.MARGINS["robot_robot_m"]),
+        ("torso vs a held object: checked", cap("t", "common", "torso"), cap("left_held", "left", "held"), "robot-robot", cfg.MARGINS["robot_robot_m"]),
         ("robot body vs robot body: exempt", cap("eb", "common", "pedestal_base"), box("pt", "common", "pedestal_top"), None, None),
         ("shoulder mount vs the other mount: exempt", cap("lm", "left", "shoulder_mount"), cap("rm", "right", "shoulder_mount"), None, None),
         ("hand-hand: left palm vs right palm", cap("lp", "left", "palm"), cap("rp", "right", "palm"), "hand-hand", cfg.MARGINS["hand_hand_m"]),
@@ -91,7 +95,7 @@ def held_and_broad():
     ids = [o.id for o in world.objects()]
     check("attach: the held beaker left the world (the far one stays)", ids == ["beaker_far"], f"-> {ids}")
     held0 = ht.placed("left", pos, rot)
-    check("attach: held shape exists and is a box", held0 is not None and held0.kind == "box")
+    check("attach: held shape exists and is a capsule (the beaker is a capsule, SF-8)", held0 is not None and held0.kind == "capsule")
 
     # move the arm: the held shape must keep its offset in the hand frame
     st2 = RobotState(pedestal_m=0.15, q_left=(0.3, -0.2, 0.1, 0.9, 0.2, 0.1, 0.0), q_right=st.q_right,
@@ -157,6 +161,7 @@ def catalog_and_config():
     size = [float(x) for x in g.get("size").split()]
     pos = [float(x) for x in g.get("pos").split()]
     cat = cfg.OBJECT_CATALOG["beaker"]
+    check("catalog: the beaker is a capsule (round, M287, SF-8)", cat["shape"] == "capsule" and cat["round"] is True)
     check("catalog: beaker radius matches models/objects/beaker.xml", abs(cat["radius_m"] - size[0]) < 1e-12, f"({size[0]})")
     check("catalog: beaker half height matches", abs(cat["half_height_m"] - size[1]) < 1e-12, f"({size[1]})")
     check("catalog: beaker centre above its bottom matches", abs(cat["centre_above_bottom_m"] - pos[2]) < 1e-12, f"({pos[2]})")
@@ -175,6 +180,16 @@ def catalog_and_config():
     names = {o.id for o in lab.objects()}
     check("lab map: no hotplate, beaker or other movable object", not any(n.startswith(("task_", "beaker", "hotplate")) for n in names))
     check("lab map: bench top and walls present", "bench_top" in names and "wall_n" in names)
+    check("lab map: bench built for bench_open True (the rails are not written)", lab.bench_open is True
+          and not any(n.startswith("bench_frame") for n in names))
+    check("lab map: gas manifold and knobs are fixtures", {"gas_manifold", "gas_knob_1", "gas_knob_2", "gas_knob_3"} <= names)
+    from src.safety_filter.world import LabMapMismatch
+    refused = False
+    try:
+        LabMapSource(LAB_MAP, expected_bench_open=False)
+    except LabMapMismatch:
+        refused = True
+    check("lab map: a filter expecting the other bench_open setting refuses the map", refused)
 
     class FakeEntry:
         def __init__(self, id_, position):

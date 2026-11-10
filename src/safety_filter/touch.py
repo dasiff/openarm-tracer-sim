@@ -6,7 +6,8 @@ they have, which world objects are near an arm, and which object a hand holds.
 Pair rules (first match wins):
   world      an arm part vs a world object: checked with arm_world_m; fingers and held objects are exempt (M289).
   same arm   any two shapes of one arm (including the arm's held object against its own hand, SF-4): exempt.
-  torso      an arm or held object vs the torso: exempt while EXEMPT_TORSO_PAIRS (the mounts touch it by construction).
+  torso      only the shapes that touch the torso by construction (TORSO_TOUCHING_IDS: both shoulder mounts, the left upper arm)
+             are exempt; every other arm part and held object is checked against the torso (SF-8).
   body-body  two robot body shapes: exempt (rigidly connected robot body); both shoulder mounts: exempt (fixed to the torso).
   hand-hand  palm, fingers or held object of one arm vs the same kinds of the other arm: hand_hand_m.
   robot-robot every other pair between the two arms, or an arm part vs another robot body part: robot_robot_m.
@@ -19,7 +20,7 @@ from dataclasses import dataclass
 import numpy as np
 
 from src.safety_filter import config as cfg
-from src.safety_filter.geometry import capsule_box, capsule_capsule
+from src.safety_filter.geometry import (capsule_box, capsule_box_batch, capsule_capsule, capsule_capsule_batch)
 from src.safety_filter.shapes import PlacedShape
 from src.safety_filter.world import WorldObject
 
@@ -65,8 +66,8 @@ def pair_rule(a: PlacedShape, b: PlacedShape):
     if "common" in (a.arm, b.arm):
         robot = b if a.arm == "common" else a
         body = a if a.arm == "common" else b
-        if body.part == "torso" and cfg.EXEMPT_TORSO_PAIRS:
-            return Exempt("torso is the parent of both shoulder mounts")
+        if body.part == "torso" and robot.id in cfg.TORSO_TOUCHING_IDS:
+            return Exempt("touches the torso by construction (overlaps it at the zero pose, SF-8)")
         if robot.arm == "common":
             return Exempt("robot body against itself")
         return _rule("robot-robot", cfg.MARGINS["robot_robot_m"])
@@ -76,15 +77,22 @@ def pair_rule(a: PlacedShape, b: PlacedShape):
     return _rule("robot-robot", cfg.MARGINS["robot_robot_m"])
 
 
+def shape_of(obj_id, shape, size, centre, rot, arm, part, body="world"):
+    """A placed shape from a world-style description: a box (half sizes) or a capsule (radius, half length along
+    the rotation's z column). Both keep their centre."""
+    centre, rot = np.asarray(centre, float), np.asarray(rot, float)
+    if shape == "capsule":
+        r, h = size
+        ax = rot[:, 2]
+        return PlacedShape(id=obj_id, arm=arm, part=part, kind="capsule", body=body,
+                           a=centre - h * ax, b=centre + h * ax, r=float(r), centre=centre, rot=rot)
+    return PlacedShape(id=obj_id, arm=arm, part=part, kind="box", body=body, centre=centre, rot=rot,
+                       half=np.asarray(size, float))
+
+
 def as_placed(obj: WorldObject) -> PlacedShape:
-    """A world object as a placed box (a cylinder is checked as its enclosing box: conservative, Stage 1)."""
-    if obj.shape == "cylinder":
-        r, h = obj.size
-        half = np.array([r, r, h])
-    else:
-        half = np.asarray(obj.size, float)
-    return PlacedShape(id=obj.id, arm="world", part="world", kind="box", body="world",
-                       centre=np.asarray(obj.centre, float), rot=obj.rot_matrix(), half=half)
+    """A world object as a placed shape (capsule or box)."""
+    return shape_of(obj.id, obj.shape, obj.size, obj.centre, obj.rot_matrix(), "world", "world")
 
 
 def gap_between(a: PlacedShape, b: PlacedShape):
@@ -110,35 +118,79 @@ class PairReport:
     in_margin: bool       # gap below the margin
 
 
-def _aabb_gap(a, b):
-    """A lower bound of the distance between two placed shapes: the gap between their axis-aligned boxes."""
-    la, ha = a.aabb()
-    lb, hb = b.aabb()
-    return float(np.max(np.maximum(la - hb, lb - ha)))
+def _aabb_arrays(shapes):
+    """(lo, hi) arrays (N,3) of the shapes' axis-aligned boxes (capsules and boxes, batched by kind)."""
+    n = len(shapes)
+    los = np.empty((n, 3))
+    his = np.empty((n, 3))
+    caps = [k for k, s in enumerate(shapes) if s.kind == "capsule"]
+    boxes = [k for k, s in enumerate(shapes) if s.kind != "capsule"]
+    if caps:
+        A = np.array([shapes[k].a for k in caps])
+        B = np.array([shapes[k].b for k in caps])
+        r = np.array([shapes[k].r for k in caps])[:, None]
+        los[caps] = np.minimum(A, B) - r
+        his[caps] = np.maximum(A, B) + r
+    if boxes:
+        C = np.array([shapes[k].centre for k in boxes])
+        R = np.array([shapes[k].rot for k in boxes])
+        H = np.array([shapes[k].half for k in boxes])
+        ext = np.abs(R) @ H[:, :, None]
+        ext = ext[:, :, 0]
+        los[boxes] = C - ext
+        his[boxes] = C + ext
+    return los, his
 
 
 def evaluate_pairs(robot_shapes, world_objects):
-    """Gaps of the checked pairs between the robot's placed shapes and the world objects.
+    """Gaps of the checked pairs between the robot's placed shapes and the world objects (batched).
 
-    Pairs whose boxes are further apart than their activation distance are skipped first (the true gap is
-    at least the box gap, so such a pair cannot be within its margin or active). Exempt pairs are left out.
-    robot_shapes: list of PlacedShape (both arms, held objects, robot body). world_objects: list of WorldObject.
+    Stage 1 order: all pairs are first cut by their boxes (a pair whose boxes are further apart than the largest
+    activation distance cannot be within its margin); the surviving pairs are classified by the touch rules, cut
+    again by their own activation distance, and their gaps computed in two batches (capsule-capsule and capsule-box).
+    Exempt pairs and box-box pairs are left out.
     Returns a list of PairReport.
     """
     items = list(robot_shapes) + [as_placed(o) for o in world_objects]
+    n = len(items)
+    if n < 2:
+        return []
+    lo, hi = _aabb_arrays(items)
+    max_act = max(cfg.MARGINS.values()) + cfg.PUSH_START_BEYOND_M
+    I, J = np.triu_indices(n, k=1)
+    sep = np.maximum(lo[I] - hi[J], lo[J] - hi[I]).max(axis=1)
+    keep = sep <= max_act
+    cand = []
+    for k in np.flatnonzero(keep):
+        a, b = items[I[k]], items[J[k]]
+        if a.kind == "box" and b.kind == "box":
+            continue
+        rule = pair_rule(a, b)
+        if isinstance(rule, Exempt):
+            continue
+        if sep[k] > rule.activation:
+            continue
+        cand.append((a, b, rule))
+    cc = [(a, b, r) for a, b, r in cand if a.kind == "capsule" and b.kind == "capsule"]
+    cb = []
+    for a, b, r in cand:
+        if a.kind == "capsule" and b.kind == "box":
+            cb.append((a, b, r, 1.0))
+        elif a.kind == "box" and b.kind == "capsule":
+            cb.append((b, a, r, -1.0))      # computed as (capsule, box); the push is flipped back below
     out = []
-    for i in range(len(items)):
-        for j in range(i + 1, len(items)):
-            a, b = items[i], items[j]
-            if a.kind == "box" and b.kind == "box":
-                continue
-            rule = pair_rule(a, b)
-            if isinstance(rule, Exempt):
-                continue
-            if _aabb_gap(a, b) > rule.activation:
-                continue
-            gap, _, _, _ = gap_between(a, b)
-            out.append(PairReport(a=a.id, b=b.id, rule=rule, gap=gap, in_margin=gap < rule.margin))
+    if cc:
+        A1 = np.array([a.a for a, _, _ in cc]); B1 = np.array([a.b for a, _, _ in cc]); r1 = np.array([a.r for a, _, _ in cc])
+        A2 = np.array([b.a for _, b, _ in cc]); B2 = np.array([b.b for _, b, _ in cc]); r2 = np.array([b.r for _, b, _ in cc])
+        gaps = capsule_capsule_batch(A1, B1, r1, A2, B2, r2, gap_only=True)
+        for (a, b, r), g in zip(cc, gaps):
+            out.append(PairReport(a=a.id, b=b.id, rule=r, gap=float(g), in_margin=bool(g < r.margin)))
+    if cb:
+        A = np.array([a.a for a, _, _, _ in cb]); B = np.array([a.b for a, _, _, _ in cb]); rr = np.array([a.r for a, _, _, _ in cb])
+        C = np.array([b.centre for _, b, _, _ in cb]); R = np.array([b.rot for _, b, _, _ in cb]); H = np.array([b.half for _, b, _, _ in cb])
+        gaps = capsule_box_batch(A, B, rr, C, R, H, gap_only=True)
+        for (a, b, r, _), g in zip(cb, gaps):
+            out.append(PairReport(a=a.id, b=b.id, rule=r, gap=float(g), in_margin=bool(g < r.margin)))
     return out
 
 
@@ -150,21 +202,16 @@ def broad_phase(robot_shapes, desired_shapes, world_objects, world_margin, relea
     it are candidates; ids in `keep` (pairs being pushed) are always candidates until released (not in keep)."""
     pad = max(s.r for s in robot_shapes if s.kind == "capsule") if any(s.kind == "capsule" for s in robot_shapes) else 0.0
     pad = max(pad + cfg.PUSH_START_BEYOND_M + world_margin, release)
-    los, his = [], []
-    for s in list(robot_shapes) + list(desired_shapes):
-        lo, hi = s.aabb()
-        los.append(lo)
-        his.append(hi)
-    lo = np.min(los, axis=0) - pad
-    hi = np.max(his, axis=0) + pad
+    arm_lo, arm_hi = _aabb_arrays(list(robot_shapes) + list(desired_shapes))
+    lo = arm_lo.min(axis=0) - pad
+    hi = arm_hi.max(axis=0) + pad
+    if not world_objects:
+        return []
+    olo, ohi = _aabb_arrays([as_placed(o) for o in world_objects])
+    hit = np.all(ohi >= lo, axis=1) & np.all(olo <= hi, axis=1)
     out = []
-    for o in world_objects:
-        if o.id in keep:
-            out.append(o)
-            continue
-        ext = np.abs(o.rot_matrix()) @ np.asarray(o.size if o.shape == "box" else (o.size[0], o.size[0], o.size[1]), float)
-        c = np.asarray(o.centre, float)
-        if np.all(c + ext >= lo) and np.all(c - ext <= hi):
+    for k, o in enumerate(world_objects):
+        if o.id in keep or hit[k]:
             out.append(o)
     return out
 
@@ -233,11 +280,10 @@ class HeldTracker:
             return None
         if rec["kind"] == "object":
             obj = rec["obj"]
-            half = np.array([obj.size[0], obj.size[0], obj.size[1]]) if obj.shape == "cylinder" else np.asarray(obj.size, float)
-            return PlacedShape(id=f"{side}_held", arm=side, part="held", kind="box", body=f"openarm_{side}_link7",
-                               centre=hand_pos + hand_rot @ rec["off_pos"], rot=hand_rot @ rec["off_rot"], half=half)
+            return shape_of(f"{side}_held", obj.shape, obj.size, hand_pos + hand_rot @ rec["off_pos"],
+                            hand_rot @ rec["off_rot"], side, "held", body=f"openarm_{side}_link7")
         c = hand_pos + hand_rot @ rec["pad_local"]
         ax = hand_rot[:, 2]  # the hand's z axis (the gripper axis)
         h = cfg.HELD_FALLBACK_HEIGHT_M / 2.0
         return PlacedShape(id=f"{side}_held", arm=side, part="held", kind="capsule", body=f"openarm_{side}_link7",
-                           a=c - h * ax, b=c + h * ax, r=rec["radius"])
+                           a=c - h * ax, b=c + h * ax, r=rec["radius"], centre=c, rot=hand_rot)

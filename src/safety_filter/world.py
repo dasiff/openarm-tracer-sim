@@ -1,7 +1,7 @@
 """World sources for the filter (M290): numbers in, objects out. No simulator, no scene file.
 
-A world object is a WorldObject: id, shape ("box" or "cylinder"), size (box half sizes, or radius and half
-height for a cylinder), centre and rotation in the world, and the graspable and round tags from the object
+A world object is a WorldObject: id, shape ("box" or "capsule"), size (box half sizes, or radius and half
+length for a capsule), centre and rotation in the world, and the graspable and round tags from the object
 catalog (config.OBJECT_CATALOG).
 
 Sources:
@@ -18,14 +18,14 @@ from pathlib import Path
 
 import numpy as np
 
-from src.safety_filter.config import OBJECT_CATALOG
+from src.safety_filter.config import LAB_MAP_BENCH_OPEN, OBJECT_CATALOG
 
 
 @dataclass(frozen=True)
 class WorldObject:
     id: str
-    shape: str                 # "box" or "cylinder"
-    size: tuple                # box: half sizes (3); cylinder: (radius, half height)
+    shape: str                 # "box" or "capsule" (a capsule's axis is the rotation's z column)
+    size: tuple                # box: half sizes (3); capsule: (radius, half length of the segment)
     centre: tuple              # world, metres
     rot: tuple                 # world rotation, row-major 3x3 (9 numbers)
     graspable: bool = False
@@ -37,8 +37,8 @@ class WorldObject:
 
     def bound_radius(self):
         """Radius of a sphere around the centre that contains the object (for the match rule)."""
-        if self.shape == "cylinder":
-            return float(np.hypot(self.size[0], self.size[1]))
+        if self.shape == "capsule":
+            return float(self.size[0] + self.size[1])
         return float(np.linalg.norm(self.size))
 
 
@@ -49,12 +49,22 @@ def _rot9(q_wxyz):
     return out
 
 
-class LabMapSource:
-    """The fixed fixtures of the lab, from lab_map.json (fingerprinted with the scene file)."""
+class LabMapMismatch(RuntimeError):
+    """The lab map was built for another bench_open setting than the filter expects (SF-8)."""
 
-    def __init__(self, path):
+
+class LabMapSource:
+    """The fixed fixtures of the lab, from lab_map.json (fingerprinted with the scene file, built for one bench_open setting)."""
+
+    def __init__(self, path, expected_bench_open=None):
+        """Raises LabMapMismatch if the map's bench_open differs from expected_bench_open (default config.LAB_MAP_BENCH_OPEN)."""
+        if expected_bench_open is None:
+            expected_bench_open = LAB_MAP_BENCH_OPEN
         doc = json.loads(Path(path).read_text(encoding="utf-8"))
+        if doc.get("bench_open") != expected_bench_open:
+            raise LabMapMismatch(f"lab map built for bench_open={doc.get('bench_open')}, filter expects {expected_bench_open}; rebuild with tools/survey_lab_map.py")
         self.scene_sha256 = doc["scene_sha256"]
+        self.bench_open = doc["bench_open"]
         self._objects = [WorldObject(id=f["name"], shape="box", size=tuple(f["half"]),
                                      centre=tuple(f["center"]), rot=tuple(_rot9(f["quat"])),
                                      fixture=True)
@@ -70,7 +80,7 @@ def catalog_object(entry_id, position, axis=None):
     if spec is None:
         raise KeyError(f"no catalog entry for {entry_id!r}")
     centre = np.asarray(position, float) + np.array([0.0, 0.0, spec["centre_above_bottom_m"]])
-    if spec["shape"] == "cylinder":
+    if spec["shape"] == "capsule":
         size = (spec["radius_m"], spec["half_height_m"])
     else:
         size = tuple(spec["half_m"])

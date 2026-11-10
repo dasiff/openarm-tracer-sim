@@ -121,3 +121,116 @@ def capsule_box(A, B, r, c, R, h):
     point_a = A + t * (B - A)
     point_b = c + R @ q
     return Contact(gap=float(gap), point_a=point_a, point_b=point_b, push=R @ n_local)
+
+
+# ---------- batch versions (vectorised over N pairs; the same results as the scalar functions) ----------
+
+def _unit_rows(v, fallback):
+    n = np.linalg.norm(v, axis=1)
+    out = np.where(n[:, None] > 1e-12, v / np.maximum(n, 1e-300)[:, None], fallback)
+    return out
+
+
+def capsule_capsule_batch(A1, B1, r1, A2, B2, r2, gap_only=False):
+    """Batch of capsule_capsule. Inputs: (N,3) ends and (N,) radii. Returns gap (N,), point_a (N,3), point_b (N,3), push (N,3)."""
+    A1, B1, A2, B2 = (np.asarray(x, float) for x in (A1, B1, A2, B2))
+    r1, r2 = np.asarray(r1, float), np.asarray(r2, float)
+    d1, d2, r = B1 - A1, B2 - A2, A1 - A2
+    a = np.einsum("ij,ij->i", d1, d1)
+    e = np.einsum("ij,ij->i", d2, d2)
+    f = np.einsum("ij,ij->i", d2, r)
+    c = np.einsum("ij,ij->i", d1, r)
+    b = np.einsum("ij,ij->i", d1, d2)
+    eps = 1e-14
+    a_s, e_s = np.maximum(a, eps), np.maximum(e, eps)
+    denom = a_s * e_s - b * b
+    s = np.where(denom > eps, np.clip((b * f - c * e_s) / np.maximum(denom, eps), 0.0, 1.0), 0.0)
+    t = (b * s + f) / e_s
+    # clamp t to [0, 1] and recompute s for the clamped end
+    s_for_t0 = np.clip(-c / a_s, 0.0, 1.0)
+    s_for_t1 = np.clip((b - c) / a_s, 0.0, 1.0)
+    lo, hi = t < 0.0, t > 1.0
+    t = np.where(lo, 0.0, np.where(hi, 1.0, t))
+    s = np.where(lo, s_for_t0, np.where(hi, s_for_t1, s))
+    # degenerate second segment (a point at A2): the closest point on the first segment, t = 0
+    s = np.where(e <= eps, s_for_t0, s)
+    t = np.where(e <= eps, 0.0, t)
+    p1 = A1 + s[:, None] * d1
+    p2 = A2 + t[:, None] * d2
+    diff = p1 - p2
+    dist = np.linalg.norm(diff, axis=1)
+    gap = dist - (r1 + r2)
+    if gap_only:
+        return gap
+    cross = np.cross(d1, d2)
+    fallback = np.tile(np.array([0.0, 0.0, 1.0]), (len(A1), 1))
+    perp = _unit_rows(cross, fallback)
+    push = np.where((dist > 1e-12)[:, None], diff / np.maximum(dist, 1e-300)[:, None], perp)
+    return gap, p1, p2, push
+
+
+def _sd_rows(p, h):
+    q = np.abs(p) - h
+    return np.linalg.norm(np.maximum(q, 0.0), axis=1) + np.minimum(q.max(axis=1), 0.0)
+
+
+def capsule_box_batch(A, B, r, c, R, h, grid=33, refine=14, gap_only=False):
+    """Batch of capsule_box. A, B (N,3) capsule ends; r (N,); c (N,3) box centres; R (N,3,3) box rotations; h (N,3) half sizes.
+
+    The signed distance along the segment is evaluated on a grid of `grid` points, then golden-section refined
+    (`refine` steps) inside the bracket around the best grid point. Returns gap, point_a, point_b, push as capsule_box;
+    with gap_only=True returns the gaps only (fewer numpy calls)."""
+    A, B, c, h = (np.asarray(x, float) for x in (A, B, c, h))
+    R = np.asarray(R, float)
+    r = np.asarray(r, float)
+    Rt = np.transpose(R, (0, 2, 1))
+    a = np.einsum("nij,nj->ni", Rt, A - c)
+    b = np.einsum("nij,nj->ni", Rt, B - c)
+    ts = np.linspace(0.0, 1.0, grid)
+    seg = b - a
+    pts = a[:, None, :] + ts[None, :, None] * seg[:, None, :]          # (N, grid, 3)
+    q = np.abs(pts) - h[:, None, :]
+    sd = np.linalg.norm(np.maximum(q, 0.0), axis=2) + np.minimum(q.max(axis=2), 0.0)  # (N, grid)
+    best = np.argmin(sd, axis=1)
+    rows = np.arange(len(a))
+    lo = ts[np.maximum(best - 1, 0)]
+    hi = ts[np.minimum(best + 1, grid - 1)]
+    gr = 0.5 * (np.sqrt(5.0) - 1.0)
+    n = len(a)
+    h2 = np.concatenate([h, h])
+    for _ in range(refine):  # golden-section on the bracket, both probes in one stacked call
+        m1 = hi - gr * (hi - lo)
+        m2 = lo + gr * (hi - lo)
+        both = _sd_rows(np.concatenate([a + m1[:, None] * seg, a + m2[:, None] * seg]), h2)
+        left = both[:n] < both[n:]
+        hi = np.where(left, m2, hi)
+        lo = np.where(left, lo, m1)
+    t = 0.5 * (lo + hi)
+    keep_grid = _sd_rows(a + t[:, None] * seg, h) > sd[rows, best]
+    t = np.where(keep_grid, ts[best], t)
+    if gap_only:
+        return _sd_rows(a + t[:, None] * seg, h) - r
+    p = a + t[:, None] * seg                                            # closest segment point, box frame
+    sd_p = _sd_rows(p, h)
+    outside = sd_p > 0.0
+    # outside: closest box point is the clamp; push = normalised (p - clamp), in the box frame
+    qo = np.clip(p, -h, h)
+    no = p - qo
+    no_norm = np.linalg.norm(no, axis=1)
+    n_out = np.where((no_norm > 1e-12)[:, None], no / np.maximum(no_norm, 1e-300)[:, None], np.array([0.0, 0.0, 1.0]))
+    # inside: the face the point is nearest to (shortest way out)
+    depth = h - np.abs(p)
+    i = np.argmin(depth, axis=1)
+    rows = np.arange(len(a))
+    sgn = np.where(p[rows, i] >= 0.0, 1.0, -1.0)
+    qi = p.copy()
+    qi[rows, i] = sgn * h[rows, i]
+    n_in = np.zeros_like(p)
+    n_in[rows, i] = sgn
+    q_box = np.where(outside[:, None], qo, qi)
+    n_local = np.where(outside[:, None], n_out, n_in)
+    gap = sd_p - r
+    point_a = A + t[:, None] * (B - A)
+    point_b = c + np.einsum("nij,nj->ni", R, q_box)
+    push = np.einsum("nij,nj->ni", R, n_local)
+    return gap, point_a, point_b, push

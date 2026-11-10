@@ -152,6 +152,28 @@ def main():
     print(f"  MuJoCo wrong on the sign (positive for a segment through the box): {cb_mj_wrong}")
     print(f"  deep pairs where the push makes the gap worse: {cb_push_bad}")
     cb_sign_bad = 0
+    # ---- the batch versions (used by the pair checks): the same pairs, vectorised ----
+    from src.safety_filter.geometry import capsule_box_batch, capsule_capsule_batch
+    rng2 = np.random.default_rng(7)
+    Ac = rng2.uniform(-0.2, 0.2, (N_PAIRS, 3)); Bc = Ac + rng2.uniform(-0.3, 0.3, (N_PAIRS, 3)); rc = rng2.uniform(0.01, 0.08, N_PAIRS)
+    Dc = Ac + rng2.uniform(-0.15, 0.15, (N_PAIRS, 3)); Ec = Dc + rng2.uniform(-0.3, 0.3, (N_PAIRS, 3)); rd = rng2.uniform(0.01, 0.08, N_PAIRS)
+    gb_cc = capsule_capsule_batch(Ac, Bc, rc, Dc, Ec, rd, gap_only=True)
+    err_cc = max(abs(gb_cc[i] - capsule_capsule(Ac[i], Bc[i], rc[i], Dc[i], Ec[i], rd[i]).gap) for i in range(N_PAIRS))
+    Cb = rng2.uniform(-0.1, 0.1, (N_PAIRS, 3)); Rb = Rotation.random(N_PAIRS, random_state=3).as_matrix()
+    Hb = rng2.uniform(0.03, 0.15, (N_PAIRS, 3)); Ab = Cb + rng2.uniform(-0.25, 0.25, (N_PAIRS, 3)); Bb = Ab + rng2.uniform(-0.3, 0.3, (N_PAIRS, 3))
+    rb = rng2.uniform(0.01, 0.08, N_PAIRS)
+    gb_cb = capsule_box_batch(Ab, Bb, rb, Cb, Rb, Hb, gap_only=True)
+    err_cb = 0.0
+    for i in range(N_PAIRS):
+        loc = (Ab[i][None] + ts_bf[:, None] * (Bb[i] - Ab[i])[None] - Cb[i]) @ Rb[i]
+        q = np.abs(loc) - Hb[i]
+        ref_i = (np.linalg.norm(np.maximum(q, 0.0), axis=1) + np.minimum(q.max(axis=1), 0.0)).min() - rb[i]
+        err_cb = max(err_cb, abs(gb_cb[i] - ref_i))
+    print(f"batch versions: capsule-capsule max |batch - scalar| {err_cc:.3e} m; capsule-box max |batch - brute force| {err_cb:.3e} m")
+    if err_cb > 2e-4 or err_cc > 1e-9:
+        print("batch accuracy FAIL")
+        return 1
+
     ok = True
     if cc_sign_bad or cc_push_bad or cb_push_bad or (cb_err_bf.max() > 2e-4):
         ok = False

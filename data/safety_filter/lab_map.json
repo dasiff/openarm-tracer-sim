@@ -1,11 +1,14 @@
 {
-  "schema": 1,
+  "schema": 2,
   "scene": "models/scenes/chemistry_lab_beaker_hotplate.xml",
   "scene_sha256": "ada206db631ff2e3a7d29a5312c4f916192e02e1866910f5f2d3ce43ef1f5aea",
+  "bench_open": true,
+  "bench_open_source": "src/task_config.py TASK_CFG['bench_open'] [M078]; the map is valid only for this setting",
   "frame": "scene world (the robot base at its zero pose)",
   "included_fixtures": [
     "back_counter",
     "bench",
+    "bench_gas",
     "fume_hood",
     "safety_station",
     "sink",
@@ -35,102 +38,6 @@
         2.2,
         0.8,
         0.06
-      ]
-    },
-    {
-      "name": "bench_frame_front",
-      "fixture": "bench",
-      "body": "bench",
-      "geom": "bench_frame_front",
-      "shape": "box",
-      "source": "box",
-      "center": [
-        0.0,
-        0.78,
-        0.45
-      ],
-      "quat": [
-        1.0,
-        0.0,
-        0.0,
-        0.0
-      ],
-      "half": [
-        2.18,
-        0.02,
-        0.45
-      ]
-    },
-    {
-      "name": "bench_frame_back",
-      "fixture": "bench",
-      "body": "bench",
-      "geom": "bench_frame_back",
-      "shape": "box",
-      "source": "box",
-      "center": [
-        0.0,
-        -0.78,
-        0.45
-      ],
-      "quat": [
-        1.0,
-        0.0,
-        0.0,
-        0.0
-      ],
-      "half": [
-        2.18,
-        0.02,
-        0.45
-      ]
-    },
-    {
-      "name": "bench_frame_left",
-      "fixture": "bench",
-      "body": "bench",
-      "geom": "bench_frame_left",
-      "shape": "box",
-      "source": "box",
-      "center": [
-        -2.18,
-        0.0,
-        0.45
-      ],
-      "quat": [
-        1.0,
-        0.0,
-        0.0,
-        0.0
-      ],
-      "half": [
-        0.02,
-        0.78,
-        0.45
-      ]
-    },
-    {
-      "name": "bench_frame_right",
-      "fixture": "bench",
-      "body": "bench",
-      "geom": "bench_frame_right",
-      "shape": "box",
-      "source": "box",
-      "center": [
-        2.18,
-        0.0,
-        0.45
-      ],
-      "quat": [
-        1.0,
-        0.0,
-        0.0,
-        0.0
-      ],
-      "half": [
-        0.02,
-        0.78,
-        0.45
       ]
     },
     {
@@ -227,6 +134,102 @@
         0.06,
         0.06,
         0.45
+      ]
+    },
+    {
+      "name": "gas_manifold",
+      "fixture": "bench_gas",
+      "body": "bench",
+      "geom": "gas_manifold",
+      "shape": "box",
+      "source": "box",
+      "center": [
+        1.55,
+        -0.6,
+        0.98
+      ],
+      "quat": [
+        1.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "half": [
+        0.25,
+        0.07,
+        0.03
+      ]
+    },
+    {
+      "name": "gas_knob_1",
+      "fixture": "bench_gas",
+      "body": "bench",
+      "geom": "gas_knob_1",
+      "shape": "box",
+      "source": "cylinder",
+      "center": [
+        1.45,
+        -0.62,
+        1.02
+      ],
+      "quat": [
+        1.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "half": [
+        0.03,
+        0.03,
+        0.02
+      ]
+    },
+    {
+      "name": "gas_knob_2",
+      "fixture": "bench_gas",
+      "body": "bench",
+      "geom": "gas_knob_2",
+      "shape": "box",
+      "source": "cylinder",
+      "center": [
+        1.55,
+        -0.62,
+        1.02
+      ],
+      "quat": [
+        1.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "half": [
+        0.03,
+        0.03,
+        0.02
+      ]
+    },
+    {
+      "name": "gas_knob_3",
+      "fixture": "bench_gas",
+      "body": "bench",
+      "geom": "gas_knob_3",
+      "shape": "box",
+      "source": "cylinder",
+      "center": [
+        1.65,
+        -0.62,
+        1.02
+      ],
+      "quat": [
+        1.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "half": [
+        0.03,
+        0.03,
+        0.02
       ]
     },
     {
@@ -568,6 +571,30 @@
   ],
   "excluded": [
     {
+      "fixture": null,
+      "body": "bench",
+      "geom": "bench_frame_front",
+      "reason": "frame rail: deleted by the open-bench rule (bench_open True, TASK_CFG)"
+    },
+    {
+      "fixture": null,
+      "body": "bench",
+      "geom": "bench_frame_back",
+      "reason": "frame rail: deleted by the open-bench rule (bench_open True, TASK_CFG)"
+    },
+    {
+      "fixture": null,
+      "body": "bench",
+      "geom": "bench_frame_left",
+      "reason": "frame rail: deleted by the open-bench rule (bench_open True, TASK_CFG)"
+    },
+    {
+      "fixture": null,
+      "body": "bench",
+      "geom": "bench_frame_right",
+      "reason": "frame rail: deleted by the open-bench rule (bench_open True, TASK_CFG)"
+    },
+    {
       "fixture": "back_counter",
       "body": "back_counter",
       "geom": "shelf_1",
@@ -680,30 +707,6 @@
       "body": "safety_station",
       "geom": "pull_handle",
       "reason": "contype 0 (visual or hole only; no collision in the simulator)"
-    },
-    {
-      "fixture": null,
-      "body": "bench",
-      "geom": "gas_manifold",
-      "reason": "collidable, not in the fixture list"
-    },
-    {
-      "fixture": null,
-      "body": "bench",
-      "geom": "gas_knob_1",
-      "reason": "collidable, not in the fixture list"
-    },
-    {
-      "fixture": null,
-      "body": "bench",
-      "geom": "gas_knob_2",
-      "reason": "collidable, not in the fixture list"
-    },
-    {
-      "fixture": null,
-      "body": "bench",
-      "geom": "gas_knob_3",
-      "reason": "collidable, not in the fixture list"
     },
     {
       "fixture": null,

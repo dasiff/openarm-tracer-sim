@@ -20,6 +20,8 @@ LAB_MAP_SCENE = "models/scenes/chemistry_lab_beaker_hotplate.xml"
 # Where the filter's files are (relative to the project root). [SF-5]
 SHAPES_FILE = "data/safety_filter/robot_shapes.json"
 LAB_MAP_FILE = "data/safety_filter/lab_map.json"
+# The bench_open setting the lab map must be built for (mirrors TASK_CFG["bench_open"], M078); the filter refuses a map built for the other setting (SF-8).
+LAB_MAP_BENCH_OPEN = True
 
 # Touch margins per pair kind (M288). A pair is checked when its gap comes within the margin.
 MARGINS = {
@@ -33,7 +35,11 @@ PUSH_STOP_BEYOND_M = 0.02       # m, PROVISIONAL [M288]
 
 # The torso is the parent of both shoulder mounts; arm and held-object pairs with it are not checked
 # (the mounts touch it by construction). Decided in Stage 1 by the touch table; flagged in the report.
-EXEMPT_TORSO_PAIRS = True       # on/off, [no decision row yet: Stage 1 choice, ask David]
+# Torso exemption, narrowed (SF-8): the torso is exempt only from the arm shapes that touch it by construction, i.e. shapes
+# that overlap the torso capsule at the zero pose (measured, 2026-11-10: docs/reports/20261110_safety_filter_fixup.md section 3):
+# both shoulder mounts (overlap in 200 of 200 random poses, fixed to the torso) and the LEFT upper arm (overlap -16 mm at the zero
+# pose; the right upper arm is +18 mm there and is checked). Forearm, link 7, palm, fingers and held objects are checked.
+TORSO_TOUCHING_IDS = ("left_shoulder_mount", "right_shoulder_mount", "left_upper_arm")
 
 # Held objects (M289, SF-4): match radius beyond an object's own radius, and the fallback capsule.
 HELD_MATCH_EXTRA_M = 0.01       # m, PROVISIONAL [M289]: the nearest graspable object within its radius + 1 cm of the finger pad midpoint
@@ -67,9 +73,11 @@ RESOLVER = {
 # centre_above_bottom_m: the shape centre relative to the entry's position (its bottom centre).
 OBJECT_CATALOG = {
     "beaker": {
-        "shape": "cylinder", "radius_m": 0.035, "half_height_m": 0.05,
+        # A round object is a CAPSULE (M287, SF-8): radius 0.035 m, segment half length 0.05 m along the beaker axis.
+        # The capsule contains the cylinder exactly (its end caps reach 3.5 cm past the rim, which is conservative).
+        "shape": "capsule", "radius_m": 0.035, "half_height_m": 0.05,
         "centre_above_bottom_m": 0.05, "graspable": True, "round": True,
-        "source": "models/objects/beaker.xml geom task_beaker_glass: cylinder radius 0.035, half height 0.05 at z 0.05",
+        "source": "models/objects/beaker.xml geom task_beaker_glass: cylinder radius 0.035, half height 0.05 at z 0.05; catalog shape capsule (M287)",
     },
     "hotplate": {
         "shape": "box", "half_m": (0.09, 0.09, 0.03),

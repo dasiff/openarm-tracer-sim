@@ -28,12 +28,16 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from src.safety_filter.config import LAB_MAP_SCENE  # noqa: E402
+from src.task_config import TASK_CFG  # noqa: E402  (only the bench_open setting is read; the scene is not built here)
+from src.task_beaker_hotplate import BENCH_RAIL_GEOMS  # noqa: E402  (the rails the sim deletes when the bench is open)
 
 DEFAULT_OUT = ROOT / "data" / "safety_filter" / "lab_map.json"
 
-# (fixture name, body in the scene, geom-name test)
+# (fixture name, body in the scene, geom-name test). The bench frame rails are dropped when bench_open is on
+# (the same rule as the simulator: src/task_beaker_hotplate.remove_bench_rails); see survey() below.
 FIXTURES = [
     ("bench", "bench", lambda n: n.startswith("bench_")),                       # bench_top, bench_frame_*, bench_leg_*
+    ("bench_gas", "bench", lambda n: n == "gas_manifold" or n.startswith("gas_knob_")),  # the gas manifold and its knobs (fixed, on the bench top)
     ("sink", "bench", lambda n: n in ("sink_basin_outer", "faucet_post", "faucet_spout")),
     ("walls", "world", lambda n: n.startswith("wall_")),
     ("back_counter", "back_counter", lambda n: True),
@@ -65,7 +69,11 @@ def enclosing_half(model, g):
     raise ValueError(f"geom type {t} not handled")
 
 
-def survey(scene_path):
+def survey(scene_path, bench_open=None):
+    """Fixtures and exclusions of the scene. bench_open (default: TASK_CFG bench_open): when True the four frame
+    rails are not written, as the simulator deletes them. Returns (fixtures, excluded, scene sha256, bench_open)."""
+    if bench_open is None:
+        bench_open = bool(TASK_CFG["bench_open"])
     scene_path = Path(scene_path)
     model = mujoco.MjModel.from_xml_path(str(scene_path.resolve()))
     data = mujoco.MjData(model)
@@ -83,6 +91,11 @@ def survey(scene_path):
                 continue
             gname = name(mujoco.mjtObj.mjOBJ_GEOM, g)
             if not wanted(gname):
+                continue
+            if bench_open and gname in BENCH_RAIL_GEOMS:
+                excluded.append({"fixture": None, "body": body_name, "geom": gname,
+                                 "reason": "frame rail: deleted by the open-bench rule (bench_open True, TASK_CFG)"})
+                matched.add(g)
                 continue
             matched.add(g)
             if model.geom_contype[g] == 0:
@@ -107,7 +120,7 @@ def survey(scene_path):
             if model.geom_bodyid[g] == body and g not in matched and (model.geom_contype[g] > 0 or model.geom_conaffinity[g] > 0):
                 excluded.append({"fixture": None, "body": body_name, "geom": name(mujoco.mjtObj.mjOBJ_GEOM, g),
                                  "reason": "collidable, not in the fixture list"})
-    return fixtures, excluded, hashlib.sha256(scene_path.read_bytes()).hexdigest()
+    return fixtures, excluded, hashlib.sha256(scene_path.read_bytes()).hexdigest(), bench_open
 
 
 def main():
@@ -115,11 +128,13 @@ def main():
     ap.add_argument("--scene", default=str(ROOT / LAB_MAP_SCENE))
     ap.add_argument("--out", default=str(DEFAULT_OUT))
     args = ap.parse_args()
-    fixtures, excluded, sha = survey(args.scene)
+    fixtures, excluded, sha, bench_open = survey(args.scene)
     doc = {
-        "schema": 1,
+        "schema": 2,
         "scene": str(Path(args.scene).resolve().relative_to(ROOT)),
         "scene_sha256": sha,
+        "bench_open": bench_open,
+        "bench_open_source": "src/task_config.py TASK_CFG['bench_open'] [M078]; the map is valid only for this setting",
         "frame": "scene world (the robot base at its zero pose)",
         "included_fixtures": sorted({f["fixture"] for f in fixtures}),
         "fixtures": fixtures,

@@ -423,7 +423,7 @@ def make_scripted_manipulation(model, data, world, side, home_q, task_cfg=TASK_C
             if u >= 1.0 and cfg["blend_radius_m"] > 0 and err < cfg["blend_radius_m"] and nxt is not None and nxt["kind"] == "move":
                 advance = True                                         # M200: within the blend radius the next move starts now, at the current pad speed (no stop, no ramp)
                 S["blend_v"], S["blend_handover"] = v_pad, True
-            elif u >= 1.0 and err < cfg["tol_m"] and ang < cfg["tol_rad"] and settled(t, cfg["settle_dwell_s"]):
+            elif u >= 1.0 and err < (cfg["place_down_tol_m"] if (st["name"] == "DOWN" and S["ctx"].get("primitive") == "place") else cfg["tol_m"]) and ang < cfg["tol_rad"] and settled(t, cfg["settle_dwell_s"]):   # place DOWN has its own settle tolerance (decision M303); every other move uses tol_m
                 advance = True
             elif el > cfg["timeout_factor"] * st["T"] + cfg["timeout_extra_s"]:
                 fail(f"{st['name']}: not reached after {el:.1f} s: {1000 * err:.1f} mm and {math.degrees(ang):.1f} deg from the waypoint")

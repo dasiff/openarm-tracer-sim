@@ -1,14 +1,16 @@
-"""Stance selection by weighted random sampling from the A8 Gaussian reach model (decided by David, 2026-11-10; decisions-log M299).
+"""Stance selection by weighted random sampling from the A8 Gaussian reach model (decided by David, 2026-11-10; decisions-log M299, Revisions 1 to 3).
 
 What the pipeline runs (src/stance_select.apply_stance_selection calls only this module):
-  1. Draw a batch of N stances, uniformly and continuously: x, y in the rectangle around the task's objects grown by the A8 margin; the heading uniformly within
-     sampler_heading_half_width_deg of the direction from the stance's (x, y) to the midpoint of the task points (Revision 2, 2026-11-10: the robot faces the objects from
-     wherever it stands); the pedestal in the pedestal range. While sampler_heading_held is True the heading is held at TASK_CFG's staging_yaw (-90 deg) instead, because
-     the staging and navigation are not checked at other headings (report: docs/reports/gaussian_sampling_selection_20261110.md).
-  2. Score each stance with the A8 count (src/reach_model.predict_count_asym, the same formula the fit used). The shoulder position comes from the stance; each
-     task point (the pick's grasp point, the place's set-down point) gives one count; the stance's score is the LOWER of its counts (the worst point).
-  3. Weight = score ** weight power. Draw one stance with probability proportional to its weight.
-  4. Run the full check on that stance with its values unchanged. Stop at the first pass. A failed stance is not put back; at most `sampler_max_draws` checks run.
+  1. Draw a batch of N stances in polar coordinates around the midpoint of the task points (Revision 3): the pedestal, then the
+     left shoulder's floor position at a distance chosen so that the shoulder-to-centre distance lies between the inner limit r_in
+     (measured from the reach maps) and the outer limit r_out (A8: r0 + 2 sr), with equal floor areas equally likely; the base is placed
+     so that the shoulder is there, with a heading within sampler_heading_half_width_deg of facing the centre from the shoulder.
+     A stance whose task point is closer than r_in to the shoulder is dropped and drawn again. While sampler_heading_held is True the
+     heading is held at TASK_CFG's staging_yaw (-90 deg) instead, because the staging and navigation are not checked at other headings.
+  2. Score each stance with the A8 count (src/reach_model.predict_count_asym). The shoulder position comes from the stance; each task
+     point (the pick's grasp point, the place's set-down point) gives one count; the stance's score is the LOWER of its counts.
+  3. Weight = score ** weight power. Draw one stance with probability proportional to its weight, without putting failed stances back.
+  4. Run the full check on that stance with its values unchanged. Stop at the first pass; at most `sampler_max_draws` checks run.
   5. The sampling seed comes from the clock and is saved in the record, so the batch and every draw can be reproduced from it.
 
 The arm used for scoring is BENCH_STANCE_CFG["arm"] (left). The right arm would use the mirrored model (reach_model.arm_params).
@@ -22,9 +24,9 @@ from src.reach_model import arm_params, shoulder_height
 from src.reach_model import predict_count_asym, A8
 
 
-def margin_m(cfg_sigmas):
-    """The sampling rectangle's growth on every side: the A8 radial centre plus `cfg_sigmas` radial widths (r0 + k * sr), metres."""
-    return A8["r0"] + cfg_sigmas * A8["sr"]
+def outer_limit_m(sigmas):
+    """r_out: the A8 radial centre plus `sigmas` radial widths (r0 + k * sr), metres (about 0.89 m for k = 2)."""
+    return A8["r0"] + sigmas * A8["sr"]
 
 
 def _turn(h, x, y):
@@ -79,42 +81,86 @@ def task_points(targets):
     return out
 
 
-def facing_heading(xs, ys, points):
-    """The direction (radians, world) from each stance's floor position (xs, ys) to the midpoint of the task points (their mean x, y)."""
-    mx = float(np.mean([p[0] for p in points]))
-    my = float(np.mean([p[1] for p in points]))
-    return np.arctan2(my - ys, mx - xs)
+def draw_batch(points, geom, arm, cfg, seed, held_heading=None):
+    """The batch, drawn from one seed in polar coordinates around the centre of the task points (Revision 3).
 
-
-def draw_batch(points, cfg, seed, held_heading=None):
-    """The whole batch, drawn from one seed: x, y, pedestal, then the headings (or the held heading for all).
+    Each attempt: the pedestal q (uniform in pedestal_range); the shoulder's height gives dz to the centre; if r_out <= |dz| the pedestal is drawn again (the
+    attempt is spent). Otherwise the floor distance d of the shoulder from the centre is d = sqrt(U (d_max^2 - d_min^2) + d_min^2), with
+    d_min = sqrt(max(r_in^2 - dz^2, 0)) and d_max = sqrt(r_out^2 - dz^2) (equal floor areas equally likely); the direction phi is uniform in 0..360 deg;
+    the shoulder's floor position is centre + d (cos phi, sin phi). The heading is the facing direction from that position to the centre plus a uniform
+    offset in +- sampler_heading_half_width_deg (or the held heading). The base origin is the shoulder's floor position minus the shoulder's horizontal
+    offset (geom shoulder x, y) turned by the heading. A stance with a task point closer than r_in to the shoulder (3D) is dropped and drawn again.
+    Attempts are capped at sampler_redraw_factor * N; if the cap is hit the stances kept so far are the batch.
 
     Args:
         points (list of (x, y, z)): The task points.
-        cfg (dict): BENCH_STANCE_CFG (sampler_batch, sampler_margin_sigmas, pedestal_range, sampler_heading_half_width_deg).
+        geom (dict): robot_geometry(model).
+        arm (str): "left" (the scoring arm).
+        cfg (dict): BENCH_STANCE_CFG (sampler_batch, sampler_r_in_m, sampler_outer_sigmas, sampler_redraw_factor, sampler_heading_half_width_deg, pedestal_range).
         seed (int): The sampling seed.
         held_heading (float or None): When not None (radians), every stance gets this heading and no heading is drawn.
 
     Returns:
-        dict: "rng", "xs", "ys", "qs", "headings" (numpy arrays of length N), "facing" (the facing direction of each stance), "box" ((x_lo, x_hi, y_lo, y_hi)).
+        dict: "rng" (the generator, to continue with the draws), "xs", "ys" (base origin), "qs", "headings", "facing" (from the shoulder to the centre), "shoulder" ((N, 3)
+        shoulder world position), "dz", "d" (floor distance shoulder to centre), "phi", "attempts" (attempts used to fill the batch), "drops" (task point
+        closer than r_in), "pedestal_redraws" (r_out <= |dz|), "cap_hit" (bool), "r_in", "r_out", "offset" ((sx, sy) torso-frame shoulder offset from the base centre).
     """
     rng = np.random.default_rng(seed)
     n = int(cfg["sampler_batch"])
-    grow = margin_m(cfg["sampler_margin_sigmas"])
-    px = np.array([p[0] for p in points])
-    py = np.array([p[1] for p in points])
-    box = (float(px.min() - grow), float(px.max() + grow), float(py.min() - grow), float(py.max() + grow))
+    r_in = float(cfg["sampler_r_in_m"])
+    r_out = outer_limit_m(cfg["sampler_outer_sigmas"])
+    cap = int(cfg["sampler_redraw_factor"]) * n
     q_lo, q_hi = cfg["pedestal_range"]
-    xs = rng.uniform(box[0], box[1], n)
-    ys = rng.uniform(box[2], box[3], n)
-    qs = rng.uniform(q_lo, q_hi, n)
-    facing = facing_heading(xs, ys, points)
-    if held_heading is not None:
-        headings = np.full(n, float(held_heading))
-    else:
-        half = math.radians(float(cfg["sampler_heading_half_width_deg"]))
-        headings = facing + rng.uniform(-half, half, n)
-    return {"rng": rng, "xs": xs, "ys": ys, "qs": qs, "headings": headings, "facing": facing, "box": box}
+    P = np.array(points, float)
+    cx, cy, cz = P.mean(axis=0)                                  # the centre: the midpoint of the task points
+    sx, sy, sz = geom["shoulder"][arm]
+    half = math.radians(float(cfg["sampler_heading_half_width_deg"]))
+    out = {k: [] for k in ("xs", "ys", "qs", "headings", "facing", "shoulder", "dz", "d", "phi")}
+    kept, attempts, drops, redraws, cap_hit = 0, 0, 0, 0, False
+    while kept < n:
+        if attempts >= cap:
+            cap_hit = True
+            break
+        m = max(64, 2 * (n - kept))
+        q = rng.uniform(q_lo, q_hi, m)
+        Sz = shoulder_height(geom, arm, q)
+        dz = Sz - cz
+        ok_q = r_out > np.abs(dz)                                 # the pedestal must allow an outer limit beyond the height gap
+        dmin = np.sqrt(np.maximum(r_in ** 2 - dz ** 2, 0.0))
+        dmax = np.sqrt(np.maximum(r_out ** 2 - dz ** 2, 0.0))
+        U = rng.uniform(0.0, 1.0, m)
+        d = np.sqrt(U * (dmax ** 2 - dmin ** 2) + dmin ** 2)
+        phi = rng.uniform(0.0, 2 * math.pi, m)
+        Sx, Sy = cx + d * np.cos(phi), cy + d * np.sin(phi)      # the shoulder's floor position
+        facing = np.arctan2(cy - Sy, cx - Sx)
+        if held_heading is not None:
+            heading = np.full(m, float(held_heading))
+        else:
+            heading = facing + rng.uniform(-half, half, m)
+        ox, oy = _turn(heading, sx, sy)
+        xs, ys = Sx - ox, Sy - oy                                 # the base origin: the shoulder minus its offset turned by the heading
+        dist = np.min(np.stack([np.sqrt((Sx - px) ** 2 + (Sy - py) ** 2 + (Sz - pz) ** 2) for px, py, pz in P]), axis=0)
+        inner = dist >= r_in
+        good = ok_q & inner
+        # attempts are used in order; the batch is filled from the first good ones
+        idx = np.nonzero(good)[0]
+        take = idx[: n - kept]
+        if len(take) == n - kept:
+            used = int(take[-1]) + 1
+        else:
+            used = m
+        attempts += used
+        seen = slice(0, used)
+        redraws += int((~ok_q[seen]).sum())
+        drops += int((ok_q[seen] & ~inner[seen]).sum())
+        for k, v in (("xs", xs), ("ys", ys), ("qs", q), ("headings", heading), ("facing", facing), ("dz", dz), ("d", d), ("phi", phi)):
+            out[k].append(np.asarray(v)[take])
+        out["shoulder"].append(np.stack([Sx[take], Sy[take], Sz[take]], axis=1))
+        kept += len(take)
+    cat = {k: (np.concatenate(v) if v and len(v[0]) else np.zeros(0)) for k, v in out.items() if k != "shoulder"}
+    cat["shoulder"] = np.concatenate(out["shoulder"]) if out["shoulder"] else np.zeros((0, 3))
+    cat.update(rng=rng, attempts=attempts, drops=drops, pedestal_redraws=redraws, cap_hit=cap_hit, r_in=r_in, r_out=r_out, offset=(float(sx), float(sy)))
+    return cat
 
 
 def select_stance(points, geom, arm, held_heading, cfg, check, seed=None, say=print):
@@ -125,29 +171,36 @@ def select_stance(points, geom, arm, held_heading, cfg, check, seed=None, say=pr
         geom (dict): robot_geometry(model).
         arm (str): The arm used for scoring.
         held_heading (float or None): The heading held for every stance (radians), or None to draw each stance's heading (see draw_batch).
-        cfg (dict): BENCH_STANCE_CFG (uses sampler_batch, sampler_weight_power, sampler_max_draws, sampler_margin_sigmas, pedestal_range).
+        cfg (dict): BENCH_STANCE_CFG (uses sampler_batch, sampler_weight_power, sampler_max_draws, sampler_r_in_m, sampler_outer_sigmas, sampler_redraw_factor,
+            sampler_heading_half_width_deg, pedestal_range).
         check (callable): check(stance) -> dict with "ok" (bool), "failed" (list), "reason" (str), "seconds" (float or None), "seed" (the full check's seed or None).
             stance is (x, y, heading, q) with float values, unchanged.
         seed (int or None): The sampling seed. None: taken from the clock (time.time_ns()).
         say (callable): Progress lines.
 
     Returns:
-        dict: "ok", "stop" (the reason when not ok), "seed", "arm", "heading", "box" ((x_lo, x_hi, y_lo, y_hi)), "batch" (N), "score" (min, median, max, fraction at zero),
-        "draws" (one dict per full check: "draw", "x", "y", "heading", "pedestal", "beaker_score"/"hotplate_score" (per point), "score", "weight", "ok", "failed", "reason", "seconds", "seed"),
-        "chosen" (the draw dict that passed, or None).
+        dict: "ok", "stop" (the reason when not ok), "seed", "arm", "held_heading", "batch" (stances kept), "attempts", "drops", "pedestal_redraws", "cap_hit",
+        "r_in", "r_out", "offset", "score" (min, median, max, fraction at zero), "draws" (one dict per full check: "draw", "index", "x", "y", "heading", "facing",
+        "pedestal", "shoulder" (x, y, z), "dz", "d", "score", "weight", per point "point_j_score", "ok", "failed", "reason", "seconds", "seed"), "chosen" (the draw that passed, or None).
     """
     if seed is None:
         seed = time.time_ns() % (2 ** 32)
-    b = draw_batch(points, cfg, seed, held_heading)
-    rng, n, box = b["rng"], int(cfg["sampler_batch"]), b["box"]
+    b = draw_batch(points, geom, arm, cfg, seed, held_heading)
+    rng = b["rng"]
     xs, ys, qs, headings = b["xs"], b["ys"], b["qs"], b["headings"]
-    q_lo, q_hi = cfg["pedestal_range"]
+    n = len(xs)
+    rec = {"seed": int(seed), "arm": arm, "held_heading": None if held_heading is None else float(held_heading), "batch": n, "attempts": int(b["attempts"]),
+           "drops": int(b["drops"]), "pedestal_redraws": int(b["pedestal_redraws"]), "cap_hit": bool(b["cap_hit"]), "r_in": float(b["r_in"]), "r_out": float(b["r_out"]),
+           "offset": [float(v) for v in b["offset"]], "pedestal_range": [float(v) for v in cfg["pedestal_range"]],
+           "draws": [], "chosen": None, "ok": False, "stop": None, "score": None}
+    if n == 0:
+        rec["stop"] = f"no stance kept: the attempt cap ({int(cfg['sampler_redraw_factor']) * int(cfg['sampler_batch'])}) was reached first"
+        return rec
     scores = a8_scores(xs, ys, qs, headings, points, geom, arm)
     weights = scores ** float(cfg["sampler_weight_power"])
-    rec = {"seed": int(seed), "arm": arm, "held_heading": None if held_heading is None else float(held_heading), "batch": n, "box": box, "pedestal_range": [float(q_lo), float(q_hi)], "margin_m": margin_m(cfg["sampler_margin_sigmas"]),
-           "score": {"min": float(scores.min()), "median": float(np.median(scores)), "max": float(scores.max()), "zero_fraction": float(np.mean(scores <= 0.0))},
-           "draws": [], "chosen": None, "ok": False, "stop": None}
-    say(f"[sampler] seed {seed}: {n} stances, score min {rec['score']['min']:.3f} median {rec['score']['median']:.3f} max {rec['score']['max']:.3f}, zero fraction {rec['score']['zero_fraction']:.3f}")
+    rec["score"] = {"min": float(scores.min()), "median": float(np.median(scores)), "max": float(scores.max()), "zero_fraction": float(np.mean(scores <= 0.0))}
+    say(f"[sampler] seed {seed}: {n} stances kept in {b['attempts']} attempts ({b['drops']} dropped inside r_in, {b['pedestal_redraws']} pedestal redraws, cap hit {b['cap_hit']}); "
+        f"score min {rec['score']['min']:.3f} median {rec['score']['median']:.3f} max {rec['score']['max']:.3f}, zero fraction {rec['score']['zero_fraction']:.3f}")
     if weights.sum() <= 0.0:
         rec["stop"] = "every stance in the batch has a zero weight (A8 score zero): no stance to draw"
         return rec
@@ -162,12 +215,14 @@ def select_stance(points, geom, arm, held_heading, cfg, check, seed=None, say=pr
         stance = (float(xs[i]), float(ys[i]), float(headings[i]), float(qs[i]))
         r = check(stance)
         row = {"draw": k + 1, "index": i, "x": stance[0], "y": stance[1], "heading": stance[2], "facing": float(b["facing"][i]), "pedestal": stance[3],
-               "beaker_score": None, "hotplate_score": None, "score": float(scores[i]), "weight": float(weights[i]),
+               "shoulder": [float(v) for v in b["shoulder"][i]], "dz": float(b["dz"][i]), "d": float(b["d"][i]),
+               "score": float(scores[i]), "weight": float(weights[i]),
                "ok": bool(r["ok"]), "failed": list(r.get("failed", [])), "reason": str(r.get("reason", ""))[:300], "seconds": r.get("seconds"), "seed": r.get("seed")}
         for j, pnt in enumerate(points):                        # the per-point counts (the score is the lower one)
             row[f"point_{j}_score"] = float(a8_scores(np.array([stance[0]]), np.array([stance[1]]), np.array([stance[3]]), np.array([stance[2]]), [pnt], geom, arm)[0])
         rec["draws"].append(row)
-        say(f"[sampler] draw {k + 1}: x {stance[0]:.4f} y {stance[1]:.4f} pedestal {stance[3]:.4f} score {row['score']:.3f}: full check {'PASS' if row['ok'] else 'FAIL ' + str(row['failed'])}")
+        say(f"[sampler] draw {k + 1}: x {stance[0]:.4f} y {stance[1]:.4f} heading {math.degrees(stance[2]):.1f} pedestal {stance[3]:.4f} score {row['score']:.3f}: "
+            f"full check {'PASS' if row['ok'] else 'FAIL ' + str(row['failed'])}")
         if row["ok"]:
             rec.update(ok=True, chosen=row)
             return rec

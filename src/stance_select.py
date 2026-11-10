@@ -740,7 +740,14 @@ def apply_stance_selection(tagged, task_cfg, maps_dir="data/reach_map", cfg=BENC
             return bd > fc.cfg["body_clearance"], pair, bd
 
         record_dir = Path(__file__).resolve().parents[1] / "data" / "logs" / "sampler_records"       # logging only: the selection record is written here (M299)
-        rec = select_stance(task_points([targets[i] for i in steps]), robot_geometry(fc.model), cfg["arm"], held, cfg, check, say=say, gate=gate, record_dir=record_dir)
+        top = fc.model.geom("bench_top")                      # the bench top footprint: the base distance to its edge (negative: over it)
+        tc, th_ = fc.scene_data.geom_xpos[top.id], fc.model.geom_size[top.id]
+        def base_metric(x, y):
+            dx, dy = abs(x - tc[0]) - th_[0], abs(y - tc[1]) - th_[1]
+            outside = math.hypot(max(dx, 0.0), max(dy, 0.0))
+            return outside if outside > 0 else max(dx, dy)
+        rec = select_stance(task_points([targets[i] for i in steps]), robot_geometry(fc.model), cfg["arm"], held, cfg, check, say=say, gate=gate, record_dir=record_dir,
+                            point_labels=[targets[i]["primitive"] for i in steps], base_metric=base_metric)
         rep["sampler"] = rec
         if not rec["ok"]:
             out["stop"] = "stance sampler: " + str(rec["stop"])

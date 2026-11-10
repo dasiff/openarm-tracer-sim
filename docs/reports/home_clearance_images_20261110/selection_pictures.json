@@ -1,0 +1,67 @@
+{
+ "seed": 2986646089,
+ "record_path": "/home/vboxuser/projects/openarm-tracer-sim/data/logs/sampler_records/sampler_2986646089.json",
+ "stop": null,
+ "ok": true,
+ "gate_failures": 4,
+ "gate_pairs": {
+  "openarm_body_link0_collision vs bench_top": 4
+ },
+ "score": {
+  "min": 0.0,
+  "median": 0.013009256234466433,
+  "max": 3.5996727435043407,
+  "zero_fraction": 0.0926
+ },
+ "attempts": 10000,
+ "drops": 0,
+ "pedestal_redraws": 0,
+ "table": [
+  {
+   "draw": 1,
+   "x": 0.8125492535140361,
+   "y": 1.1151458378825034,
+   "heading": -1.5707963267948966,
+   "pedestal": 0.09194708971711801,
+   "score": 3.2359821287150092,
+   "weight": 10.471580337362923,
+   "ok": true,
+   "failed": [],
+   "reason": "",
+   "seconds": 48.05,
+   "seed": 1794281505118846624
+  }
+ ],
+ "selected_draw": 1,
+ "pictures_for": {
+  "selected": {
+   "x": 0.8125492535140361,
+   "y": 1.1151458378825034,
+   "heading_deg": -90.0,
+   "pedestal": 0.09194708971711801
+  }
+ },
+ "pictures": {
+  "selected": {
+   "files": {
+    "top": "sel_selected_top.png",
+    "side": "sel_selected_side.png"
+   },
+   "pair": {
+    "gap_mm": 77.56327824115796,
+    "arm_part": "openarm_right_right_finger_collision",
+    "object": "task_hotplate_base",
+    "p_arm": [
+     0.7082925293344847,
+     0.8050104106521301,
+     1.074653466452968
+    ],
+    "p_obj": [
+     0.7100000000000002,
+     0.7500000000000001,
+     1.02
+    ]
+   }
+  }
+ }
+}

@@ -177,9 +177,9 @@ def write_record(rec, path):
     return str(path)
 
 
-def select_stance(points, geom, arm, held_heading, cfg, check, seed=None, say=print, gate=None, record_dir=None):
+def select_stance(points, geom, arm, held_heading, cfg, check, seed=None, say=print, gate=None, record_dir=None, point_labels=None, base_metric=None):
     """The selection (see _select_stance), then the record is written to record_dir/sampler_<seed>.json (also when it stops or fails). The record is logging only."""
-    rec = _select_stance(points, geom, arm, held_heading, cfg, check, seed, say, gate)
+    rec = _select_stance(points, geom, arm, held_heading, cfg, check, seed, say, gate, point_labels, base_metric)
     if record_dir is not None:
         rec["record_path"] = write_record(dict(rec, settings={k: cfg.get(k) for k in ("sampler_batch", "sampler_weight_power", "sampler_max_draws", "sampler_gate_max_failures", "sampler_r_in_m",
                                                                                       "sampler_outer_sigmas", "sampler_redraw_factor", "sampler_heading_half_width_deg", "sampler_heading_held", "pedestal_range")}),
@@ -187,7 +187,7 @@ def select_stance(points, geom, arm, held_heading, cfg, check, seed=None, say=pr
     return rec
 
 
-def _select_stance(points, geom, arm, held_heading, cfg, check, seed=None, say=print, gate=None):
+def _select_stance(points, geom, arm, held_heading, cfg, check, seed=None, say=print, gate=None, point_labels=None, base_metric=None):
     """The whole selection: draw, score, weight, draw again, check.
 
     Args:
@@ -260,6 +260,9 @@ def _select_stance(points, geom, arm, held_heading, cfg, check, seed=None, say=p
                "shoulder": [float(v) for v in b["shoulder"][i]], "dz": float(b["dz"][i]), "d": float(b["d"][i]),
                "score": float(scores[i]), "weight": float(weights[i]),
                "ok": bool(r["ok"]), "failed": list(r.get("failed", [])), "reason": str(r.get("reason", "")), "seconds": r.get("seconds"), "seed": r.get("seed")}
+        row["shoulder_to_point_m"] = [float(np.linalg.norm(np.array(row["shoulder"]) - np.array(pnt))) for pnt in points]     # 3D, left shoulder to each task point (logging)
+        row["point_labels"] = list(point_labels) if point_labels is not None else None
+        row["base_to_bench_edge_m"] = None if base_metric is None else float(base_metric(stance[0], stance[1]))                  # negative: the base is over the bench top (logging)
         for j, pnt in enumerate(points):                        # the per-point counts (the score is the lower one)
             row[f"point_{j}_score"] = float(a8_scores(np.array([stance[0]]), np.array([stance[1]]), np.array([stance[3]]), np.array([stance[2]]), [pnt], geom, arm)[0])
         rec["draws"].append(row)

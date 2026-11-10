@@ -33,7 +33,7 @@ Logs: `data/logs/gen5_staging_20261110_195401.log`, `data/logs/gen5_moved_202611
 |---|---|---|
 | candidates generated (passed the body-check gate) | 50 (4 gate failures) | 50 (2 gate failures) |
 | candidates checked (full check) | 5 | 50 |
-| passed full check | 1 (candidate 5) | 9 (9, 14, 16, 21, 25, 28, 38, 39, plus one more on the list) |
+| passed full check | 1 (candidate 5) | 9 (1, 9, 14, 16, 21, 25, 28, 38, 39) |
 | passed dry-run | 1 (candidate 5) | 0 |
 | yielded stance | x 0.6785, y 1.0696, heading -84.6 deg, pedestal 0.1132 m, A9 score 3.199 | none: "no candidate passed both the full check and the dry-run" |
 | dry-run wall time | 19.3 s (1 run) | 175.9 s total (9 runs) |

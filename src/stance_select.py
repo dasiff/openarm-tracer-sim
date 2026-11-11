@@ -816,6 +816,21 @@ def apply_stance_selection(tagged, task_cfg, maps_dir="data/reach_map", cfg=BENC
                 fc._checkers.clear()                                       # a cache: rebuilt when needed, results unchanged
             r = fc.check(stance, points_at_heading(pts, stance[2]))           # M300: the place's back-off point turns with the stance's heading (not the staging yaw)
             results.append(r)
+            # Logging piece 2: record arm solutions if check passed (logging only, no behavior change)
+            if r.get("ok") and len(results) <= len(rec.get("draws", [])):
+                candidate_num = len(results) - 1
+                arm_solutions = {"left": {}, "right": {}}
+                if "ik" in r:
+                    for ik_entry in r.get("ik", []):
+                        if ik_entry.get("ok"):
+                            for side in ["left", "right"]:
+                                task_point_key = ik_entry.get("point_name", f"point_{ik_entry.get('point_idx', 0)}")
+                                arm_solutions[side][task_point_key] = {
+                                    "q": ik_entry.get(f"solution_{side}", []),
+                                    "point": task_point_key,
+                                    "angle": ik_entry.get("angle", None)
+                                }
+                logger.record_full_check_solution(candidate_num, arm_solutions)
             return {"ok": bool(r["ok"]), "failed": list(r.get("failed", [])), "reason": str(r.get("reason", "")), "seconds": (r.get("seconds") or {}).get("total"), "seed": r.get("seed"), "raw": r}
 
         pick_i = next((i for i in steps if targets[i]["primitive"] == "pick"), steps[0])
@@ -830,6 +845,19 @@ def apply_stance_selection(tagged, task_cfg, maps_dir="data/reach_map", cfg=BENC
             except (KeyError, ApproachAngleError) as e:
                 return {"ok": False, "failed": "angles", "reason": f"approach angles missing: {e}", "seconds": 0.0, "subtasks": []}
             res = dry_run_stance(fc.chk, fc.model, stance, task_cfg["beaker_xy"], k, th)
+            # Logging piece 3: record dry-run trajectory data (logging only, no behavior change)
+            if res.get("subtasks") and len(results) <= len(rec.get("draws", [])):
+                candidate_num = len(results) - 1
+                subtask_data = {}
+                for subtask in res.get("subtasks", []):
+                    subtask_name = subtask.get("name", f"subtask_{subtask.get('idx', 0)}")
+                    subtask_data[subtask_name] = {
+                        "name": subtask_name,
+                        "ok": subtask.get("ok", False),
+                        "ticks": subtask.get("ticks", []),
+                        "error": subtask.get("error", None)
+                    }
+                logger.record_dryrun_trajectory(candidate_num, subtask_data)
             return {"ok": res["ok"], "failed": res["failed"], "reason": res["reason"], "seconds": res["seconds"], "subtasks": res["subtasks"], "pick_k": int(k), "place_theta_deg": th}
 
         def gate(stance):
@@ -874,6 +902,10 @@ def apply_stance_selection(tagged, task_cfg, maps_dir="data/reach_map", cfg=BENC
         if got is not None:
             logger.record_accepted(got.get("sampler_draw", -1))
         logger.save_candidates_list()
+        # Logging piece 2: save full check solutions (logging only, no behavior change)
+        logger.save_full_check_solutions()
+        # Logging piece 3: save dry-run trajectories (logging only, no behavior change)
+        logger.save_dryrun_trajectories()
 
         if got is None:
             out["stop"] = "stance sampler: " + str(rec.get("stop"))

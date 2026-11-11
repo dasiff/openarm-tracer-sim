@@ -761,7 +761,9 @@ def apply_stance_selection(tagged, task_cfg, maps_dir="data/reach_map", cfg=BENC
         (runs, the sampler record under "sampler", chosen).
     """
     import gc
+    import time
     from types import SimpleNamespace
+    from pathlib import Path
     from src.full_check import FullCheck
     from src.stance_finder import robot_geometry
     from src.edge_sampling import select_edge_stance, pieces_for
@@ -771,8 +773,12 @@ def apply_stance_selection(tagged, task_cfg, maps_dir="data/reach_map", cfg=BENC
     from src.world_model import SimGroundTruthSource, WorldModel
     from src.nav_footprint import obstacles_from_model
     from src.usable_edges import attach, base_length, furniture_tops, usable_segments
+    from src.stance_search_logging import StanceSearchLogger
     yaw = float(task_cfg["staging_yaw"])
     fc = FullCheck(maps={**bs.load_maps(maps_dir)}, task_cfg=task_cfg, maps_dir=maps_dir)
+    run_dir = Path(__file__).resolve().parents[1] / "data" / "demo_record" / "temp_stance_search"
+    logger = StanceSearchLogger(run_dir)
+    logger.record_search_start(sim_time=0.0)
     try:
         segs = tagged["segments"]
         steps = _manip_steps(tagged)
@@ -856,6 +862,19 @@ def apply_stance_selection(tagged, task_cfg, maps_dir="data/reach_map", cfg=BENC
         gen = iter_verified_stances(objects, pieces, geom, cfg["arm"], cfg, check, verify, gate=gate, say=say, record_dir=record_dir, base_metric=base_metric, point_labels=labels, rec=rec)
         got = next(gen, None)                                 # M301, M302: the first candidate that passes the full check and the dry-run; None when none does
         rep["sampler"] = rec
+
+        # Logging piece 1: record all candidates tried (logging only, no behavior change)
+        if "draws" in rec:
+            for i, draw in enumerate(rec["draws"]):
+                cand_data = logger.record_candidate_attempted(i, draw["x"], draw["y"], draw["heading"], draw["pedestal"], sim_time=0.0)
+                if i < len(results):
+                    res = results[i]
+                    logger.record_candidate_check_result(cand_data, "full_check", res.get("ok", False), res.get("reason", ""))
+                logger.add_candidate(cand_data)
+        if got is not None:
+            logger.record_accepted(got.get("sampler_draw", -1))
+        logger.save_candidates_list()
+
         if got is None:
             out["stop"] = "stance sampler: " + str(rec.get("stop"))
             rep["notes"].append(out["stop"])

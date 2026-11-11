@@ -121,16 +121,12 @@ class StanceSearchLogger:
 
     def save_full_check_solutions(self):
         """Save full check solutions to JSON file (PIECE 2)."""
-        if not self.full_check_solutions:
-            return
         filepath = self.run_dir / "full_check_solutions.json"
         with open(filepath, 'w') as f:
             json.dump(self.full_check_solutions, f, indent=1)
 
     def save_dryrun_trajectories(self):
         """Save dry-run trajectories to JSON file (PIECE 3)."""
-        if not self.dryrun_data:
-            return
         filepath = self.run_dir / "dryrun_trajectories.json"
         with open(filepath, 'w') as f:
             json.dump(self.dryrun_data, f, indent=1)

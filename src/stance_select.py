@@ -776,8 +776,7 @@ def apply_stance_selection(tagged, task_cfg, maps_dir="data/reach_map", cfg=BENC
     from src.stance_search_logging import StanceSearchLogger
     yaw = float(task_cfg["staging_yaw"])
     fc = FullCheck(maps={**bs.load_maps(maps_dir)}, task_cfg=task_cfg, maps_dir=maps_dir)
-    run_dir = Path(__file__).resolve().parents[1] / "data" / "demo_record" / "temp_stance_search"
-    logger = StanceSearchLogger(run_dir)
+    logger = StanceSearchLogger()
     logger.record_search_start(sim_time=0.0)
     try:
         segs = tagged["segments"]
@@ -816,8 +815,8 @@ def apply_stance_selection(tagged, task_cfg, maps_dir="data/reach_map", cfg=BENC
                 fc._checkers.clear()                                       # a cache: rebuilt when needed, results unchanged
             r = fc.check(stance, points_at_heading(pts, stance[2]))           # M300: the place's back-off point turns with the stance's heading (not the staging yaw)
             results.append(r)
-            # Logging piece 2: record arm solutions if check passed (logging only, no behavior change)
-            if r.get("ok") and len(results) <= len(rec.get("draws", [])):
+            # Logging piece 2: record arm solutions for all candidates that reach full check (logging only, no behavior change)
+            if len(results) <= len(rec.get("draws", [])):
                 candidate_num = len(results) - 1
                 arm_solutions = {"left": {}, "right": {}}
                 if "ik" in r:

@@ -1,26 +1,37 @@
 """Logging-only module for stance search results. No algorithm or behavior change.
 
-Saves JSON files to the run directory:
+Saves JSON files to a unique search directory:
   - candidates_list.json: all candidates tried, including body-check rejects
   - full_check_solutions.json: arm joint solutions from full check (piece 2)
   - dryrun_trajectories.json: per-tick data from dry-run (piece 3)
+
+Each search gets its own subdirectory to prevent overwrites across searches.
 """
 
 import json
 import time
+import uuid
 from pathlib import Path
 
 
 class StanceSearchLogger:
     """Logs stance search results to JSON files without changing behavior."""
 
-    def __init__(self, run_dir):
-        """Initialize logger for a run directory.
+    def __init__(self, base_dir=None):
+        """Initialize logger for a unique search directory.
 
         Args:
-            run_dir: Path to the run's directory where logs will be saved.
+            base_dir: Base directory for stance search logs. If None, uses data/demo_record/stance_search.
+                      A unique subdirectory is created for each search.
         """
-        self.run_dir = Path(run_dir)
+        if base_dir is None:
+            base_dir = Path(__file__).resolve().parents[1] / "data" / "demo_record" / "stance_search"
+
+        base_dir = Path(base_dir)
+        base_dir.mkdir(parents=True, exist_ok=True)
+
+        search_id = str(uuid.uuid4())[:8]
+        self.run_dir = base_dir / search_id
         self.run_dir.mkdir(parents=True, exist_ok=True)
         self.search_start_time = time.time()
         self.search_start_sim_time = None  # Set by caller with current sim time

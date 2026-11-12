@@ -776,7 +776,7 @@ def apply_stance_selection(tagged, task_cfg, maps_dir="data/reach_map", cfg=BENC
     from src.world_model import SimGroundTruthSource, WorldModel
     from src.nav_footprint import obstacles_from_model
     from src.usable_edges import attach, base_length, furniture_tops, usable_segments
-    from src.stance_search_logging import StanceSearchLogger
+    from src.stance_search_logging import StanceSearchLogger, solve_record
     yaw = float(task_cfg["staging_yaw"])
     fc = FullCheck(maps={**bs.load_maps(maps_dir)}, task_cfg=task_cfg, maps_dir=maps_dir)
     logger = StanceSearchLogger(run_dir=run_dir)
@@ -809,6 +809,17 @@ def apply_stance_selection(tagged, task_cfg, maps_dir="data/reach_map", cfg=BENC
         pts = [p for i in steps for p in targets[i]["points"]]
         results = []
         number_of = {}                                                    # stance -> candidate number (gate, check and verify get the same tuple)
+        capture = {"stance": None, "solves": []}                          # logging (M314): the full check's solves at the candidate's own stance while it is checked
+        solve_plain = fc._solve_stance
+
+        def solve_logged(s, points, approach_bin, warm=None, theta=0.0):
+            """The check's own solve, unchanged; at the candidate's own stance its answer is kept for the log."""
+            info = solve_plain(s, points, approach_bin, warm, theta=theta)
+            if capture["stance"] is not None and tuple(s) == capture["stance"]:
+                capture["solves"].append(solve_record(cfg["arm"], points, info, approach_bin, theta))
+            return info
+
+        fc._solve_stance = solve_logged
 
         def clocks():
             """The simulator's clock (the scene data's time) and the clock of the check's own data, both in seconds (logging)."""
@@ -822,9 +833,12 @@ def apply_stance_selection(tagged, task_cfg, maps_dir="data/reach_map", cfg=BENC
                 fc._checkers.clear()                                       # a cache: rebuilt when needed, results unchanged
             n = number_of[stance]
             logger.begin_check(n, "full_check", clocks())
+            capture["stance"], capture["solves"] = tuple(stance), []
             r = fc.check(stance, points_at_heading(pts, stance[2]))           # M300: the place's back-off point turns with the stance's heading (not the staging yaw)
             results.append(r)
             logger.end_check(n, "full_check", r["ok"], r.get("reason", ""), clocks())
+            logger.add_solutions(n, capture["solves"])
+            capture["stance"] = None
             return {"ok": bool(r["ok"]), "failed": list(r.get("failed", [])), "reason": str(r.get("reason", "")), "seconds": (r.get("seconds") or {}).get("total"), "seed": r.get("seed"), "raw": r}
 
         pick_i = next((i for i in steps if targets[i]["primitive"] == "pick"), steps[0])
@@ -916,6 +930,7 @@ def apply_stance_selection(tagged, task_cfg, maps_dir="data/reach_map", cfg=BENC
         out.update(ok=True)
         return out
     finally:
+        fc.__dict__.pop("_solve_stance", None)                # the check's own method again
         logger.save()                                         # the three files, also when the search stops early or raises (M313)
         del fc
         gc.collect()

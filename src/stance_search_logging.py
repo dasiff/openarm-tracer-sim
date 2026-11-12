@@ -17,6 +17,8 @@ import time
 import uuid
 from pathlib import Path
 
+import numpy as np
+
 from src.grasp_rules import bin_center
 from src.task_config import STANCE_SEARCH_LOG_CFG
 
@@ -36,6 +38,16 @@ def num(v):
 def approach_angle_deg(kind, approach_bin=None, theta_rad=0.0):
     """A pick's approach angle in degrees from the stance heading (its bin centre), or a place's hand turn in degrees."""
     return math.degrees(bin_center(int(approach_bin))) if kind == "pick" else math.degrees(theta_rad)
+
+
+def solve_record(arm, points, info, approach_bin, theta_rad):
+    """One solve of the full check at a candidate's own stance (a pick's approach bin, or a place's hand turn): each point's target and joint solution, None where the solve did not reach it (M314)."""
+    kind = "pick" if approach_bin is not None else "place"
+    sol = info["solution"]
+    return {"arm": arm, "kind": kind, "approach_angle_deg": num(approach_angle_deg(kind, approach_bin, theta_rad)), "ok": bool(info["ok"]),
+            "failed_point": info["failed_point"], "failed_path": info.get("failed_path"),
+            "points": [{"index": i, "path": pt.get("path"), "pose": pt.get("pose"), "target_m": [num(v) for v in pt["p"]],
+                        "q_rad": None if np.isnan(sol[i]).any() else [num(v) for v in sol[i]]} for i, pt in enumerate(points)]}
 
 
 def _new_folder_name():

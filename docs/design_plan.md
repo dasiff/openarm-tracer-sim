@@ -691,3 +691,7 @@ Status: Stage 2b BUILT on branch safety-filter, not pushed (SF numbers may be re
 - **SF-48**: The gap rule (speed limit, SF-29) stays in both resolvers: gap_rule_mode 'ours' (default) and 'paper_plain' both work in kong_style; the gap rule gives each pair's push amount, the resolver shares it.
 - **SF-49**: Layered fix: config elbow_swing_hand_target 'slid' (default) or 'raw' (old behaviour).
 - **SF-50**: Spec test line relaxed: 'realized hand orientation within 1e-6 rad' in experiments/safety_filter_spec_test.py now compares to the accuracy value from config (0.5 degrees); one Jacobian step cannot reach 1e-6 (error 6.4e-4 rad).
+
+### Known limitations
+
+No handling of a late filter answer. The filter runs inside the control loop and the loop waits for it, so there is no 'filter busy' status for the bridge to act on. Accepted for now because the filter may never run in real time: in simulation the physics waits for the filter. If real-time use is ever needed, the filter must run alongside the control loop, report 'busy' when late, and send a checked fallback motion with each command for the bridge to use while it is busy.

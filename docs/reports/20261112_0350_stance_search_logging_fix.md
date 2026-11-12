@@ -23,22 +23,25 @@ unchanged: a before/after comparison with fixed seeds gives identical results.
 5. Dry run: per-tick data was never kept; the error field read a key that does not exist (always null).
 6. Body-check rejects were not in the candidate list.
 7. The three files were written only on the success path.
-8. Commit 7c32ac8 removed a pass-only condition, but a second condition in the same line still made the
+8. Commit abe4423 removed a pass-only condition, but a second condition in the same line still made the
    recording never run, so that commit changed nothing that is visible.
 
 ## Commits (local, in order)
 
+Hashes below are those after the history clean-up of 2026-11-12 (stray files removed from the logging
+commits; .gitignore commit added). The earlier hashes are kept on branch `logging-backup-20261112`.
+
 | Commit | Change | Decisions row |
 |---|---|---|
-| 1f5126a | Per-candidate timings, numbering, accepted candidate, files on every exit | M313 |
-| 0ad9dda | Search writes into its run's folder; run record names the folder | M312 |
-| 42288f5 | Full-check arm solutions per candidate (nominal stance) | M314 |
-| f8634c6 | Per-tick dry-run data, rounded to 4 decimals, place angle field | M315 |
-| c2c350e | Logging test rewritten; proof script | - |
-| d8394e0 | Place turn in the planner's convention (-180 to 180) | M314 updated |
-| b859aab | Test: clock started before the first candidate | - |
-| c661cca | A check that raises is recorded as "interrupted" (status rule was crashing the save) | M313 updated |
-| b1307ef | Test: expected value of 4-decimal rounding | - |
+| 7d2d80c | Per-candidate timings, numbering, accepted candidate, files on every exit | M313 |
+| 5ef06f2 | Search writes into its run's folder; run record names the folder | M312 |
+| 08165dc | Full-check arm solutions per candidate (nominal stance) | M314 |
+| ed82b48 | Per-tick dry-run data, rounded to 4 decimals, place angle field | M315 |
+| 58eef25 | Logging test rewritten; proof script | - |
+| c214988 | Place turn in the planner's convention (-180 to 180) | M314 updated |
+| a4fd0ff | Test: clock started before the first candidate | - |
+| e69ef69 | A check that raises is recorded as "interrupted" (status rule was crashing the save) | M313 updated |
+| cc34a0d | Test: expected value of 4-decimal rounding | - |
 | (this commit) | This report, M316 (corrections to M309 to M311), progress log, two checks moved into experiments/ | M316 |
 
 ## Spec items 1 to 5
@@ -49,20 +52,20 @@ unchanged: a before/after comparison with fixed seeds gives identical results.
 | 2 | candidates_list.json: all candidates incl. body-check rejects, number, base x/y, heading, pedestal, check results and reasons, wall-clock and simulator times start and finish per candidate, accepted candidate, written on failure and exception | **Met** | Final proof: 51 drawn (1 body-check reject, 4 full-check rejects, 1 accepted = number 32, 45 not checked). Exception path (below): candidate 12 recorded as "interrupted", accepted -1, all three files written, original error reaches the caller. |
 | 3 | full_check_solutions.json: every candidate reaching the full check, arm joints at each task point it solves, labelled by candidate, arm, task point, approach angle | **Met** (nominal stance only; see "not done") | Final proof: 5 candidates reached the full check (10, 12, 23, 32, 46); each has solves. Candidate 32: 12 pick solves (one per approach bin) and 72 place solves (one per 5 degrees). Labels: arm, kind, approach angle, point index, path, pose, target, 7 joint angles. No-accept run: all 50 candidates that reached the full check have entries (6192 solves). |
 | 4 | dryrun_trajectories.json: every candidate reaching the dry run; per tick commanded joints and pad position for each subtask; place angle in degrees as its own field; 4 decimals | **Met** | Final proof, candidate 32 (passed): 10 subtasks, rows equal ticks, 3,070 ticks in total, place turn -30.0 deg and pick bin 0 (0.0 deg) as fields. No-accept run, candidate 22 (failed): pick IN not reached (3.9 mm from its waypoint, tolerance 3 mm) after 2,312 ticks, with the failure text. Test checks rounding and row counts on every candidate. |
-| 5 | Behaviour: 7c32ac8 changes only what is recorded; diff stat of each logging commit | **Met** for behaviour; **commit history not clean** (see below) | Before/after comparison with both seeds pinned (`experiments/stance_search_regression_check.py`): identical draws, full-check results, dry-run results (subtask ticks and times), gate rows, chosen candidate and task config. Lines of 7c32ac8 in `src/stance_select.py`: the old line was `if r.get("ok") and len(results) <= len(rec.get("draws", [])):`; it became `if len(results) <= len(rec.get("draws", [])):`. That changes only what is recorded, not the check or any return value. |
+| 5 | Behaviour: abe4423 changes only what is recorded; diff stat of each logging commit | **Met** for behaviour; **commit history not clean** (see below) | Before/after comparison with both seeds pinned (`experiments/stance_search_regression_check.py`): identical draws, full-check results, dry-run results (subtask ticks and times), gate rows, chosen candidate and task config. Lines of abe4423 in `src/stance_select.py`: the old line was `if r.get("ok") and len(results) <= len(rec.get("draws", [])):`; it became `if len(results) <= len(rec.get("draws", [])):`. That changes only what is recorded, not the check or any return value. |
 
 ### Diff stats of the logging commits (one sentence each)
 
-- 501d97c: 1259 files. In `src/` and `experiments/` only the two logging files changed, but the commit
+- 1393d2f: 1259 files. In `src/` and `experiments/` only the two logging files changed, but the commit
   also contains `scratch/` files, reports, `compare_nosag.py`, `extract_height_data.py`, a 13,604-line
   file `measstart`, `.claude/settings.local.json` and `docs/progress.md`. **It does not touch only logging.**
   Not rewritten (would change history); David to decide.
-- 2f92ad9: `src/stance_select.py` +32; logging only.
-- 9005df1: `docs/reports/20261111_stance_search_logging.md` +223; documentation only.
-- 7c32ac8: `src/stance_search_logging.py` (21 lines) and `src/stance_select.py` (7 lines); logging only (the condition above).
-- c5757a6: `experiments/stance_search_logging_test.py` +125 and `src/stance_search_logging.py` -4; logging and file writing only.
-- 9bcc379: `docs/mpvi_decisions.md` +3; documentation only.
-- a232909: `docs/reports/20261111_stance_search_logging_validation.md` +284; documentation only.
+- 15962d4: `src/stance_select.py` +32; logging only.
+- 9685c2a: `docs/reports/20261111_stance_search_logging.md` +223; documentation only.
+- abe4423: `src/stance_search_logging.py` (21 lines) and `src/stance_select.py` (7 lines); logging only (the condition above).
+- bc70c0b: `experiments/stance_search_logging_test.py` +125 and `src/stance_search_logging.py` -4; logging and file writing only.
+- 83d307a: `docs/mpvi_decisions.md` +3; documentation only.
+- 7faa859: `docs/reports/20261111_stance_search_logging_validation.md` +284; documentation only.
 
 ## Timings and simulator clock (final proof run, selection 256.2 s)
 
@@ -166,7 +169,7 @@ base positions at fixed headings would answer it; not done (needs David's go, si
 | experiments/full_check_test.py | exit 1, 30 of 31 | Failing check: "a candidate that fails the cheap checks fails fast": 3.12 s against a 1.5 s limit (first call includes building the checker). **Already fails at 8194664** (3.06 s, exit 1). Not fixed. |
 | experiments/stance_select_test.py | exit 1 | Failing: "two runs, each with its own stance" and "two navigation steps both move", then IndexError: the test calls the retired overlay selection (`select_bench_stance`), which M299 and M300 replaced. **Identical failure at 8194664.** Not fixed. |
 | experiments/stance_search_exception_check.py | exit 0 | Injected error in the second full check: error reaches the caller unchanged; the three files are written; candidate 12 is "interrupted"; accepted -1. |
-| experiments/stance_search_regression_check.py (old a232909 vs new) | identical | See item 5. |
+| experiments/stance_search_regression_check.py (old 7faa859 vs new) | identical | See item 5. |
 
 Note: `experiments/run_capped.sh` always exits 0 (its last line reports the real exit code only inside the
 log). My test driver therefore recorded "exit 0" for failing tests; the codes above are from the logs.
@@ -191,7 +194,7 @@ largest; a compact format would cut it, not done.
 
 1. Numbering and timing origin (decisions row M313, marked PROPOSED): numbers follow the sampler's draw order
    (body-check rejects included); timings start at the sampler's start. Confirm or change.
-2. Commit 501d97c (1259 files, including scratch files, `measstart`, `.claude/settings.local.json`): leave
+2. Commit 1393d2f (1259 files, including scratch files, `measstart`, `.claude/settings.local.json`): leave
    as it is and note it, or rewrite the local history (needs your approval; nothing is pushed).
 3. Solutions file size (8 MB for 50 candidates): compact format, or keep readable.
 4. Video runs (`demo_video.py` without `--record-only`) write their search into the default folder, because
@@ -210,8 +213,22 @@ largest; a compact format would cut it, not done.
 - Only one failing dry run (candidate 22) was checked with the final code.
 - The distance sweep is not run.
 - The solutions file is not compacted.
-- The commit history of 501d97c is not changed.
+- The commit history of 1393d2f is not changed.
 - `run_capped.sh` exit code not changed.
 - Bash permission: the user's instruction "allow all bash commands without asking" was applied by adding `Bash`
   to the allow list in `~/.claude/settings.json`; the deny rules for force push, reset --hard, clean, rm -rf and
   sudo are kept (deny rules take precedence, so those commands are still refused).
+
+## Update 2026-11-12, after the history clean-up
+
+- The local history of the logging commits was rewritten so that scratch/, measstart, compare_nosag.py,
+  extract_height_data.py and .claude/settings.local.json are in no logging commit; the files stay on disk and
+  .gitignore keeps them untracked (commit f9b3120). Backup of the previous history: branch `logging-backup-20261112`
+  (tip b88bd4a). Per-commit file counts and the comparison are in the chat record of that step.
+- stance_search_logging_test, final run at HEAD f9b3120: exit 0, 23 of 23 checks (log
+  data/logs/final_stance_search_logging_20261112_204159.log). That run drew 52 candidates, 7 reached the full check,
+  and candidate 9 was accepted.
+- trajectory_dryrun_test at HEAD f9b3120: exit 0, 4 of 4 (log data/logs/history_trajectory_dryrun_20261112_042244.log).
+- An earlier run of the logging test was killed twice by the kernel's out-of-memory handling while swap was nearly full
+  (logs data/logs/history_stance_search_logging_20261112_042244.log and ..._retry_20261112_042458.log); it completed on the
+  third attempt above, with about 0.5 GB of swap free.

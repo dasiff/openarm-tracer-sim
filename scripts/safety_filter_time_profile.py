@@ -67,7 +67,7 @@ STAGE_ROWS = (
        ("pair_push_gap", "  gap_between inside pair_push"),
        ("guard", "jump-through guard: _guard"),
        ("path_samples", "  guard samples: _path_samples (items)"),
-       ("sweeps", "sweeps: plan_sweep (calls = sweeps)"),
+       ("sweeps", "sweeps: _sweep (calls = sweeps)"),
        ("restore_lengths", "link length restore: restore_lengths"),
        ("kong_solver", "Kong solver: solve_arm"),
        ("jacobian", "Jacobian step: ArmKinematics.jacobian_step"),
@@ -82,7 +82,7 @@ STAGE_NOTES = [
     "pair_distance: calls of resolver.gap_between (cache misses of the _Tick gap cache). One call = one pair check. Type from dc.pair_type with no world objects (the comparison world has none).",
     "broad_phase: calls of resolver.evaluate_pairs; items = pairs in its batch. Those gaps are batched inside touch.evaluate_pairs, so they are not gap_between calls.",
     "pair_push_gap: gap_between calls made inside push_direction.pair_push (kong_style and layered). A pair check, not in pair_distance; its time is inside push_direction.",
-    "restore_lengths: one call per pushed arm. sweeps: one plan_sweep call per sweep.",
+    "restore_lengths: one call per pushed arm. sweeps: one _sweep call per sweep.",
     "path_samples: kong_style._path_samples; items = its return value (the samples of the jump-through guard).",
     "shorten: Resolver._shorten; items = pass-test evaluations (full step first, then halvings). Default test: _Tick.worst_value_discover calls made while _shorten runs.",
     "Timers: time.perf_counter around each call. The timers-off run gives the honest speed; the timers add their own overhead.",
@@ -203,7 +203,7 @@ class Profiler:
         self._patch(GR, "shortfall", lambda f: self._timed("gap_rule", f))
         self._patch(KS, "_guard", lambda f: self._timed("guard", f))
         self._patch(KS, "_path_samples", lambda f: self._timed("path_samples", f, items_of=lambda r: r))
-        self._patch(KS, "plan_sweep", lambda f: self._timed("sweeps", f))
+        self._patch(KS, "_sweep", lambda f: self._timed("sweeps", f))
         self._patch(KS, "restore_lengths", lambda f: self._timed("restore_lengths", f))
         self._patch(KS, "solve_arm", lambda f: self._timed("kong_solver", f))
         self._patch(AC.ArmKinematics, "jacobian_step", lambda f: self._timed("jacobian", f))

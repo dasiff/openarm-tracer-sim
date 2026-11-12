@@ -91,6 +91,8 @@ RESOLVER = {
     "tunnel_guard_max_samples": 50,  # count [SF-46]: kong_style jump-through guard: most poses sampled along that path (the number used is the largest keypoint move divided by its capsule radius, rounded up, but never more than this)
     "tunnel_guard_skip_already_below": True,  # on/off [SF-46]: kong_style jump-through guard: a pair already below the guard gap at the last command is not counted (the gap rule and the push handle it; the forearm already overlaps the torso shape by 27 mm at the zombie pose, which would stop the arm forever); my choice, David to confirm
     "kong_shortened_accuracy": "own_pose",  # text [SF-47]: kong_style: an arm whose step was shortened inside the sweeps is checked for hand accuracy against its own shortened pose ("own_pose", so the check passes) or against the raw commanded pose ("raw", fails when shortening slows the hand by more than the accuracy value); my choice, David to confirm
+    # ---- Stage 2g (SF-52 to SF-58) ----
+    "pair_order": "deepest_first",  # text [SF-58]: kong_style: the order in which one sweep pushes the pairs: "deepest_first" = largest shortfall first, ties by pair name (default, David's decision); "by_name" = alphabetical by pair name (for order-independence tests only)
 }
 
 # Object catalog (M290): shape and tags of each object type. Sizes are taken from the object model files

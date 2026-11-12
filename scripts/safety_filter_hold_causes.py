@@ -74,7 +74,7 @@ class Tracer:
         tr, res = self, self.res
         o_init, o_gap, o_disc, o_worst = R._Tick.__init__, R._Tick.gap, R._Tick.discover, R._Tick.worst
         o_fix, o_short, o_checks = R.Resolver._fix, R.Resolver._shorten, R.Resolver._checks
-        o_plan, o_guard, o_paths = ks.plan_sweep, ks._guard, ks._path_samples
+        o_plan, o_guard, o_paths = ks._sweep, ks._guard, ks._path_samples
 
         def init(t, *a, **k):
             o_init(t, *a, **k)
@@ -98,9 +98,9 @@ class Tracer:
             tr.unit = ("round", tr.unit[1] + 1)
             return o_fix(rs, t, q, w, methods, targets, st)
 
-        def plan(rs, t, q, pairs, cons):
+        def plan(rs, t, q, pairs, cons, *more):          # Stage 2g: one sweep = ks._sweep (pairs pushed one at a time)
             tr.unit = ("sweep", tr.unit[1] + 1)
-            return o_plan(rs, t, q, pairs, cons)
+            return o_plan(rs, t, q, pairs, cons, *more)
 
         def paths(rs, t):
             n = o_paths(rs, t)
@@ -191,7 +191,7 @@ class Tracer:
         self._patch(R.Resolver, "_fix", fix)
         self._patch(R.Resolver, "_shorten", short)
         self._patch(R.Resolver, "_checks", checks)
-        self._patch(ks, "plan_sweep", plan)
+        self._patch(ks, "_sweep", plan)
         self._patch(ks, "_guard", guard)
         self._patch(ks, "_path_samples", paths)
         self.saved.append((kin, "convert_directions", kin.__dict__.get("convert_directions"), "convert_directions" in kin.__dict__))

@@ -1,19 +1,28 @@
-"""The kong_style resolver (Stage 2b; SF-40 to SF-50): every pair that needs a push is shared among four points per arm
-(shoulder, elbow, wrist, hand reference point), the pushes are ADDED per point, the link lengths are restored, and the points
-are converted to joint angles in one go (Kong's solver, then exactly one Jacobian step on our own model).
+"""The kong_style resolver (Stage 2b; SF-40 to SF-50; Stage 2g one pair at a time, SF-52 to SF-58): the colliding pairs are
+pushed ONE AT A TIME, deepest violation first (Kong's Algorithm 10). Each pair is measured at the CURRENT pose, shared among the four
+points per arm (shoulder, elbow, wrist, hand reference point) by its capsule's category, the link lengths are restored, and the points
+are converted to joint angles at once (Kong's solver, then exactly one Jacobian step on our own model), so the next pair is measured
+on the exact pose the earlier pushes left.
 
-What is new here is only how a pair's push is shared among the points. Everything else is the layered resolver's: the link
-categories (link_rules), the shared layer's shapes and gaps, the gap rule (gap_rule: how MUCH each pair must move), the push
-direction (push_direction.pair_push), the closing-arm rule, step shortening, the four checks, hold-still and the status record.
+What is new here is only the order of the work. Everything else is the layered resolver's: the link categories (link_rules), the shared
+layer's shapes and gaps, the gap rule (gap_rule: how MUCH each pair must move), the push direction (push_direction.pair_push), the
+closing-arm rule (decided once per tick from the raw command against the last filtered command), step shortening, the four checks,
+hold-still and the status record.
 
 Per tick (resolver.Resolver.step calls step() below when RESOLVER["mode"] is "kong_style"):
  1. Pass-through: no pair needs a push or a speed limit -> the raw array itself comes back (status PASS).
  2. Jump-through guard: the straight joint-space path last -> raw is sampled; if a sample has a pair below tunnel_guard_min_gap_m
     the step is shortened (the layered resolver's step shortening, with this pass test); the result is the raw command from here on.
- 3. Sweeps (up to RESOLVER["rounds"], stop when the worst shortfall is under stop_m): per category the pushes are summed per point
-    (see the *_displacement functions), lengths restored (restore_lengths), points converted (solve_arm).
+ 3. Sweeps (up to RESOLVER["rounds"], stop when no pair has a shortfall of stop_m or more). Each sweep lists the pairs at or above
+    stop_m, orders them (RESOLVER["pair_order"]: deepest shortfall first, ties by name), and for each pair in that order measures it
+    again at the current pose: under stop_m -> skipped (an earlier push fixed it); otherwise pushed and converted at once (_push_pair).
+    A pair handed to step shortening (shoulder contact, upper arm contact below min_lever_fraction) flags its arm; the arm is shortened
+    at the end of the sweep and the sweeps stop.
  4. The four checks (resolver.Resolver._checks); the accuracy target is the PUSHED hand pose (SF-47). Any failure: hold-still.
- 5. Status KONG_PUSH: sweeps used (rounds), worst pair, gap, shortfall, and the categories pushed (methods).
+    Nothing is clipped and no check runs between pairs.
+ 5. Status KONG_PUSH: sweeps used (rounds), worst pair, gap, shortfall, the categories pushed (methods), and the Stage 2g counters
+    (pairs pushed, skipped, handed to shortening, solver calls, largest joint-limit overshoot and largest joint change at any
+    intermediate pose, and the pair log).
 """
 
 import math
@@ -82,14 +91,6 @@ def solve_arm(res, state, side, S, E, W, hand_rot):
     return res.kin.convert_directions(state, side, u, l, hand_rot)
 
 
-class SweepPlan:
-    """What a sweep wants before conversion. pushed: {side: (E, W, H)} the points after summing and length restore;
-    shorten: set of arms whose step must be shortened instead; cats: categories pushed (in order)."""
-
-    def __init__(self):
-        self.pushed, self.shorten, self.cats = {}, set(), []
-
-
 def _keypoints(res, t, q):
     out = {}
     for side in SIDES:
@@ -99,51 +100,107 @@ def _keypoints(res, t, q):
     return out
 
 
-def plan_sweep(res, t, q, pairs, cons):
-    """Sum the pushes of all pairs per point and restore the link lengths. pairs: [(key, shortfall)] of the pairs needing a push;
-    cons: {side: (lengths, hand_offset)}. Returns a SweepPlan (nothing is converted here)."""
-    kp = _keypoints(res, t, q)
-    disp = {s: {"E": np.zeros(3), "W": np.zeros(3), "H": np.zeros(3)} for s in SIDES}
-    plan = SweepPlan()
-    pushed_arm = set()
-    for key, short in pairs:
-        arms = t.closing(key)
-        if not arms:
+def _arm_points(res, t, q, side):
+    """(S, E, W, H) of one arm at the joint angles q (forward kinematics)."""
+    S, E, W = res.kin.sew(res._state(t, q), side)
+    H, _ = res.kin.hand_pose_now(side)
+    return S, E, W, H
+
+
+def _name(key):
+    return "|".join(key)
+
+
+def list_pairs(t, q):
+    """[(key, shortfall)] of the pairs whose shortfall at the pose q is at or above stop_m and that have a closing arm."""
+    stop = cfg.RESOLVER["stop_m"]
+    out = []
+    for key in sorted(t.keys):
+        s = t.shortfall(q, key)
+        if s >= stop and t.closing(key):
+            out.append((key, s))
+    return out
+
+
+def order_pairs(pairs):
+    """The processing order of one sweep (fixed at its start): "deepest_first" = largest shortfall first, ties by pair name;
+    "by_name" = alphabetical by pair name (SF-58)."""
+    mode = cfg.RESOLVER["pair_order"]
+    if mode == "deepest_first":
+        return sorted(pairs, key=lambda ks: (-ks[1], _name(ks[0])))
+    if mode == "by_name":
+        return sorted(pairs, key=lambda ks: _name(ks[0]))
+    raise ValueError(f"RESOLVER['pair_order'] must be 'deepest_first' or 'by_name', not {mode!r}")
+
+
+def _push_pair(res, t, q, key, short, cons, r_cmd, targets, shorten, st):
+    """Push one pair at the CURRENT pose q (changed in place): for each closing arm the share of the shortfall is spread over that
+    arm's points by the capsule's category (the *_displacement functions), the link lengths are restored and the arm is converted to
+    joint angles at once. Returns (categories pushed, action) with action "pushed" or "shortened" (the pair was handed to step
+    shortening: nothing pushed)."""
+    arms = t.closing(key)
+    share = short / len(arms)                           # both arms closing: each takes half; world and one closing arm: the arm takes it all
+    a, b = t.shape(q, key[0]), t.shape(q, key[1])
+    pp = pair_push(a, b)                                # one snapshot of the pair for every closing arm, so the arms take equal shares
+    cats, pushed = [], False
+    for side in arms:
+        if side in shorten:                             # this arm will be shortened at the end of the sweep
             continue
-        share = short / len(arms)                       # both arms closing: each takes half; world and one closing arm: the arm takes it all
-        a, b = t.shape(q, key[0]), t.shape(q, key[1])
-        pp = pair_push(a, b)
-        for side in arms:
-            mine, direction, point = (a, pp.dir_a, pp.point_a) if a.arm == side else (b, pp.dir_b, pp.point_b)
-            S, E, W, H = kp[side]
-            pv = np.asarray(direction, float) * share
-            cat = category_of(mine)
-            if cat == HAND:
-                dw, dh = hand_displacement(pv)
-                disp[side]["W"] += dw
-                disp[side]["H"] += dh
-            elif cat == UPPER_ARM:
-                tau = contact_fraction(point, S, E)
-                if tau < cfg.RESOLVER["min_lever_fraction"]:
-                    plan.shorten.add(side)
-                    continue
-                disp[side]["E"] += upper_arm_displacement(pv, tau)
-            elif cat == FOREARM:
-                tau = contact_fraction(point, E, W)
-                de, dw = forearm_displacement(pv, tau)
-                disp[side]["E"] += de
-                disp[side]["W"] += dw
-            else:                                       # shoulder (and unknown parts): step shortening
-                plan.shorten.add(side)
+        mine, direction, point = (a, pp.dir_a, pp.point_a) if a.arm == side else (b, pp.dir_b, pp.point_b)
+        S, E, W, H = _arm_points(res, t, q, side)
+        pv = np.asarray(direction, float) * share
+        cat = category_of(mine)
+        dE, dW = np.zeros(3), np.zeros(3)
+        if cat == HAND:
+            dW, _ = hand_displacement(pv)
+        elif cat == UPPER_ARM:
+            tau = contact_fraction(point, S, E)
+            if tau < cfg.RESOLVER["min_lever_fraction"]:
+                shorten.add(side)
                 continue
-            pushed_arm.add(side)
-            if cat not in plan.cats:
-                plan.cats.append(cat)
-    for side in pushed_arm - plan.shorten:
-        S, E, W, H = kp[side]
+            dE = upper_arm_displacement(pv, tau)
+        elif cat == FOREARM:
+            tau = contact_fraction(point, E, W)
+            dE, dW = forearm_displacement(pv, tau)
+        else:                                           # shoulder (and unknown parts): step shortening
+            shorten.add(side)
+            continue
         lengths, offset = cons[side]
-        plan.pushed[side] = restore_lengths(S, E + disp[side]["E"], W + disp[side]["W"], lengths, offset)
-    return plan
+        E2, W2, H2 = restore_lengths(S, E + dE, W + dW, lengths, offset)
+        i = _IDX[side]
+        old = q[i].copy()
+        q[i] = _convert(res, t, q, side, S, E2, W2, H2, r_cmd[side])
+        st.solver_calls += 1
+        lim = res.kin.limits[side]
+        st.max_limit_overshoot_rad = max(st.max_limit_overshoot_rad, float(max(np.max(lim[:, 0] - q[i]), np.max(q[i] - lim[:, 1]), 0.0)))
+        st.max_joint_change_rad = max(st.max_joint_change_rad, float(np.max(np.abs(q[i] - old))))
+        targets[side] = (H2, r_cmd[side])
+        pushed = True
+        if cat not in cats:
+            cats.append(cat)
+    return cats, ("pushed" if pushed else "shortened")
+
+
+def _sweep(res, t, q, pairs, cons, r_cmd, targets, shorten, st):
+    """One sweep over the ordered pairs: re-measure, skip or push (and convert) each. Returns the categories pushed."""
+    stop = cfg.RESOLVER["stop_m"]
+    cats = []
+    for key, _ in pairs:
+        short = t.shortfall(q, key)                     # at the CURRENT pose: earlier pushes of this sweep are included
+        if short < stop:
+            st.pairs_skipped += 1
+            st.pair_log.append((_name(key), "skipped"))
+            continue
+        c, action = _push_pair(res, t, q, key, short, cons, r_cmd, targets, shorten, st)
+        if action == "pushed":
+            st.pairs_pushed += 1
+        else:
+            st.pairs_shortened += 1
+        st.pair_log.append((_name(key), action))
+        for x in c:
+            if x not in cats:
+                cats.append(x)
+    return cats
 
 
 # ---------------------------------------------------------------- the jump-through guard
@@ -227,30 +284,25 @@ def step(res, raw, last, state, world_objects=(), held=None):
             S, E, W, H = _keypoints(res, t, t.raw)[side]
             cons[side] = ((float(np.linalg.norm(E - S)), float(np.linalg.norm(W - E))), H - W)
             r_cmd[side] = res.kin.hand_pose(res._state(t, t.raw), side)[1]
-        sweeps, pushed_any = 0, False
+        sweeps = 0
         while sweeps < cfg.RESOLVER["rounds"]:
-            w = t.worst(q, discover=True)
-            if w is None or (sweeps > 0 and w[1] < cfg.RESOLVER["stop_m"]):
+            t.discover(q)
+            pairs = order_pairs(list_pairs(t, q))          # the order is fixed at the start of the sweep
+            if not pairs:                                   # every pair is under stop_m
                 break
-            pairs = [(k, t.shortfall(q, k)) for k in sorted(t.keys)
-                     if t.shortfall(q, k) > cfg.RESOLVER["trigger_m"] and t.closing(k)]
-            plan = plan_sweep(res, t, q, pairs, cons)
-            for side, (E2, W2, H2) in plan.pushed.items():
-                S = res.kin.sew(res._state(t, q), side)[0]
-                q[_IDX[side]] = _convert(res, t, q, side, S, E2, W2, H2, r_cmd[side])
-                targets[side] = (H2, r_cmd[side])
-                pushed_any = True
-            for c in plan.cats:
+            shorten = set()
+            for c in _sweep(res, t, q, pairs, cons, r_cmd, targets, shorten, st):
                 if c not in cats:
                     cats.append(c)
             sweeps += 1
-            if plan.shorten:                            # a pair that cannot be pushed: step shortening of that arm
-                res._shorten(t, q, sorted(plan.shorten), methods, targets, st)
+            if shorten:                                     # a pair that cannot be pushed: step shortening of that arm
+                res._shorten(t, q, sorted(shorten), methods, targets, st)
                 shortened = True
-                for side in plan.shorten:
+                for side in shorten:
                     if cfg.RESOLVER["kong_shortened_accuracy"] == "own_pose":
                         targets[side] = res.kin.hand_pose(res._state(t, q), side)
                 break
+        pushed_any = st.pairs_pushed > 0
         st.rounds = sweeps
         reason = res._checks(t, q, targets)
         if reason:

@@ -52,6 +52,14 @@ class FilterStatus:
     methods: tuple = ()
     fraction: float = float("nan")
     hand_targets: dict = field(default_factory=dict)   # side -> (position (3,), rotation (3,3)): the pose the resolver aimed the hand at (empty on PASS, HOLD and for shortened arms)
+    # Stage 2g (kong_style only, SF-52 to SF-54): the one-pair-at-a-time sweep's counters for this tick
+    pairs_pushed: int = 0          # pairs pushed (and converted) this tick
+    pairs_skipped: int = 0         # pairs skipped because an earlier push had already brought their shortfall under stop_m
+    pairs_shortened: int = 0       # pairs handed to step shortening (shoulder contact, upper arm contact below min_lever_fraction)
+    solver_calls: int = 0          # Kong solver calls this tick (one per arm conversion)
+    max_limit_overshoot_rad: float = 0.0   # largest joint-limit overshoot at any intermediate pose (rad; 0 if none); nothing is clipped
+    max_joint_change_rad: float = 0.0      # largest joint change between two consecutive intermediate poses (rad)
+    pair_log: list = field(default_factory=list)   # [(pair name, "pushed" | "skipped" | "shortened")] in processing order
 
 
 class _Hold(Exception):

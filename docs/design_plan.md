@@ -695,3 +695,7 @@ Status: Stage 2b BUILT on branch safety-filter, not pushed (SF numbers may be re
 ### Known limitations
 
 No handling of a late filter answer. The filter runs inside the control loop and the loop waits for it, so there is no 'filter busy' status for the bridge to act on. Accepted for now because the filter may never run in real time: in simulation the physics waits for the filter. If real-time use is ever needed, the filter must run alongside the control loop, report 'busy' when late, and send a checked fallback motion with each command for the bridge to use while it is busy.
+
+### Stage 4 design (decided, not built) [decision row SF-51]
+
+When the filter finds no safe pose it returns status 'no safe pose found' (today's HOLD, with its reason) together with the last safe command. The bridge hands control to a swappable slow-down policy, a function passed in to the bridge. Default: smooth stop, chosen for the materials lab (held glassware). Alternative: repeat the last safe command. The slow-down may never travel more than half the smallest margin (currently 5 mm); if the arm is moving too fast to stop gently within that, it brakes harder. The bridge reports each command it actually sent, and the filter's next check starts from that command. During a slow-down, the recorded action is the command the bridge sent, with a status saying it was braking and why.

@@ -36,8 +36,10 @@ def num(v):
 
 
 def approach_angle_deg(kind, approach_bin=None, theta_rad=0.0):
-    """A pick's approach angle in degrees from the stance heading (its bin centre), or a place's hand turn in degrees."""
-    return math.degrees(bin_center(int(approach_bin))) if kind == "pick" else math.degrees(theta_rad)
+    """A pick's approach angle in degrees from the stance heading (its bin centre); a place's hand turn in degrees, from -180 to 180 as the planner lists it."""
+    if kind == "pick":
+        return math.degrees(bin_center(int(approach_bin)))
+    return (math.degrees(theta_rad) + 180.0) % 360.0 - 180.0
 
 
 def solve_record(arm, points, info, approach_bin, theta_rad):

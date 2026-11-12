@@ -89,7 +89,7 @@ RESOLVER = {
     "lever_weight_wrist": 1.0,   # weight, no unit [SF-43]: kong_style forearm contact: how willing the wrist is to move compared with the elbow (wW in the split formula); 1.0 = equal
     "tunnel_guard_min_gap_m": 0.0,  # m [SF-46]: kong_style jump-through guard: the straight joint-space path from the last command to the raw command may not pass any pair closer than this (0.0 = touching)
     "tunnel_guard_max_samples": 50,  # count [SF-46]: kong_style jump-through guard: most poses sampled along that path (the number used is the largest keypoint move divided by its capsule radius, rounded up, but never more than this)
-    "tunnel_guard_ignore_not_worse": True,  # on/off [SF-46]: kong_style jump-through guard: a pair that is already below the guard gap at the last command only counts if the path makes it smaller than at the last command (otherwise an overlap that exists by construction would stop the arm forever); my choice, David to confirm
+    "tunnel_guard_skip_already_below": True,  # on/off [SF-46]: kong_style jump-through guard: a pair already below the guard gap at the last command is not counted (the gap rule and the push handle it; the forearm already overlaps the torso shape by 27 mm at the zombie pose, which would stop the arm forever); my choice, David to confirm
     "kong_shortened_accuracy": "own_pose",  # text [SF-47]: kong_style: an arm whose step was shortened inside the sweeps is checked for hand accuracy against its own shortened pose ("own_pose", so the check passes) or against the raw commanded pose ("raw", fails when shortening slows the hand by more than the accuracy value); my choice, David to confirm
 }
 

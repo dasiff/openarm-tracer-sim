@@ -26,7 +26,7 @@ from src.mink_arm import MinkArm, pad_rotation
 from src.mpvi_modules import move_duration
 from src.rate_limit import min_jerk
 from src.task_beaker_hotplate import bench_top_z
-from src.task_config import BEAKER_CFG, DRYRUN_CFG, MINK_CFG, PICK_PLACE_CFG, TASK_CFG
+from src.task_config import BEAKER_CFG, DRYRUN_CFG, MINK_CFG, PICK_PLACE_CFG, STANCE_SEARCH_LOG_CFG, TASK_CFG
 from src.task_points import pick_waypoints, plate_top_z
 
 
@@ -54,12 +54,21 @@ def _track(model, d, arm):
     mujoco.mj_kinematics(model, d)
 
 
-def _hold(model, d, arm, name, seconds):
+def _trace_row(t, arm, pad):
+    """One tick of the trace (logging, M315): time since the subtask started, the commanded joints (rad) and the pad centre (m), rounded."""
+    r = STANCE_SEARCH_LOG_CFG["round_decimals"]
+    return [round(float(t), r)] + [round(float(v), r) for v in arm.q_cmd] + [round(float(v), r) for v in pad]
+
+
+def _hold(model, d, arm, name, seconds, trace=False):
     """A stub subtask (CLOSE, OPEN): the arm holds its command for the given time; the gripper is not simulated."""
     n = int(round(seconds / TICK_S))
-    for _ in range(n):
+    rows = [] if trace else None
+    for k in range(1, n + 1):
         _track(model, d, arm)
-    return {"name": name, "T_s": float(seconds), "ticks": n, "ok": True, "max_ref_mm": 0.0, "final_mm": 0.0, "tick_log": []}, True, None
+        if rows is not None:
+            rows.append(_trace_row(k * TICK_S, arm, arm.pad_pose(d)[0]))
+    return {"name": name, "T_s": float(seconds), "ticks": n, "ok": True, "max_ref_mm": 0.0, "final_mm": 0.0, "tick_log": [], "trace": rows}, True, None
 
 
 def _move(model, d, arm, name, target, R, speed, cfg):
@@ -73,6 +82,7 @@ def _move(model, d, arm, name, target, R, speed, cfg):
     slerp = Slerp([0.0, 1.0], Rotation.from_matrix([R0, R]))
     timeout = cfg["timeout_factor"] * T + cfg["timeout_extra_s"]
     settle_t, log, max_ref, ticks = None, [], 0.0, 0
+    rows = [] if cfg.get("_record_trace") else None
     q_prev = arm.q_cmd.copy()
     t = 0.0
     while True:
@@ -87,7 +97,7 @@ def _move(model, d, arm, name, target, R, speed, cfg):
             arm.step(d, p_ref, R_ref)
         except Exception as e:                            # noqa: BLE001 - mink's NoSolutionFound and any solver failure end the subtask with its message
             why = f"{name}: no IK solution at {t:.2f} s ({type(e).__name__})"
-            return {"name": name, "T_s": T, "ticks": ticks, "ok": False, "fail": why, "max_ref_mm": 1000 * max_ref, "final_mm": None, "tick_log": log}, False, why
+            return {"name": name, "T_s": T, "ticks": ticks, "ok": False, "fail": why, "max_ref_mm": 1000 * max_ref, "final_mm": None, "tick_log": log, "trace": rows}, False, why
         _track(model, d, arm)
         p, Rp = arm.pad_pose(d)
         ref_err = float(np.linalg.norm(p - p_ref))
@@ -100,17 +110,19 @@ def _move(model, d, arm, name, target, R, speed, cfg):
             log.append([round(t, 4), round(1000 * err, 2), round(1000 * ref_err, 2)])
         if not np.all(np.isfinite(arm.q_cmd)):
             why = f"{name}: the IK diverged at {t:.2f} s (a non-finite command)"
-            return {"name": name, "T_s": T, "ticks": ticks, "ok": False, "fail": why, "max_ref_mm": 1000 * max_ref, "final_mm": None, "tick_log": log}, False, why
+            return {"name": name, "T_s": T, "ticks": ticks, "ok": False, "fail": why, "max_ref_mm": 1000 * max_ref, "final_mm": None, "tick_log": log, "trace": rows}, False, why
+        if rows is not None:
+            rows.append(_trace_row(t, arm, p))
         if u >= 1.0 and err < cfg["tol_m"] and ang < cfg["tol_rad"] and speed_now < cfg["settle_speed_rad_s"]:
             if settle_t is None:
                 settle_t = t
             if t - settle_t >= cfg["settle_dwell_s"]:
-                return {"name": name, "T_s": T, "ticks": ticks, "ok": True, "max_ref_mm": 1000 * max_ref, "final_mm": 1000 * err, "tick_log": log}, True, None
+                return {"name": name, "T_s": T, "ticks": ticks, "ok": True, "max_ref_mm": 1000 * max_ref, "final_mm": 1000 * err, "tick_log": log, "trace": rows}, True, None
         else:
             settle_t = None
         if t > timeout:
             why = f"{name}: not reached after {t:.1f} s ({1000 * err:.1f} mm from the waypoint)"
-            return {"name": name, "T_s": T, "ticks": ticks, "ok": False, "fail": why, "max_ref_mm": 1000 * max_ref, "final_mm": 1000 * err, "tick_log": log}, False, why
+            return {"name": name, "T_s": T, "ticks": ticks, "ok": False, "fail": why, "max_ref_mm": 1000 * max_ref, "final_mm": 1000 * err, "tick_log": log, "trace": rows}, False, why
 
 
 def _home(model, d, arm, name, q_home, cfg):
@@ -118,16 +130,19 @@ def _home(model, d, arm, name, q_home, cfg):
     q0 = arm.q_cmd.copy()
     T = max(cfg["min_move_s"], float(np.max(np.abs(q_home - q0))) / 0.3)
     ticks = int(round(T / TICK_S))
+    rows = [] if cfg.get("_record_trace") else None
     for k in range(1, ticks + 1):
         arm.q_cmd = q0 + (q_home - q0) * min_jerk(k / ticks)
         _track(model, d, arm)
+        if rows is not None:
+            rows.append(_trace_row(k * TICK_S, arm, arm.pad_pose(d)[0]))
     err = float(np.max(np.abs(arm.q_cmd - q_home)))
     ok = err < DRYRUN_CFG["home_tol_rad"]
     why = None if ok else f"{name}: {math.degrees(err):.1f} deg from the zombie pose"
-    return {"name": name, "T_s": T, "ticks": ticks, "ok": ok, "max_ref_mm": 0.0, "final_mm": math.degrees(err), "tick_log": []}, ok, why
+    return {"name": name, "T_s": T, "ticks": ticks, "ok": ok, "max_ref_mm": 0.0, "final_mm": math.degrees(err), "tick_log": [], "trace": rows}, ok, why
 
 
-def dry_run_stance(chk, model, stance, beaker_xy, pick_k, place_theta_deg, cfg=PICK_PLACE_CFG, mink_cfg=MINK_CFG, home_q=None, record=False):
+def dry_run_stance(chk, model, stance, beaker_xy, pick_k, place_theta_deg, cfg=PICK_PLACE_CFG, mink_cfg=MINK_CFG, home_q=None, record=False, trace=False):
     """The dry run of one stance: pick (OVER, DOWN, IN, CLOSE, UP) then place (OVER, DOWN, OPEN, BACK, HOME), on the commanded pad.
 
     Args:
@@ -141,9 +156,11 @@ def dry_run_stance(chk, model, stance, beaker_xy, pick_k, place_theta_deg, cfg=P
         mink_cfg (dict): MINK_CFG.
         home_q (sequence of 7 float or None): The zombie pose's joints. Defaults to TASK_CFG home_q_left.
         record (bool): Keep each tick of each move in tick_log: [t, error to the target mm, error to the reference mm].
+        trace (bool): Keep each tick of each subtask as a row [t_s, the 7 commanded joints (rad), the pad centre x, y, z (m)], rounded (logging, M315).
 
     Returns:
-        dict: "ok", "failed" (the subtask name or None), "reason", "subtasks" (one dict per subtask: name, T_s, ticks, ok, max_ref_mm, final_mm, fail), "seconds".
+        dict: "ok", "failed" (the subtask name or None), "reason", "subtasks" (one dict per subtask: name, T_s, ticks, ok, max_ref_mm, final_mm, fail), "seconds",
+        "trace" (with trace=True: a list of {"name", "rows"} per subtask, else None; kept out of "subtasks" so the records that carry them do not grow).
     """
     t0 = time.perf_counter()
     home = np.asarray(TASK_CFG["home_q_left"] if home_q is None else home_q, float)
@@ -153,7 +170,8 @@ def dry_run_stance(chk, model, stance, beaker_xy, pick_k, place_theta_deg, cfg=P
     arm = MinkArm(model, d, SIDE, home, mink_cfg)
     arm.q_cmd = home.copy()
     _track(model, d, arm)
-    cfg = dict(cfg, _record_ticks=record)
+    cfg = dict(cfg, _record_ticks=record, _record_trace=trace)
+    traces = []
     bx, by = float(beaker_xy[0]), float(beaker_xy[1])
     bench_top = float(bench_top_z(model))
     height = float(BEAKER_CFG["height"])
@@ -163,10 +181,13 @@ def dry_run_stance(chk, model, stance, beaker_xy, pick_k, place_theta_deg, cfg=P
     subtasks = []
 
     def finish(ok, failed, reason):
-        return {"ok": bool(ok), "failed": failed, "reason": reason, "subtasks": subtasks, "seconds": time.perf_counter() - t0}
+        return {"ok": bool(ok), "failed": failed, "reason": reason, "subtasks": subtasks, "seconds": time.perf_counter() - t0, "trace": traces if trace else None}
 
     def record_and_check(res):
         rec, ok, why = res
+        rows = rec.pop("trace", None)
+        if rows is not None:
+            traces.append({"name": rec["name"], "rows": rows})
         subtasks.append({k: v for k, v in rec.items() if k != "tick_log" or record})
         return ok, why
 
@@ -177,7 +198,7 @@ def dry_run_stance(chk, model, stance, beaker_xy, pick_k, place_theta_deg, cfg=P
         ok, why = record_and_check(_move(model, d, arm, name, target, R, speed, cfg))
         if not ok:
             return finish(False, name, why)
-    ok, why = record_and_check(_hold(model, d, arm, "pick CLOSE", cfg["close_min_s"]))
+    ok, why = record_and_check(_hold(model, d, arm, "pick CLOSE", cfg["close_min_s"], trace=trace))
     ok, why = record_and_check(_move(model, d, arm, "pick UP", W["lift"], R, cfg["slow_speed_m_s"], cfg))
     if not ok:
         return finish(False, "pick UP", why)
@@ -201,7 +222,7 @@ def dry_run_stance(chk, model, stance, beaker_xy, pick_k, place_theta_deg, cfg=P
         ok, why = record_and_check(_move(model, d, arm, name, target, R_pl, speed, cfg))
         if not ok:
             return finish(False, name, why)
-    ok, why = record_and_check(_hold(model, d, arm, "place OPEN", DRYRUN_CFG["open_s"]))
+    ok, why = record_and_check(_hold(model, d, arm, "place OPEN", DRYRUN_CFG["open_s"], trace=trace))
     ok, why = record_and_check(_move(model, d, arm, "place BACK", back, R_pl, cfg["slow_speed_m_s"], cfg))
     if not ok:
         return finish(False, "place BACK", why)

@@ -776,7 +776,7 @@ def apply_stance_selection(tagged, task_cfg, maps_dir="data/reach_map", cfg=BENC
     from src.world_model import SimGroundTruthSource, WorldModel
     from src.nav_footprint import obstacles_from_model
     from src.usable_edges import attach, base_length, furniture_tops, usable_segments
-    from src.stance_search_logging import StanceSearchLogger, solve_record
+    from src.stance_search_logging import StanceSearchLogger, dryrun_record, solve_record
     yaw = float(task_cfg["staging_yaw"])
     fc = FullCheck(maps={**bs.load_maps(maps_dir)}, task_cfg=task_cfg, maps_dir=maps_dir)
     logger = StanceSearchLogger(run_dir=run_dir)
@@ -855,8 +855,9 @@ def apply_stance_selection(tagged, task_cfg, maps_dir="data/reach_map", cfg=BENC
             except (KeyError, ApproachAngleError) as e:
                 logger.end_check(n, "dry_run", False, f"approach angles missing: {e}", clocks())
                 return {"ok": False, "failed": "angles", "reason": f"approach angles missing: {e}", "seconds": 0.0, "subtasks": []}
-            res = dry_run_stance(fc.chk, fc.model, stance, task_cfg["beaker_xy"], k, th)
+            res = dry_run_stance(fc.chk, fc.model, stance, task_cfg["beaker_xy"], k, th, trace=True)
             logger.end_check(n, "dry_run", res["ok"], res["reason"], clocks())
+            logger.add_dryrun(n, dryrun_record(k, th, res))
             return {"ok": res["ok"], "failed": res["failed"], "reason": res["reason"], "seconds": res["seconds"], "subtasks": res["subtasks"], "pick_k": int(k), "place_theta_deg": th}
 
         def gate(stance):

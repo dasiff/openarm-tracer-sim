@@ -50,6 +50,15 @@ def solve_record(arm, points, info, approach_bin, theta_rad):
                         "q_rad": None if np.isnan(sol[i]).any() else [num(v) for v in sol[i]]} for i, pt in enumerate(points)]}
 
 
+def dryrun_record(approach_bin, place_theta_deg, res):
+    """One candidate's dry run (M315): the pick's approach angle and the place's hand turn in degrees, the outcome, and per subtask its ticks as rows
+    [t_s, the 7 commanded joints (rad), the pad centre x, y, z (m)]. The subtask's error is its failure message (None when it passed)."""
+    rows = {t["name"]: t["rows"] for t in (res.get("trace") or [])}
+    return {"pick_approach_bin": int(approach_bin), "pick_approach_angle_deg": num(approach_angle_deg("pick", approach_bin)), "place_theta_deg": num(place_theta_deg),
+            "ok": bool(res["ok"]), "failed": res["failed"], "reason": res["reason"],
+            "subtasks": {s["name"]: {"ok": bool(s.get("ok")), "ticks": s.get("ticks"), "error": s.get("fail"), "rows": rows.get(s["name"], [])} for s in res["subtasks"]}}
+
+
 def _new_folder_name():
     return f"{time.strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:8]}"
 

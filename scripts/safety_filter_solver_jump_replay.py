@@ -129,20 +129,20 @@ def classify(P, U, C):
     return "other", "unpushed raw call also jumps %.3f rad (joint %d), no flip, no limit, joint 6 not near zero" % (U["max_dq"], U["max_dq_joint"])
 
 
-def targets_of(row, n):
+def targets_of(row, n, joint=None):
     d = json.load(open(ROOT / f"data/safety_filter/hold_causes_row{row}.json"))
     out = []
     for c in d["all_hold_causes_short"]:
         m = re.match(r"joint (\d+) of the (left|right) arm jumped ([0-9.]+) rad; first seen at solver output", c["cause"])
-        if c["reason"] == "BRANCH_GUARD" and m:
+        if c["reason"] == "BRANCH_GUARD" and m and (joint is None or int(m.group(1)) == joint):
             out.append({"tick": c["tick"], "joint": int(m.group(1)), "side": m.group(2), "jump": float(m.group(3))})
         if len(out) >= n:
             break
     return out
 
 
-def replay_row(setup, row, n):
-    targets = targets_of(row, n)
+def replay_row(setup, row, n, joint=None):
+    targets = targets_of(row, n, joint)
     by_tick = {t["tick"]: t for t in targets}
     last_tick = max(by_tick)
     first = min(by_tick)
@@ -315,11 +315,14 @@ def main(argv=None):
     ap.add_argument("--n", type=int, default=20)
     ap.add_argument("--rows", type=int, nargs="+", default=[6, 4])
     ap.add_argument("--out", default="data/safety_filter/solver_jump_replay.json")
+    ap.add_argument("--joint", type=int, default=None, help="only holds whose Stage 2c cause names this joint (e.g. 6); default: the first holds of any joint")
     args = ap.parse_args(argv)
     setup = dc.Setup(full_stream=True)
     result = {"jump_rad": JUMP_RAD, "near_zero_j6_rad": NEAR_ZERO_J6, "flip_tol_rad": FLIP_TOL, "rows": {}}
     for row in args.rows:
-        cases, trace = replay_row(setup, row, args.n)
+        cases, trace = replay_row(setup, row, args.n, args.joint)
+        if not cases:
+            print(f"row {row}: no holds naming joint {args.joint}")
         counts = {}
         for c in cases:
             counts[c["cause"]] = counts.get(c["cause"], 0) + 1

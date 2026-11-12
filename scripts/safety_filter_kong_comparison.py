@@ -1,11 +1,15 @@
 #!/usr/bin/env python
 """Stage 2 comparison: our safety-filter resolver against Kong's compiled SEW filter on a scripted two-arm rolling punch.
 
-Four configurations run on the same raw command stream:
+Six configurations run on the same raw command stream:
   1  no filter: output = raw
   2  Kong's compiled filter (SafetyFilter, collision_avoidance=True), streamed: first tick reset from HOME, then reset=False
-  3  our resolver in "paper_plain" mode (gap rule off), arm-versus-arm pairs only, Kong's capsule radii, every cfg.MARGINS entry 0.0
-  4  our resolver with the full gap rule ("ours"), our own shapes and margins (default), for information
+  3  our resolver, layered (RESOLVER mode "layered", elbow_swing_hand_target "slid"), gap rule "paper_plain" (gap rule off),
+     arm-versus-arm pairs only, Kong's capsule radii, every cfg.MARGINS entry 0.0
+  4  our resolver, layered, full gap rule ("ours"), our own shapes and margins (default), for information
+  5  our resolver, kong_style (RESOLVER mode "kong_style"), same setup as 3
+  6  our resolver, kong_style, same setup as 4
+Rows 3 to 6 set their settings for that row only and put every value back afterwards (resolver_settings).
 
 The stream: each hand in turn moves in a straight line (min-jerk timing) from its HOME hand position to a point 5 cm past
 the body midline (left hand y = -0.05 m, right hand y = +0.05 m, same x and z) in 0.5 s, and back in 0.5 s. The other hand
@@ -20,14 +24,17 @@ Known problem (see the report): the straight line at constant x and z needs join
 Metrics per configuration (all ticks): smallest arm-versus-arm gap with Kong's capsules and with our shapes, hold-still ticks,
 hand position and orientation error of the output against the raw command, largest joint jump per tick, filter-call time,
 status and hold-reason counts.
+No-contact hand error (rows 2 to 6): over the ticks where the RAW command's smallest gap, by the row's own measure, is above
+NO_CONTACT_GAP_M, the number of such ticks and the hand position error of the output against the raw command (mean and max, mm).
 
 Run from the repository root, venv active. A full run takes more than a couple of minutes: run it in a detached tmux session:
   bash experiments/run_capped.sh data/logs/<timestamp>_kong_comparison.log python scripts/safety_filter_kong_comparison.py
-Options: --ticks N (dry run: first N ticks, for timing), --dx M, --dz M, --clip final|none, --configs 1,2,3,4, --scan,
+Options: --ticks N (dry run: first N ticks, for timing), --dx M, --dz M, --clip final|none, --configs 1,2,3,4,5,6, --scan,
 --repeats N, --out PATH. Output: JSON written to a temporary file and renamed (default data/safety_filter/kong_comparison_<stamp>.json).
 """
 
 import argparse
+import contextlib
 import datetime as dt
 import json
 import os
@@ -63,6 +70,7 @@ KONG_SEGMENT = {"upper": "upper_arm", "lower": "forearm", "hand": "hand"}   # th
 KONG_BODY = {"upper": "openarm_{side}_link2", "lower": "openarm_{side}_link4", "hand": "openarm_{side}_link7"}   # MuJoCo body frame of each capsule
 SCAN_DX = (-0.15, -0.10, -0.05, 0.0, 0.05, 0.10, 0.15, 0.20)   # m: forward offsets tried by --scan
 SCAN_DZ = (-0.10, -0.05, 0.0, 0.05, 0.10)                        # m: height offsets tried by --scan
+NO_CONTACT_GAP_M = 0.05                      # m: my choice, 5 cm: a tick counts as no contact when the raw command's smallest gap is above this
 
 
 # ---------------------------------------------------------------- the stream
@@ -260,21 +268,36 @@ def run_resolver(res, raw, q_ref):
     return out, times, {"status": statuses, "hold_reason": reasons}
 
 
-def run_paper_plain(m, path, tool_local, raw, q_ref):
-    """Configuration 3: gap rule off, all margins 0.0, Kong's shapes. Restored in finally."""
-    saved_mode = cfg.GAP_RULE["mode"]
-    saved_margins = dict(cfg.MARGINS)
+def resolver_state():
+    """The config values the rows change: resolver mode, elbow-swing hand target, gap-rule mode, touch margins."""
+    return {"mode": cfg.RESOLVER["mode"], "elbow_swing_hand_target": cfg.RESOLVER["elbow_swing_hand_target"],
+            "gap_rule_mode": cfg.GAP_RULE["mode"], "margins": dict(cfg.MARGINS)}
+
+
+@contextlib.contextmanager
+def resolver_settings(mode, gap_mode, margins):
+    """Sets the values for one row: resolver mode, elbow-swing hand target "slid" (the fix), gap-rule mode, touch margins.
+    Every value is put back when the row ends, also when the row raises."""
+    saved = resolver_state()
     try:
-        cfg.GAP_RULE["mode"] = "paper_plain"
-        for key in cfg.MARGINS:
-            cfg.MARGINS[key] = 0.0
-        shapes = KongShapes(m, path, tool_local)
-        res = Resolver(shapes, fx.DT, fx.solver())
-        return run_resolver(res, raw, q_ref)
-    finally:
-        cfg.GAP_RULE["mode"] = saved_mode
+        cfg.RESOLVER["mode"] = mode
+        cfg.RESOLVER["elbow_swing_hand_target"] = "slid"
+        cfg.GAP_RULE["mode"] = gap_mode
         cfg.MARGINS.clear()
-        cfg.MARGINS.update(saved_margins)
+        cfg.MARGINS.update(margins)
+        yield
+    finally:
+        cfg.RESOLVER["mode"] = saved["mode"]
+        cfg.RESOLVER["elbow_swing_hand_target"] = saved["elbow_swing_hand_target"]
+        cfg.GAP_RULE["mode"] = saved["gap_rule_mode"]
+        cfg.MARGINS.clear()
+        cfg.MARGINS.update(saved["margins"])
+
+
+def run_row(make_resolver, raw, q_ref, mode, gap_mode, margins):
+    """One resolver row (rows 3 to 6): the resolver is built and the stream run inside resolver_settings."""
+    with resolver_settings(mode, gap_mode, margins):
+        return run_resolver(make_resolver(), raw, q_ref)
 
 
 def _label(x):
@@ -286,15 +309,20 @@ def _label(x):
 
 # ---------------------------------------------------------------- metrics
 
-def gap_metrics(out, kong_metric, ours):
-    """Smallest gaps over all ticks. Returns ((gap_kong, tick, pair), (gap_ours, tick, pair), (gap_ours_no_shoulder, tick, pair)).
+def gap_series(out, kong_metric, ours):
+    """Smallest gaps of every tick, and the smallest over all ticks. Returns (series, best).
+    series: "kong" (N,) the smallest left-right gap with Kong's capsules (None without Kong's wheel), "ours_all" (N,) the smallest
+    left-right gap of our shapes, "ours_ns" (N,) the same with the left-right shoulder-mount pair left out.
+    best: the same three names -> (gap in m, tick, pair ids) over all ticks.
     Kong: all left x right pairs of Kong's capsules (capsule_capsule). Ours: all left-arm x right-arm capsules of our shapes (batch, checked
-    against capsule_capsule on the first tick); touch rules are ignored. The third value leaves out the left-right shoulder-mount pair,
-    which sits 14 mm inside at HOME in our shapes (both arms mount on the torso) and so sets the minimum of every run."""
-    best_k = (np.inf, -1, "")
-    best_o = (np.inf, -1, "")
-    best_s = (np.inf, -1, "")
-    for k in range(len(out)):
+    against capsule_capsule on the first tick); touch rules are ignored. The shoulder-mount pair sits 14 mm inside at HOME in our shapes
+    (both arms mount on the torso) and so sets the minimum of every run; "ours_ns" leaves it out."""
+    N = len(out)
+    kong = None if kong_metric is None else np.full(N, np.inf)
+    ours_all = np.full(N, np.inf)
+    ours_ns = np.full(N, np.inf)
+    best = {"kong": (np.inf, -1, ""), "ours_all": (np.inf, -1, ""), "ours_ns": (np.inf, -1, "")}
+    for k in range(N):
         st = state_of(out[k])
         if kong_metric is not None:
             pl = kong_metric.place(st)
@@ -302,9 +330,10 @@ def gap_metrics(out, kong_metric, ours):
             R = [p for p in pl if p.arm == "right"]
             for a in L:
                 for b in R:
-                    g = capsule_capsule(a.a, a.b, a.r, b.a, b.b, b.r).gap
-                    if g < best_k[0]:
-                        best_k = (float(g), k, f"{a.id} / {b.id}")
+                    g = float(capsule_capsule(a.a, a.b, a.r, b.a, b.b, b.r).gap)
+                    kong[k] = min(kong[k], g)
+                    if g < best["kong"][0]:
+                        best["kong"] = (g, k, f"{a.id} / {b.id}")
         pl = ours.place(st)
         L = [p for p in pl if p.arm == "left" and p.kind == "capsule"]
         R = [p for p in pl if p.arm == "right" and p.kind == "capsule"]
@@ -318,28 +347,31 @@ def gap_metrics(out, kong_metric, ours):
             if not np.allclose(g, ref, atol=1e-12):
                 raise RuntimeError("batch capsule gap differs from capsule_capsule")
         j_min = int(np.argmin(g))
-        if g[j_min] < best_o[0]:
-            best_o = (float(g[j_min]), k, f"{L[ii[j_min]].id} / {R[jj[j_min]].id}")
+        ours_all[k] = g[j_min]
+        if g[j_min] < best["ours_all"][0]:
+            best["ours_all"] = (float(g[j_min]), k, f"{L[ii[j_min]].id} / {R[jj[j_min]].id}")
         keep = np.array([n2 for n2, (i, j) in enumerate(zip(ii, jj))
                          if L[i].part != "shoulder_mount" and R[j].part != "shoulder_mount"], dtype=int)
         if len(keep):
             s_min = int(keep[np.argmin(g[keep])])
-            if g[s_min] < best_s[0]:
-                best_s = (float(g[s_min]), k, f"{L[ii[s_min]].id} / {R[jj[s_min]].id}")
-    return best_k, best_o, best_s
+            ours_ns[k] = g[s_min]
+            if g[s_min] < best["ours_ns"][0]:
+                best["ours_ns"] = (float(g[s_min]), k, f"{L[ii[s_min]].id} / {R[jj[s_min]].id}")
+    return {"kong": kong, "ours_all": ours_all, "ours_ns": ours_ns}, best
 
 
-def hand_error(kin, raw, out):
-    """Hand position (mean, max, mm) and orientation (max, deg) of the output against the raw command, both hands, all ticks."""
-    pos, rot = [], []
+def hand_error_series(kin, raw, out):
+    """Per tick and hand (column 0 left, 1 right): hand position error (N, 2) in mm and hand orientation error (N, 2) in rad,
+    of the output against the raw command."""
+    pos = np.zeros((len(raw), 2))
+    rot = np.zeros((len(raw), 2))
     for k in range(len(raw)):
-        for side in SIDES:
+        for i, side in enumerate(SIDES):
             p_o, R_o = kin.hand_pose(state_of(out[k]), side)
             p_r, R_r = kin.hand_pose(state_of(raw[k]), side)
-            pos.append(float(np.linalg.norm(p_o - p_r)))
-            rot.append(rotation_error_rad(R_r, R_o))
-    pos = np.array(pos) * 1000.0
-    return float(pos.mean()), float(pos.max()), float(np.degrees(max(rot)))
+            pos[k, i] = 1000.0 * float(np.linalg.norm(p_o - p_r))
+            rot[k, i] = rotation_error_rad(R_r, R_o)
+    return pos, rot
 
 
 def max_jump(out, q_ref):
@@ -347,10 +379,14 @@ def max_jump(out, q_ref):
     return float(np.abs(np.diff(seq, axis=0)).max())
 
 
-def summarise(name, required, kin, raw, out, times, extra, q_ref, kong_metric, ours):
-    (gk, kk, kpair), (go, ko, opair), (gs, ks, spair) = gap_metrics(out, kong_metric, ours)
-    mean_pos, max_pos, max_rot = hand_error(kin, raw, out)
-    row = {"name": name, "required_gap": required,
+def summarise(name, required, kin, raw, out, times, extra, q_ref, kong_metric, ours, settings, no_contact):
+    """One row. settings: the row's config values (None for rows 1 and 2). no_contact: (measure name, boolean mask over the ticks or None)
+    of the no-contact ticks, taken from the raw command."""
+    _, best = gap_series(out, kong_metric, ours)
+    (gk, kk, kpair), (go, ko, opair), (gs, ks, spair) = best["kong"], best["ours_all"], best["ours_ns"]
+    pos, rot = hand_error_series(kin, raw, out)
+    measure, mask = no_contact
+    row = {"name": name, "required_gap": required, "settings": settings,
            "min_gap_kong_radii_mm": None if kong_metric is None else round(1000.0 * gk, 4),
            "min_gap_kong_radii_at": {"tick": kk, "pair": kpair},
            "min_gap_our_shapes_mm": round(1000.0 * go, 4),
@@ -358,10 +394,18 @@ def summarise(name, required, kin, raw, out, times, extra, q_ref, kong_metric, o
            "min_gap_our_shapes_no_shoulder_mount_mm": round(1000.0 * gs, 4),
            "min_gap_our_shapes_no_shoulder_mount_at": {"tick": ks, "pair": spair},
            "hold_ticks": None, "status_counts": None, "hold_reason_counts": None,
-           "hand_pos_err_mean_mm": round(mean_pos, 4), "hand_pos_err_max_mm": round(max_pos, 4),
-           "hand_rot_err_max_deg": round(max_rot, 4),
+           "hand_pos_err_mean_mm": round(float(pos.mean()), 4), "hand_pos_err_max_mm": round(float(pos.max()), 4),
+           "hand_rot_err_max_deg": round(float(np.degrees(rot.max())), 4),
            "max_joint_jump_rad": round(max_jump(out, q_ref), 5),
+           "no_contact_measure": measure, "no_contact_ticks": None,
+           "no_contact_hand_pos_err_mean_mm": None, "no_contact_hand_pos_err_max_mm": None,
            "time_ms_mean": None, "time_ms_max": None}
+    if mask is not None:
+        row["no_contact_ticks"] = int(mask.sum())
+        sel = pos[mask]
+        if sel.size:
+            row["no_contact_hand_pos_err_mean_mm"] = round(float(sel.mean()), 4)
+            row["no_contact_hand_pos_err_max_mm"] = round(float(sel.max()), 4)
     if times is not None:
         row["time_ms_mean"] = round(1000.0 * float(np.mean(times)), 4)
         row["time_ms_max"] = round(1000.0 * float(np.max(times)), 4)
@@ -429,33 +473,70 @@ def run_comparison(args, kin, m, sh):
     doc["tool_local_at_home"] = None if tool_local is None else {s: np.round(tool_local[s], 6).tolist() for s in SIDES}
     kong_metric = KongShapes(m, path, tool_local) if tool_local is not None else None
     ours = sh
+
+    # No-contact masks (from the RAW command, once): a tick counts when the raw command's smallest gap, by the row's own measure,
+    # is above NO_CONTACT_GAP_M. Kong-radii rows: Kong's gap. Our-shapes rows: our gap with the shoulder-mount pair left out.
+    raw_series, _ = gap_series(raw, kong_metric, ours)
+    masks = {"kong_radii": None if raw_series["kong"] is None else raw_series["kong"] > NO_CONTACT_GAP_M,
+             "our_shapes": raw_series["ours_ns"] > NO_CONTACT_GAP_M}
+    doc["no_contact"] = {"gap_threshold_m": NO_CONTACT_GAP_M,
+                         "raw_ticks_above_threshold": {
+                             "kong_radii": None if masks["kong_radii"] is None else int(masks["kong_radii"].sum()),
+                             "our_shapes_no_shoulder_mount": int(masks["our_shapes"].sum()),
+                             "our_shapes_all_pairs": int((raw_series["ours_all"] > NO_CONTACT_GAP_M).sum())}}
+    print("raw ticks above the no-contact threshold:", json.dumps(doc["no_contact"]["raw_ticks_above_threshold"]), flush=True)
+
+    def no_contact(required):
+        measure = "kong_radii" if required == "kong_radii" else "our_shapes_no_shoulder_mount"
+        return measure, masks[required]
+
+    def kong_resolver():
+        return Resolver(KongShapes(m, path, tool_local), fx.DT, fx.solver())
+
+    def our_resolver():
+        return fx.new_resolver()
+
+    def resolver_row(key, num, mode, gap_mode, margins, required, make):
+        settings = {"resolver_mode": mode, "elbow_swing_hand_target": "slid", "gap_rule_mode": gap_mode,
+                    "margins": dict(margins), "shapes": required}
+        if required == "kong_radii" and kong_err is not None:
+            return {"name": key, "error": kong_err, "settings": settings}
+        print(f"config {num}: {key}", flush=True)
+
+        def body():
+            out, times, extra = run_row(make, raw, q_ref, mode, gap_mode, margins)
+            return summarise(key, required, kin, raw, out, times, extra, q_ref, kong_metric, ours, settings, no_contact(required))
+        return guarded(f"config {num}", body)
+
+    start = resolver_state()
+    margins_default = dict(cfg.MARGINS)
+    margins_zero = {key: 0.0 for key in cfg.MARGINS}
     rows = {}
 
     if "1" in wanted:
         print("config 1: no filter", flush=True)
-        rows["1_no_filter"] = summarise("1_no_filter", "kong_radii", kin, raw, raw.copy(), None, None, q_ref, kong_metric, ours)
+        rows["1_no_filter"] = summarise("1_no_filter", "kong_radii", kin, raw, raw.copy(), None, None, q_ref, kong_metric, ours,
+                                        None, no_contact("kong_radii"))
     if "2" in wanted:
         print("config 2: Kong compiled filter", flush=True)
         def c2():
             out, times, extra = run_kong(raw, q_ref)
-            return summarise("2_kong_compiled", "kong_radii", kin, raw, out, times, extra, q_ref, kong_metric, ours)
+            return summarise("2_kong_compiled", "kong_radii", kin, raw, out, times, extra, q_ref, kong_metric, ours,
+                             None, no_contact("kong_radii"))
         rows["2_kong_compiled"] = guarded("config 2", c2) if kong_err is None else {"name": "2_kong_compiled", "error": kong_err}
     if "3" in wanted:
-        print("config 3: resolver paper_plain, Kong radii, margins 0", flush=True)
-        def c3():
-            out, times, extra = run_paper_plain(m, path, tool_local, raw, q_ref)
-            return summarise("3_resolver_paper_plain_kong_radii", "kong_radii", kin, raw, out, times, extra, q_ref, kong_metric, ours)
-        rows["3_resolver_paper_plain_kong_radii"] = guarded("config 3", c3) if kong_err is None else {"name": "3", "error": kong_err}
+        rows["3_layered_paper_plain_kong_radii"] = resolver_row("3_layered_paper_plain_kong_radii", "3", "layered", "paper_plain",
+                                                                margins_zero, "kong_radii", kong_resolver)
     if "4" in wanted:
-        print("config 4: resolver full gap rule, our shapes and margins", flush=True)
-        doc["config4_gap_rule_mode"] = cfg.GAP_RULE["mode"]
-        doc["config4_margins"] = dict(cfg.MARGINS)
-        def c4():
-            res = fx.new_resolver()
-            out, times, extra = run_resolver(res, raw, q_ref)
-            return summarise("4_resolver_ours", "our_shapes", kin, raw, out, times, extra, q_ref, kong_metric, ours)
-        rows["4_resolver_ours"] = guarded("config 4", c4) if kong_err is None else {"name": "4", "error": kong_err}
+        rows["4_layered_ours"] = resolver_row("4_layered_ours", "4", "layered", "ours", margins_default, "our_shapes", our_resolver)
+    if "5" in wanted:
+        rows["5_kong_style_paper_plain_kong_radii"] = resolver_row("5_kong_style_paper_plain_kong_radii", "5", "kong_style",
+                                                                   "paper_plain", margins_zero, "kong_radii", kong_resolver)
+    if "6" in wanted:
+        rows["6_kong_style_ours"] = resolver_row("6_kong_style_ours", "6", "kong_style", "ours", margins_default, "our_shapes", our_resolver)
 
+    doc["resolver_config_at_start"] = start
+    doc["resolver_config_restored"] = resolver_state() == start
     doc["ticks_run"] = n
     doc["ticks_in_stream"] = n_total
     doc["configs"] = rows
@@ -481,17 +562,22 @@ def write_json_atomic(path, doc):
 
 
 def print_table(rows):
-    print("\n| configuration | required gap | min gap Kong radii (mm) | min gap our shapes (mm) | min gap our shapes w/o shoulder mounts (mm) | hold ticks | hand pos mean/max (mm) | hand rot max (deg) | max joint jump (rad) | time mean/max (ms) |")
-    print("|---|---|---|---|---|---|---|---|---|---|")
+    print("\n| configuration | required gap | min gap Kong radii (mm) | min gap our shapes (mm) | min gap our shapes w/o shoulder mounts (mm) | hold ticks | hand pos mean/max (mm) | hand rot max (deg) | max joint jump (rad) | time mean/max (ms) | no-contact ticks | no-contact hand pos mean/max (mm) |")
+    print("|---|---|---|---|---|---|---|---|---|---|---|---|")
     for name, r in rows.items():
         if "error" in r:
             print(f"| {name} | ERROR: {r['error']} |")
             continue
         f = lambda v: "n/a" if v is None else v
         tm = "n/a" if r["time_ms_mean"] is None else f"{r['time_ms_mean']} / {r['time_ms_max']}"
+        nc = "n/a" if r["no_contact_hand_pos_err_mean_mm"] is None else f"{r['no_contact_hand_pos_err_mean_mm']} / {r['no_contact_hand_pos_err_max_mm']}"
         print(f"| {name} | {r['required_gap']} | {f(r['min_gap_kong_radii_mm'])} | {r['min_gap_our_shapes_mm']} | "
               f"{r['min_gap_our_shapes_no_shoulder_mount_mm']} | {f(r['hold_ticks'])} | "
-              f"{r['hand_pos_err_mean_mm']} / {r['hand_pos_err_max_mm']} | {r['hand_rot_err_max_deg']} | {r['max_joint_jump_rad']} | {tm} |", flush=True)
+              f"{r['hand_pos_err_mean_mm']} / {r['hand_pos_err_max_mm']} | {r['hand_rot_err_max_deg']} | {r['max_joint_jump_rad']} | {tm} | "
+              f"{f(r['no_contact_ticks'])} | {nc} |", flush=True)
+    for name, r in rows.items():
+        if "error" not in r and r["status_counts"] is not None:
+            print(f"{name}: statuses {r['status_counts']}; hold reasons {r['hold_reason_counts']}", flush=True)
 
 
 def main(argv=None):
@@ -501,7 +587,7 @@ def main(argv=None):
     ap.add_argument("--dx", type=float, default=0.0, help="forward shift of the whole path, m (default 0)")
     ap.add_argument("--dz", type=float, default=0.0, help="height shift of the whole path, m (default 0)")
     ap.add_argument("--clip", choices=("final", "none"), default="final", help="clip the raw joints to the limits (default final)")
-    ap.add_argument("--configs", default="1,2,3,4", help="comma list of configurations to run (default 1,2,3,4)")
+    ap.add_argument("--configs", default="1,2,3,4,5,6", help="comma list of configurations to run (default 1,2,3,4,5,6)")
     ap.add_argument("--scan", action="store_true", help="only scan the offset grid (stream statistics, no filters)")
     ap.add_argument("--out", default=None, help="JSON output path (default data/safety_filter/kong_comparison_<stamp>.json)")
     args = ap.parse_args(argv)
@@ -517,7 +603,8 @@ def main(argv=None):
            "params": {"fs_hz": FS, "repeats": args.repeats, "period_s": PERIOD_S, "half_s": HALF_S, "punch_y_m": PUNCH_Y,
                       "ik_steps": IK_STEPS, "ik_tol_rad": IK_TOL, "kong_radii_m": KONG_RADII, "kong_segment": KONG_SEGMENT,
                       "kong_body": KONG_BODY, "shapes_file": cfg.SHAPES_FILE, "margins_default": dict(cfg.MARGINS),
-                      "gap_rule_mode_default": cfg.GAP_RULE["mode"]}}
+                      "gap_rule_mode_default": cfg.GAP_RULE["mode"], "no_contact_gap_m": NO_CONTACT_GAP_M,
+                      "resolver_defaults": resolver_state()}}
     if args.scan:
         doc["offset_scan"] = scan(kin, args.repeats)
     else:

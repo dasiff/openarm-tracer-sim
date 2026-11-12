@@ -67,7 +67,9 @@ def _new_folder_name():
 
 def _status(cand, accepted):
     checks = cand["checks"]
-    if not checks.get("body_check", {}).get("passed", True):
+    if any(name in checks and "passed" not in checks[name] for name in ("body_check", "full_check", "dry_run")):
+        return "interrupted"
+    if "body_check" in checks and not checks["body_check"]["passed"]:
         return "rejected_body_check"
     if "full_check" not in checks:
         return "not_checked"

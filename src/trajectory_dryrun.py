@@ -198,13 +198,14 @@ def dry_run_stance(chk, model, stance, beaker_xy, pick_k, place_theta_deg, cfg=P
         ok, why = record_and_check(_move(model, d, arm, name, target, R, speed, cfg))
         if not ok:
             return finish(False, name, why)
+    pad_in, _ = _commanded_pad(model, d, arm, arm.q_cmd)             # the pad at the grasp (after the move in): the beaker's bottom centre is then at the bench top
     ok, why = record_and_check(_hold(model, d, arm, "pick CLOSE", cfg["close_min_s"], trace=trace))
     ok, why = record_and_check(_move(model, d, arm, "pick UP", W["lift"], R, cfg["slow_speed_m_s"], cfg))
     if not ok:
         return finish(False, "pick UP", why)
     # the held beaker keeps the grasp's offset: the pad relative to the beaker's bottom centre at the pick
     pad_now, R_now = _commanded_pad(model, d, arm, arm.q_cmd)
-    off = pad_now - np.array([bx, by, bench_top])
+    off = pad_in - np.array([bx, by, bench_top])                        # the offset at the grasp, as the real place measures it (pad and held beaker together); not pad_now, the beaker rose with the hand
     hp = np.array(d.site("hotplate_top").xpos, float)
     th = math.radians(float(place_theta_deg))
     co, si = math.cos(th), math.sin(th)

@@ -94,10 +94,12 @@ def record_only(args):
     sim = load_task(MOVED, cameras=True)
     manip = getattr(args, "manipulation", "scripted")                 # M260: "mock" makes the mock policy the arm and gripper source
     task = make_pipeline_task(plan, task_cfg=MOVED, stop_on_disagreement=True, checker="oracle", instruction=args.instruction, manipulation=manip,
-                              mock_stats_path=out / "mock_queries.csv")
+                              mock_stats_path=out / "mock_queries.csv", run_dir=out)
     loop = {**(task.get("loop_cfg") or {}), **(loop_cfg_for(args) or {})}
     s = run_episode(task, sim.model, sim.data, out_dir=out / "episode", record_dir=out / "recording", loop_cfg=loop, extra_sources=task.get("extra_sources"))
     state = task["pipeline"]["orchestrator"]["state"]
+    (out / "run_info.json").write_text(json.dumps({"outcome": s["outcome"], "stance_search_dir": task.get("stance_search_dir"),
+                                                   "episode_summary": "episode/episode_summary.json", "recording": "recording"}, indent=1))
     print(f"outcome {s['outcome']}; plan failure {state['failure']}; status {state['status']}", flush=True)
     return 0 if s["outcome"] == "SUCCESS" else 1
 

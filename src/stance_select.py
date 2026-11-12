@@ -751,10 +751,13 @@ def _sampler_objects(world, tagged, segs, steps, targets):
     return list(objs.values()), labels, None
 
 
-def apply_stance_selection(tagged, task_cfg, maps_dir="data/reach_map", cfg=BENCH_STANCE_CFG, say=print):
+def apply_stance_selection(tagged, task_cfg, maps_dir="data/reach_map", cfg=BENCH_STANCE_CFG, say=print, run_dir=None):
     """What make_pipeline_task calls (2026-11-10, decisions-log M299): the Gaussian sampler only (src/stance_sampling.py). No overlay, no two-pass, no fallback.
 
     The heading is held at TASK_CFG's staging_yaw. One stance serves every manipulation step of the plan (the scripted staging parks one stance per plan).
+
+    Args:
+        run_dir (str, Path or None): the run's own folder, where the three log files go (M312); None: the search's own folder. The folder is in the sampler record ("stance_search_dir").
 
     Returns:
         dict: "ok", "stop" (the reason when not ok), "task_cfg" (staging_xy, staging_yaw, pedestal_q = the drawn stance's values, unchanged), "plan", "report"
@@ -776,7 +779,7 @@ def apply_stance_selection(tagged, task_cfg, maps_dir="data/reach_map", cfg=BENC
     from src.stance_search_logging import StanceSearchLogger
     yaw = float(task_cfg["staging_yaw"])
     fc = FullCheck(maps={**bs.load_maps(maps_dir)}, task_cfg=task_cfg, maps_dir=maps_dir)
-    logger = StanceSearchLogger()
+    logger = StanceSearchLogger(run_dir=run_dir)
     try:
         segs = tagged["segments"]
         steps = _manip_steps(tagged)
@@ -874,7 +877,7 @@ def apply_stance_selection(tagged, task_cfg, maps_dir="data/reach_map", cfg=BENC
             rep["notes"].append(out["stop"])
             rep["sampler"] = {"ok": False, "stop": out["stop"], "pieces": None}
             return out
-        rec = {}
+        rec = {"stance_search_dir": str(logger.folder)}
         logger.start()
         gen = iter_verified_stances(objects, pieces, geom, cfg["arm"], cfg, check, verify, gate=gate, say=say, record_dir=record_dir, base_metric=base_metric, point_labels=labels, rec=rec)
         got = next(gen, None)                                 # M301, M302: the first candidate that passes the full check and the dry-run; None when none does

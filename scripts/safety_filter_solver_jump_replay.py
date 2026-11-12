@@ -45,6 +45,9 @@ NEAR_ZERO_J6 = 0.15      # rad: joint 6 closer to zero than this counts as near 
 FLIP_TOL = 0.3           # rad: "about pi" for joints 5 and 7
 POS_TOL_M, ROT_TOL_DEG = 0.002, 0.5   # a hand pose "matches" within 2 mm and 0.5 deg (as in step 2)
 LIMIT_TOL = 1e-6
+SNAP_J4 = 0.242       # rad: the elbow bend below which the Oct 5 note says the solver snaps (value quoted by David; not found in this repo, tested here)
+JOINT_JUMP = 0.2     # rad: joints 3 and 5 both count as jumping above this (my choice)
+SUM_TOL = 0.1        # rad: q3+q5 "almost unchanged" when its change is below this (my choice)
 
 
 class Recorder:
@@ -233,7 +236,63 @@ def analyse_case(kin, orig, rec, tgt, last, raw_k, status, reason):
     case.update({"solver_inputs": pushed_in, "pushed": P, "unpushed": U, "roundtrip_seeded_current": C, "roundtrip_seeded_last": C2,
                  "raw_vs_last_max_dq": float(np.abs(raw_k[si] - last[si]).max()), "sensitivity_rad_per_rad": float(sens),
                  "flip_pattern": is_flip(P), "cause": cause, "description": why})
+    # elbow bend (joint 4 as the angle between the solver's upper-arm and forearm directions), joints 3 and 5 sums, wrist error
+    bend_in = float(np.arccos(np.clip(u @ l, -1, 1)))
+    qs = np.array([state.q_left, state.q_right], float)
+    qs[si] = first["out"]
+    W_out = kin.sew(with_arms(state, qs), side)[2]
+    out_v, last_v = np.asarray(first["out"], float), np.asarray(last[si], float)
+    s_before, s_after = float(last_v[2] + last_v[4]), float(out_v[2] + out_v[4])
+    d3, d5 = float(out_v[2] - last_v[2]), float(out_v[4] - last_v[4])
+    sum_unchanged = bool(abs(s_after - s_before) < SUM_TOL and abs(d3) > JOINT_JUMP and abs(d5) > JOINT_JUMP)
+    case["elbow"] = {"bend_input_rad": bend_in, "bend_input_below_snap": bool(bend_in < SNAP_J4),
+                     "joint4_last_rad": float(last_v[3]), "joint4_last_below_snap": bool(last_v[3] < SNAP_J4),
+                     "bend_last_from_directions_rad": float(np.arccos(np.clip(ul @ ll, -1, 1))),
+                     "q3_plus_q5_before": s_before, "q3_plus_q5_after": s_after, "d_q3": d3, "d_q5": d5,
+                     "sum_change": s_after - s_before, "sum_almost_unchanged_joints_3_5_jump": sum_unchanged,
+                     "wrist_err_mm": float(np.linalg.norm(W_out - W2) * 1000)}
     return case
+
+
+def elbow_table(cases):
+    L = ["| tick | arm | bend of solver input (rad) | joint 4 of last filtered (rad) | bend < 0.242? | q3+q5 before > after (rad) | d q3 / d q5 (rad) | sum almost unchanged, joints 3 and 5 jump? | wrist error of solver output (mm) | cause |",
+         "|---|---|---|---|---|---|---|---|---|---|"]
+    for c in cases:
+        e = c.get("elbow")
+        if e is None:
+            L.append(f"| {c['tick']} | {c['side']} | - | - | - | - | - | - | - | {c['cause']} |")
+            continue
+        L.append(f"| {c['tick']} | {c['side']} | {e['bend_input_rad']:.3f} | {e['joint4_last_rad']:.3f} | {'yes' if e['bend_input_below_snap'] else 'no'} | "
+                 f"{e['q3_plus_q5_before']:.3f} > {e['q3_plus_q5_after']:.3f} | {e['d_q3']:.2f} / {e['d_q5']:.2f} | "
+                 f"{'yes' if e['sum_almost_unchanged_joints_3_5_jump'] else 'no'} | {e['wrist_err_mm']:.1f} | {c['cause']} |")
+    return "\n".join(L)
+
+
+def split_summary(cases):
+    """Cause counts split by elbow bend below the snap value (yes/no); within yes, the sum-unchanged count."""
+    yes = [c for c in cases if "elbow" in c and c["elbow"]["bend_input_below_snap"]]
+    no = [c for c in cases if "elbow" in c and not c["elbow"]["bend_input_below_snap"]]
+    def counts(xs):
+        d = {}
+        for c in xs:
+            d[c["cause"]] = d.get(c["cause"], 0) + 1
+        return d
+    return {"bend_below_snap_yes": {"n": len(yes), "causes": counts(yes),
+                                    "joints_3_5_jump_with_sum_almost_unchanged": sum(1 for c in yes if c["elbow"]["sum_almost_unchanged_joints_3_5_jump"])},
+            "bend_below_snap_no": {"n": len(no), "causes": counts(no),
+                                   "joints_3_5_jump_with_sum_almost_unchanged": sum(1 for c in no if c["elbow"]["sum_almost_unchanged_joints_3_5_jump"])}}
+
+
+def holds_joint4_full_stream(row):
+    """All holds of the full Stage 2c stream (no replay): joint 4 of the last filtered command of each hold, either arm."""
+    z = np.load(ROOT / f"data/safety_filter/hold_causes_row{row}.npz")
+    out, status = z["out"], z["status"]
+    ks = [k for k in range(1, len(status)) if status[k] == "HOLD"]
+    j4 = np.array([[out[k - 1][0][3], out[k - 1][1][3]] for k in ks])
+    below = np.any(j4 < SNAP_J4, axis=1)
+    return {"holds": len(ks), "holds_with_an_arm_joint4_below_snap": int(below.sum()),
+            "min_joint4_last_filtered": float(j4.min()) if len(ks) else None,
+            "max_joint4_last_filtered": float(j4.max()) if len(ks) else None}
 
 
 def md_table(cases):
@@ -268,6 +327,13 @@ def main(argv=None):
         print(f"\n### row {row}: {dc.ROWS[row][0]}\n")
         print(md_table(cases))
         print("\ncause counts:", counts)
+        print("\nElbow bend and joints 3 and 5 (per case)\n")
+        print(elbow_table(cases))
+        split = split_summary(cases)
+        result.setdefault("elbow_split", {})[str(row)] = split
+        print("\nSplit by elbow bend below %.3f rad:" % SNAP_J4, json.dumps(split))
+        result.setdefault("holds_full_stream", {})[str(row)] = holds_joint4_full_stream(row)
+        print("Holds of the full stream, joint 4 of the last filtered command:", result["holds_full_stream"][str(row)])
         print("\nSolver calls of the ticks before the first hold (left arm j4, j5, j6; last = last filtered command)")
         for tr in trace:
             print(f"tick {tr['tick']} {tr['status']}: last {np.round(tr['last_left_j4_j5_j6'], 3).tolist()} raw {np.round(tr['raw_left_j4_j5_j6'], 3).tolist()} final {np.round(tr['final_left_j4_j5_j6'], 3).tolist()}")

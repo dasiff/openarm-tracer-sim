@@ -27,4 +27,7 @@ run safety_filter_distance_test python experiments/safety_filter_distance_test.p
 run safety_filter_shapes_test python experiments/safety_filter_shapes_test.py
 run safety_filter_touch_test python experiments/safety_filter_touch_test.py
 run safety_filter_structure_test python experiments/safety_filter_structure_test.py
+run safety_filter_link_rules_test python experiments/safety_filter_link_rules_test.py
+run safety_filter_gap_rule_test python experiments/safety_filter_gap_rule_test.py
+run safety_filter_resolver_test python experiments/safety_filter_resolver_test.py
 echo ALL_DONE >> "$SUM"

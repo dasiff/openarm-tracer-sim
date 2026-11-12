@@ -29,6 +29,8 @@ TASK (David, 2026-10-28, four changes then report; no video, no push): (1) held-
 
 # Progress log
 
+TASK 2026-11-12 (safety filter Stage 2, resolver; branch safety-filter; no push). PLAN: 0 read; 1 link categories; 2 gap rule; 3 push direction; 4 resolver core; 5 recording; 6 tests; 7 Kong comparison (scripts/safety_filter_kong_comparison.py, report docs/reports/safety_filter_stage2_kong_comparison_20261111.md); 8 plan rows SF-28.. (design plan section 16 end + mpvi_decisions). DONE 0-6 (commits 8268e51 + tests commit). CURRENT: step 7 (comparison). RUN: none.
+
 UPDATE 13:45: DONE (not pushed, no video re-render yet): items 1 (a-f), 2, 3 measured/implemented; report docs/reports/20261028_1300_place_over_turn_panel_labels_pedestal_sweep.md. Findings: no joint hits 0.5 rad/s in PLACE OVER, the unevenness is the skill-start snap held at the ramp cap for the first 0.34 s; uniform scaling keeps two speed peaks and tilt 2.73 deg/dip 17.0 mm; pedestal 0.10 and 0.15 succeed, 0.20 fails at PICK IN (J4 at its 10 deg margin). Uncommitted-to-remote work: all commits since 25dcf65 are local. NEXT: David's decisions (ramp snap, uniform scaling, pedestal), then the video.
 
 UPDATE (David: render the video): RUN: tmux video_mj, `bash experiments/run_capped.sh data/logs/demo_video_smoothmj_20261028_101054.log python experiments/demo_video.py --name demo_moved_minjerk` (bridge ON, min-jerk + skill-start ramps), video to data/videos/demo_moved_minjerk_*.mp4, done marker data/logs/video_mj_20261028_101054.done, started 10:10 2026-10-28. About 2.5 min episode plus rendering (last video took 135 s episode). NEXT: check the log, report the path, commit. Do not start another MuJoCo process.

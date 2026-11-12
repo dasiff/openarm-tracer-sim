@@ -19,7 +19,7 @@ Output: (filtered command, FilterStatus).
 Robot state may come from the simulator; the resolver never reads world data from it (it takes world objects as numbers).
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import numpy as np
 
@@ -50,6 +50,7 @@ class FilterStatus:
     hold_reason: str = ""
     methods: tuple = ()
     fraction: float = float("nan")
+    hand_targets: dict = field(default_factory=dict)   # side -> (position (3,), rotation (3,3)): the pose the resolver aimed the hand at (empty on PASS, HOLD and for shortened arms)
 
 
 class _Hold(Exception):
@@ -227,6 +228,7 @@ class Resolver:
             self._update_active(t, last)
             return last.copy(), st
         st.methods = tuple(dict.fromkeys(methods))
+        st.hand_targets = {s: (np.array(v[0]), np.array(v[1])) for s, v in targets.items()}
         st.status = (STEP_SHORTENED if STEP_SHORTENED in methods else ELBOW_SWING if ELBOW_SWING in methods
                      else HAND_SLIDE if HAND_SLIDE in methods else PASS)
         self._update_active(t, q)
@@ -245,9 +247,9 @@ class Resolver:
         arms = t.closing(key)
         share = short / len(arms)
         shorten = []
+        a, b = t.shape(q, key[0]), t.shape(q, key[1])
+        pp = pair_push(a, b)             # one snapshot of the pair for every closing arm, so the arms take equal shares
         for side in arms:
-            a, b = t.shape(q, key[0]), t.shape(q, key[1])
-            pp = pair_push(a, b)
             mine, direction, point = (a, pp.dir_a, pp.point_a) if a.arm == side else (b, pp.dir_b, pp.point_b)
             cat = category_of(mine)
             if cat == HAND:

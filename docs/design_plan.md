@@ -657,3 +657,21 @@ PENDING:
 - Codebase-wide removal of world ground-truth reads (separate project, planned from `docs/reports/world_model_inventory_20261109.md`).
 - Perception feeding the world model (design plan §13).
 - Possible retirement of the elbow guard once the bench is in the filter's lab map (note only).
+
+
+### Stage 2 decision rows (SF-28 to SF-39, 2026-11-12; resolver; full text in docs/mpvi_decisions.md)
+
+Status: Stage 2 resolver BUILT on branch safety-filter, not pushed. SF-27 is the divide-and-conquer design above, so these start at SF-28 (another branch may reuse the numbers; renumber at merge).
+
+- **SF-28**: Link categories of the resolver: shoulder = links 1, 2 (and the shoulder mount, link 0): step shortening only; upper_arm = links 3, 4 and forearm = links 5, 6: elbow swing; hand = link 7, palm, finger, held object: hand slide.
+- **SF-29**: Gap rule modes (config GAP_RULE['mode']): 'ours' = M294 (allowed approach 30/s x (gap - margin); below the margin push 30/s x violation, capped 5 cm/s; in the slowing band only the closing speed is limited).
+- **SF-30**: Closing-arm rule: a pair needs action when its shortfall against the gap rule exceeds 1 micrometre (trigger_m, my choice) AND an arm of the pair is closing (moving only that arm to its raw command shrinks the gap by more than 1 nm).
+- **SF-31**: Worst-pair-first rounds: up to 10 rounds, each fixes only the single worst pair (largest shortfall) for its closing arm(s), then every pair is re-checked; stop when the worst shortfall is under 0.5 mm.
+- **SF-32**: Elbow swing: our elbow point E is moved, then the elbow is swung about the shoulder-wrist line (both arm lengths kept); Kong's converter (collision avoidance off) gets directions only (upper arm = joint 3 axis, forearm = joint 5 axis) and the commanded hand orientation; then exactly one damped Jacobian step on our model moves the hand to the raw commanded position.
+- **SF-33**: Hand slide: the hand's motion from last to current is stripped of its component into the obstacle (along the contact direction) only; the hand orientation target is the commanded one; one Jacobian step from the current working pose reaches the pushed-back position.
+- **SF-34**: Step shortening: the joint-space step (last to raw) of the arms that need it is scaled by one fraction; largest passing fraction by a halving search of 12 halvings (resolution 1/4096); below 0.001 the result is hold-still (SHORTEN_ZERO).
+- **SF-35**: Hold-still reasons and checks after any push, on the final joint angles: BRANCH_GUARD (any of all seven joints of a pushed arm more than 0.25 rad from the last filtered command; the plan names no joints, so all seven), SHAPE_RECHECK (worst shortfall at least 0.5 mm), JOINT_LIMITS (our model's ranges), ACCURACY (hand within 2 mm and 0.5 deg of the target: raw commanded pose for swings; pushed-back pose for slides).
+- **SF-36**: Accuracy target after step shortening: literal task text, the RAW commanded pose (config shortening_accuracy_target='raw').
+- **SF-37**: Recording: every tick the raw command, the filtered command and the status record (status, rounds, worst pair, gap, shortfall, hold reason, methods, fraction), in chunked npz files with meta.json, the layout of src/run_record.py.
+- **SF-38**: Rolling punch (Stage 2 comparison): each hand in turn moves in a straight line (min-jerk timing) from its zombie-pose hand position to a point 5 cm past the body midline in 0.5 s and back in 0.5 s at constant height, forward distance and hand orientation; the other hand starts half a period (0.5 s) later; 10 repeats; commands are joint targets from our model's Jacobian; the same stream for every configuration.
+- **SF-39**: Comparison configurations: 1 no filter; 2 Kong's compiled filter (radii: upper arm 0.05, forearm 0.05, hand 0.08 m on S-E, E-W, W-tool; from docs/reports/safety_filter_kong_code_20261109.md); 3 our resolver, paper_plain, arm-vs-arm pairs only, Kong's capsules, margins 0; 4 our resolver, full gap rule, our shapes and margins (information).

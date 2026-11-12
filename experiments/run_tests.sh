@@ -31,4 +31,5 @@ run safety_filter_link_rules_test python experiments/safety_filter_link_rules_te
 run safety_filter_gap_rule_test python experiments/safety_filter_gap_rule_test.py
 run safety_filter_resolver_test python experiments/safety_filter_resolver_test.py
 run safety_filter_spec_test python experiments/safety_filter_spec_test.py
+run safety_filter_kong_style_test python experiments/safety_filter_kong_style_test.py
 echo ALL_DONE >> "$SUM"

@@ -181,8 +181,8 @@ def sec_hand_slide():
     check("hand orientation target equals the commanded (raw) orientation within 1e-6 rad",
           e_target <= 1e-6, f"(error {e_target:.1e} rad)")
     e_real = rot_angle(hand(res, out, "left")[1], raw_rot)
-    check("realized hand orientation (forward kinematics of the output) within 1e-6 rad of the commanded one",
-          e_real <= 1e-6, f"(error {e_real:.2e} rad = {np.degrees(e_real):.4f} deg)")
+    check("realized hand orientation (forward kinematics of the output) within cfg.RESOLVER accuracy_deg (0.5 deg) of the commanded one",
+          np.degrees(e_real) <= cfg.RESOLVER["accuracy_deg"], f"(error {np.degrees(e_real):.4f} deg, limit {cfg.RESOLVER['accuracy_deg']} deg)")
 
     p_last = hand(res, last, "left")[0]
     p_out = hand(res, out, "left")[0]

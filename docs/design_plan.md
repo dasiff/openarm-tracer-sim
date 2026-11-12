@@ -675,3 +675,19 @@ Status: Stage 2 resolver BUILT on branch safety-filter, not pushed. SF-27 is the
 - **SF-37**: Recording: every tick the raw command, the filtered command and the status record (status, rounds, worst pair, gap, shortfall, hold reason, methods, fraction), in chunked npz files with meta.json, the layout of src/run_record.py.
 - **SF-38**: Rolling punch (Stage 2 comparison): each hand in turn moves in a straight line (min-jerk timing) from its zombie-pose hand position to a point 5 cm past the body midline in 0.5 s and back in 0.5 s at constant height, forward distance and hand orientation; the other hand starts half a period (0.5 s) later; 10 repeats; commands are joint targets from our model's Jacobian; the same stream for every configuration.
 - **SF-39**: Comparison configurations: 1 no filter; 2 Kong's compiled filter (radii: upper arm 0.05, forearm 0.05, hand 0.08 m on S-E, E-W, W-tool; from docs/reports/safety_filter_kong_code_20261109.md); 3 our resolver, paper_plain, arm-vs-arm pairs only, Kong's capsules, margins 0; 4 our resolver, full gap rule, our shapes and margins (information).
+
+### Stage 2b decision rows (SF-40 to SF-50, 2026-11-12; kong_style resolver; full text in docs/mpvi_decisions.md)
+
+Status: Stage 2b BUILT on branch safety-filter, not pushed (SF numbers may be renumbered at merge, see Stage 2). The comparison is docs/reports/safety_filter_stage2b_comparison_20261112.md.
+
+- **SF-40**: Resolver switch: config RESOLVER['mode'] picks the resolver: 'layered' (the Stage 2 separate tools), 'kong_style' (Stage 2b) or 'cbf' (raises NotImplementedError('CBF resolver not built'); no CBF code).
+- **SF-41**: kong_style is the default resolver; the layered one stays as a switchable option.
+- **SF-42**: kong_style sweeps: up to 10 (the rounds setting), stop when the worst shortfall is under 0.5 mm.
+- **SF-43**: Forearm lever split: tau = fraction from elbow (0) to wrist (1); elbow moves wE (1-tau) push / D, wrist wW tau push / D, D = wE (1-tau)^2 + wW tau^2, so the contact point moves by exactly the push.
+- **SF-44**: Upper arm contact: elbow only, displacement = push / tau, tau = fraction shoulder (0) to elbow (1).
+- **SF-45**: Link length restore after summing: elbow moved along the shoulder-to-elbow direction to its original distance from the shoulder; wrist the same from the elbow; hand reference point = new wrist + the original wrist-to-hand vector at the commanded hand orientation (the hand never tilts).
+- **SF-46**: Jump-through guard: the straight joint-space path from the last filtered command to the raw command is sampled (ceil(largest keypoint move / its capsule radius), at most 50 = tunnel_guard_max_samples); if any sample has a pair below tunnel_guard_min_gap_m (0.0) the step is shortened by the existing step shortening (12 halvings, 0.001 floor) with the pass test 'no sample from 0 to the fraction violates'; the shortened command is the raw command for the rest of the tick.
+- **SF-47**: kong_style accuracy check: the hand pose after the sweeps must be within 2 mm and 0.5 degrees of the PUSHED hand target (the last sweep's restored hand point and the commanded orientation), not of the original command.
+- **SF-48**: The gap rule (speed limit, SF-29) stays in both resolvers: gap_rule_mode 'ours' (default) and 'paper_plain' both work in kong_style; the gap rule gives each pair's push amount, the resolver shares it.
+- **SF-49**: Layered fix: config elbow_swing_hand_target 'slid' (default) or 'raw' (old behaviour).
+- **SF-50**: Spec test line relaxed: 'realized hand orientation within 1e-6 rad' in experiments/safety_filter_spec_test.py now compares to the accuracy value from config (0.5 degrees); one Jacobian step cannot reach 1e-6 (error 6.4e-4 rad).

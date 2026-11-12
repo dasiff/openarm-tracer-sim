@@ -29,6 +29,8 @@ TASK (David, 2026-10-28, four changes then report; no video, no push): (1) held-
 
 # Progress log
 
+TASK 2026-11-12 (safety filter Stage 2e, elbow snap addendum to 2d, measurement only) DONE: replay split by elbow bend (no replayed case or hold below 0.242 rad; joint 6 holds replayed: all (d), joint limit, bend 0.75 rad or more); sweep (onset of wrong hand pose at 0.242 in 10 of 12 posture-arms, snap >0.25 rad in 5 with joints 3 and 5 sum preserved; joint 6 not involved); report docs/reports/safety_filter_stage2e_elbow_snap_20261112.md. Stage 2d's row 6 conclusion covered only the first 20 holds; joint 6 holds (1461) replayed now. No src change, not pushed.
+
 TASK 2026-11-12 (safety filter Stage 2d, solver jumps, diagnosis only) DONE: model check (only a 2 mm elbow point difference), zero-push round trip (exact on home and stream; fails only for straight elbow), replay (row 4: joint 6 limit, 20 of 20; row 6: push growth then lock-in); report docs/reports/safety_filter_stage2d_solver_jumps_20261112.md. Also added design plan section 16 'Known limitations' and 'Stage 4 design' entries and row SF-51. No src change, not pushed.
 
 TASK 2026-11-12 (safety filter Stage 2c diagnosis) DONE: pair counts, time profile (62% of tick in pair checks inside shortening/guard), hold causes (not start-pose-below-guard; forearm-torso pair + solver jumps), lag test, mild stream; report docs/reports/safety_filter_stage2c_diagnosis_20261112.md. No src change, not pushed.

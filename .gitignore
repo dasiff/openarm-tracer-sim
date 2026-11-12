@@ -43,3 +43,10 @@ assets/private/
 
 # CodeGraph index (generated, rebuild with codegraph init)
 .codegraph/
+
+# Local files that are not part of the project (kept on disk, never tracked)
+/scratch/
+/measstart
+/compare_nosag.py
+/extract_height_data.py
+.claude/settings.local.json

@@ -19,6 +19,8 @@ from safety_filter_resolver_fixtures import (DT, HOME, MIRROR, hand_hand_gap, ik
                                               solver, state_of)
 
 from src.safety_filter import config as cfg  # noqa: E402
+cfg.RESOLVER["mode"] = "layered"            # these tests are about the layered resolver (SF-40); kong_style is tested in safety_filter_kong_style_test.py
+cfg.RESOLVER["elbow_swing_hand_target"] = "raw"  # the old behaviour these tests were written for (SF-49)
 from src.safety_filter import gap_rule, link_rules  # noqa: E402
 from src.safety_filter.arm_conversion import rotation_error_rad  # noqa: E402
 from src.safety_filter.push_direction import pair_push  # noqa: E402

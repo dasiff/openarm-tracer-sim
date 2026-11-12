@@ -31,8 +31,9 @@ from src.safety_filter.push_direction import contact_fraction, elbow_displacemen
 from src.safety_filter.shapes import SIDES, RobotState
 from src.safety_filter.touch import Exempt, as_placed, evaluate_pairs, gap_between, pair_rule
 
-PASS, ELBOW_SWING, HAND_SLIDE, STEP_SHORTENED, HOLD = "PASS", "ELBOW_SWING", "HAND_SLIDE", "STEP_SHORTENED", "HOLD"
-STATUSES = (PASS, ELBOW_SWING, HAND_SLIDE, STEP_SHORTENED, HOLD)
+PASS, ELBOW_SWING, HAND_SLIDE, STEP_SHORTENED, HOLD, KONG_PUSH = "PASS", "ELBOW_SWING", "HAND_SLIDE", "STEP_SHORTENED", "HOLD", "KONG_PUSH"
+STATUSES = (PASS, ELBOW_SWING, HAND_SLIDE, STEP_SHORTENED, HOLD, KONG_PUSH)   # KONG_PUSH last: older recordings keep their indices
+MODES = ("layered", "kong_style", "cbf")
 HOLD_REASONS = ("BRANCH_GUARD", "SHAPE_RECHECK", "JOINT_LIMITS", "ACCURACY", "SHORTEN_ZERO", "NO_SOLVER", "SOLVER_FAILED", "NOT_FINITE")
 _ARM_INDEX = {"left": 0, "right": 1}
 
@@ -188,7 +189,19 @@ class Resolver:
     # ------------------------------------------------------------------
     def step(self, raw, last, state: RobotState, world_objects=(), held=None):
         """One control tick. raw, last: (2, 7) arrays (rad). Returns (filtered, FilterStatus).
-        On PASS the filtered command is the raw array object itself (not a copy)."""
+        On PASS the filtered command is the raw array object itself (not a copy).
+        Dispatches on config RESOLVER["mode"] (SF-40): "layered" (this file), "kong_style" (kong_style.py), "cbf" (not built)."""
+        mode = cfg.RESOLVER["mode"]
+        if mode not in MODES:
+            raise ValueError(f"RESOLVER['mode'] must be one of {MODES}, not {mode!r}")
+        if mode == "cbf":
+            raise NotImplementedError("CBF resolver not built")
+        if mode == "kong_style":
+            from src.safety_filter import kong_style
+            return kong_style.step(self, raw, last, state, world_objects, held)
+        return self._step_layered(raw, last, state, world_objects, held)
+
+    def _step_layered(self, raw, last, state, world_objects, held):
         last = np.asarray(last, float)
         if not np.isfinite(np.asarray(raw, float)).all():
             return last.copy(), FilterStatus(status=HOLD, hold_reason="NOT_FINITE")
@@ -304,7 +317,7 @@ class Resolver:
         e_new = S + ((E - S) @ axis) * axis + rho * r2 / n2     # a swing about the S-W line keeps both arm lengths
         u = (e_new - S) / np.linalg.norm(e_new - S)
         l = (W - e_new) / np.linalg.norm(W - e_new)
-        p_raw, r_raw = self.kin.hand_pose(self._state(t, t.raw), side)
+        p_raw, r_raw = self._swing_hand_target(t, side, targets)
         try:
             qc = self.kin.convert_directions(self._state(t, q), side, u, l, r_raw)
         except RuntimeError as exc:
@@ -316,8 +329,17 @@ class Resolver:
         targets[side] = (p_raw, r_raw)
         return True
 
+    def _swing_hand_target(self, t, side, targets):
+        """The hand pose an elbow swing aims at (SF-49): "slid" = the target set earlier in this tick (a hand slide's), else the raw commanded pose."""
+        m = cfg.RESOLVER["elbow_swing_hand_target"]
+        if m not in ("slid", "raw"):
+            raise ValueError(f"RESOLVER['elbow_swing_hand_target'] must be 'slid' or 'raw', not {m!r}")
+        if m == "slid" and side in targets:
+            return targets[side]
+        return self.kin.hand_pose(self._state(t, t.raw), side)
+
     # ---- step shortening ----
-    def _shorten(self, t, q, sides, methods, targets, st):
+    def _shorten(self, t, q, sides, methods, targets, st, passes=None):
         """Scale the joint-space step (last -> raw) of the given arms by the largest fraction at which every pair meets
         the gap rule (halving search); below shorten_min_fraction: hold still."""
         idx = [_ARM_INDEX[s] for s in sides]
@@ -328,8 +350,9 @@ class Resolver:
                 qq[i] = t.last[i] + f * (t.raw[i] - t.last[i])
             return qq
 
-        def passes(f):
-            return t.worst_value_discover(trial(f)) < cfg.RESOLVER["stop_m"]
+        if passes is None:                       # default pass test: every pair meets the gap rule; kong_style's jump-through guard passes its own
+            def passes(f):
+                return t.worst_value_discover(trial(f)) < cfg.RESOLVER["stop_m"]
 
         if passes(1.0):
             f = 1.0

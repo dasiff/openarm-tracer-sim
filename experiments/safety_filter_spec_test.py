@@ -19,6 +19,8 @@ sys.path.insert(0, str(ROOT / "experiments"))
 
 import safety_filter_resolver_fixtures as fx  # noqa: E402
 from src.safety_filter import config as cfg  # noqa: E402
+cfg.RESOLVER["mode"] = "layered"            # these tests are about the layered resolver (SF-40); kong_style is tested in safety_filter_kong_style_test.py
+cfg.RESOLVER["elbow_swing_hand_target"] = "raw"  # the old behaviour these tests were written for (SF-49)
 from src.safety_filter import gap_rule  # noqa: E402
 from src.safety_filter.shapes import RobotState  # noqa: E402
 

@@ -748,3 +748,5 @@ PROGRESS 21:02: sweep done (data/logs/nc_sweep_20261110_205804.log: 382 geom-set
 PROGRESS 21:05: tests/timing done, SF-23..26 rows, plan marker, report docs/reports/20261110_2112_safety_filter_never_close.md. NEXT: commit; final message. Not pushed.
 DOC 2026-11-10: divide-and-conquer never-close design added (SF-27, design plan section 16 PENDING); docs only.
 PUSH 2026-11-10: safety-filter pushed to origin/safety-filter through 90b6177 (new branch, main untouched).
+
+TASK 2026-11-12 (David, safety filter Stage 2b: kong_style resolver, resolver switch, small fix; decision rows SF-40 to SF-50; no push). STEPS: 0 read DONE; 1 switch DONE; 2 layered fix (elbow_swing_hand_target) DONE (closing right arm still HOLD ACCURACY in both settings, log data/logs/20261112_s2b_step2_closing.log); 3 kong_style.py; 4 tests (subagent spec tests); 5 comparison (subagent); 6 plan + decisions. CURRENT: step 3.

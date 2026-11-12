@@ -1,136 +1,144 @@
-"""Logging-only module for stance search results. No algorithm or behavior change.
+"""Logging of one stance search (decisions-log M309 to M316). Logging only: nothing here changes which stance is checked, any answer or any return value.
 
-Saves JSON files to a unique search directory:
-  - candidates_list.json: all candidates tried, including body-check rejects
-  - full_check_solutions.json: arm joint solutions from full check (piece 2)
-  - dryrun_trajectories.json: per-tick data from dry-run (piece 3)
+A search writes three JSON files into its folder, all together at the end of the search (also when it stops early or raises):
+  candidates_list.json: every stance the search drew, numbered in draw order, body-check rejects included. Each has its body check, full check and dry run with
+    start and finish in seconds since the search began, and the simulator's clock; "accepted" is the number of the accepted candidate (-1 when none).
+  full_check_solutions.json: the arm joint solutions the full check computed at the candidate's own stance (every pick approach angle and every place hand turn it solved).
+  dryrun_trajectories.json: per tick commanded joints and pad position of each dry-run subtask, for every candidate that reached the dry run.
 
-Each search gets its own subdirectory to prevent overwrites across searches.
+The folder: the run's own folder when the search is called from a run (the files go there, and the run's record names the folder); otherwise a new folder under
+STANCE_SEARCH_LOG_CFG["dir"]. A search never writes into a folder that already holds one of the three files.
 """
 
 import json
+import math
+import os
 import time
 import uuid
 from pathlib import Path
 
+from src.grasp_rules import bin_center
+from src.task_config import STANCE_SEARCH_LOG_CFG
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+FILES = ("candidates_list.json", "full_check_solutions.json", "dryrun_trajectories.json")
+DRYRUN_COLUMNS = ["t_s"] + [f"q{j}_rad" for j in range(1, 8)] + ["pad_x_m", "pad_y_m", "pad_z_m"]
+
+
+def num(v):
+    """A number as the files keep it: rounded, and None for a missing or NaN value (a NaN is not valid JSON)."""
+    if v is None:
+        return None
+    f = float(v)
+    return None if math.isnan(f) else round(f, STANCE_SEARCH_LOG_CFG["round_decimals"])
+
+
+def approach_angle_deg(kind, approach_bin=None, theta_rad=0.0):
+    """A pick's approach angle in degrees from the stance heading (its bin centre), or a place's hand turn in degrees."""
+    return math.degrees(bin_center(int(approach_bin))) if kind == "pick" else math.degrees(theta_rad)
+
+
+def _new_folder_name():
+    return f"{time.strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:8]}"
+
+
+def _status(cand, accepted):
+    checks = cand["checks"]
+    if not checks.get("body_check", {}).get("passed", True):
+        return "rejected_body_check"
+    if "full_check" not in checks:
+        return "not_checked"
+    if not checks["full_check"]["passed"]:
+        return "rejected_full_check"
+    if "dry_run" not in checks:
+        return "not_checked"
+    if not checks["dry_run"]["passed"]:
+        return "rejected_dry_run"
+    return "accepted" if cand["number"] == accepted else "passed_not_chosen"
+
 
 class StanceSearchLogger:
-    """Logs stance search results to JSON files without changing behavior."""
+    """One search's records; save() writes its three files into self.folder."""
 
-    def __init__(self, base_dir=None):
-        """Initialize logger for a unique search directory.
+    def __init__(self, run_dir=None, base_dir=None):
+        """Makes the search's folder. With run_dir (a search called from a run): run_dir itself, unless it already holds one of the three files, then a new folder inside it.
+        Without: a new folder under base_dir (default STANCE_SEARCH_LOG_CFG["dir"]). A folder is never reused for a second search."""
+        if run_dir is None:
+            root = Path(base_dir) if base_dir is not None else PROJECT_ROOT / STANCE_SEARCH_LOG_CFG["dir"]
+            self.folder = root / _new_folder_name()
+            self.folder.mkdir(parents=True, exist_ok=False)
+        else:
+            self.folder = Path(run_dir)
+            self.folder.mkdir(parents=True, exist_ok=True)
+            if any((self.folder / name).exists() for name in FILES):
+                self.folder = self.folder / _new_folder_name()
+                self.folder.mkdir(exist_ok=False)
+        for name in FILES:                                   # reserved now: a second search started before this one saves gets its own folder
+            (self.folder / name).touch(exist_ok=False)
+        self._t0 = None
+        self._candidates = {}
+        self._solutions = {}
+        self._dryrun = {}
+        self.accepted = None
 
-        Args:
-            base_dir: Base directory for stance search logs. If None, uses data/demo_record/stance_search.
-                      A unique subdirectory is created for each search.
-        """
-        if base_dir is None:
-            base_dir = Path(__file__).resolve().parents[1] / "data" / "demo_record" / "stance_search"
+    def start(self):
+        """Starts the search clock: every wall-clock time in the files counts from here."""
+        self._t0 = time.perf_counter()
 
-        base_dir = Path(base_dir)
-        base_dir.mkdir(parents=True, exist_ok=True)
+    def _wall(self):
+        return num(time.perf_counter() - self._t0)
 
-        search_id = str(uuid.uuid4())[:8]
-        self.run_dir = base_dir / search_id
-        self.run_dir.mkdir(parents=True, exist_ok=True)
-        self.search_start_time = time.time()
-        self.search_start_sim_time = None  # Set by caller with current sim time
-        self.candidates = []
-        self.full_check_solutions = {}
-        self.dryrun_data = {}
-        self.accepted_candidate = None
+    def new_candidate(self, stance, clocks):
+        """A stance the search has drawn; its number is its place in the draw order. clocks: (simulator time in s, check data time in s)."""
+        n = len(self._candidates)
+        x, y, heading, pedestal = stance
+        self._candidates[n] = {"number": n, "base_x": num(x), "base_y": num(y), "heading_deg": num(math.degrees(heading)), "pedestal_m": num(pedestal),
+                               "wall_time_start_s": self._wall(), "sim_time_start_s": num(clocks[0]), "check_clock_start_s": num(clocks[1]), "checks": {}}
+        return n
 
-    def record_search_start(self, sim_time=0.0):
-        """Record search start time."""
-        self.search_start_time = time.time()
-        self.search_start_sim_time = sim_time
+    def begin_check(self, n, name, clocks):
+        self._candidates[n]["checks"][name] = {"wall_time_start_s": self._wall(), "sim_time_start_s": num(clocks[0]), "check_clock_start_s": num(clocks[1])}
 
-    def record_candidate_attempted(self, candidate_num, x, y, heading_deg, pedestal_m, sim_time=None):
-        """Record that a candidate is being checked.
+    def end_check(self, n, name, passed, reason, clocks):
+        cand = self._candidates[n]
+        rec = cand["checks"][name]
+        rec.update(passed=bool(passed), reason=str(reason or "")[:200], wall_time_end_s=self._wall(), sim_time_end_s=num(clocks[0]), check_clock_end_s=num(clocks[1]))
+        cand.update(wall_time_end_s=rec["wall_time_end_s"], sim_time_end_s=rec["sim_time_end_s"], check_clock_end_s=rec["check_clock_end_s"])
 
-        Args:
-            candidate_num: Integer candidate number
-            x, y: Base position
-            heading_deg: Base heading in degrees
-            pedestal_m: Pedestal height in meters
-            sim_time: Current sim time (seconds)
-        """
-        wall_time_s = time.time() - self.search_start_time
-        return {
-            "number": int(candidate_num),
-            "base_x": round(float(x), 4),
-            "base_y": round(float(y), 4),
-            "heading_deg": round(float(heading_deg), 1),
-            "pedestal_m": round(float(pedestal_m), 4),
-            "wall_time_start_s": round(wall_time_s, 2),
-            "sim_time_start_s": round(float(sim_time or 0.0), 2),
-            "checks": {}
-        }
+    def add_solutions(self, n, solves):
+        self._solutions[n] = solves
 
-    def record_candidate_check_result(self, cand_data, check_name, passed, reason=""):
-        """Record result of a check on a candidate.
+    def add_dryrun(self, n, data):
+        self._dryrun[n] = data
 
-        Args:
-            cand_data: Dict from record_candidate_attempted
-            check_name: Name of check (e.g. "body_check", "full_check", "dry_run")
-            passed: Boolean whether check passed
-            reason: String reason if failed
-        """
-        wall_time_s = time.time() - self.search_start_time
-        cand_data["checks"][check_name] = {
-            "passed": bool(passed),
-            "reason": str(reason)[:200] if reason else "",
-            "wall_time_end_s": round(wall_time_s, 2)
-        }
+    def accept(self, n):
+        self.accepted = int(n)
 
-    def record_full_check_solution(self, candidate_num, arm_solutions):
-        """Record full check's arm joint solutions at each task point.
+    def save(self):
+        """Writes the three files (each through a temporary name, so a file is never half written)."""
+        cands = [dict(self._candidates[n], status=_status(self._candidates[n], self.accepted)) for n in sorted(self._candidates)]
+        self._write("candidates_list.json", {"search_folder": str(self.folder), "accepted": -1 if self.accepted is None else self.accepted,
+                                             "candidates": cands})
+        self._write("full_check_solutions.json", {"candidates": {str(n): self._solutions[n] for n in sorted(self._solutions)}})
+        self._write("dryrun_trajectories.json", {"columns": DRYRUN_COLUMNS, "candidates": {str(n): self._dryrun[n] for n in sorted(self._dryrun)}}, compact=True)
 
-        Args:
-            candidate_num: Integer candidate number
-            arm_solutions: Dict with structure:
-                {
-                  "left": {task_point_name: {"q": [7 joints], "point": "name", "angle": angle}},
-                  "right": {...}
-                }
-        """
-        self.full_check_solutions[int(candidate_num)] = arm_solutions
+    def _write(self, name, data, compact=False):
+        data = _without_nan(data)
+        tmp = self.folder / (name + ".tmp")
+        with open(tmp, "w") as f:
+            if compact:
+                json.dump(data, f, separators=(",", ":"))
+            else:
+                json.dump(data, f, indent=1)
+        os.replace(tmp, self.folder / name)
 
-    def record_dryrun_trajectory(self, candidate_num, subtask_data):
-        """Record dry-run per-tick data.
 
-        Args:
-            candidate_num: Integer candidate number
-            subtask_data: Dict with per-tick info for each subtask
-        """
-        self.dryrun_data[int(candidate_num)] = subtask_data
-
-    def record_accepted(self, candidate_num):
-        """Record which candidate was accepted."""
-        self.accepted_candidate = int(candidate_num)
-
-    def save_candidates_list(self):
-        """Save all candidates list to JSON file (PIECE 1)."""
-        filepath = self.run_dir / "candidates_list.json"
-        data = {
-            "candidates": self.candidates,
-            "accepted": self.accepted_candidate
-        }
-        with open(filepath, 'w') as f:
-            json.dump(data, f, indent=1)
-
-    def save_full_check_solutions(self):
-        """Save full check solutions to JSON file (PIECE 2)."""
-        filepath = self.run_dir / "full_check_solutions.json"
-        with open(filepath, 'w') as f:
-            json.dump(self.full_check_solutions, f, indent=1)
-
-    def save_dryrun_trajectories(self):
-        """Save dry-run trajectories to JSON file (PIECE 3)."""
-        filepath = self.run_dir / "dryrun_trajectories.json"
-        with open(filepath, 'w') as f:
-            json.dump(self.dryrun_data, f, indent=1)
-
-    def add_candidate(self, cand_data):
-        """Add a completed candidate record to the list."""
-        self.candidates.append(cand_data)
+def _without_nan(v):
+    """The same structure with every NaN replaced by None (JSON has no NaN)."""
+    if isinstance(v, dict):
+        return {k: _without_nan(x) for k, x in v.items()}
+    if isinstance(v, (list, tuple)):
+        return [_without_nan(x) for x in v]
+    if isinstance(v, float) and math.isnan(v):
+        return None
+    return v

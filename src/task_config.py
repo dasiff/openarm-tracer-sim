@@ -541,6 +541,12 @@ STANCE_LOG_CFG = {
     "full_state": True,                     # on/off: save the whole simulation state in each record (MuJoCo's full-physics state: warm start, ctrl, act, time, mocap, plus the derived kinematics and mass matrix); about 2 to 3 KB more per record (M282)
 }
 
+# The stance search logs (decisions-log M312 to M316, David 2026-11-11): the three JSON files written for each stance search. Logging only: no draw, check or answer changes.
+STANCE_SEARCH_LOG_CFG = {
+    "dir": "data/demo_record/stance_search",  # folder: a search that is not called from a run writes its files into a new folder here (time and a random id in the name); a search called from a run writes into the run's folder [row M312]
+    "round_decimals": 4,                       # count: decimals kept for every number in the files (joints in rad, pad positions in m, times in s); the dry-run ticks are rounded to this [row M315]
+}
+
 # Navigation core (src/nav_*.py; overnight queue stage 2; navigation proposal docs/reports/20261021_2121_navigation_design.md). Names follow Nav2 where an equivalent exists (proposal section 11).
 # The starting values that David did not set himself are in row M148 ([PENDING David]).
 NAV_CFG = {

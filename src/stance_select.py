@@ -777,7 +777,6 @@ def apply_stance_selection(tagged, task_cfg, maps_dir="data/reach_map", cfg=BENC
     yaw = float(task_cfg["staging_yaw"])
     fc = FullCheck(maps={**bs.load_maps(maps_dir)}, task_cfg=task_cfg, maps_dir=maps_dir)
     logger = StanceSearchLogger()
-    logger.record_search_start(sim_time=0.0)
     try:
         segs = tagged["segments"]
         steps = _manip_steps(tagged)
@@ -806,6 +805,11 @@ def apply_stance_selection(tagged, task_cfg, maps_dir="data/reach_map", cfg=BENC
             return out
         pts = [p for i in steps for p in targets[i]["points"]]
         results = []
+        number_of = {}                                                    # stance -> candidate number (gate, check and verify get the same tuple)
+
+        def clocks():
+            """The simulator's clock (the scene data's time) and the clock of the check's own data, both in seconds (logging)."""
+            return float(fc.scene_data.time), float(fc.chk.d.time)
 
         def check(stance):
             """The full check of one drawn stance, its values unchanged (the M283 seed is the check's own)."""
@@ -813,23 +817,11 @@ def apply_stance_selection(tagged, task_cfg, maps_dir="data/reach_map", cfg=BENC
             fc.start_log.clear()
             if len(fc._checkers) > 4:
                 fc._checkers.clear()                                       # a cache: rebuilt when needed, results unchanged
+            n = number_of[stance]
+            logger.begin_check(n, "full_check", clocks())
             r = fc.check(stance, points_at_heading(pts, stance[2]))           # M300: the place's back-off point turns with the stance's heading (not the staging yaw)
             results.append(r)
-            # Logging piece 2: record arm solutions for all candidates that reach full check (logging only, no behavior change)
-            if len(results) <= len(rec.get("draws", [])):
-                candidate_num = len(results) - 1
-                arm_solutions = {"left": {}, "right": {}}
-                if "ik" in r:
-                    for ik_entry in r.get("ik", []):
-                        if ik_entry.get("ok"):
-                            for side in ["left", "right"]:
-                                task_point_key = ik_entry.get("point_name", f"point_{ik_entry.get('point_idx', 0)}")
-                                arm_solutions[side][task_point_key] = {
-                                    "q": ik_entry.get(f"solution_{side}", []),
-                                    "point": task_point_key,
-                                    "angle": ik_entry.get("angle", None)
-                                }
-                logger.record_full_check_solution(candidate_num, arm_solutions)
+            logger.end_check(n, "full_check", r["ok"], r.get("reason", ""), clocks())
             return {"ok": bool(r["ok"]), "failed": list(r.get("failed", [])), "reason": str(r.get("reason", "")), "seconds": (r.get("seconds") or {}).get("total"), "seed": r.get("seed"), "raw": r}
 
         pick_i = next((i for i in steps if targets[i]["primitive"] == "pick"), steps[0])
@@ -838,31 +830,28 @@ def apply_stance_selection(tagged, task_cfg, maps_dir="data/reach_map", cfg=BENC
         def verify(stance, raw):
             """The trajectory dry-run of one candidate that passed the full check (M302): the pick's approach bin and the place's hand turn are the ones the full check passed."""
             lists = {int(t["task"]): list(t["angles"]) for t in ((raw or {}).get("task_angle_lists") or []) if t.get("task") is not None}
+            n = number_of[stance]
+            logger.begin_check(n, "dry_run", clocks())
             try:
                 k = choose_approach_angle(lists[int(pick_i)])
                 th = choose_place_angle(lists[int(place_i)]) if place_i is not None and lists.get(int(place_i)) else 0.0
             except (KeyError, ApproachAngleError) as e:
+                logger.end_check(n, "dry_run", False, f"approach angles missing: {e}", clocks())
                 return {"ok": False, "failed": "angles", "reason": f"approach angles missing: {e}", "seconds": 0.0, "subtasks": []}
             res = dry_run_stance(fc.chk, fc.model, stance, task_cfg["beaker_xy"], k, th)
-            # Logging piece 3: record dry-run trajectory data (logging only, no behavior change)
-            if res.get("subtasks") and len(results) <= len(rec.get("draws", [])):
-                candidate_num = len(results) - 1
-                subtask_data = {}
-                for subtask in res.get("subtasks", []):
-                    subtask_name = subtask.get("name", f"subtask_{subtask.get('idx', 0)}")
-                    subtask_data[subtask_name] = {
-                        "name": subtask_name,
-                        "ok": subtask.get("ok", False),
-                        "ticks": subtask.get("ticks", []),
-                        "error": subtask.get("error", None)
-                    }
-                logger.record_dryrun_trajectory(candidate_num, subtask_data)
+            logger.end_check(n, "dry_run", res["ok"], res["reason"], clocks())
             return {"ok": res["ok"], "failed": res["failed"], "reason": res["reason"], "seconds": res["seconds"], "subtasks": res["subtasks"], "pick_k": int(k), "place_theta_deg": th}
 
         def gate(stance):
             """The full check's own body check at the stance (FullCheck.clear.body_distance, the limit of its body group): a stance that touches the scene is discarded before the full check (M299)."""
+            n = logger.new_candidate(stance, clocks())
+            logger.begin_check(n, "body_check", clocks())
             bd, pair = fc.clear.body_distance(stance)
-            return bd > fc.cfg["body_clearance"], pair, bd
+            passed = bd > fc.cfg["body_clearance"]
+            logger.end_check(n, "body_check", passed, "" if passed else f"touches {pair} at {1000 * bd:.1f} mm (limit {1000 * fc.cfg['body_clearance']:.1f} mm)", clocks())
+            if passed:
+                number_of[stance] = n
+            return passed, pair, bd
 
         record_dir = Path(__file__).resolve().parents[1] / "data" / "logs" / "sampler_records"       # logging only: the selection record is written here (M299, M300)
         top = fc.model.geom("bench_top")                      # the bench top footprint: the base distance to its edge (negative: over it)
@@ -886,25 +875,12 @@ def apply_stance_selection(tagged, task_cfg, maps_dir="data/reach_map", cfg=BENC
             rep["sampler"] = {"ok": False, "stop": out["stop"], "pieces": None}
             return out
         rec = {}
+        logger.start()
         gen = iter_verified_stances(objects, pieces, geom, cfg["arm"], cfg, check, verify, gate=gate, say=say, record_dir=record_dir, base_metric=base_metric, point_labels=labels, rec=rec)
         got = next(gen, None)                                 # M301, M302: the first candidate that passes the full check and the dry-run; None when none does
         rep["sampler"] = rec
-
-        # Logging piece 1: record all candidates tried (logging only, no behavior change)
-        if "draws" in rec:
-            for i, draw in enumerate(rec["draws"]):
-                cand_data = logger.record_candidate_attempted(i, draw["x"], draw["y"], draw["heading"], draw["pedestal"], sim_time=0.0)
-                if i < len(results):
-                    res = results[i]
-                    logger.record_candidate_check_result(cand_data, "full_check", res.get("ok", False), res.get("reason", ""))
-                logger.add_candidate(cand_data)
         if got is not None:
-            logger.record_accepted(got.get("sampler_draw", -1))
-        logger.save_candidates_list()
-        # Logging piece 2: save full check solutions (logging only, no behavior change)
-        logger.save_full_check_solutions()
-        # Logging piece 3: save dry-run trajectories (logging only, no behavior change)
-        logger.save_dryrun_trajectories()
+            logger.accept(number_of[got["stance"]])
 
         if got is None:
             out["stop"] = "stance sampler: " + str(rec.get("stop"))
@@ -937,5 +913,6 @@ def apply_stance_selection(tagged, task_cfg, maps_dir="data/reach_map", cfg=BENC
         out.update(ok=True)
         return out
     finally:
+        logger.save()                                         # the three files, also when the search stops early or raises (M313)
         del fc
         gc.collect()

@@ -22,7 +22,8 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 PKG = ROOT / "src" / "safety_filter"
-ALLOWED_PROJECT_IMPORTS = {"src.robot_specs", "src.battery", "src.cameras", "src.safety_filter"}
+# src.geo_kin_self_collision_filter: Kong's joint-angle converter (robot only: joints in, joints out; no scene, no world), used by the resolver (SF-1, SF-32)
+ALLOWED_PROJECT_IMPORTS = {"src.robot_specs", "src.battery", "src.cameras", "src.safety_filter", "src.geo_kin_self_collision_filter"}
 # world_model is NOT forbidden: M290 allows world information from the world model (the adapter takes it by duck typing).
 FORBIDDEN_NAMES = ("sim", "simulator", "scene", "mjdata", "data_sim", "spec")
 FORBIDDEN_CALLS = ("from_xml_path", "from_xml_string", "from_xml")

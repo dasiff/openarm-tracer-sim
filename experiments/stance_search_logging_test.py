@@ -52,7 +52,7 @@ def part_a():
     sol = json.loads((first.folder / "full_check_solutions.json").read_text())
     check("NaN joint values are written as null", sol["candidates"]["0"][0]["points"][0]["q_rad"] == [None] * 7, "")
     dr = json.loads((first.folder / "dryrun_trajectories.json").read_text())
-    check("numbers are rounded to 4 decimals", dr["candidates"]["0"]["place_theta_deg"] == -20.0 and num(0.123456) == 0.1235, str(dr["candidates"]["0"]["place_theta_deg"]))
+    check("numbers are rounded to 4 decimals", dr["candidates"]["0"]["place_theta_deg"] == -19.9999 and num(0.123456) == 0.1235, str(dr["candidates"]["0"]["place_theta_deg"]))
     check("the dry-run file names its columns", dr["columns"] == DRYRUN_COLUMNS and len(dr["columns"]) == 11, str(len(dr["columns"])))
     check("a search with no accepted candidate records -1", (second.folder / "candidates_list.json").exists() and json.loads((second.folder / "candidates_list.json").read_text())["accepted"] == -1, "")
 

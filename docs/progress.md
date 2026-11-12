@@ -29,6 +29,8 @@ TASK (David, 2026-10-28, four changes then report; no video, no push): (1) held-
 
 # Progress log
 
+TASK 2026-11-12 (safety filter Stage 2d, solver jumps, diagnosis only) DONE: model check (only a 2 mm elbow point difference), zero-push round trip (exact on home and stream; fails only for straight elbow), replay (row 4: joint 6 limit, 20 of 20; row 6: push growth then lock-in); report docs/reports/safety_filter_stage2d_solver_jumps_20261112.md. Also added design plan section 16 'Known limitations' and 'Stage 4 design' entries and row SF-51. No src change, not pushed.
+
 TASK 2026-11-12 (safety filter Stage 2c diagnosis) DONE: pair counts, time profile (62% of tick in pair checks inside shortening/guard), hold causes (not start-pose-below-guard; forearm-torso pair + solver jumps), lag test, mild stream; report docs/reports/safety_filter_stage2c_diagnosis_20261112.md. No src change, not pushed.
 
 TASK 2026-11-12 (safety filter Stage 2, resolver; branch safety-filter; no push). PLAN: 0 read; 1 link categories; 2 gap rule; 3 push direction; 4 resolver core; 5 recording; 6 tests; 7 Kong comparison (scripts/safety_filter_kong_comparison.py, report docs/reports/safety_filter_stage2_kong_comparison_20261111.md); 8 plan rows SF-28.. (design plan section 16 end + mpvi_decisions). DONE 0-7 (comparison by subagent, report docs/reports/safety_filter_stage2_kong_comparison_20261111.md) and 8. CURRENT: final test run and final message. Two spec-test checks fail (resolver limits, reported). RUN: none. Not pushed.

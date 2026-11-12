@@ -90,10 +90,40 @@ def kin_points(res, q):
     return out
 
 
+class _Plan:
+    """What one sweep of the given pairs did: pushed {side: (E2, W2, H2)} the restored points of each pushed arm (last push),
+    shorten: arms handed to step shortening, q: the joint angles afterwards, st: the status counters."""
+
+    def __init__(self):
+        self.pushed, self.shorten, self.q, self.st = {}, set(), None, None
+
+
 def sweep(res, t, pairs, q=None):
-    """One sweep's plan (kong_style.plan_sweep) for the given pairs at the pose q (default: the raw command)."""
-    q = t.raw if q is None else np.asarray(q, float)
-    return K.plan_sweep(res, t, q, pairs, kin_points(res, q))
+    """One sweep (kong_style._sweep: the pairs pushed one at a time, each converted at once) of the given pairs at the pose q (default:
+    the raw command). The shortfall of each pair is the one GIVEN (the tick's shortfall is pinned to it), so a test can force it."""
+    from src.safety_filter.resolver import FilterStatus
+    q = np.array(t.raw if q is None else q, float)
+    cons = kin_points(res, q)
+    r_cmd = {s: res.kin.hand_pose(state_of(q), s)[1] for s in SIDES}
+    plan, targets, calls = _Plan(), {}, []
+    orig = K.restore_lengths
+
+    def spy(*a):
+        r = orig(*a)
+        calls.append(r)
+        return r
+
+    given = dict(pairs)
+    real = t.shortfall
+    plan.st = FilterStatus()
+    with mock.patch.object(K, "restore_lengths", spy), mock.patch.object(t, "shortfall", lambda qq, k: given.get(k, real(qq, k))):
+        K._sweep(res, t, q, K.order_pairs(list(pairs)), cons, r_cmd, targets, plan.shorten, plan.st)
+    for side, (H2, _) in targets.items():
+        for E2, W2, H in calls:
+            if np.array_equal(H, H2):
+                plan.pushed[side] = (E2, W2, H2)
+    plan.q = q
+    return plan
 
 
 def hand_pos(res, q, side):
@@ -213,13 +243,15 @@ def sec_upper_arm():
     tau_real = contact_fraction(pp.point_a, S_r, E_r)
     check("real geometry: the upper-arm pair closes and is short of the gap rule", t.closing(key) == ["left"] and short > cfg.RESOLVER["trigger_m"],
           f"(short {short * 1000:.2f} mm, closing {t.closing(key)})")
-    plan = sweep(res, t, [(key, short)])
+    # the real geometry is short by 0.44 mm, under stop_m (0.5 mm), so the sweep would skip the pair (Stage 2g); the lever rule is tested
+    # with a given shortfall of 2 mm
+    plan = sweep(res, t, [(key, 0.002)])
     check("real contact above min_lever_fraction: the elbow is pushed, nothing is shortened",
           tau_real > cfg.RESOLVER["min_lever_fraction"] and "left" in plan.pushed and not plan.shorten,
           f"(tau {tau_real:.3f}, pushed {sorted(plan.pushed)}, shorten {sorted(plan.shorten)})")
     # the lever input forced to tau 0.1: the zombie-pose link 3 contacts all project at tau about 0.3 or more (see the report)
     with mock.patch.object(K, "contact_fraction", lambda point, end_a, end_b: 0.1):
-        plan = sweep(res, t, [(key, short)])
+        plan = sweep(res, t, [(key, 0.002)])
     check("tau 0.1 (below min_lever_fraction): the pair is not pushed; step shortening is used for that arm",
           0.1 < cfg.RESOLVER["min_lever_fraction"] and plan.shorten == {"left"} and "left" not in plan.pushed,
           f"(shorten {sorted(plan.shorten)}, pushed {sorted(plan.pushed)}, min_lever_fraction {cfg.RESOLVER['min_lever_fraction']})")

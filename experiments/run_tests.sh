@@ -30,4 +30,5 @@ run safety_filter_structure_test python experiments/safety_filter_structure_test
 run safety_filter_link_rules_test python experiments/safety_filter_link_rules_test.py
 run safety_filter_gap_rule_test python experiments/safety_filter_gap_rule_test.py
 run safety_filter_resolver_test python experiments/safety_filter_resolver_test.py
+run safety_filter_spec_test python experiments/safety_filter_spec_test.py
 echo ALL_DONE >> "$SUM"

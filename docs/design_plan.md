@@ -682,10 +682,10 @@ Status: Stage 2b BUILT on branch safety-filter, not pushed (SF numbers may be re
 
 - **SF-40**: Resolver switch: config RESOLVER['mode'] picks the resolver: 'layered' (the Stage 2 separate tools), 'kong_style' (Stage 2b) or 'cbf' (raises NotImplementedError('CBF resolver not built'); no CBF code).
 - **SF-41**: kong_style is the default resolver; the layered one stays as a switchable option.
-- **SF-42**: kong_style sweeps: up to 10 (the rounds setting), stop when the worst shortfall is under 0.5 mm.
+- **SF-42**: kong_style sweeps: up to 10 (the rounds setting), stop when the worst shortfall is under 0.5 mm. [Summing of pushes SUPERSEDED by SF-52 to SF-55.]
 - **SF-43**: Forearm lever split: tau = fraction from elbow (0) to wrist (1); elbow moves wE (1-tau) push / D, wrist wW tau push / D, D = wE (1-tau)^2 + wW tau^2, so the contact point moves by exactly the push.
 - **SF-44**: Upper arm contact: elbow only, displacement = push / tau, tau = fraction shoulder (0) to elbow (1).
-- **SF-45**: Link length restore after summing: elbow moved along the shoulder-to-elbow direction to its original distance from the shoulder; wrist the same from the elbow; hand reference point = new wrist + the original wrist-to-hand vector at the commanded hand orientation (the hand never tilts).
+- **SF-45**: Link length restore ["after summing" SUPERSEDED by SF-52 to SF-55; the restore now follows each pair's push]: elbow moved along the shoulder-to-elbow direction to its original distance from the shoulder; wrist the same from the elbow; hand reference point = new wrist + the original wrist-to-hand vector at the commanded hand orientation (the hand never tilts).
 - **SF-46**: Jump-through guard: the straight joint-space path from the last filtered command to the raw command is sampled (ceil(largest keypoint move / its capsule radius), at most 50 = tunnel_guard_max_samples); if any sample has a pair below tunnel_guard_min_gap_m (0.0) the step is shortened by the existing step shortening (12 halvings, 0.001 floor) with the pass test 'no sample from 0 to the fraction violates'; the shortened command is the raw command for the rest of the tick.
 - **SF-47**: kong_style accuracy check: the hand pose after the sweeps must be within 2 mm and 0.5 degrees of the PUSHED hand target (the last sweep's restored hand point and the commanded orientation), not of the original command.
 - **SF-48**: The gap rule (speed limit, SF-29) stays in both resolvers: gap_rule_mode 'ours' (default) and 'paper_plain' both work in kong_style; the gap rule gives each pair's push amount, the resolver shares it.
@@ -699,3 +699,15 @@ No handling of a late filter answer. The filter runs inside the control loop and
 ### Stage 4 design (decided, not built) [decision row SF-51]
 
 When the filter finds no safe pose it returns status 'no safe pose found' (today's HOLD, with its reason) together with the last safe command. The bridge hands control to a swappable slow-down policy, a function passed in to the bridge. Default: smooth stop, chosen for the materials lab (held glassware). Alternative: repeat the last safe command. The slow-down may never travel more than half the smallest margin (currently 5 mm); if the arm is moving too fast to stop gently within that, it brakes harder. The bridge reports each command it actually sent, and the filter's next check starts from that command. During a slow-down, the recorded action is the command the bridge sent, with a status saying it was braking and why.
+
+### Stage 2g: one pair at a time (decision rows SF-52 to SF-58, 2026-11-12, David; full text in docs/mpvi_decisions.md)
+
+Status: Stage 2g BUILT on branch safety-filter, not pushed. Report: docs/reports/safety_filter_stage2g_sequential_push_20261112.md. Background: Stage 2f found that one kong_style sweep added up about 55 pair contributions, so the summed wrist push was about 20 times the largest single one.
+
+- **SF-52**: kong_style pushes one pair at a time (Kong's Algorithm 10), deepest violation first; push amount, direction, lever split, closing-arm rule, margins and the gap rule are the existing ones.
+- **SF-53**: Re-measure and skip: pairs at or above stop_m (0.5 mm) are listed; each is measured again at the current pose before its push and skipped if under stop_m.
+- **SF-54**: Conversion after every pair (restore, Kong's solver, one Jacobian step); no clipping and no guard or limit check between pairs; the final checks are unchanged; the status record has the new counters.
+- **SF-55**: The summed behavior is removed, not kept as a setting.
+- **SF-56**: The closing-arm decision is fixed per tick.
+- **SF-57**: The reactive stream (scripts/safety_filter_reactive_stream.py) is test-only.
+- **SF-58**: Config pair_order: 'deepest_first' (default) or 'by_name'.

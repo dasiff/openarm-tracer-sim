@@ -25,6 +25,7 @@ done
 run safety_filter_model_check python experiments/safety_filter_roundtrip.py --model-check
 run safety_filter_distance_test python experiments/safety_filter_distance_test.py
 run safety_filter_shapes_test python experiments/safety_filter_shapes_test.py
+run safety_filter_plugin_test python experiments/safety_filter_plugin_test.py
 run safety_filter_touch_test python experiments/safety_filter_touch_test.py
 run safety_filter_structure_test python experiments/safety_filter_structure_test.py
 run safety_filter_link_rules_test python experiments/safety_filter_link_rules_test.py

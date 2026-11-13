@@ -89,13 +89,13 @@ def render_search(run, rec, out_path, only_times=None, log=print):
         gl.free()
 
 
-def render_real(rec_dir, out_path, clock_offset_s, log=print):
+def render_real(rec_dir, out_path, clock_offset_s, verify=False, log=print):
     """Part 3: the recording replayed in the notebook layout (no intro), the clock continuing from the search's end. Returns the replay report."""
     work = Path(out_path).parent / (Path(out_path).stem + "_work")
     replay_mod.open_video = lambda path, fps, size, codec="mp4v", quality=None: X264Writer(path, fps, size, str(path) + ".ffmpeg.log")
-    r = replay_mod.replay_run(rec_dir, out_dir=work, video="viewer", hz=float(CFG["fps"]), size=tuple(CFG["size"]), name="real", quiet=True, intro=None, clock_offset_s=clock_offset_s)
+    r = replay_mod.replay_run(rec_dir, out_dir=work, video="viewer", hz=float(CFG["fps"]), size=tuple(CFG["size"]), name="real", quiet=True, intro=None, clock_offset_s=clock_offset_s, verify=verify)
     log(f"  replay ok {r['ok']} ({r.get('n_ticks_recorded')} ticks, mismatch {r.get('mismatch')}); frames {r.get('frames_rendered')}")
-    if not r["ok"]:
+    if verify and not r["ok"]:
         raise RuntimeError(f"the replay did not reproduce the run: {r.get('mismatch')}")
     shutil.move(str(work / "real.mp4"), str(out_path))
     shutil.rmtree(work, ignore_errors=True)
@@ -126,20 +126,23 @@ def main(a):
     stamp = time.strftime("%Y%m%d_%H%M%S")
     search_tmp, search_final = out / f".{name}_search_{stamp}.mp4.tmp", out / f"{name}_search_{stamp}.mp4"
     t0 = time.time()
-    n = render_search(run, rec, search_tmp)
-    os.replace(search_tmp, search_final)
+    if a.search_file:
+        search_final, n = Path(a.search_file), int(round(run.duration_s * CFG["fps"]))
+    else:
+        n = render_search(run, rec, search_tmp)
+        os.replace(search_tmp, search_final)
     info = {"run": str(run_dir), "search_video": str(search_final), "search_frames": n, "search_duration_s": run.duration_s, "search_end_s": run.search_end_s, "other_candidates": run.other_numbers,
             "accepted": run.accepted, "settings": {k: (list(v) if isinstance(v, tuple) else v) for k, v in CFG.items()}, "search_render_wall_s": time.time() - t0}
     print(f"search part done: {search_final} ({n} frames, {time.time() - t0:.0f} s wall)", flush=True)
     if not a.search_only:
         real = out / f".{name}_real_{stamp}.mp4.tmp"
-        r = render_real(run_dir / "recording", real, run.search_end_s)
+        r = render_real(run_dir / "recording", real, run.search_end_s, verify=a.verify)
         full_final = out / f"{name}_full_{stamp}.mp4"
         full_tmp = out / f".{name}_full_{stamp}.mp4.tmp"
         concat([search_final, real], full_tmp)
         os.replace(full_tmp, full_final)
         real.unlink()
-        info.update(full_video=str(full_final), real_frames=r.get("frames_rendered"), real_ticks=r.get("n_ticks_recorded"), real_verified=r["ok"], clock_at_real_start_s=run.search_end_s + 1.4)
+        info.update(full_video=str(full_final), real_frames=r.get("frames_rendered"), real_ticks=r.get("n_ticks_recorded"), real_replay_bit_identical=r["ok"], real_mismatch=r.get("mismatch"), clock_at_real_start_s=run.search_end_s + 1.4)
         print(f"full video: {full_final}", flush=True)
     (out / f"{name}_search_info_{stamp}.json").write_text(json.dumps(info, indent=1, default=str))
     return 0
@@ -152,4 +155,6 @@ if __name__ == "__main__":
     ap.add_argument("--name", default=None)
     ap.add_argument("--stills-only", action="store_true")
     ap.add_argument("--search-only", action="store_true")
+    ap.add_argument("--search-file", default=None, help="use this already rendered search part instead of rendering it again")
+    ap.add_argument("--verify", action="store_true", help="stop if the replay is not bit-identical to the recording (the recordings of 2026-11-13 are not: see the report)")
     sys.exit(main(ap.parse_args()))

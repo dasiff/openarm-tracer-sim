@@ -696,7 +696,7 @@ Status: Stage 2b BUILT on branch safety-filter, not pushed (SF numbers may be re
 
 No handling of a late filter answer. The filter runs inside the control loop and the loop waits for it, so there is no 'filter busy' status for the bridge to act on. Accepted for now because the filter may never run in real time: in simulation the physics waits for the filter. If real-time use is ever needed, the filter must run alongside the control loop, report 'busy' when late, and send a checked fallback motion with each command for the bridge to use while it is busy.
 
-### Stage 4 design (decided, not built) [decision row SF-51]
+### Stage 4 design (decided; plug-in BUILT on branch safety-filter-plugin, smooth stop NOT built) [decision row SF-51]
 
 When the filter finds no safe pose it returns status 'no safe pose found' (today's HOLD, with its reason) together with the last safe command. The bridge hands control to a swappable slow-down policy, a function passed in to the bridge. Default: smooth stop, chosen for the materials lab (held glassware). Alternative: repeat the last safe command. The slow-down may never travel more than half the smallest margin (currently 5 mm); if the arm is moving too fast to stop gently within that, it brakes harder. The bridge reports each command it actually sent, and the filter's next check starts from that command. During a slow-down, the recorded action is the command the bridge sent, with a status saying it was braking and why.
 
@@ -711,3 +711,14 @@ Status: Stage 2g BUILT on branch safety-filter, not pushed. Report: docs/reports
 - **SF-56**: The closing-arm decision is fixed per tick.
 - **SF-57**: The reactive stream (scripts/safety_filter_reactive_stream.py) is test-only.
 - **SF-58**: Config pair_order: 'deepest_first' (default) or 'by_name'.
+
+### Stage 4 build: the plug-in (decision rows SF-59 to SF-64, 2026-11-13; full text in docs/mpvi_decisions.md)
+
+Status: BUILT on branch safety-filter-plugin (from safety-filter), not pushed. Glue: src/safety_filter_plugin.py; config SAFETY_FILTER_PLUGIN_CFG in src/task_config.py; runner flag --safety-filter {off,shadow,on}. Report: docs/reports/safety_filter_stage4_plugin_20261113.md. Smooth stop NOT built (only its slot).
+
+- **SF-59**: Three modes, default off. off = nothing (no import, no call, no recording; byte-identical). shadow = filter runs and is recorded, the robot gets the raw command. on = the robot gets the filtered command. The filter sits in the control loop after the helpers (open catch, weighing) and before the sag trim, on every arms command that carries arm targets.
+- **SF-60**: The last safe command the filter compares against is always the command actually sent (raw in shadow, filtered in on). At the first call it is the command the robot holds.
+- **SF-61**: Hold policy slot: hold_policy(last_sent, status, history) -> command, passed in when the plug-in is created. Default "repeat_last_safe". Smooth stop deferred (next week). The policy is asked in shadow too (for the record).
+- **SF-62**: The glue lives outside src/safety_filter/ (the structural test forbids simulator access inside it). The filter reads no world data from the simulator: objects from the world model stand-in (make_sim_world_model through WorldModelAdapter), fixtures from the lab map; joint state may come from the simulator.
+- **SF-63**: Recording (shadow and on only) per call: time, raw, filtered, sent command, status, hold reason, filter time, and the filter's status fields; data/safety_filter/plugin_runs/<run name>.npz, rewritten through a temporary file.
+- **SF-64**: Run limits max_minutes and max_ticks stop the run cleanly (stopped_by "safety_filter_limit"), recording saved.

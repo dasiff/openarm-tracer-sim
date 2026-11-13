@@ -144,7 +144,12 @@ def make_sim_plugin(model, data, cfg, loop_handles):
     pcfg = {**tc.SAFETY_FILTER_PLUGIN_CFG, **{k: v for k, v in (cfg.get("safety_filter_cfg") or {}).items()}}
     shapes = RobotShapes(load_robot_only_model(), root / sfcfg.SHAPES_FILE)
     resolver = Resolver(shapes, 1.0 / float(cfg["source_hz"]), make_solver())
-    world_model = make_sim_world_model(model, data)                 # the stand-in the pick and place uses (ground truth objects)
+    try:
+        world_model = make_sim_world_model(model, data)             # the stand-in the pick and place uses (ground truth objects)
+    except KeyError as e:                                           # a scene without the task beaker (e.g. the manual bench scene): no objects, said out loud
+        from src.world_model import WorldModel
+        print(f"[safety filter] world model stand-in needs the task beaker, not in this scene ({str(e)[:60]}): the filter sees fixtures only")
+        world_model = WorldModel([])
     adapter = WorldModelAdapter(world_model)
     lab = LabMapSource(root / sfcfg.LAB_MAP_FILE)
 

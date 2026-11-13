@@ -154,10 +154,14 @@ def make_sim_plugin(model, data, cfg, loop_handles):
     lab = LabMapSource(root / sfcfg.LAB_MAP_FILE)
 
     class _Source:
-        def objects(self):
-            return lab.objects() + adapter.objects()
+        state = None
 
-    view = WorldView(_Source())
+        def objects(self):
+            extra = cfg.get("safety_filter_extra_objects")         # test hook (SF-59): made-up objects for the world list, or fn(state) -> list
+            return lab.objects() + adapter.objects() + (list(extra(self.state) if callable(extra) else extra) if extra else [])
+
+    source = _Source()
+    view = WorldView(source)
     tracker = HeldTracker(view)
     arm_q = {s: [int(model.jnt_qposadr[model.joint(f"openarm_{s}_joint{i}").id]) for i in range(1, 8)] for s in SIDES}
     fq = loop_handles["fing_qadr"]
@@ -168,6 +172,7 @@ def make_sim_plugin(model, data, cfg, loop_handles):
         state = RobotState(base_xyz=tuple(data.qpos[0:3]), base_quat=tuple(data.qpos[3:7]), pedestal_m=float(data.qpos[ped_q]),
                            q_left=tuple(data.qpos[arm_q["left"]]), q_right=tuple(data.qpos[arm_q["right"]]),
                            finger_left=float(data.qpos[fq["left"]]), finger_right=float(data.qpos[fq["right"]]))
+        source.state = state
         placed = shapes.place(state)
         for s in SIDES:
             pos, rot = shapes.hand_frame(s)

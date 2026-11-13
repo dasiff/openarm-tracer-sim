@@ -433,6 +433,7 @@ PICK_PLACE_CFG = {
     # "phase_start_max_accel_rad_s2": 0.5 / 0.3 = 1.667 rad/s^2, the old linear ramp's acceleration (David 2026-10-28), kept for reference: the minimum-jerk envelope's peak acceleration was this at ramp 0.5625 s and is 0.9375 at 1.0 s [row M195]
     "min_move_s": 1.0,  # s: the shortest duration of a waypoint move [row M112 PENDING David: no decision recorded]
     "blend_radius_m": 0.020,               # m: within this distance of a move's waypoint (at the end of its time law) the next move starts at once, at the pad's current speed, instead of stopping; only between two moves of one skill (the last move before a gripper step keeps the strict stop). 0 turns it off (David 2026-10-29: "at 20 mm we can start blending into the next movement starting at current speed") [row M200]
+    "place_down_tol_m": 0.005,                       # m: the place DOWN move's settle distance (the real run, not the dry run). Was the shared tol_m (3 mm); a 3.6 mm miss failed seed 4273723047's place on 2026-11-10 [row M303, David's request]
     "tol_m": 0.003, "tol_rad": math.radians(2.0),    # a waypoint is reached within these (measured pad pose) and settled [row M112 PENDING David: no decision recorded]
     "settle_speed_rad_s": 0.02, "settle_dwell_s": 0.2,  # rad/s and s: a waypoint counts as settled when the arm's joints are slower than the speed for the dwell time [row M112 PENDING David: no decision recorded]
     "sag_gain_per_s": 3.0, "sag_max_m": 0.04, "sag_max_rad": 0.1,   # the simple sag correction: integral gain on the measured pad pose error (1/s; 3.0 is the original value of the existing sag on run, back on by row M225; it replaces M215's 0; 0 would be off) and its limits in m and rad (0.04 m, 0.1 rad) [row M112 PENDING David: no decision recorded for the limits]
@@ -540,6 +541,12 @@ STANCE_LOG_CFG = {
     "full_state": True,                     # on/off: save the whole simulation state in each record (MuJoCo's full-physics state: warm start, ctrl, act, time, mocap, plus the derived kinematics and mass matrix); about 2 to 3 KB more per record (M282)
 }
 
+# The stance search logs (decisions-log M312 to M316, David 2026-11-11): the three JSON files written for each stance search. Logging only: no draw, check or answer changes.
+STANCE_SEARCH_LOG_CFG = {
+    "dir": "data/demo_record/stance_search",  # folder: a search that is not called from a run writes its files into a new folder here (time and a random id in the name); a search called from a run writes into the run's folder [row M312]
+    "round_decimals": 4,                       # count: decimals kept for every number in the files (joints in rad, pad positions in m, times in s); the dry-run ticks are rounded to this [row M315]
+}
+
 # Navigation core (src/nav_*.py; overnight queue stage 2; navigation proposal docs/reports/20261021_2121_navigation_design.md). Names follow Nav2 where an equivalent exists (proposal section 11).
 # The starting values that David did not set himself are in row M148 ([PENDING David]).
 NAV_CFG = {
@@ -622,6 +629,8 @@ BENCH_STANCE_CFG = {
     "sampler_redraw_factor": 20,               # count: the attempts at a stance (pedestal and inner-limit redraws included) are capped at this many times the batch size; if the cap is hit the stances kept are the batch [row M299]
     "sampler_heading_half_width_deg": 45.0,    # degrees: the old polar draw's heading range. UNUSED by the edge sampler (the heading is the exact direction to the task centroid, row M300); kept for later [row M299]
     "sampler_gate_max_failures": 500,           # count: the body-check gate (the full check's own body check, run on each drawn stance before the full check) may discard this many stances in one selection; more and the selection stops and reports it. A discarded stance is not drawn again and does not count toward sampler_max_draws [row M299]
+    "sampler_heading_variety": True,            # M301: the heading is the midpoint direction plus a Gaussian offset (sampler_heading_sigma_deg), kept only where the arm reaches every task point (bearing within one sigma of the arm's bearing width) [row M301]
+    "sampler_heading_sigma_deg": 15.0,          # degrees, PROPOSED by the implementer (not decided by David, 2026-11-10; was 30): the standard deviation of the heading's offset from the midpoint direction; David to confirm [row M301]
     "sampler_heading_held": False,              # the old sampler's flag (True: heading held at staging_yaw). UNUSED by the edge sampler: its heading is the exact direction from the base to the task centroid (row M300). Set False 2026-11-10 with the edge sampler [row M299, M300]
     "sampler_margin_m": 0.0301,                 # m: the usable edge's margin: the smallest signed distance of the base centre out in front of the edge, from the bench's body contact (measured 2026-11-10 by experiments/edge_margin_study.py, docs/reports/edge_stance_selection_20261110/margin.json: first clear distance 30.08 mm at pedestals 0.05 and 0.25 m, the larger value rounded up to 0.1 mm; no extra safety margin) [row M300]
     "sampler_r_max_m": 0.6654,                  # m: the reach limit of the edge sampler: the 3D distance from the left shoulder to each task point must be at most this = A9 r0 + sigma_far (0.5423 + 0.1231; the far side at e^-1, about 37 % of the peak) [row M300]
@@ -779,4 +788,41 @@ ELBOW_GUARD_CFG = {
     "housing_m": 0.1188,            # metres, the elbow link's lowest point below the joint centre (sphere bound, report 20261105_1647). [row M269]
     "allowance_m": 0.012,           # metres, for 1 degree of base tilt and 5 mm of sag together (the assumed values; not measured, report 20261105_1700). [row M269]
     "margin_m": 0.014,              # metres, the safety margin David set on Nov 5, 2026 (the one judgement number of the rule). [row M269]
+}
+
+
+# Trajectory dry-run (decisions-log M302, src/trajectory_dryrun.py): the planner's pick and place moves run through the IK without physics, as the final gate of stance selection.
+DRYRUN_CFG = {
+    "home_tol_rad": 0.02,      # rad, PROPOSED by the implementer: the HOME joints are reached when every joint is within this of the zombie pose [row M302]
+    "open_s": 0.5,             # s, PROPOSED by the implementer: the gripper's opening time in the dry run (no gripper physics; the skill's OPEN ends when the fingers are open) [row M302]
+}
+
+
+
+# Stance-search display (decisions-log row M321, src/search_timeline.py, src/ghost_robot.py): what the video of a successful run shows while the robot sits idle at home during the stance search.
+# Display only: nothing here is read by the planner, the controller or any check, and nothing here reaches a policy camera (design plan 7.1). Change a number and re-render; nothing is re-run.
+SEARCH_DISPLAY_CFG = {
+    # --- part 1: other candidates (ones that failed the full check) ---
+    "n_other_candidates": 4,        # how many failed candidates are shown, in candidate-number order (David, 2026-11-13) [row M321]
+    "other_candidate_s": 2.0,       # s of video per failed candidate (David) [row M321]
+    "other_step_s": 1.2,            # s of that time in which the ghost steps through the poses the full check solved (David) [row M321]
+    # the rest of other_candidate_s (0.8 s) is the red hold at the last solved pose with the reason in the panel
+    # --- part 2: the accepted candidate ---
+    "key_pose_s": 0.8,              # s of video per key pose of the accepted candidate's full check (David) [row M321]
+    "dryrun_speed": 3.0,            # the dry-run ghost arm moves at this multiple of real (simulated) speed (David) [row M321]
+    "green_hold_s": 2.0,            # s the accepted candidate's ghost is held in green after the dry run (David) [row M321]
+    "fade_s": 1.0,                  # s in which the ghost then fades out (David) [row M321]
+    # --- ghost colours, red green blue alpha, each 0..1 ---
+    "ghost_checked_rgba": (0.35, 0.65, 1.0, 0.35),    # light blue, about 35 percent opaque: shown as checked / being checked (David) [row M321]
+    "ghost_failed_rgba": (1.0, 0.15, 0.15, 0.35),     # red: the candidate failed (David) [row M321]
+    "ghost_accepted_rgba": (0.2, 0.85, 0.3, 0.35),    # green: the accepted candidate (David) [row M321]
+    # --- the key poses of the accepted candidate (and the most that a failed one steps through): the full check's task point paths, in order. (label, kind, path, which of the points with that path) [row M321]
+    "key_poses": (("pick approach", "pick", "over", 0), ("grasp", "pick", "grasp", 0), ("lift", "pick", "lift", 0),
+                  ("place approach", "place", "carry", 0), ("place down", "place", "setdown", -1), ("retreat", "place", "back", 0)),
+    # --- the video ---
+    "fps": 30,                      # video frames per second (the existing notebook video's rate) [row M321]
+    "size": (1920, 1080),           # video size in pixels (the existing notebook video's) [row M321]
+    "clock_text_scale": 2.2,        # size of the clock digits relative to the panel text (readable at a glance; implementer's choice) [row M321]
+    # --- the fixed overview camera of parts 1 and 2: where it looks (m), distance (m), azimuth and elevation (deg). Chosen so that the bench with the beaker and hotplate, the robot at home and the ghost all show. [row M321]
+    "overview_camera": {"lookat": (0.95, 2.0, 0.8), "distance": 3.6, "azimuth": 25.0, "elevation": -38.0},
 }

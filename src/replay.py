@@ -177,7 +177,7 @@ class PngFrames:
 
 
 def replay_run(run_dir, out_dir=None, cameras=None, video="preview", hz=30.0, size=None, shadows="policy", codec="mp4v", quality=None,
-               verify=True, max_ticks=None, render_ticks=None, quiet=False, name="viewer", after_handoff_s=None, legend_extra=None, face=None, intro=None, still_ticks=None, step_hook=None, render_at_ticks=None):
+               verify=True, max_ticks=None, render_ticks=None, quiet=False, name="viewer", after_handoff_s=None, legend_extra=None, face=None, intro=None, still_ticks=None, step_hook=None, render_at_ticks=None, clock_offset_s=None):
     """Replays a recorded run: verifies its states and optionally renders its cameras.
 
     The recording is rebuilt and re-simulated through src/control_loop.run_loop (see the module docstring for what is checked and
@@ -222,6 +222,7 @@ def replay_run(run_dir, out_dir=None, cameras=None, video="preview", hz=30.0, si
             (the whole picture) and <name>_panel_<label>.png (the status panel alone). Defaults to None.
         render_at_ticks (set or None): "viewer" mode only: render a picture only at these control ticks (those that are also rendering ticks of `hz`), for stills without a
             whole video. None renders every rendering tick. Defaults to None.
+        clock_offset_s (float or None): "viewer" mode only: draws the stance-search video's big clock, reading this many real seconds plus the simulated time (M321). None draws none. Defaults to None.
         step_hook (callable or None): Called as step_hook(step_count, data) after every physics step (for measurements; it must only read `data`). Defaults to None.
 
     Returns:
@@ -410,8 +411,11 @@ def replay_run(run_dir, out_dir=None, cameras=None, video="preview", hz=30.0, si
         yaw = base_yaw(data_)
         phase = phase_at[tick] or "DRIVE"
         status = phase + (f"  (+{(tick - handoff_tick) * tick_dt:.0f} s)" if handoff_tick is not None and tick >= handoff_tick else "")
-        return {"time": data_.time, "base_vel": (vx, vy, wz), "twist": (vx * math.cos(yaw) + vy * math.sin(yaw), wz), "status": status,
+        info = {"time": data_.time, "base_vel": (vx, vy, wz), "twist": (vx * math.cos(yaw) + vy * math.sin(yaw), wz), "status": status,
                 "mode": ("teleop" if phase == "OPERATOR" else "auto") if meta.get("mode") == "auto" else None, "fps": hz}
+        if clock_offset_s is not None:                                  # the stance-search video's clock (M321): the search's end in real seconds plus the run's simulated time
+            info["clock_s"] = clock_offset_s + data_.time
+        return info
 
     def on_step(step_count, data_):
         """Renders and writes the frames of one physics step, when this step is a rendering step.

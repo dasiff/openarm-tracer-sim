@@ -87,7 +87,7 @@ def _edge_test(seg, xs, ys, margin):
     return (s >= margin) & (t >= 0.0) & (t <= L), s
 
 
-def region(xs, ys, qs, objects, geom, arm, cfg):
+def region(xs, ys, qs, objects, geom, arm, cfg, heads=None):
     """Which stances are in the overlap of the objects' regions.
 
     Returns:
@@ -95,7 +95,7 @@ def region(xs, ys, qs, objects, geom, arm, cfg):
             "signed" (N,) float (its signed distance from that edge, NaN none), "reach" (N,) bool (every task point of the object within r_max).
     """
     margin, rmax = float(cfg["sampler_margin_m"]), float(cfg["sampler_r_max_m"])
-    heads = headings_for(xs, ys, objects)
+    heads = headings_for(xs, ys, objects) if heads is None else np.asarray(heads, float)
     sx, sy, sz = shoulder(geom, arm, xs, ys, heads, qs)
     ok = np.ones(len(xs), bool)
     info = []
@@ -197,7 +197,12 @@ def draw_stances(pieces, objects, geom, arm, cfg, seed, chunk=2000):
         x = r[:, 0] + (r[:, 1] - r[:, 0]) * rng.random(m)
         y = r[:, 2] + (r[:, 3] - r[:, 2]) * rng.random(m)
         q = rng.uniform(pmin, pmax, m)
-        ok, h, info = region(x, y, q, objects, geom, arm, cfg)
+        if cfg.get("sampler_heading_variety", False):           # M301: the midpoint direction plus a Gaussian offset; a heading the arm cannot reach is discarded
+            h = headings_for(x, y, objects) + rng.normal(0.0, math.radians(cfg["sampler_heading_sigma_deg"]), m)
+            ok, _, info = region(x, y, q, objects, geom, arm, cfg, heads=h)
+            ok = ok & heading_reachable(x, y, q, h, objects, geom, arm, cfg)
+        else:
+            ok, h, info = region(x, y, q, objects, geom, arm, cfg)
         good = np.flatnonzero(ok)
         need = batch - kept
         if len(good) >= need:                                   # the batch fills inside this chunk: the attempts count only up to the last stance kept
@@ -212,6 +217,27 @@ def draw_stances(pieces, objects, geom, arm, cfg, seed, chunk=2000):
     cat = lambda v: np.concatenate(v) if v else np.zeros(0)
     infos = [{k: cat(v) for k, v in inf.items()} for inf in infos]
     return {"xs": cat(xs), "ys": cat(ys), "qs": cat(qs), "headings": cat(heads), "info": infos, "attempts": attempts, "cap_hit": kept < batch, "rng": rng}
+
+
+def heading_reachable(xs, ys, qs, heads, objects, geom, arm, cfg):
+    """(N,) bool: every task point of every object lies inside the arm's bearing width at its heading: |theta| within sigma(z) of the A9 bearing (the one-sigma range).
+
+    Positive bearings (the wide side of the left arm) are always inside; the negative side narrows with the height offset z. Discarding the rest makes the heading's range hard.
+    """
+    p9, _ = a9_params(cfg, arm)
+    sx, sy, sz = shoulder(geom, arm, xs, ys, heads, qs)
+    c, s = np.cos(heads), np.sin(heads)
+    ok = np.ones(len(xs), bool)
+    for o in objects:
+        for prov in o["points"]:
+            px, py, pz = provider_xyz(prov, heads)
+            dx, dy, dz = px - sx, py - sy, pz - sz
+            xl = c * dx + s * dy
+            yl = -s * dx + c * dy
+            theta = np.arctan2(yl, xl)
+            sig = np.where(theta < 0, p9[4] + p9[5] * dz, p9[6] + p9[7] * dz)
+            ok &= np.abs(theta) <= np.maximum(sig, 1e-3)
+    return ok
 
 
 def a9_score(xs, ys, qs, heads, objects, geom, arm, cfg):
@@ -233,6 +259,15 @@ def a9_score(xs, ys, qs, heads, objects, geom, arm, cfg):
             r = np.sqrt(xl ** 2 + yl ** 2 + dz ** 2)
             counts.append(predict_count_a9(r, np.arctan2(yl, xl), dz, p9, z_cut))
     return np.min(np.stack(counts), axis=0), counts
+
+
+def _pieces_summary(objects, pieces):
+    """The pieces for the record: the edges each piece uses, its box, its area and whether it is feasible."""
+    return [{"edges": [{"furniture": objects[i]["edges"][k]["furniture"], "side": objects[i]["edges"][k]["side"], "edge": int(objects[i]["edges"][k]["edge"]),
+                        "p0": [float(v) for v in objects[i]["edges"][k]["p0"]], "p1": [float(v) for v in objects[i]["edges"][k]["p1"]], "object": objects[i]["name"]}
+                       for i, k in p["edges"]],
+             "rect": None if p["rect"] is None else [float(v) for v in p["rect"]], "area_m2": float(p["area"]), "feasible": bool(p["feasible"]),
+             "feasible_points": int(p["feasible_points"])} for p in pieces]
 
 
 def select_edge_stance(objects, pieces, geom, arm, cfg, check, gate=None, seed=None, say=print, record_dir=None, base_metric=None, point_labels=None):
@@ -263,12 +298,7 @@ def select_edge_stance(objects, pieces, geom, arm, cfg, check, gate=None, seed=N
         seed = time.time_ns() % (2 ** 32)
     feas = [p for p in pieces if p["feasible"] and p["area"] > 0]
     rec = {"seed": int(seed), "arm": arm, "batch": 0, "attempts": 0, "cap_hit": False, "ok": False, "stop": None, "chosen": None, "draws": [], "score": None,
-           "gate_failures": 0, "gate_pairs": {}, "gate_rows": [], "fraction_kept": None, "record_path": None,
-           "pieces": [{"edges": [{"furniture": objects[i]["edges"][k]["furniture"], "side": objects[i]["edges"][k]["side"], "edge": int(objects[i]["edges"][k]["edge"]),
-                                  "p0": [float(v) for v in objects[i]["edges"][k]["p0"]], "p1": [float(v) for v in objects[i]["edges"][k]["p1"]], "object": objects[i]["name"]}
-                                 for i, k in p["edges"]],
-                       "rect": None if p["rect"] is None else [float(v) for v in p["rect"]], "area_m2": float(p["area"]), "feasible": bool(p["feasible"]),
-                       "feasible_points": int(p["feasible_points"])} for p in pieces]}
+           "gate_failures": 0, "gate_pairs": {}, "gate_rows": [], "fraction_kept": None, "record_path": None, "pieces": _pieces_summary(objects, pieces)}
     if not feas:
         rec["stop"] = "needs travel between stances: the objects' regions do not overlap"
         return _finish(rec, record_dir, t0)
@@ -356,3 +386,102 @@ def _finish(rec, record_dir, t0):
     if record_dir is not None:
         rec["record_path"] = write_record(rec, record_dir / f"sampler_{rec['seed']}.json")
     return rec
+
+
+def iter_verified_stances(objects, pieces, geom, arm, cfg, check, verify, gate=None, seed=None, say=print, record_dir=None, base_metric=None, point_labels=None, rec=None):
+    """The generator of verified stances (M301 generator, M302 dry-run gate). Yields each stance that passes the full check and the trajectory dry-run, in order.
+
+    The candidates: the weighted draw without replacement (as select_edge_stance), each through the body-check gate; the first sampler_max_draws stances that pass the gate are
+    the candidate list, sorted by their A9 score (highest first). For each candidate in that order: the full check (check(stance) returns a dict with "ok", "failed", "reason",
+    "seconds", "seed", "raw" (the full check's own result)); if it passes, verify(stance, raw) (the trajectory dry-run) returns a dict with "ok" and the rest; if both pass the
+    generator yields. A candidate that fails either is passed over silently (its row stays in the record). The list ends with StopIteration.
+
+    Args:
+        objects, pieces, geom, arm, cfg, gate, seed, say, record_dir, base_metric, point_labels: as select_edge_stance.
+        check (callable): check(stance) -> dict (see above).
+        verify (callable or None): verify(stance, raw) -> dict with "ok". None: no dry-run (every full-check pass is yielded).
+        rec (dict or None): the record, filled as the generator goes (candidates, counts, rows). Written to record_dir at each yield and at the end.
+
+    Yields:
+        dict: {"stance": (x, y, heading, q), "row": the draw row, "raw": the full check's result, "dryrun": verify's result or None}.
+    """
+    t0 = time.perf_counter()
+    if seed is None:
+        seed = time.time_ns() % (2 ** 32)
+    rec = {} if rec is None else rec
+    rec.update(seed=int(seed), arm=arm, candidates=0, full_passed=0, dryrun_passed=0, gate_failures=0, gate_pairs={}, gate_rows=[], draws=[], chosen=None, stop=None,
+               record_path=None, pieces=_pieces_summary(objects, pieces), ok=False)
+    feas = [p for p in pieces if p["feasible"] and p["area"] > 0]
+    if not feas:
+        rec["stop"] = "needs travel between stances: the objects' regions do not overlap"
+        return _finish_gen(rec, record_dir, t0)
+    d = draw_stances(pieces, objects, geom, arm, cfg, seed)
+    rng, xs, ys, qs, heads = d["rng"], d["xs"], d["ys"], d["qs"], d["headings"]
+    n = len(xs)
+    rec.update(batch=n, attempts=int(d["attempts"]), cap_hit=bool(d["cap_hit"]), fraction_kept=float(n / d["attempts"]) if d["attempts"] else None)
+    if n == 0:
+        rec["stop"] = f"no stance kept: the attempt cap ({int(cfg['sampler_redraw_factor']) * int(cfg['sampler_batch'])}) was reached first"
+        return _finish_gen(rec, record_dir, t0)
+    scores, counts = a9_score(xs, ys, qs, heads, objects, geom, arm, cfg)
+    weights = scores ** float(cfg["sampler_weight_power"])
+    rec["score"] = {"min": float(scores.min()), "median": float(np.median(scores)), "max": float(scores.max()), "zero_fraction": float(np.mean(scores <= 0.0))}
+    say(f"[sampler] seed {seed}: {n} stances kept in {d['attempts']} attempts (fraction kept {rec['fraction_kept']:.3f}); A9 score min {rec['score']['min']:.3f} "
+        f"median {rec['score']['median']:.3f} max {rec['score']['max']:.3f}; headings: mid direction plus sigma {cfg['sampler_heading_sigma_deg']} deg, reachable only")
+    alive = np.ones(n, bool)
+    budget = int(cfg["sampler_max_draws"])
+    cap_gate = int(cfg["sampler_gate_max_failures"])
+    cands = []
+    while len(cands) < budget and alive.any():
+        w = np.where(alive, weights, 0.0)
+        if w.sum() <= 0.0:
+            break
+        i = int(rng.choice(n, p=w / w.sum()))
+        alive[i] = False
+        stance = (float(xs[i]), float(ys[i]), float(heads[i]), float(qs[i]))
+        if gate is not None:
+            g_ok, g_pair, g_dist = gate(stance)
+            if not g_ok:
+                rec["gate_failures"] += 1
+                rec["gate_pairs"][g_pair] = rec["gate_pairs"].get(g_pair, 0) + 1
+                rec["gate_rows"].append({"n": rec["gate_failures"], "x": stance[0], "y": stance[1], "heading": stance[2], "pedestal": stance[3], "pair": g_pair, "distance_m": float(g_dist)})
+                if rec["gate_failures"] >= cap_gate:
+                    rec["stop"] = f"the body-check gate failed {rec['gate_failures']} times (cap {cap_gate}): selection stopped"
+                    break
+                continue
+        cands.append((i, stance))
+    rec["candidates"] = len(cands)
+    cands.sort(key=lambda c: -float(scores[c[0]]))                  # the candidate list, highest A9 score first
+    say(f"[sampler] {len(cands)} candidates passed the body-check gate ({rec['gate_failures']} gate failures); checking in score order")
+    for i, stance in cands:
+        r = check(stance)
+        row = {"draw": len(rec["draws"]) + 1, "index": int(i), "x": stance[0], "y": stance[1], "heading": stance[2], "pedestal": stance[3], "score": float(scores[i]),
+               "weight": float(weights[i]), "ok": bool(r["ok"]), "failed": list(r.get("failed", [])), "reason": str(r.get("reason", "")), "seconds": r.get("seconds"), "seed": r.get("seed"),
+               "dryrun": None}
+        rec["draws"].append(row)
+        say(f"[sampler] candidate {row['draw']}: x {stance[0]:.4f} y {stance[1]:.4f} heading {math.degrees(stance[2]):.1f} pedestal {stance[3]:.4f} score {row['score']:.3f}: "
+            f"full check {'PASS' if row['ok'] else 'FAIL'} ({row['seconds'] if row['seconds'] is not None else float('nan'):.2f} s)"
+            + ("" if row["ok"] else f" reason: {row['reason']}"))
+        if not row["ok"]:
+            continue
+        rec["full_passed"] += 1
+        v = verify(stance, r.get("raw")) if verify is not None else None
+        row["dryrun"] = v
+        if v is not None:
+            say(f"[dryrun] candidate {row['draw']}: {'PASS' if v['ok'] else 'FAIL'} ({v.get('seconds', float('nan')):.2f} s)" + ("" if v["ok"] else f" {v.get('reason', '')}"))
+        if v is not None and not v["ok"]:
+            continue
+        rec["dryrun_passed"] += 1
+        rec.update(ok=True, chosen=row)
+        _finish_gen(rec, record_dir, t0)                         # written before the yield: the caller takes this stance and does not resume the generator (2026-11-10)
+        yield {"stance": stance, "row": row, "raw": r.get("raw"), "dryrun": v}
+    if rec["chosen"] is None and rec["stop"] is None:
+        rec["stop"] = f"no candidate passed both the full check and the dry-run ({len(cands)} candidates)"
+    _finish_gen(rec, record_dir, t0)
+
+
+def _finish_gen(rec, record_dir, t0):
+    """Writes the generator's record (atomically) when a folder is given, and returns it (an empty generator's end)."""
+    rec["seconds"] = time.perf_counter() - t0
+    if record_dir is not None:
+        rec["record_path"] = write_record(rec, record_dir / f"sampler_{rec['seed']}.json")
+    return None

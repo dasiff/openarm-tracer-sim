@@ -27,7 +27,8 @@ import numpy as np
 from src import robot_specs
 from src.cameras import CameraRig
 from src.face import Face, settle_renderer, show_face_group
-from src.viewer_layout import (FOVY_DEG, REFERENCE_HEIGHT, hud_bitmap, hud_position, hud_rows, inset_layout, inset_tile, order_tiles,
+from src.ghost_robot import GhostRobot
+from src.viewer_layout import (clock_bitmap, text_bitmap, FOVY_DEG, REFERENCE_HEIGHT, hud_bitmap, hud_position, hud_rows, inset_layout, inset_tile, order_tiles,
                                panel_from_status, setup_follow_camera, update_follow_camera)
 
 
@@ -92,6 +93,7 @@ class CompositeRenderer:
         self.scene.flags[mujoco.mjtRndFlag.mjRND_REFLECTION] = 1
         self.rig = CameraRig(model, [{**cs, "shadows": True} for cs in camera_specs], context, shadows=True)
         self.base_body = max(mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, "base_link"), 1)
+        self.ghost = None                                              # created on first use (the stance-search display, M321)
 
     def render(self, data, info):
         """Render one frame: follow view, status panel and camera tiles.
@@ -117,6 +119,13 @@ class CompositeRenderer:
                 "fps" (float): Video frame rate (not drawn: the video has no frame-rate row).
                 "panel" (dict, optional): The plan block as viewer_layout.panel_block() takes it, instead of the one worked
                   out from "status" (used for the phases before the robot moves).
+                Display-only keys of the stance-search video (decisions-log row M321); with none of them the picture is exactly as before:
+                "clock_s" (float, optional): draws the big clock at the top right, "Time" and M:SS of these real seconds.
+                "clock_scale" (float, optional): the clock's text size relative to the panel's. Defaults to 2.2.
+                "search_rows" (list of (label, text), optional): the status panel shows these rows alone instead of the usual ones.
+                "ghost" (tuple, optional): (pose dict of GhostRobot.set_pose's arguments x, y, yaw, pedestal, left_q, right_q; rgba): a see-through robot copy is drawn in the follow view only.
+                "camera" (dict, optional): a fixed camera {"lookat", "distance", "azimuth", "elevation"} instead of the follow camera.
+                "tiles" (bool, optional): False leaves the camera tiles out. Defaults to True.
 
         Returns:
             numpy.ndarray: Frame of shape (H, W, 3), dtype uint8, in
@@ -126,10 +135,19 @@ class CompositeRenderer:
         # --- the three cameras, then the follow view ---
         self.rig.render(data)
         yaw_deg = update_follow_camera(self.cam, data, self.base_body)
+        if info.get("camera"):                                          # the stance-search display's fixed overview camera
+            cam = info["camera"]
+            self.cam.lookat[:], self.cam.distance, self.cam.azimuth, self.cam.elevation = cam["lookat"], cam["distance"], cam["azimuth"], cam["elevation"]
         mujoco.mjr_setBuffer(mujoco.mjtFramebuffer.mjFB_OFFSCREEN, self.context)
         viewport = mujoco.MjrRect(0, 0, W, H)
         with self.face.facing(data, self.cam):
             mujoco.mjv_updateScene(model, data, self.opt, None, self.cam, mujoco.mjtCatBit.mjCAT_ALL, self.scene)
+            if info.get("ghost"):                                       # appended to this scene only: no policy camera renders it
+                pose, rgba = info["ghost"]
+                if self.ghost is None:
+                    self.ghost = GhostRobot(model, data)
+                self.ghost.set_pose(**pose)
+                self.ghost.draw(self.scene, self.opt, rgba)
         mujoco.mjr_render(viewport, self.scene, self.context)
         rgb = np.zeros((H, W, 3), dtype=np.uint8)
         mujoco.mjr_readPixels(rgb, None, viewport, self.context)
@@ -140,9 +158,15 @@ class CompositeRenderer:
         # --- the status panel, top left ---
         lin, ang = info["twist"]
         panel = info.get("panel") or panel_from_status(self.panel_static, info.get("status"))
-        hud = hud_bitmap(hud_rows(info["time"], info["base_vel"], yaw_deg, data.qpos[0:3],
-                                  middle_rows=[("twist lin, ang", f"{lin:+.2f}, {ang:+.2f}")],
-                                  status=None if panel is not None else info.get("status"), mode=info.get("mode")), (), self.s, panel)
+        if info.get("search_rows"):
+            rows = [r for r in info["search_rows"] if r[0] in ("search", "candidate", "stage", "body-check rejects")]
+            block = [(lab, val, "current" if lab == "result" else "note", 6 if lab == "result" else 3) for lab, val in info["search_rows"] if lab in ("result", "pose")]
+            w, lw = int(round(520 * self.s)), int(round(170 * self.s))
+            hud = text_bitmap(rows, w, lw, (), self.s, block, lw)
+        else:
+            hud = hud_bitmap(hud_rows(info["time"], info["base_vel"], yaw_deg, data.qpos[0:3],
+                                      middle_rows=[("twist lin, ang", f"{lin:+.2f}, {ang:+.2f}")],
+                                      status=None if panel is not None else info.get("status"), mode=info.get("mode")), (), self.s, panel)
         left, top = hud_position(self.s)
         frame[top:top + hud.shape[0], left:left + hud.shape[1]] = hud
         self.panel_box = (left, top, hud.shape[1], hud.shape[0])        # (left, top, width, height) of the status panel in the frame
@@ -150,6 +174,13 @@ class CompositeRenderer:
         # --- the camera tiles, along the bottom ---
         tiles = order_tiles(list(self.rig.images.items()))
         iw, ih, gap, xs = inset_layout(W, len(tiles), self.s)
-        for (name, img), x in zip(tiles, xs):
-            frame[H - gap - ih:H - gap, x:x + iw] = inset_tile(name, img, iw, ih, self.s)
+        if info.get("tiles", True):
+            for (name, img), x in zip(tiles, xs):
+                frame[H - gap - ih:H - gap, x:x + iw] = inset_tile(name, img, iw, ih, self.s)
+        # --- the clock, top right (stance-search video only) ---
+        if info.get("clock_s") is not None:
+            from src.search_timeline import clock_text
+            clk = clock_bitmap(clock_text(info["clock_s"]), self.s, info.get("clock_scale", 2.2))
+            m = int(round(8 * self.s))
+            frame[m:m + clk.shape[0], W - m - clk.shape[1]:W - m] = clk
         return frame

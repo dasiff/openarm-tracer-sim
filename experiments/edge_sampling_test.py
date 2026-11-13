@@ -29,7 +29,7 @@ sys.path.insert(0, str(PROJECT_ROOT))
 import numpy as np  # noqa: E402
 
 from src import reach_model as rm  # noqa: E402
-from src.edge_sampling import a9_params, draw_stances, headings_for, pieces_for, region, select_edge_stance, shoulder  # noqa: E402
+from src.edge_sampling import a9_params, a9_score, draw_stances, headings_for, pieces_for, region, select_edge_stance, shoulder  # noqa: E402
 from src.stance_select import points_at_heading  # noqa: E402
 from src.support import support_chain  # noqa: E402
 from src.task_config import BENCH_STANCE_CFG  # noqa: E402
@@ -128,7 +128,8 @@ def main():
     pcs = pieces_for([obj], geom, "left", cfg)
     feas = [p for p in pcs if p["feasible"]]
     check("the single object has a feasible piece on the edge", len(feas) == 1, f"{len(feas)} feasible of {len(pcs)}")
-    d = draw_stances(pcs, [obj], geom, "left", cfg, seed=11)
+    cfg_base = dict(cfg, sampler_heading_variety=False)           # the base fraction (the heading variety is checked in section 11)
+    d = draw_stances(pcs, [obj], geom, "left", cfg_base, seed=11)
     xs, ys, qs, hs = d["xs"], d["ys"], d["qs"], d["headings"]
     check("every kept stance is at least the margin out from the edge (the edge's outward normal is -y)", bool(np.all(-ys >= margin - 1e-9)), f"min outward {float(np.min(-ys)):.4f} m")
     check("every kept stance is within the edge part (x in -1 .. 1)", bool(np.all(np.abs(xs) <= 1.0 + 1e-9)), "")
@@ -141,7 +142,7 @@ def main():
     obj_b = {"name": "other", "points": [{"kind": "fixed", "p": (1.1, 0.3, 1.20)}], "edges": [edge], "pick": (1.1, 0.3, 1.20), "place": None, "mid": (1.1, 0.3, 1.20)}
     pcs2 = pieces_for([obj, obj_b], geom, "left", cfg)
     d2 = draw_stances(pcs2, [obj, obj_b], geom, "left", cfg, seed=5)
-    ok2, _, info2 = region(d2["xs"], d2["ys"], d2["qs"], [obj, obj_b], geom, "left", cfg)      # both objects together, with the joint centroid heading
+    ok2, _, info2 = region(d2["xs"], d2["ys"], d2["qs"], [obj, obj_b], geom, "left", cfg, heads=d2["headings"])      # both objects together, with the stance's own heading
     both = bool(np.all(ok2) and all(np.all(inf["reach"]) and np.all(inf["edge"] >= 0) for inf in info2))
     check("the overlap is nonempty and every kept stance is in both objects' regions (the joint heading)", len(d2["xs"]) > 0 and both, f"{len(d2['xs'])} kept")
     far = dict(obj_b, points=[{"kind": "fixed", "p": (5.0, 0.3, 1.20)}], pick=(5.0, 0.3, 1.20), mid=(5.0, 0.3, 1.20))
@@ -205,12 +206,64 @@ def main():
     check("the bench has 6 usable edge parts; its front (+y) edge is in 3 parts", len(bench) == 6 and len(front) == 3, f"{len(bench)} parts, front {len(front)}")
     used = {e["furniture"] for p in sel.get("pieces", []) for e in p["edges"]}
     check("the selection's pieces use the bench's edges (the beaker on the hotplate maps to the bench)", used == {"bench_top"}, f"furniture {sorted(used)}")
-    check("the selection ran with the stub check (50 full-check draws) and stopped with a reason", "all 50 draws failed" in str(out["stop"]), f"stop: {out['stop']}")
+    check("the selection ran with the stub check (50 full-check candidates) and stopped with a reason", "no candidate passed" in str(out["stop"]), f"stop: {out['stop']}")
     mj = json.loads((PROJECT_ROOT / "docs" / "reports" / "edge_stance_selection_20261110" / "margin.json").read_text())
     check("the stored margin in the config is the one the measurement wrote", abs(mj["stored_margin_m"] - BENCH_STANCE_CFG["sampler_margin_m"]) < 1e-9,
           f"config {BENCH_STANCE_CFG['sampler_margin_m']}, measured file {mj['stored_margin_m']}")
     check("r_max is A9 r0 + sigma_far (to 4 decimals)", abs(BENCH_STANCE_CFG["sampler_a9"]["r0"] + BENCH_STANCE_CFG["sampler_a9"]["sigma_far"] - BENCH_STANCE_CFG["sampler_r_max_m"]) < 5e-5,
           f"{BENCH_STANCE_CFG['sampler_a9']['r0'] + BENCH_STANCE_CFG['sampler_a9']['sigma_far']:.5f} vs {BENCH_STANCE_CFG['sampler_r_max_m']}")
+
+    print("11. heading variety (M301) and the generator (M301, M302 gate)")
+    from src.edge_sampling import heading_reachable, iter_verified_stances  # noqa: E402
+    cfg_v = dict(cfg, sampler_heading_variety=True)
+    dv = draw_stances(pcs, [obj], geom, "left", cfg_v, seed=23)
+    mid = headings_for(dv["xs"], dv["ys"], [obj])
+    off = np.degrees(np.angle(np.exp(1j * (dv["headings"] - mid))))
+    check("the drawn headings spread around the midpoint direction (sd of the offset 10 to 45 deg)", 10.0 < float(np.std(off)) < 45.0, f"sd {float(np.std(off)):.1f} deg over {len(off)} stances")
+    check("every kept heading is reachable (bearing within the arm's one-sigma width)", bool(np.all(heading_reachable(dv["xs"], dv["ys"], dv["qs"], dv["headings"], [obj], geom, "left", cfg_v))), "")
+    far_h = np.array([math.pi])                                   # a heading straight away from the object
+    check("a heading pointing away from the object is not reachable", not bool(heading_reachable(np.array([0.2]), np.array([-0.1]), np.array([0.15]), far_h, [obj], geom, "left", cfg_v)[0]), "")
+    seen = []
+
+    def gen_check(stance):
+        seen.append(stance)
+        return {"ok": True, "failed": [], "reason": "", "seconds": 0.0, "seed": 0, "raw": {"n": len(seen)}}
+    scores_of = lambda st: float(a9_score(np.array([st[0]]), np.array([st[1]]), np.array([st[3]]), np.array([st[2]]), [obj], geom, "left", cfg_v)[0][0])
+    rec_g = {}
+    gen = iter_verified_stances([obj], pcs, geom, "left", cfg_v, gen_check, None, seed=23, rec=rec_g, say=lambda *a, **k: None)
+    first = next(gen, None)
+    check("the generator yields a stance that passed the full check (no dry-run: verify None)", first is not None and first["row"]["ok"], f"yielded draw {first['row']['draw'] if first else None}")
+    if first is not None:
+        check("the yielded stance is the first candidate in score order", abs(first["row"]["score"] - max(scores_of(c) for c in seen[:1])) < 1e-9 and len(seen) >= 1, f"checked {len(seen)} candidates")
+    scores_seq = [r["score"] for r in rec_g.get("draws", [])]
+    check("the candidates are checked in descending score order", all(a >= b - 1e-12 for a, b in zip(scores_seq, scores_seq[1:])), f"{len(scores_seq)} candidates")
+    rejects = {"n": 0}
+
+    def gen_fail(stance):
+        rejects["n"] += 1
+        return {"ok": False, "failed": ["x"], "reason": "stub", "seconds": 0.0, "seed": 0, "raw": {}}
+    rec_n = {}
+    none_left = next(iter_verified_stances([obj], pcs, geom, "left", cfg_v, gen_fail, None, seed=23, rec=rec_n, say=lambda *a, **k: None), "END")
+    check("when no candidate passes, the generator ends (StopIteration) with the reason", none_left == "END" and "no candidate passed" in str(rec_n.get("stop")), f"stop: {rec_n.get('stop')}")
+    dry_calls = []
+
+    def verify_fail(stance, raw):
+        dry_calls.append(stance)
+        return {"ok": False, "reason": "stub dry-run", "seconds": 0.0}
+    rec_d = {}
+    none_dry = next(iter_verified_stances([obj], pcs, geom, "left", cfg_v, gen_check, verify_fail, seed=23, rec=rec_d, say=lambda *a, **k: None), "END")
+    check("a full-check pass that fails the dry-run is not yielded (every candidate passing the check goes to the dry-run)", none_dry == "END" and len(dry_calls) == rec_d.get("full_passed") and len(dry_calls) > 0, f"{len(dry_calls)} dry-runs")
+    import tempfile  # noqa: E402
+    rec_w = {}
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        got_w = next(iter_verified_stances([obj], pcs, geom, "left", cfg_v, gen_check, None, seed=23, rec=rec_w, record_dir=Path(tmp_dir), say=lambda *a, **k: None), None)
+        written = sorted(Path(tmp_dir).glob("sampler_*.json"))
+        ok_rec = bool(written) and json.loads(written[0].read_text()).get("ok") is True
+    check("the record is written before the yield (a caller that takes the first stance does not resume the generator)", got_w is not None and ok_rec, f"{len(written)} record file(s)")
+    rec_r1, rec_r2 = {}, {}
+    g1 = [c["row"]["index"] for c in iter_verified_stances([obj], pcs, geom, "left", cfg_v, gen_check, None, seed=99, rec=rec_r1, say=lambda *a, **k: None)]
+    g2 = [c["row"]["index"] for c in iter_verified_stances([obj], pcs, geom, "left", cfg_v, gen_check, None, seed=99, rec=rec_r2, say=lambda *a, **k: None)]
+    check("replay from the seed: the same candidates in the same order", g1 == g2, f"{len(g1)} yielded")
 
     print()
     print("FAILED: " + ", ".join(FAILS) if FAILS else "ALL PASS")

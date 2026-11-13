@@ -85,6 +85,17 @@ def loop_cfg_for(args):
     return None if args.no_bridge else {"command_bridge": {"enabled": True}}
 
 
+def search_seeds(folder):
+    """The stance search's seeds (M319), from its candidates_list.json: the sampler's, the full check's pin (None: from the clock) and the full check's own seed of the accepted candidate."""
+    try:
+        c = json.loads((Path(folder) / "candidates_list.json").read_text())
+        acc = next((x for x in c["candidates"] if x["number"] == c["accepted"]), None)
+        return {"sampler_seed": c.get("sampler_seed"), "full_check_seed_pin": c.get("full_check_seed_pin"),
+                "full_check_seed_of_accepted": ((acc or {}).get("checks", {}).get("full_check") or {}).get("seed")}
+    except (OSError, ValueError, TypeError, KeyError):
+        return {"sampler_seed": None, "full_check_seed_pin": None, "full_check_seed_of_accepted": None}
+
+
 def record_only(args):
     """Runs the episode as main() does and keeps the recording in args.record_only; no video. Returns 0 on SUCCESS."""
     out = Path(args.record_only)
@@ -94,10 +105,13 @@ def record_only(args):
     sim = load_task(MOVED, cameras=True)
     manip = getattr(args, "manipulation", "scripted")                 # M260: "mock" makes the mock policy the arm and gripper source
     task = make_pipeline_task(plan, task_cfg=MOVED, stop_on_disagreement=True, checker="oracle", instruction=args.instruction, manipulation=manip,
-                              mock_stats_path=out / "mock_queries.csv")
+                              mock_stats_path=out / "mock_queries.csv", run_dir=out)
     loop = {**(task.get("loop_cfg") or {}), **(loop_cfg_for(args) or {})}
     s = run_episode(task, sim.model, sim.data, out_dir=out / "episode", record_dir=out / "recording", loop_cfg=loop, extra_sources=task.get("extra_sources"))
     state = task["pipeline"]["orchestrator"]["state"]
+    seeds = search_seeds(task.get("stance_search_dir"))
+    (out / "run_info.json").write_text(json.dumps({"outcome": s["outcome"], "stance_search_dir": task.get("stance_search_dir"), **seeds,
+                                                   "episode_summary": "episode/episode_summary.json", "recording": "recording"}, indent=1))
     print(f"outcome {s['outcome']}; plan failure {state['failure']}; status {state['status']}", flush=True)
     return 0 if s["outcome"] == "SUCCESS" else 1
 
@@ -120,6 +134,7 @@ def main(args):
     s = run_episode(task, sim.model, sim.data, out_dir=work / "episode", record_dir=work / "recording", loop_cfg=loop_cfg_for(args))
     state = task["pipeline"]["orchestrator"]["state"]
     ok_success, _ = task["check_success"](sim.model, sim.data)
+    facts.update(**search_seeds(task.get("stance_search_dir")))
     facts.update(outcome=s["outcome"], plan_failure=state["failure"], status=state["status"], beaker_on_hotplate=bool(ok_success), episode_wall_s=time.perf_counter() - t0)
     print(f"outcome {s['outcome']}; plan failure {state['failure']}; status {state['status']}; beaker on the hotplate {ok_success}", flush=True)
     if s["outcome"] != "SUCCESS" or not all(x == "done" for x in state["status"]) or not ok_success:

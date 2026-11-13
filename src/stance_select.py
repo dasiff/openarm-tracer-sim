@@ -751,26 +751,36 @@ def _sampler_objects(world, tagged, segs, steps, targets):
     return list(objs.values()), labels, None
 
 
-def apply_stance_selection(tagged, task_cfg, maps_dir="data/reach_map", cfg=BENCH_STANCE_CFG, say=print):
+def apply_stance_selection(tagged, task_cfg, maps_dir="data/reach_map", cfg=BENCH_STANCE_CFG, say=print, run_dir=None):
     """What make_pipeline_task calls (2026-11-10, decisions-log M299): the Gaussian sampler only (src/stance_sampling.py). No overlay, no two-pass, no fallback.
 
     The heading is held at TASK_CFG's staging_yaw. One stance serves every manipulation step of the plan (the scripted staging parks one stance per plan).
+
+    Args:
+        run_dir (str, Path or None): the run's own folder, where the three log files go (M312); None: the search's own folder. The folder is in the sampler record ("stance_search_dir").
 
     Returns:
         dict: "ok", "stop" (the reason when not ok), "task_cfg" (staging_xy, staging_yaw, pedestal_q = the drawn stance's values, unchanged), "plan", "report"
         (runs, the sampler record under "sampler", chosen).
     """
     import gc
+    import time
     from types import SimpleNamespace
+    from pathlib import Path
     from src.full_check import FullCheck
     from src.stance_finder import robot_geometry
     from src.edge_sampling import select_edge_stance, pieces_for
-    from src.approach_angle import choose_place_angle
+    from src.approach_angle import ApproachAngleError, choose_approach_angle, choose_place_angle
+    from src.edge_sampling import iter_verified_stances
+    from src.trajectory_dryrun import dry_run_stance
     from src.world_model import SimGroundTruthSource, WorldModel
     from src.nav_footprint import obstacles_from_model
     from src.usable_edges import attach, base_length, furniture_tops, usable_segments
+    from src.stance_search_logging import StanceSearchLogger, dryrun_record, solve_record
     yaw = float(task_cfg["staging_yaw"])
     fc = FullCheck(maps={**bs.load_maps(maps_dir)}, task_cfg=task_cfg, maps_dir=maps_dir)
+    logger = StanceSearchLogger(run_dir=run_dir)
+    rec = None                                                # the sampler's record (set below); the finally block reads its seed (M319)
     try:
         segs = tagged["segments"]
         steps = _manip_steps(tagged)
@@ -799,17 +809,68 @@ def apply_stance_selection(tagged, task_cfg, maps_dir="data/reach_map", cfg=BENC
             return out
         pts = [p for i in steps for p in targets[i]["points"]]
         results = []
+        number_of = {}                                                    # stance -> candidate number (gate, check and verify get the same tuple)
+        capture = {"stance": None, "solves": []}                          # logging (M314): the full check's solves at the candidate's own stance while it is checked
+        solve_plain = fc._solve_stance
+
+        def solve_logged(s, points, approach_bin, warm=None, theta=0.0):
+            """The check's own solve, unchanged; at the candidate's own stance its answer is kept for the log."""
+            info = solve_plain(s, points, approach_bin, warm, theta=theta)
+            if capture["stance"] is not None and tuple(s) == capture["stance"]:
+                capture["solves"].append(solve_record(cfg["arm"], points, info, approach_bin, theta))
+            return info
+
+        fc._solve_stance = solve_logged
+
+        def clocks():
+            """The simulator's clock (the scene data's time) and the clock of the check's own data, both in seconds (logging)."""
+            return float(fc.scene_data.time), float(fc.chk.d.time)
 
         def check(stance):
             """The full check of one drawn stance, its values unchanged (the M283 seed is the check's own)."""
+            fc.pose_ik_log.clear()                                             # memory (2026-11-10): the check's logs and the per-pedestal checkers grew with every candidate and hit the 6 GB cap
+            fc.start_log.clear()
+            if len(fc._checkers) > 4:
+                fc._checkers.clear()                                       # a cache: rebuilt when needed, results unchanged
+            n = number_of[stance]
+            logger.begin_check(n, "full_check", clocks())
+            capture["stance"], capture["solves"] = tuple(stance), []
             r = fc.check(stance, points_at_heading(pts, stance[2]))           # M300: the place's back-off point turns with the stance's heading (not the staging yaw)
             results.append(r)
-            return {"ok": bool(r["ok"]), "failed": list(r.get("failed", [])), "reason": str(r.get("reason", "")), "seconds": (r.get("seconds") or {}).get("total"), "seed": r.get("seed")}
+            logger.end_check(n, "full_check", r["ok"], r.get("reason", ""), clocks(), seed=r.get("seed"))
+            logger.add_solutions(n, capture["solves"])
+            capture["stance"] = None
+            return {"ok": bool(r["ok"]), "failed": list(r.get("failed", [])), "reason": str(r.get("reason", "")), "seconds": (r.get("seconds") or {}).get("total"), "seed": r.get("seed"), "raw": r}
+
+        pick_i = next((i for i in steps if targets[i]["primitive"] == "pick"), steps[0])
+        place_i = next((i for i in steps if targets[i]["primitive"] == "place"), None)
+
+        def verify(stance, raw):
+            """The trajectory dry-run of one candidate that passed the full check (M302): the pick's approach bin and the place's hand turn are the ones the full check passed."""
+            lists = {int(t["task"]): list(t["angles"]) for t in ((raw or {}).get("task_angle_lists") or []) if t.get("task") is not None}
+            n = number_of[stance]
+            logger.begin_check(n, "dry_run", clocks())
+            try:
+                k = choose_approach_angle(lists[int(pick_i)])
+                th = choose_place_angle(lists[int(place_i)]) if place_i is not None and lists.get(int(place_i)) else 0.0
+            except (KeyError, ApproachAngleError) as e:
+                logger.end_check(n, "dry_run", False, f"approach angles missing: {e}", clocks())
+                return {"ok": False, "failed": "angles", "reason": f"approach angles missing: {e}", "seconds": 0.0, "subtasks": []}
+            res = dry_run_stance(fc.chk, fc.model, stance, task_cfg["beaker_xy"], k, th, trace=True)
+            logger.end_check(n, "dry_run", res["ok"], res["reason"], clocks())
+            logger.add_dryrun(n, dryrun_record(k, th, res))
+            return {"ok": res["ok"], "failed": res["failed"], "reason": res["reason"], "seconds": res["seconds"], "subtasks": res["subtasks"], "pick_k": int(k), "place_theta_deg": th}
 
         def gate(stance):
             """The full check's own body check at the stance (FullCheck.clear.body_distance, the limit of its body group): a stance that touches the scene is discarded before the full check (M299)."""
+            n = logger.new_candidate(stance, clocks())
+            logger.begin_check(n, "body_check", clocks())
             bd, pair = fc.clear.body_distance(stance)
-            return bd > fc.cfg["body_clearance"], pair, bd
+            passed = bd > fc.cfg["body_clearance"]
+            logger.end_check(n, "body_check", passed, "" if passed else f"touches {pair} at {1000 * bd:.1f} mm (limit {1000 * fc.cfg['body_clearance']:.1f} mm)", clocks())
+            if passed:
+                number_of[stance] = n
+            return passed, pair, bd
 
         record_dir = Path(__file__).resolve().parents[1] / "data" / "logs" / "sampler_records"       # logging only: the selection record is written here (M299, M300)
         top = fc.model.geom("bench_top")                      # the bench top footprint: the base distance to its edge (negative: over it)
@@ -832,19 +893,25 @@ def apply_stance_selection(tagged, task_cfg, maps_dir="data/reach_map", cfg=BENC
             rep["notes"].append(out["stop"])
             rep["sampler"] = {"ok": False, "stop": out["stop"], "pieces": None}
             return out
-        rec = select_edge_stance(objects, pieces, geom, cfg["arm"], cfg, check, gate=gate, say=say, record_dir=record_dir, base_metric=base_metric, point_labels=labels)
+        rec = {"stance_search_dir": str(logger.folder)}
+        logger.start()
+        gen = iter_verified_stances(objects, pieces, geom, cfg["arm"], cfg, check, verify, gate=gate, say=say, record_dir=record_dir, base_metric=base_metric, point_labels=labels, rec=rec)
+        got = next(gen, None)                                 # M301, M302: the first candidate that passes the full check and the dry-run; None when none does
         rep["sampler"] = rec
-        if not rec["ok"]:
-            out["stop"] = "stance sampler: " + str(rec["stop"])
+        if got is not None:
+            logger.accept(number_of[got["stance"]])
+
+        if got is None:
+            out["stop"] = "stance sampler: " + str(rec.get("stop"))
             rep["notes"].append(out["stop"])
             return out
-        k = rec["chosen"]["draw"] - 1
-        passed = results[k]
-        x, y, q, yaw_c = rec["chosen"]["x"], rec["chosen"]["y"], rec["chosen"]["pedestal"], rec["chosen"]["heading"]      # the chosen stance's own heading (M299 Revision 2; the staging yaw when held)
+        passed = got["raw"]
+        x, y, q, yaw_c = got["stance"][0], got["stance"][1], got["stance"][3], got["stance"][2]      # the chosen stance's own heading (M299 Revision 2; M301: drawn around the midpoint direction)
         lists = {int(t["task"]): list(t["angles"]) for t in (passed.get("task_angle_lists") or []) if t.get("task") is not None}
         tries = [{"xy": [row["x"], row["y"]], "q": row["pedestal"], "full_check_ok": row["ok"], "failed": row["failed"], "reason": row["reason"], "place": res.get("place"),
                   "task_lists": res.get("task_angle_lists"), "score": row["score"], "weight": row["weight"], "sampler_draw": row["draw"]}
                  for row, res in zip(rec["draws"], results)]
+        rep["dryrun"] = got["dryrun"]
         nav = _nav_before(segs, steps[0])
         for i in steps[1:]:
             nj = _nav_before(segs, i)
@@ -865,5 +932,9 @@ def apply_stance_selection(tagged, task_cfg, maps_dir="data/reach_map", cfg=BENC
         out.update(ok=True)
         return out
     finally:
+        fc.__dict__.pop("_solve_stance", None)                # the check's own method again
+        from src.task_config import FULLCHECK_CFG
+        logger.set_seeds((rec or {}).get("seed"), FULLCHECK_CFG["seed_pin"])      # M319: the seeds, so that the search can be reproduced
+        logger.save()                                         # the three files, also when the search stops early or raises (M313)
         del fc
         gc.collect()

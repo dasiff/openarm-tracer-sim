@@ -722,3 +722,13 @@ Status: BUILT on branch safety-filter-plugin (from safety-filter), not pushed. G
 - **SF-62**: The glue lives outside src/safety_filter/ (the structural test forbids simulator access inside it). The filter reads no world data from the simulator: objects from the world model stand-in (make_sim_world_model through WorldModelAdapter), fixtures from the lab map; joint state may come from the simulator.
 - **SF-63**: Recording (shadow and on only) per call: time, raw, filtered, sent command, status, hold reason, filter time, and the filter's status fields; data/safety_filter/plugin_runs/<run name>.npz, rewritten through a temporary file.
 - **SF-64**: Run limits max_minutes and max_ticks stop the run cleanly (stopped_by "safety_filter_limit"), recording saved.
+
+### Cat demo (decision rows SF-65 to SF-68, 2026-11-13; full text in docs/mpvi_decisions.md)
+
+Status: BUILT on branch safety-filter-plugin, not pushed. Report: docs/reports/safety_filter_cat_demo_20261113.md. Video data/videos/safety_filter_cat_20261113.mp4 (not in Git).
+
+- **SF-65**: Never-touch objects: no exemptions (fingers and held object checked), margin 0.05 m; the only change in src/safety_filter/ (flag on the world object and shape, one branch in the rule table, one config value).
+- **SF-66**: The cat is test and video only (a vertical capsule on the beaker-hotplate line), never in the lab map; it joins the world list when manipulation starts.
+- **SF-67**: Its picture is visual-only geoms in a separate scene file, moved in the viewer scene only.
+- **SF-68**: Ghost arm at the raw command (red) and the caption "SAFETY FILTER ACTIVE" while the filter is not PASS.
+

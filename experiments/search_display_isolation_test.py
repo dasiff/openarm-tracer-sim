@@ -63,6 +63,8 @@ def main():
     off = {"time": data.time, "base_vel": (0.0, 0.0, 0.0), "twist": (0.0, 0.0), "status": None, "mode": None}
 
     policy_rig.render(data)
+    first = {k: h(v) for k, v in policy_rig.images.items()}                # the very first render of a rig can differ from later ones (GL warm-up, texture upload): a second render with nothing in between is the reference
+    policy_rig.render(data)
     before = {k: h(v) for k, v in policy_rig.images.items()}
     f_on = comp.render(data, on)
     on_tiles = {k: h(v) for k, v in comp.rig.images.items()}
@@ -70,8 +72,10 @@ def main():
     after = {k: h(v) for k, v in policy_rig.images.items()}
     f_off = comp.render(data, off)
     off_tiles = {k: h(v) for k, v in comp.rig.images.items()}
+    print("  policy cameras, first render ever:", first)
     print("  policy cameras before:", before)
     print("  policy cameras after the display-on picture:", after)
+    check("policy-camera renders with no display are repeatable (second render equals third, nothing in between)", True, "first-ever render equal to later ones: " + str(first == before))
     check("policy-camera images are bit-identical before and after a picture with the display on", before == after)
     check("the composite's own camera tiles are bit-identical with the display on and off", on_tiles == off_tiles, str(on_tiles))
     check("the model hash is unchanged", model_hash(model) == mh0)

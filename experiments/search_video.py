@@ -106,7 +106,7 @@ def concat(parts, out_path):
     """Joins MP4 files of the same codec settings without re-encoding."""
     lst = Path(str(out_path) + ".list.txt")
     lst.write_text("".join(f"file '{Path(p).resolve()}'\n" for p in parts))
-    subprocess.run([imageio_ffmpeg.get_ffmpeg_exe(), "-y", "-loglevel", "warning", "-f", "concat", "-safe", "0", "-i", str(lst), "-c", "copy", "-movflags", "+faststart", str(out_path)], check=True)
+    subprocess.run([imageio_ffmpeg.get_ffmpeg_exe(), "-y", "-loglevel", "warning", "-f", "concat", "-safe", "0", "-i", str(lst), "-c", "copy", "-movflags", "+faststart", "-f", "mp4", str(out_path)], check=True)
     lst.unlink()
 
 

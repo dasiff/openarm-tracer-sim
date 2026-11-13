@@ -105,6 +105,8 @@ class StanceSearchLogger:
         self._solutions = {}
         self._dryrun = {}
         self.accepted = None
+        self.sampler_seed = None                             # the seeds of the search, so that it can be reproduced (M319)
+        self.full_check_seed_pin = None
 
     def start(self):
         """Starts the search clock: every wall-clock time in the files counts from here."""
@@ -124,10 +126,12 @@ class StanceSearchLogger:
     def begin_check(self, n, name, clocks):
         self._candidates[n]["checks"][name] = {"wall_time_start_s": self._wall(), "sim_time_start_s": num(clocks[0]), "check_clock_start_s": num(clocks[1])}
 
-    def end_check(self, n, name, passed, reason, clocks):
+    def end_check(self, n, name, passed, reason, clocks, seed=None):
         cand = self._candidates[n]
         rec = cand["checks"][name]
         rec.update(passed=bool(passed), reason=str(reason or "")[:200], wall_time_end_s=self._wall(), sim_time_end_s=num(clocks[0]), check_clock_end_s=num(clocks[1]))
+        if seed is not None:                                 # the full check's own seed of this candidate (M319)
+            rec["seed"] = int(seed)
         cand.update(wall_time_end_s=rec["wall_time_end_s"], sim_time_end_s=rec["sim_time_end_s"], check_clock_end_s=rec["check_clock_end_s"])
 
     def add_solutions(self, n, solves):
@@ -136,6 +140,11 @@ class StanceSearchLogger:
     def add_dryrun(self, n, data):
         self._dryrun[n] = data
 
+    def set_seeds(self, sampler_seed, full_check_seed_pin):
+        """The sampler's seed and the full check's pinned seed (None: not pinned, the clock gave each check its own seed, kept per candidate in its full-check record)."""
+        self.sampler_seed = None if sampler_seed is None else int(sampler_seed)
+        self.full_check_seed_pin = None if full_check_seed_pin is None else int(full_check_seed_pin)
+
     def accept(self, n):
         self.accepted = int(n)
 
@@ -143,7 +152,7 @@ class StanceSearchLogger:
         """Writes the three files (each through a temporary name, so a file is never half written)."""
         cands = [dict(self._candidates[n], status=_status(self._candidates[n], self.accepted)) for n in sorted(self._candidates)]
         self._write("candidates_list.json", {"search_folder": str(self.folder), "accepted": -1 if self.accepted is None else self.accepted,
-                                             "candidates": cands})
+                                             "sampler_seed": self.sampler_seed, "full_check_seed_pin": self.full_check_seed_pin, "candidates": cands})
         self._write("full_check_solutions.json", {"candidates": {str(n): self._solutions[n] for n in sorted(self._solutions)}})
         self._write("dryrun_trajectories.json", {"columns": DRYRUN_COLUMNS, "candidates": {str(n): self._dryrun[n] for n in sorted(self._dryrun)}}, compact=True)
 

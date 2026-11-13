@@ -780,6 +780,7 @@ def apply_stance_selection(tagged, task_cfg, maps_dir="data/reach_map", cfg=BENC
     yaw = float(task_cfg["staging_yaw"])
     fc = FullCheck(maps={**bs.load_maps(maps_dir)}, task_cfg=task_cfg, maps_dir=maps_dir)
     logger = StanceSearchLogger(run_dir=run_dir)
+    rec = None                                                # the sampler's record (set below); the finally block reads its seed (M319)
     try:
         segs = tagged["segments"]
         steps = _manip_steps(tagged)
@@ -836,7 +837,7 @@ def apply_stance_selection(tagged, task_cfg, maps_dir="data/reach_map", cfg=BENC
             capture["stance"], capture["solves"] = tuple(stance), []
             r = fc.check(stance, points_at_heading(pts, stance[2]))           # M300: the place's back-off point turns with the stance's heading (not the staging yaw)
             results.append(r)
-            logger.end_check(n, "full_check", r["ok"], r.get("reason", ""), clocks())
+            logger.end_check(n, "full_check", r["ok"], r.get("reason", ""), clocks(), seed=r.get("seed"))
             logger.add_solutions(n, capture["solves"])
             capture["stance"] = None
             return {"ok": bool(r["ok"]), "failed": list(r.get("failed", [])), "reason": str(r.get("reason", "")), "seconds": (r.get("seconds") or {}).get("total"), "seed": r.get("seed"), "raw": r}
@@ -932,6 +933,8 @@ def apply_stance_selection(tagged, task_cfg, maps_dir="data/reach_map", cfg=BENC
         return out
     finally:
         fc.__dict__.pop("_solve_stance", None)                # the check's own method again
+        from src.task_config import FULLCHECK_CFG
+        logger.set_seeds((rec or {}).get("seed"), FULLCHECK_CFG["seed_pin"])      # M319: the seeds, so that the search can be reproduced
         logger.save()                                         # the three files, also when the search stops early or raises (M313)
         del fc
         gc.collect()

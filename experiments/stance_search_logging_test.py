@@ -41,6 +41,9 @@ def part_a():
     n = first.new_candidate((0.9, 1.1, 0.5, 0.12), clk)
     first.begin_check(n, "body_check", clk)
     first.end_check(n, "body_check", True, None, clk)
+    first.begin_check(n, "full_check", clk)
+    first.end_check(n, "full_check", True, None, clk, seed=999)
+    first.set_seeds(3397871272, 4242)
     first.add_solutions(n, [{"ok": True, "points": [{"q_rad": [float("nan")] * 7}]}])
     first.add_dryrun(n, {"place_theta_deg": num(-19.999949), "subtasks": {}})
     first.accept(n)
@@ -54,6 +57,10 @@ def part_a():
     dr = json.loads((first.folder / "dryrun_trajectories.json").read_text())
     check("numbers are rounded to 4 decimals", dr["candidates"]["0"]["place_theta_deg"] == -19.9999 and num(0.123456) == 0.1235, str(dr["candidates"]["0"]["place_theta_deg"]))
     check("the dry-run file names its columns", dr["columns"] == DRYRUN_COLUMNS and len(dr["columns"]) == 11, str(len(dr["columns"])))
+    check("the sampler seed, the full-check pin and the candidate's own full-check seed are in the file (M319)",
+          body["sampler_seed"] == 3397871272 and body["full_check_seed_pin"] == 4242 and body["candidates"][0]["checks"]["full_check"]["seed"] == 999,
+          f"{body['sampler_seed']} {body['full_check_seed_pin']}")
+    check("a search without seeds set records null, not a missing key", json.loads((second.folder / "candidates_list.json").read_text())["sampler_seed"] is None, "")
     check("a search with no accepted candidate records -1", (second.folder / "candidates_list.json").exists() and json.loads((second.folder / "candidates_list.json").read_text())["accepted"] == -1, "")
 
 
@@ -71,6 +78,13 @@ def part_b():
     check("the sampler record names the search folder", folder.is_dir(), str(folder))
     check("the three files are in that folder", all((folder / f).is_file() for f in FILES), "")
     cands = json.loads((folder / "candidates_list.json").read_text())
+    check("the file records the sampler's seed (the one in the sampler record) and the full-check pin key (M319)",
+          isinstance(cands["sampler_seed"], int) and cands["sampler_seed"] == sampler.get("seed") and "full_check_seed_pin" in cands, f"{cands['sampler_seed']} pin {cands['full_check_seed_pin']}")
+    fcs = [c["checks"]["full_check"] for c in cands["candidates"] if "full_check" in c["checks"] and "passed" in c["checks"]["full_check"]]
+    check("every full check that ran has its own seed in its record (M319)", bool(fcs) and all(isinstance(f.get("seed"), int) for f in fcs), f"{len(fcs)} full checks")
+    from demo_video import search_seeds
+    sd = search_seeds(folder)
+    check("the run record's seeds (demo_video.search_seeds) are those of the file", sd["sampler_seed"] == cands["sampler_seed"] and sd["full_check_seed_of_accepted"] is not None or cands["accepted"] == -1, str(sd))
     sols = json.loads((folder / "full_check_solutions.json").read_text())
     dry = json.loads((folder / "dryrun_trajectories.json").read_text())
     cl = cands["candidates"]

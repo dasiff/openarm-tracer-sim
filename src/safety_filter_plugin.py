@@ -53,7 +53,7 @@ class SafetyFilterPlugin:
         self.history = deque(maxlen=int(history_len))
         self.rec = {k: [] for k in ("t", "raw", "filtered", "sent", "status", "reason", "filter_time", "rounds", "worst_gap",
                                     "worst_shortfall", "fraction", "worst_pair", "methods", "pairs_pushed", "pairs_skipped",
-                                    "pairs_shortened", "solver_calls")}
+                                    "pairs_shortened", "solver_calls", "q_meas", "base", "pedestal", "fingers", "held_ends")}
         self.n_calls, self._t0 = 0, clock()
         self.ctx = {"t": 0.0, "manip_started": False}   # read by the extra-objects test hook
 
@@ -81,7 +81,7 @@ class SafetyFilterPlugin:
         if status.status == "HOLD":
             filtered = np.asarray(self.hold_policy(self.last_sent.copy(), status, list(self.history)), dtype=float)
         sent = raw if self.mode == "shadow" else filtered
-        self._record(t, raw, filtered, sent, status, dt_filter)
+        self._record(t, raw, filtered, sent, status, dt_filter, state)
         self.history.append({"raw": raw, "sent": sent.copy(), "status": status.status, "reason": status.hold_reason})
         if status.status != "PASS" and np.allclose(sent, self.last_sent, atol=1e-9):      # held: not PASS and the command sent did not change
             self._hold_t0 = float(t) if self._hold_t0 is None else self._hold_t0
@@ -110,8 +110,14 @@ class SafetyFilterPlugin:
         return False
 
     # ------------------------------------------------------------------
-    def _record(self, t, raw, filtered, sent, st, dt_filter):
+    def _record(self, t, raw, filtered, sent, st, dt_filter, state=None):
         r = self.rec
+        if state is not None and hasattr(state, "q_left"):      # the measured robot state at this call (for gaps of the REAL arm afterwards)
+            r["q_meas"].append(np.array([state.q_left, state.q_right], dtype=float))
+            r["base"].append(np.array(list(state.base_xyz) + list(state.base_quat), dtype=float))
+            r["pedestal"].append(float(state.pedestal_m))
+            r["fingers"].append(np.array([state.finger_left, state.finger_right], dtype=float))
+            r["held_ends"].append(np.array(self.ctx.get("held_ends", np.full((2, 3, 3), np.nan)), dtype=float))   # per side: a, b, then (r, 0, 0)
         r["t"].append(float(t)); r["raw"].append(raw.copy()); r["filtered"].append(filtered.copy()); r["sent"].append(sent.copy())
         r["status"].append(st.status); r["reason"].append(st.hold_reason or ""); r["filter_time"].append(dt_filter)
         r["rounds"].append(st.rounds); r["worst_gap"].append(st.worst_gap); r["worst_shortfall"].append(st.worst_shortfall)
@@ -123,7 +129,7 @@ class SafetyFilterPlugin:
         """The recording as arrays (raw, filtered, sent: [tick, arm, joint]; filter_time in s; text fields as strings)."""
         out = {}
         for k, v in self.rec.items():
-            out[k] = np.array(v) if v else np.zeros((0, 2, 7) if k in ("raw", "filtered", "sent") else (0,))
+            out[k] = np.array(v) if v else np.zeros((0, 2, 7) if k in ("raw", "filtered", "sent", "q_meas") else (0,))
         return out
 
     def save(self):
@@ -195,6 +201,13 @@ def make_sim_plugin(model, data, cfg, loop_handles):
         for s in SIDES:
             pos, rot = shapes.hand_frame(s)
             tracker.update(s, bool(holding.get(s, False)), placed, pos, rot)
+        he = np.full((2, 3, 3), np.nan)
+        for i, s in enumerate(SIDES):
+            hp = tracker.placed(s, *shapes.hand_frame(s))
+            if hp is not None and hp.kind == "capsule":
+                he[i, 0], he[i, 1], he[i, 2, 0] = hp.a, hp.b, hp.r
+        if plugin_ref:
+            plugin_ref[0].ctx["held_ends"] = he
         return state, view.objects(), tracker
 
     policy = pcfg["hold_policy"]

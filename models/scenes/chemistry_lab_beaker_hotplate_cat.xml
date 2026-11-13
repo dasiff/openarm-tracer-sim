@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<mujoco model="chemistry_lab_beaker_hotplate_cat">
+  <!-- The beaker-hotplate scene plus three VISUAL-ONLY geoms of the safety filter cat demo (src/cat_demo.py). Not in the lab map; for the demo and its video only.
+       The geoms have no collision (contype 0, conaffinity 0) and sit far under the floor; the viewer and the video move them to the cat's place (src/cat_demo.draw_cat),
+       so no policy camera ever sees them. The texture is the cut-out cat picture on a fur-grey backdrop (the renderer ignores the texture transparency); it is not in Git (data/demo_assets/supercat_card.png). -->
+  <include file="chemistry_lab_beaker_hotplate.xml"/>
+  <asset>
+    <texture name="cat_tex" type="2d" file="../../data/demo_assets/supercat_card.png"/>
+    <material name="cat_mat" texture="cat_tex" rgba="1 1 1 0.999" specular="0" shininess="0" reflectance="0"/>
+  </asset>
+  <worldbody>
+    <geom name="cat_card" type="box" size="0.10 0.002 0.15" pos="0 0 -1000" material="cat_mat" contype="0" conaffinity="0" group="0"/>
+    <geom name="cat_capsule" type="capsule" size="0.10 0.05" pos="0 0 -1000" rgba="1 0.55 0.1 0.15" contype="0" conaffinity="0" group="0"/>
+    <geom name="cat_shell" type="capsule" size="0.15 0.05" pos="0 0 -1000" rgba="1 0.55 0.1 0.07" contype="0" conaffinity="0" group="0"/>
+  </worldbody>
+</mujoco>

@@ -25,6 +25,9 @@ CAT_CFG = {
     "fade_s": 0.5,                 # s: the fade-in when the cat appears (0 = plain cut)
     "card_front_sign": 1.0,        # +1 or -1: which side of the card the picture is on (flip if the picture shows mirrored in a still)
     "geoms": ("cat_card", "cat_capsule", "cat_shell"),
+    "ghost_rgba": (1.0, 0.15, 0.15, 0.35),   # colour and opacity of the ghost arms at the RAW command (red tint, see-through)
+    "ghost_diff_m": 0.01,          # m: the ghost is also drawn when the raw command's arm differs from the command sent by more than this at any link (status PASS or not)
+    "caption": "SAFETY FILTER ACTIVE",   # text shown whenever the filter's status is not PASS
 }
 
 
@@ -89,3 +92,47 @@ def draw_cat(scene, model, cat_obj, face_xy, alpha, cfg=CAT_CFG):
             g.pos[:] = c
             g.mat[:] = np.eye(3)
             g.rgba[3] = cfg["shell_alpha"] * alpha
+
+
+def make_info_hook(model, plugin_npz, cat_obj, face_xy, cfg=CAT_CFG, show_cat=True, t_appear=0.0):
+    """The display hook of the video (replay_run's info_hook): for every picture it adds the cat, the red ghost arms at the raw command and the caption.
+
+    Looks the filter's record up by simulated time (the record of that tick): ghost and caption only while mode "on" ran (the record exists) and the status is not PASS, or
+    the raw command's arm differs from the command sent by more than cfg["ghost_diff_m"] at any arm link (forward kinematics of both on a scratch copy of the data)."""
+    import mujoco
+    from src import robot_specs
+    from src.base_control import base_yaw
+    from src.robot_helpers import arm_ids
+
+    z = np.load(plugin_npz)
+    t_rec, raw, sent, status = z["t"], z["raw"], z["sent"], z["status"]
+    qadr = {s: arm_ids(model, s)["qadr"] for s in ("left", "right")}
+    ped = [int(model.joint(j).qposadr[0]) for j in robot_specs.PEDESTAL_SPECS["joints"]]
+    arm_bodies = [b for b in range(model.nbody) if any(model.body(b).name.startswith(f"openarm_{s}_link") for s in ("left", "right"))]
+    scratch = mujoco.MjData(model)
+
+    def arm_points(data, q):
+        scratch.qpos[:] = data.qpos
+        for i, s in enumerate(("left", "right")):
+            for a, v in zip(qadr[s], q[i]):
+                scratch.qpos[a] = v
+        mujoco.mj_kinematics(model, scratch)
+        return scratch.xpos[arm_bodies].copy()
+
+    def hook(info, data, tick):
+        if show_cat:
+            fade = 1.0 if cfg["fade_s"] <= 0 else min(1.0, max(0.0, (data.time - t_appear) / cfg["fade_s"]))
+            info["decor"] = lambda scene, m: draw_cat(scene, m, cat_obj, face_xy, fade, cfg)
+        i = int(np.searchsorted(t_rec, data.time, side="right")) - 1
+        if i < 0 or data.time > t_rec[-1] + 0.05:
+            return
+        not_pass = status[i] != "PASS"
+        differs = False
+        if not not_pass:
+            differs = float(np.abs(arm_points(data, raw[i]) - arm_points(data, sent[i])).max()) > cfg["ghost_diff_m"]
+        if not_pass or differs:
+            info["ghost2"] = ({"x": float(data.qpos[0]), "y": float(data.qpos[1]), "yaw": float(base_yaw(data)), "pedestal": float(data.qpos[ped[0]]),
+                               "left_q": [float(v) for v in raw[i][0]], "right_q": [float(v) for v in raw[i][1]]}, cfg["ghost_rgba"])
+        if not_pass:
+            info["caption"] = cfg["caption"]
+    return hook

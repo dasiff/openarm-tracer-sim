@@ -797,3 +797,32 @@ DRYRUN_CFG = {
     "open_s": 0.5,             # s, PROPOSED by the implementer: the gripper's opening time in the dry run (no gripper physics; the skill's OPEN ends when the fingers are open) [row M302]
 }
 
+
+
+# Stance-search display (decisions-log row M321, src/search_timeline.py, src/ghost_robot.py): what the video of a successful run shows while the robot sits idle at home during the stance search.
+# Display only: nothing here is read by the planner, the controller or any check, and nothing here reaches a policy camera (design plan 7.1). Change a number and re-render; nothing is re-run.
+SEARCH_DISPLAY_CFG = {
+    # --- part 1: other candidates (ones that failed the full check) ---
+    "n_other_candidates": 4,        # how many failed candidates are shown, in candidate-number order (David, 2026-11-13) [row M321]
+    "other_candidate_s": 2.0,       # s of video per failed candidate (David) [row M321]
+    "other_step_s": 1.2,            # s of that time in which the ghost steps through the poses the full check solved (David) [row M321]
+    # the rest of other_candidate_s (0.8 s) is the red hold at the last solved pose with the reason in the panel
+    # --- part 2: the accepted candidate ---
+    "key_pose_s": 0.8,              # s of video per key pose of the accepted candidate's full check (David) [row M321]
+    "dryrun_speed": 3.0,            # the dry-run ghost arm moves at this multiple of real (simulated) speed (David) [row M321]
+    "green_hold_s": 2.0,            # s the accepted candidate's ghost is held in green after the dry run (David) [row M321]
+    "fade_s": 1.0,                  # s in which the ghost then fades out (David) [row M321]
+    # --- ghost colours, red green blue alpha, each 0..1 ---
+    "ghost_checked_rgba": (0.35, 0.65, 1.0, 0.35),    # light blue, about 35 percent opaque: shown as checked / being checked (David) [row M321]
+    "ghost_failed_rgba": (1.0, 0.15, 0.15, 0.35),     # red: the candidate failed (David) [row M321]
+    "ghost_accepted_rgba": (0.2, 0.85, 0.3, 0.35),    # green: the accepted candidate (David) [row M321]
+    # --- the key poses of the accepted candidate (and the most that a failed one steps through): the full check's task point paths, in order. (label, kind, path, which of the points with that path) [row M321]
+    "key_poses": (("pick approach", "pick", "over", 0), ("grasp", "pick", "grasp", 0), ("lift", "pick", "lift", 0),
+                  ("place approach", "place", "carry", 0), ("place down", "place", "setdown", -1), ("retreat", "place", "back", 0)),
+    # --- the video ---
+    "fps": 30,                      # video frames per second (the existing notebook video's rate) [row M321]
+    "size": (1920, 1080),           # video size in pixels (the existing notebook video's) [row M321]
+    "clock_text_scale": 2.2,        # size of the clock digits relative to the panel text (readable at a glance; implementer's choice) [row M321]
+    # --- the fixed overview camera of parts 1 and 2: where it looks (m), distance (m), azimuth and elevation (deg). Chosen so that the bench with the beaker and hotplate, the robot at home and the ghost all show. [row M321]
+    "overview_camera": {"lookat": (1.0, 2.1, 0.8), "distance": 5.2, "azimuth": 0.0, "elevation": -35.0},
+}

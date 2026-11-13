@@ -82,7 +82,14 @@ class X264Writer:
 
 def loop_cfg_for(args):
     """The control loop's overrides: the command bridge ON unless --no-bridge (design plan section 1: ON for the scripted task)."""
-    return None if args.no_bridge else {"command_bridge": {"enabled": True}}
+    out = {} if args.no_bridge else {"command_bridge": {"enabled": True}}
+    if getattr(args, "safety_filter", "off") != "off":
+        out.update(safety_filter_mode=args.safety_filter, safety_filter_run_name=args.safety_filter_run_name)
+        if args.safety_filter_max_ticks:
+            out["safety_filter_max_ticks"] = args.safety_filter_max_ticks
+        if args.safety_filter_max_minutes:
+            out["safety_filter_max_minutes"] = args.safety_filter_max_minutes
+    return out or None
 
 
 def search_seeds(folder):
@@ -175,4 +182,8 @@ if __name__ == "__main__":
     ap.add_argument("--no-bridge", action="store_true", help="run without the command bridge (the real arms' command limits, COMMAND_BRIDGE_CFG; ON by default here, as for D3)")
     ap.add_argument("--manipulation", choices=["scripted", "mock"], default="scripted", help="the arm and gripper source: the scripted pick and place (default) or the mock policy (M260; --record-only only)")
     ap.add_argument("--record-only", metavar="DIR", help="run the episode and keep its recording in DIR (data/demo_record/...); make no video, no files in data/videos (for measurements and panel screenshots)")
+    ap.add_argument("--safety-filter", choices=["off", "shadow", "on"], default="off", help="the safety filter plug-in (src/safety_filter_plugin.py), see combined_controller --safety-filter")
+    ap.add_argument("--safety-filter-run-name", default=None)
+    ap.add_argument("--safety-filter-max-ticks", type=int, default=None, help="stop the run cleanly after this many filter calls")
+    ap.add_argument("--safety-filter-max-minutes", type=float, default=None, help="stop the run cleanly after this many minutes of wall-clock time")
     sys.exit(main(ap.parse_args()))

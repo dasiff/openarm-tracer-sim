@@ -244,7 +244,8 @@ def _resolve_groups(model, groups):
 def run(scene: str, spawn_pos, groups: list[dict], policy,
         mode: str = "manual", camera: int = 0, preview: bool = True,
         snapshot_every: float = 0.0, snapshot_dir: str | None = None,
-        record: bool = False, record_run: str | None = None):
+        record: bool = False, record_run: str | None = None,
+        safety_filter: str = "off", safety_filter_run_name: str | None = None):
     """
     Main entry point (unchanged signature): load the scene, build the viewer and the sources, run the loop.
 
@@ -349,6 +350,7 @@ def run(scene: str, spawn_pos, groups: list[dict], policy,
         "spawn_pos": spawn_pos, "warmup_s": WARMUP_SEC, "resettle_s": RESETTLE_SEC, "routes": routes,
         "claimed_ids": sorted(claimed_ids), "held": held, "tick_ref": tick, "bench_frames": bench["frames"],
         "bench_log": bench["log"], "preview": preview and mode == "teleop",
+        "safety_filter_mode": safety_filter, "safety_filter_run_name": safety_filter_run_name,
         "record_run": record_run, "record_meta": {"model": {"kind": "scene", "scene": scene}, "mode": mode},
         "hotkeys": {"toggle_route": glfw.KEY_F2 if mode == "teleop" else None, "toggle_log": glfw.KEY_F5, "quit": glfw.KEY_ESCAPE},
     }
@@ -388,6 +390,9 @@ def main():
                         help="teleop: don't show the live camera window")
     parser.add_argument("--no-face", action="store_true",
                         help="leave the robot's head and face out of the model (visual only: the viewer shows it, the policy cameras never do)")
+    parser.add_argument("--safety-filter", choices=["off", "shadow", "on"], default="off",
+                        help="the safety filter plug-in (src/safety_filter_plugin.py): off (default, nothing changes), shadow (runs and records, the robot gets the raw command), on (the robot gets the filtered command)")
+    parser.add_argument("--safety-filter-run-name", default=None, help="name of the plug-in recording in data/safety_filter/plugin_runs/")
     args = parser.parse_args()
     if args.no_face:
         from src import face
@@ -408,6 +413,8 @@ def main():
         snapshot_dir=args.snapshot_dir,
         record=args.record,
         record_run=args.record_run,
+        safety_filter=args.safety_filter,
+        safety_filter_run_name=args.safety_filter_run_name,
     )
 
 

@@ -826,3 +826,15 @@ SEARCH_DISPLAY_CFG = {
     # --- the fixed overview camera of parts 1 and 2: where it looks (m), distance (m), azimuth and elevation (deg). Chosen so that the bench with the beaker and hotplate, the robot at home and the ghost all show. [row M321]
     "overview_camera": {"lookat": (0.95, 2.0, 0.8), "distance": 3.6, "azimuth": 25.0, "elevation": -38.0},
 }
+
+
+# The safety filter plug-in (src/safety_filter_plugin.py; design plan section 16, Stage 4 build; decision rows SF-59 to SF-64). Plain words for every value.
+SAFETY_FILTER_PLUGIN_CFG = {
+    "mode": "off",                  # text [SF-59]: "off" = the filter is not imported, not called, nothing recorded (the control loop behaves exactly as without it, default); "shadow" = the filter runs and is recorded but the robot still gets the RAW command; "on" = the robot gets the filtered command. Runner flag --safety-filter
+    "hold_policy": "repeat_last_safe",  # text [SF-61]: what is sent when the filter finds no safe pose: "repeat_last_safe" = the last command actually sent again. A smooth stop is not built (next week); the slot takes any function(last_sent, status, history) -> command
+    "history_len": 300,             # ticks [SF-61]: how many recent ticks (raw, sent, status) the hold policy gets as history: 2 seconds at 150 Hz, enough for a slow-down policy to see the speed
+    "out_dir": "data/safety_filter/plugin_runs",  # folder [SF-63]: where the recording <run name>.npz goes (git-ignored)
+    "flush_every": 3000,            # ticks [SF-63]: the recording file is rewritten (temporary file, then rename) this often, so a crash loses at most this many ticks
+    "max_minutes": None,            # wall-clock minutes [SF-64]: stop the run cleanly after this long (the recording is saved); None = no limit
+    "max_ticks": None,              # filter calls [SF-64]: stop the run cleanly after this many filter calls (the recording is saved); None = no limit
+}

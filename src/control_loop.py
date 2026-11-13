@@ -155,6 +155,9 @@ LOOP_CFG = {
                                    # only while teleop) and the source's request_teleop command switch between the modes
     "record_run": None,            # directory: record the run's physics inputs and verification hashes (src/run_record.py) [row M121 PENDING David: no decision recorded]
     "record_meta": None,           # dict stored in the recording's meta.json: {"model": recipe to rebuild the model, ...} [row M121 PENDING David: no decision recorded]
+    "safety_filter_mode": "off",   # "off" (default: no import, no call, nothing recorded), "shadow" (filter runs and is recorded, the robot gets the raw command) or "on" (the robot gets the filtered command); src/safety_filter_plugin.py [row SF-59]
+    "safety_filter_run_name": None,    # name of the plug-in's recording data/safety_filter/plugin_runs/<name>.npz (None: a time stamp) [row SF-63]
+    "safety_filter_max_minutes": None, "safety_filter_max_ticks": None,   # clean stop after this much wall-clock time / this many filter calls (None: the SAFETY_FILTER_PLUGIN_CFG value) [row SF-64]
     "replay": None,                # src/replay.py: {"ctrl", "basevel", "on_start", "on_step", "on_tick_end"}: no sources, inputs from a recording [row M121 PENDING David: no decision recorded]
 }
 
@@ -600,6 +603,10 @@ def run_loop(model, data, sources, cfg, viewer=None, logger=None):
     fq_adr = {s: int(model.jnt_qposadr[model.joint(f"openarm_{s}_finger_joint1").id]) for s in sides}
     fv_adr = {s: int(model.jnt_dofadr[model.joint(f"openarm_{s}_finger_joint1").id]) for s in sides}
     hold_det = {s: HoldDetector() for s in sides}
+    sf_plugin = None
+    if cfg["safety_filter_mode"] != "off" and cfg["replay"] is None:     # row SF-59: off imports nothing; a replay feeds recorded inputs and is never filtered
+        from src.safety_filter_plugin import make_sim_plugin
+        sf_plugin = make_sim_plugin(model, data, cfg, {"fing_qadr": fq_adr, "ped_qadr": ped_qadr})
     catch = {s: OpenCatch(model, s, fq_adr[s], fv_adr[s]) for s in sides}
     gate = SourceGate(max(1, int(round(cfg["source_hz"] / CHUNK_CFG["rate_hz"]))))   # chunks play every 5 ticks at 150 Hz and 30 per second
     open_catch_log = []                                        # entries {"tick", "side", "kind", ...} (caught, repeat_ignored, released, failed_hold, opened, ...)
@@ -1132,6 +1139,10 @@ def run_loop(model, data, sources, cfg, viewer=None, logger=None):
         if not cfg["exclusive"] and any(c["mode"] == "idle" for c in cmds):
             stop_base()
         for cmd in to_apply:
+            if sf_plugin is not None and cmd.get("mode") == "arms" and cmd.get("arm_targets"):   # row SF-59: the safety filter sits after the helpers (open catch, weighing) and before the sag trim
+                cmd = {**cmd, "arm_targets": sf_plugin.process(cmd["arm_targets"], {s_: hold_det[s_].holding for s_ in sides}, applied()["arm_targets"], t)}
+                if sf_plugin.limit_reached() and stop_req[0] is None:
+                    stop_req[0] = "safety_filter_limit"
             cmd = sag_correct(cmd)                          # M262: the sag trim sits between the source and the bridge (every source; the same code)
             cmd = bridge_take(cmd)
             if cmd is not None:
@@ -1237,6 +1248,8 @@ def run_loop(model, data, sources, cfg, viewer=None, logger=None):
     if recorder is not None:
         recorder.close({"stopped_by": stop_req[0], "frames": frame})
     print(f"\nLoop exited after {frame} frames.")
+    if sf_plugin is not None:
+        print(f"safety filter ({sf_plugin.mode}): {sf_plugin.n_calls} calls, recording {sf_plugin.close()}")
     if logging_active and logger is not None and len(logger.trajectory) > 0:
         logger.save()
     for src in sources.values():

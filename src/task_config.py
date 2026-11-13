@@ -824,5 +824,5 @@ SEARCH_DISPLAY_CFG = {
     "size": (1920, 1080),           # video size in pixels (the existing notebook video's) [row M321]
     "clock_text_scale": 2.2,        # size of the clock digits relative to the panel text (readable at a glance; implementer's choice) [row M321]
     # --- the fixed overview camera of parts 1 and 2: where it looks (m), distance (m), azimuth and elevation (deg). Chosen so that the bench with the beaker and hotplate, the robot at home and the ghost all show. [row M321]
-    "overview_camera": {"lookat": (1.0, 2.1, 0.8), "distance": 5.2, "azimuth": 0.0, "elevation": -35.0},
+    "overview_camera": {"lookat": (0.95, 2.0, 0.8), "distance": 3.6, "azimuth": 25.0, "elevation": -38.0},
 }

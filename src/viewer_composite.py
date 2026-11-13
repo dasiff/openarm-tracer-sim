@@ -159,7 +159,10 @@ class CompositeRenderer:
         lin, ang = info["twist"]
         panel = info.get("panel") or panel_from_status(self.panel_static, info.get("status"))
         if info.get("search_rows"):
-            hud = text_bitmap(info["search_rows"], int(round(400 * self.s)), int(round(150 * self.s)), (), self.s)
+            rows = [r for r in info["search_rows"] if r[0] in ("search", "candidate", "stage", "body-check rejects")]
+            block = [(lab, val, "current" if lab == "result" else "note", 6 if lab == "result" else 3) for lab, val in info["search_rows"] if lab in ("result", "pose")]
+            w, lw = int(round(520 * self.s)), int(round(170 * self.s))
+            hud = text_bitmap(rows, w, lw, (), self.s, block, lw)
         else:
             hud = hud_bitmap(hud_rows(info["time"], info["base_vel"], yaw_deg, data.qpos[0:3],
                                       middle_rows=[("twist lin, ang", f"{lin:+.2f}, {ang:+.2f}")],

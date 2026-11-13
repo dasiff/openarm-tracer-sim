@@ -34,6 +34,9 @@ MARGINS = {
     "robot_robot_m": 0.03,      # m, PROVISIONAL [M288]: every other robot vs robot pair (arm parts of one arm vs the other arm, held vs robot body)
     "arm_world_m": 0.01,        # m, PROVISIONAL [M288]: arm parts (not fingers) vs world objects; must stay below the palm-to-beaker gap at a normal grasp
 }
+# A never-touch world object (WorldObject.never_touch, SF-65, David 2026-11-13): checked against every arm part INCLUDING fingers and held objects, with this margin
+# instead of arm_world_m. Kept out of MARGINS so every existing loop over MARGINS stays as before.
+NEVER_TOUCH_MARGIN_M = 0.05     # m [SF-65]: 5 cm; David's value for the cat demo
 # Pushing starts this far beyond a pair's margin and stops this far beyond it (M288). Stage 2 uses them.
 PUSH_START_BEYOND_M = 0.01      # m, PROVISIONAL [M288]
 PUSH_STOP_BEYOND_M = 0.02       # m, PROVISIONAL [M288]

@@ -37,7 +37,7 @@ HOLD_POLICIES = {"repeat_last_safe": repeat_last_safe}
 
 class SafetyFilterPlugin:
     def __init__(self, mode, filter_step, inputs_fn, hold_policy=repeat_last_safe, run_name="run", out_dir=None,
-                 history_len=300, flush_every=3000, max_minutes=None, max_ticks=None, clock=time.perf_counter):
+                 history_len=300, flush_every=3000, max_minutes=None, max_ticks=None, hold_stop_s=None, clock=time.perf_counter):
         """mode: "off" | "shadow" | "on" (anything else raises ValueError).
         filter_step(raw, last, state, world_objects, held) -> (filtered, status): the filter's entry function (Resolver.step).
         inputs_fn(holding) -> (state, world_objects, held): builds the filter inputs for this call; holding is {side: bool}.
@@ -47,21 +47,26 @@ class SafetyFilterPlugin:
             raise ValueError(f"safety filter mode must be one of {MODES}, not {mode!r}")
         self.mode, self.filter_step, self.inputs_fn, self.hold_policy = mode, filter_step, inputs_fn, hold_policy
         self.run_name, self.out_dir, self.flush_every, self.clock = run_name, out_dir, int(flush_every), clock
-        self.max_minutes, self.max_ticks = max_minutes, max_ticks
+        self.max_minutes, self.max_ticks, self.hold_stop_s = max_minutes, max_ticks, hold_stop_s
+        self._hold_t0, self.stop_reason = None, None     # start (sim s) of the current run of held ticks; why limit_reached() said yes
         self.last_sent = None
         self.history = deque(maxlen=int(history_len))
         self.rec = {k: [] for k in ("t", "raw", "filtered", "sent", "status", "reason", "filter_time", "rounds", "worst_gap",
                                     "worst_shortfall", "fraction", "worst_pair", "methods", "pairs_pushed", "pairs_skipped",
                                     "pairs_shortened", "solver_calls")}
         self.n_calls, self._t0 = 0, clock()
+        self.ctx = {"t": 0.0, "manip_started": False}   # read by the extra-objects test hook
 
     # ------------------------------------------------------------------
-    def process(self, arm_targets, holding, current_targets, t=0.0):
+    def process(self, arm_targets, holding, current_targets, t=0.0, manip=False):
         """One command. arm_targets: {side: 7 joint targets} (the raw command). holding: {side: bool}. current_targets:
         {side: 7 targets} the robot holds now (used only at the first call). t: sim time (s).
         Returns the arm targets to give the robot, same form as arm_targets ({side: list of 7}); in off mode the same object."""
         if self.mode == "off":
             return arm_targets
+        self.ctx["t"] = float(t)
+        if manip:
+            self.ctx["manip_started"] = True        # sticky: the manipulation source has commanded the arms (test hook: made-up objects can join the world then)
         if self.last_sent is None:
             self.last_sent = np.array([current_targets[s] for s in SIDES], dtype=float)
         raw = self.last_sent.copy()
@@ -78,6 +83,10 @@ class SafetyFilterPlugin:
         sent = raw if self.mode == "shadow" else filtered
         self._record(t, raw, filtered, sent, status, dt_filter)
         self.history.append({"raw": raw, "sent": sent.copy(), "status": status.status, "reason": status.hold_reason})
+        if status.status != "PASS" and np.allclose(sent, self.last_sent, atol=1e-9):      # held: not PASS and the command sent did not change
+            self._hold_t0 = float(t) if self._hold_t0 is None else self._hold_t0
+        else:
+            self._hold_t0 = None
         self.last_sent = sent.copy()
         self.n_calls += 1
         if self.out_dir is not None and self.flush_every > 0 and self.n_calls % self.flush_every == 0:
@@ -90,8 +99,15 @@ class SafetyFilterPlugin:
         if self.mode == "off":
             return False
         if self.max_ticks is not None and self.n_calls >= self.max_ticks:
+            self.stop_reason = "max_ticks"
             return True
-        return self.max_minutes is not None and (self.clock() - self._t0) / 60.0 >= self.max_minutes
+        if self.hold_stop_s is not None and self._hold_t0 is not None and self.ctx["t"] - self._hold_t0 >= self.hold_stop_s:
+            self.stop_reason = f"held for {self.hold_stop_s} s"
+            return True
+        if self.max_minutes is not None and (self.clock() - self._t0) / 60.0 >= self.max_minutes:
+            self.stop_reason = "max_minutes"
+            return True
+        return False
 
     # ------------------------------------------------------------------
     def _record(self, t, raw, filtered, sent, st, dt_filter):
@@ -158,10 +174,12 @@ def make_sim_plugin(model, data, cfg, loop_handles):
 
         def objects(self):
             extra = cfg.get("safety_filter_extra_objects")         # test hook (SF-59): made-up objects for the world list, or fn(state) -> list
-            return lab.objects() + adapter.objects() + (list(extra(self.state) if callable(extra) else extra) if extra else [])
+            return lab.objects() + adapter.objects() + (list(extra(self.state, plugin_ctx()) if callable(extra) else extra) if extra else [])
 
     source = _Source()
     view = WorldView(source)
+    plugin_ref = []                                                 # filled below: the plug-in, so the test hook can read its ctx
+    plugin_ctx = lambda: plugin_ref[0].ctx if plugin_ref else {"t": 0.0, "manip_started": False}  # noqa: E731
     tracker = HeldTracker(view)
     arm_q = {s: [int(model.jnt_qposadr[model.joint(f"openarm_{s}_joint{i}").id]) for i in range(1, 8)] for s in SIDES}
     fq = loop_handles["fing_qadr"]
@@ -185,7 +203,10 @@ def make_sim_plugin(model, data, cfg, loop_handles):
             raise ValueError(f"unknown hold policy {policy!r}; known: {sorted(HOLD_POLICIES)}")
         policy = HOLD_POLICIES[policy]
     run_name = cfg.get("safety_filter_run_name") or time.strftime("run_%Y%m%d_%H%M%S")
-    return SafetyFilterPlugin(cfg["safety_filter_mode"], resolver.step, inputs_fn, policy, run_name=run_name,
+    plugin = SafetyFilterPlugin(cfg["safety_filter_mode"], resolver.step, inputs_fn, policy, run_name=run_name,
                               out_dir=root / pcfg["out_dir"], history_len=pcfg["history_len"], flush_every=pcfg["flush_every"],
                               max_minutes=cfg.get("safety_filter_max_minutes", pcfg["max_minutes"]),
-                              max_ticks=cfg.get("safety_filter_max_ticks", pcfg["max_ticks"]))
+                              max_ticks=cfg.get("safety_filter_max_ticks", pcfg["max_ticks"]),
+                              hold_stop_s=cfg.get("safety_filter_hold_stop_s", pcfg["hold_stop_s"]))
+    plugin_ref.append(plugin)
+    return plugin

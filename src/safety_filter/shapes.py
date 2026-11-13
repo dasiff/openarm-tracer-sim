@@ -64,6 +64,7 @@ class PlacedShape:
     rot: np.ndarray = None
     half: np.ndarray = None
     geoms: tuple = ()
+    never_touch: bool = False  # SF-65: set on a world shape made from a never-touch object
     segment: str = ""  # the resolver's segment (SF-20): upper_arm (links 1-3: contacts move the elbow only), forearm (links 4-6), hand (link 7, palm, fingers), shoulder, body
 
     def aabb(self):

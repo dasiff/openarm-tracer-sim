@@ -836,5 +836,6 @@ SAFETY_FILTER_PLUGIN_CFG = {
     "out_dir": "data/safety_filter/plugin_runs",  # folder [SF-63]: where the recording <run name>.npz goes (git-ignored)
     "flush_every": 3000,            # ticks [SF-63]: the recording file is rewritten (temporary file, then rename) this often, so a crash loses at most this many ticks
     "max_minutes": None,            # wall-clock minutes [SF-64]: stop the run cleanly after this long (the recording is saved); None = no limit
+    "hold_stop_s": None,            # simulated seconds [SF-64]: stop the run cleanly when the filter has held the arm (status not PASS and the command sent unchanged) this long in a row; None = never (the cat demo uses 5)
     "max_ticks": None,              # filter calls [SF-64]: stop the run cleanly after this many filter calls (the recording is saved); None = no limit
 }

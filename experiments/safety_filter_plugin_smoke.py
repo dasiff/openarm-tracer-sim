@@ -35,7 +35,7 @@ box = {}
 state_seen = {}
 
 
-def extra(state):
+def extra(state, ctx=None):
     """The made-up box: centred on the left hand's position at 80% of the reach, 4 cm half size. Made once, from the first state."""
     state_seen.setdefault("s", state)
     if not box:

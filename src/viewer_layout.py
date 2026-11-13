@@ -465,3 +465,28 @@ def inset_tile(name, img, iw, ih, scale=1.0):
     cv2.rectangle(small, (0, 0), (S(len(name) * 9 + 10), S(20)), (45, 45, 45), -1)
     cv2.putText(small, name, (S(5), S(15)), cv2.FONT_HERSHEY_SIMPLEX, 0.5 * scale, (255, 255, 255), max(1, int(round(scale))), cv2.LINE_AA)
     return small
+
+
+def clock_bitmap(text, scale=1.0, text_scale=2.2):
+    """Draws the big clock of the stance-search video: the word "Time" small above the digits (M:SS) large (decisions-log row M321).
+
+    Args:
+        text (str): The clock text, e.g. "3:55" (from search_timeline.clock_text).
+        scale (float): Size factor relative to the live window. Defaults to 1.0.
+        text_scale (float): The digits' size relative to the panel's text size (SEARCH_DISPLAY_CFG["clock_text_scale"]). Defaults to 2.2.
+
+    Returns:
+        numpy.ndarray: RGB bitmap, dark box with white text, of a size that fits the text, dtype uint8.
+    """
+    S = lambda v: int(round(v * scale))
+    font = cv2.FONT_HERSHEY_DUPLEX
+    fs_big, thick_big = 0.45 * scale * text_scale * 2.0, max(2, int(round(3 * scale)))
+    fs_lab = 0.45 * scale * text_scale * 0.7
+    (tw, th), base = cv2.getTextSize("0:00" if len(text) <= 4 else text, font, fs_big, thick_big)
+    (lw, lh), _ = cv2.getTextSize("Time", font, fs_lab, max(1, int(round(scale))))
+    w, h = max(tw, lw) + S(30), lh + th + base + S(34)
+    bmp = np.full((h, w, 3), 30, np.uint8)
+    cv2.rectangle(bmp, (0, 0), (w - 1, h - 1), (200, 200, 200), max(1, int(round(scale))))
+    cv2.putText(bmp, "Time", (S(15), S(12) + lh), font, fs_lab, (190, 190, 190), max(1, int(round(scale))), cv2.LINE_AA)
+    cv2.putText(bmp, text, (w - S(15) - cv2.getTextSize(text, font, fs_big, thick_big)[0][0], S(22) + lh + th), font, fs_big, (255, 255, 255), thick_big, cv2.LINE_AA)
+    return bmp

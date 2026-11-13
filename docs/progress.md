@@ -1,3 +1,5 @@
+TASK 2026-11-13 (David asleep, unattended: stance-search ghost display + videos for staging and moved runs; display code only, no push, no questions). PLAN: 1 read viewer code + ghost renderer (src/ghost_robot.py); 2 search-state data layer (src/search_timeline.py) + unit tests; 3 clock + extended status panel + timing settings block; 4 timeline builder + renderer, search part for staging, look at frames, fix; 5 splice real run, full staging video; 6 moved run; 7 isolation test + existing tests; report + decisions row. CURRENT: step 1 starting (free -h ok: 4.0 GB swap free, no tmux, no MuJoCo).
+
 DONE 2026-11-13 00:40 (corrected dry run): fix 52b0eb3 (M318 applied), seeds 386cef0 (M319), reruns SUCCESS (data/demo_record/rerun_staging_20261113_000814, rerun_moved_20261113_001429), report docs/reports/20261113_0030_corrected_dry_run_rerun.md, row M320; not pushed. Feature complete but David asked not to push.
 
 DONE 2026-11-12 23:30 (dry-run place-down height diagnosis): cause confirmed (offset taken after the lift, +106.6 mm); report docs/reports/20261112_2330_dryrun_place_down_height_diagnosis.md; row M318 PROPOSED; src untouched, fix NOT applied, not pushed.

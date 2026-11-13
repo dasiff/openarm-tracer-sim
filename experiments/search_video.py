@@ -89,11 +89,11 @@ def render_search(run, rec, out_path, only_times=None, log=print):
         gl.free()
 
 
-def render_real(rec_dir, out_path, clock_offset_s, verify=False, log=print):
+def render_real(rec_dir, out_path, clock_offset_s, verify=False, log=print, info_hook=None):
     """Part 3: the recording replayed in the notebook layout (no intro), the clock continuing from the search's end. Returns the replay report."""
     work = Path(out_path).parent / (Path(out_path).stem + "_work")
     replay_mod.open_video = lambda path, fps, size, codec="mp4v", quality=None: X264Writer(path, fps, size, str(path) + ".ffmpeg.log")
-    r = replay_mod.replay_run(rec_dir, out_dir=work, video="viewer", hz=float(CFG["fps"]), size=tuple(CFG["size"]), name="real", quiet=True, intro=None, clock_offset_s=clock_offset_s, verify=verify)
+    r = replay_mod.replay_run(rec_dir, out_dir=work, video="viewer", hz=float(CFG["fps"]), size=tuple(CFG["size"]), name="real", quiet=True, intro=None, clock_offset_s=clock_offset_s, verify=verify, info_hook=info_hook)
     log(f"  replay ok {r['ok']} ({r.get('n_ticks_recorded')} ticks, mismatch {r.get('mismatch')}); frames {r.get('frames_rendered')}")
     if verify and not r["ok"]:
         raise RuntimeError(f"the replay did not reproduce the run: {r.get('mismatch')}")

@@ -123,6 +123,10 @@ class RobotShapes:
         self._base = self._jid("base_float")
         self._pedestal = self._jid("pedestal_joint")
         self._prepare_arrays()
+        self._adr_base, self._adr_ped = int(model.jnt_qposadr[self._base]), int(model.jnt_qposadr[self._pedestal])
+        self._adr_arm = {s: np.array([model.jnt_qposadr[j] for j in self._joint[s]]) for s in SIDES}
+        self._adr_fing = {s: np.array([model.jnt_qposadr[j] for j in self._finger[s]]) for s in SIDES}
+        self._qbuf, self._kin_q, self._kin_done = np.array(model.qpos0, float), np.array(model.qpos0, float), False
         self.largest_radius = max((s["radius"] for s in self.specs if s["kind"] == "capsule"), default=0.0)
 
     def _jid(self, name):
@@ -132,22 +136,26 @@ class RobotShapes:
         return j
 
     def set_state(self, state: RobotState):
-        """Puts the joint state into the data and runs the kinematics (no dynamics, no stepping)."""
+        """Puts the joint state into the data and runs the kinematics (no dynamics, no stepping). When the joint state is the
+        one the kinematics was last run for, nothing is recomputed (SF-70)."""
         m, d = self.model, self.data
-        d.qpos[:] = m.qpos0
-        a = m.jnt_qposadr[self._base]
-        d.qpos[a:a + 3] = state.base_xyz
-        d.qpos[a + 3:a + 7] = state.base_quat
-        d.qpos[m.jnt_qposadr[self._pedestal]] = state.pedestal_m
-        for side, q, f in (("left", state.q_left, state.finger_left), ("right", state.q_right, state.finger_right)):
-            q = np.asarray(q, dtype=float)
-            if q.shape != (ARM_JOINTS,) or not np.isfinite(q).all():
+        q = self._qbuf
+        q[:] = m.qpos0
+        q[self._adr_base:self._adr_base + 3] = state.base_xyz
+        q[self._adr_base + 3:self._adr_base + 7] = state.base_quat
+        q[self._adr_ped] = state.pedestal_m
+        for side, qa, f in (("left", state.q_left, state.finger_left), ("right", state.q_right, state.finger_right)):
+            qa = np.asarray(qa, dtype=float)
+            if qa.shape != (ARM_JOINTS,) or not np.isfinite(qa).all():
                 raise ValueError(f"{side}: expected {ARM_JOINTS} finite joint angles")
-            for j, v in zip(self._joint[side], q):
-                d.qpos[m.jnt_qposadr[j]] = v
-            for j in self._finger[side]:
-                d.qpos[m.jnt_qposadr[j]] = f
+            q[self._adr_arm[side]] = qa
+            q[self._adr_fing[side]] = f
+        if self._kin_done and np.array_equal(q, self._kin_q) and np.array_equal(d.qpos, q):
+            return
+        d.qpos[:] = q
         mujoco.mj_kinematics(m, d)
+        self._kin_q[:] = q
+        self._kin_done = True
 
     def _prepare_arrays(self):
         """Index arrays so that place() is one vectorised pass (built once)."""
@@ -171,26 +179,35 @@ class RobotShapes:
             self._box_rl = np.array([_quat_to_mat(self.specs[k]["quat_local"]) for k in box_idx])
             self._box_h = np.array([self.specs[k]["half"] for k in box_idx], float)
 
-    def place(self, state: RobotState):
-        """All shapes in the world for this joint state (one vectorised pass). Returns a list of PlacedShape in spec order."""
-        self.set_state(state)
+    def place_arrays(self):
+        """The shapes of the state last set, as arrays: capsule ends A, B (in the order of the capsule shapes) and box centres C
+        and rotations R (in the order of the box shapes). The numbers place() puts into its PlacedShape objects."""
         d = self.data
         xpos = d.xpos
         xmat = d.xmat.reshape(-1, 3, 3)
-        out = [None] * len(self.specs)
+        A = B = C = Rw = None
         if len(self._cap_idx):
             A0 = xpos[self._cap_ba] + np.einsum("kij,kj->ki", xmat[self._cap_ba], self._cap_la)
             B0 = xpos[self._cap_bb] + np.einsum("kij,kj->ki", xmat[self._cap_bb], self._cap_lb)
             A = A0 + self._cap_t0[:, None] * (B0 - A0)
             B = A0 + self._cap_t1[:, None] * (B0 - A0)
+        if len(self._box_idx):
+            C = xpos[self._box_b] + np.einsum("kij,kj->ki", xmat[self._box_b], self._box_c)
+            Rw = np.einsum("kij,kjl->kil", xmat[self._box_b], self._box_rl)
+        return A, B, C, Rw
+
+    def place(self, state: RobotState):
+        """All shapes in the world for this joint state (one vectorised pass). Returns a list of PlacedShape in spec order."""
+        self.set_state(state)
+        A, B, C, Rw = self.place_arrays()
+        out = [None] * len(self.specs)
+        if len(self._cap_idx):
             for n, k in enumerate(self._cap_idx):
                 sp = self.specs[k]
                 out[k] = PlacedShape(id=sp["id"], arm=sp["arm"], part=sp["part"], kind="capsule", body=sp["frame"],
                                      a=A[n], b=B[n], r=float(self._cap_r[n]), geoms=tuple(sp["geoms"]),
                                      segment=sp.get("segment", ""))
         if len(self._box_idx):
-            C = xpos[self._box_b] + np.einsum("kij,kj->ki", xmat[self._box_b], self._box_c)
-            Rw = np.einsum("kij,kjl->kil", xmat[self._box_b], self._box_rl)
             for n, k in enumerate(self._box_idx):
                 sp = self.specs[k]
                 out[k] = PlacedShape(id=sp["id"], arm=sp["arm"], part=sp["part"], kind="box", body=sp["frame"],

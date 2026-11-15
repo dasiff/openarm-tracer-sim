@@ -115,7 +115,7 @@ def list_pairs(t, q):
     """[(key, shortfall)] of the pairs whose shortfall at the pose q is at or above stop_m and that have a closing arm."""
     stop = cfg.RESOLVER["stop_m"]
     out = []
-    for key in sorted(t.keys):
+    for key in sorted(t.maybe_short(q, stop)):          # the pairs the bounds cannot rule out (every pair at or above stop_m is among them)
         s = t.shortfall(q, key)
         if s >= stop and t.closing(key):
             out.append((key, s))
@@ -205,12 +205,7 @@ def _sweep(res, t, q, pairs, cons, r_cmd, targets, shorten, st):
 
 # ---------------------------------------------------------------- the jump-through guard
 def _capsule_radii(t, q):
-    rad = {}
-    for s in t.pose(q)[1]:
-        if getattr(s, "arm", None) in SIDES and s.kind == "capsule" and s.r > 0.0:
-            c = category_of(s)
-            rad[c] = min(rad.get(c, np.inf), s.r)
-    return rad
+    return t.capsule_radii()                            # smallest capsule radius per link category (the same at every pose)
 
 
 def _path_samples(res, t):
@@ -233,12 +228,7 @@ def _guard(res, t, methods, targets, st):
     skip_below = cfg.RESOLVER["tunnel_guard_skip_already_below"]
 
     def violates(qs):
-        t.discover(qs)
-        for key in t.keys:
-            g = t.gap(qs, key)
-            if g < min_gap and not (skip_below and t.g0[key] < min_gap):
-                return True
-        return False
+        return t.any_gap_below(qs, min_gap, skip_below)
 
     def passes(f):                                      # no sample from 0 to the fraction f violates
         for j in range(1, n + 1):
@@ -262,12 +252,9 @@ def step(res, raw, last, state, world_objects=(), held=None):
     last = np.asarray(last, float)
     if not np.isfinite(np.asarray(raw, float)).all():
         return last.copy(), R.FilterStatus(status=R.HOLD, hold_reason="NOT_FINITE")
-    t = R._Tick(res, np.asarray(raw), last, state, world_objects, held)
-    t.discover(last)
-    t.discover(t.raw)
-    for key in res._active:
-        t.add_known(key)
-    first = t.worst(t.raw)
+    t, first = res.begin(np.asarray(raw), last, state, world_objects, held)
+    if t is None:                                       # 1. pass-through, every pair asleep
+        return raw, R.FilterStatus()
     if first is None:                                   # 1. pass-through
         res._update_active(t, t.raw)
         return raw, R.FilterStatus()

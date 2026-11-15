@@ -425,7 +425,7 @@ class SleepTimers:
     Each tick every pair with wakeup_tick <= now is popped and is the only pair the broad phase and the resolver see; after the tick
     each popped pair gets wakeup_tick = now + max(1, floor((G - release) / (v x dt x (1 + safety_buffer)))), G a lower bound of its gap at the
     pose the filter returns, release = margin + slowing band, v the fastest the pair's two parts can approach each other (the sum over each
-    part's arm joints of the part's largest distance from the joint, for any pose, x config SLEEP["joint_speed_rad_s"]).
+    part's arm joints of the part's largest distance from the joint, for any pose, x the speed bound the caller gave the resolver (Resolver.joint_speed_rad_s, the command bridge limit)).
     A pair at or inside its release distance gets now + 1 (looked at every tick). A tick with no pair popped is a pass-through
     without any kinematics.
 
@@ -455,7 +455,7 @@ class SleepTimers:
     def _settings_now(self):
         from src.safety_filter.shapes import never_close_pairs
         return (tuple(sorted(cfg.MARGINS.items())), cfg.NEVER_TOUCH_MARGIN_M, cfg.PUSH_START_BEYOND_M, cfg.PUSH_STOP_BEYOND_M, tuple(cfg.TORSO_EXEMPT_PARTS),
-                id(never_close_pairs()), tuple(sorted(cfg.GAP_RULE.items())), cfg.RESOLVER["trigger_m"], tuple(sorted(cfg.SLEEP.items())))
+                id(never_close_pairs()), tuple(sorted(cfg.GAP_RULE.items())), cfg.RESOLVER["trigger_m"], tuple(sorted(cfg.SLEEP.items())), self._speed)
 
     def _static_lever(self, t):
         """Per item and arm joint: an upper bound, for EVERY pose, of the distance of any point of the item from the joint's anchor:
@@ -489,7 +489,8 @@ class SleepTimers:
     def awake(self, res, raw, last, state, world, held):
         """The mask of the pairs that woke this tick, or None (look at every pair: no valid schedule). All False = pass-through."""
         self.now += 1
-        if not cfg.SLEEP["enabled"] or self.tab is None or not gap_rule.bounds_valid(res.dt):
+        self._speed = res.joint_speed_rad_s
+        if not cfg.SLEEP["enabled"] or res.joint_speed_rad_s is None or self.tab is None or not gap_rule.bounds_valid(res.dt):
             return None
         objs = self.w_objs
         same_ids = len(objs) == len(world) and all(a.id == b.id for a, b in zip(objs, world))
@@ -508,7 +509,7 @@ class SleepTimers:
             w, p = heapq.heappop(self.heap)
             if self.wake[p] == w:
                 mask[p] = True
-        step_cap = cfg.SLEEP["joint_speed_rad_s"] * res.dt * (1.0 + cfg.SLEEP["safety_buffer"]) + cfg.SLEEP["command_step_slack_rad"]
+        step_cap = res.joint_speed_rad_s * res.dt * (1.0 + cfg.SLEEP["safety_buffer"]) + cfg.SLEEP["command_step_slack_rad"]
         fast = np.abs(np.asarray(raw, float) - np.asarray(last, float)).max(axis=1) > step_cap       # per arm: the command step is faster than the bound
         mask |= (tab.uses_side[0] & fast[0]) | (tab.uses_side[1] & fast[1])
         sv = self._state_vec(state)
@@ -523,13 +524,13 @@ class SleepTimers:
     def after_tick(self, t, q):
         """Reschedules the pairs looked at this tick (all of them when the tick looked at every pair), from a lower bound of each pair's
         gap at the pose q the filter returns."""
-        if not cfg.SLEEP["enabled"] or not t._bounds_ok:
+        if not cfg.SLEEP["enabled"] or t.res.joint_speed_rad_s is None or not t._bounds_ok:
             return
         tab = t.tab
         fresh = self.tab is not tab
         if fresh:
             self.tab, self.w_objs, self.held_sig, self._settings = tab, list(t.world_objects), self._held_sig(t.held), self._settings_now()
-            vitem = self._static_lever(t).sum(axis=1) * cfg.SLEEP["joint_speed_rad_s"]
+            vitem = self._static_lever(t).sum(axis=1) * t.res.joint_speed_rad_s
             self.vpair = vitem[tab.I] + vitem[tab.J]
             self.wake = np.zeros(len(tab), dtype=np.int64)
             self.heap = []

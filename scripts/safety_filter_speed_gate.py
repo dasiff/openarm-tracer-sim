@@ -68,7 +68,9 @@ def new_resolver(dt):
     if "solver" not in _CACHE:
         _CACHE["solver"] = make_solver()
         _CACHE["model"] = load_robot_only_model()
-    return Resolver(RobotShapes(_CACHE["model"], ROOT / sfcfg.SHAPES_FILE), dt, _CACHE["solver"])
+    res = Resolver(RobotShapes(_CACHE["model"], ROOT / sfcfg.SHAPES_FILE), dt, _CACHE["solver"])
+    res.joint_speed_rad_s = sc.bridge_speed()           # as the plug-in does for a bridged run (the golden simulator runs were bridged)
+    return res
 
 
 _CACHE = {}

@@ -72,11 +72,14 @@ class _Hold(Exception):
 class Resolver:
     """The push-apart resolver. Holds the pairs being acted on between ticks (the release band) and nothing else."""
 
-    def __init__(self, shapes, dt, solver=None):
+    def __init__(self, shapes, dt, solver=None, joint_speed_rad_s=None):
         """Args: shapes (RobotShapes): the robot shapes (the robot-only model; its kinematics are ours).
         dt (float): tick length, s (1 / the control loop's source_hz). solver: the converter for the elbow swing (arm_conversion.make_solver()),
-        or None (an elbow swing then holds still with reason NO_SOLVER)."""
+        or None (an elbow swing then holds still with reason NO_SOLVER).
+        joint_speed_rad_s (float or None): the fastest an arm joint is allowed to move, rad/s, read by the caller from the command bridge limit
+        (COMMAND_BRIDGE_CFG max_joint_velocity_rad_s); the pair sleep (tick.SleepTimers) needs it and is off without it (SF-72)."""
         self.shapes, self.dt = shapes, float(dt)
+        self.joint_speed_rad_s = joint_speed_rad_s
         self.kin = ArmKinematics(shapes, solver)
         self._active = set()
         self.statics = Statics(shapes)                      # array form kept between ticks: pair tables, world arrays, sleep timers (SF-69, SF-72)

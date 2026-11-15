@@ -267,6 +267,13 @@ def punch_stream():
     return z["raw"], z["q0"]
 
 
+def bridge_speed():
+    """The joint speed bound the plug-in gives the resolver in a bridged run: COMMAND_BRIDGE_CFG's limit (None if the bridge is off by default).
+    Set as an attribute after the resolver is built, so the same call works on the reference tree, which ignores it."""
+    from src.task_config import COMMAND_BRIDGE_CFG
+    return float(COMMAND_BRIDGE_CFG["max_joint_velocity_rad_s"]) if COMMAND_BRIDGE_CFG["enabled"] else None
+
+
 def run_punch(kind, mode, ticks=0, checkpoint=None, say=print):
     """Closed loop on the punch stream ("original" or "reactive") with a fresh resolver. Returns the TickRecorder.
     checkpoint: a file; the run saves its state there every PUNCH_CHECKPOINT_TICKS ticks and resumes from it if it exists."""
@@ -278,6 +285,7 @@ def run_punch(kind, mode, ticks=0, checkpoint=None, say=print):
     n = len(target) if not ticks else min(int(ticks), len(target))
     with resolver_mode(mode):
         res = kc.fx.new_resolver()
+        res.joint_speed_rad_s = bridge_speed()
         lo, hi = limits_arrays(res.kin)
         rec = TickRecorder(res.dt, mode, f"punch_{kind}")
         k0, last = 0, np.array(q0, float)

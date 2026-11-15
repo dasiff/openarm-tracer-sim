@@ -4,8 +4,6 @@ Kept here, not in src/task_config.py (task brief). Each provisional number is ta
 Plain-word comments: what the setting does, its unit, why this value.
 """
 
-from src.task_config import COMMAND_BRIDGE_CFG   # the one place the filter reads the command bridge limit from (SF-72)
-
 # Build tool (tools/build_filter_shapes.py): how the upper arm and forearm radii are sampled.
 SHAPE_BUILD = {
     "random_poses_first_set": 1000,   # count: random joint poses in the first sample set (plus the joint-limit corners); the radius at 1000 samples [SF-5]
@@ -123,7 +121,7 @@ OBJECT_CATALOG = {
 # while it cannot reach its release distance (margin + slowing band) within the sleep, by this speed bound.
 SLEEP = {
     "enabled": True,                # on/off [SF-72]: predictive sleep
-    "joint_speed_rad_s": COMMAND_BRIDGE_CFG["max_joint_velocity_rad_s"],   # rad/s [SF-72]: the fastest any arm joint is assumed to move: READ from the command bridge's joint speed limit (src/task_config.py COMMAND_BRIDGE_CFG), not copied. A command step faster than this x dt x (1 + safety_buffer) wakes the pairs of that arm for that tick
+    # the joint speed bound is NOT a setting here: the caller passes it to Resolver(joint_speed_rad_s=...), read from the command bridge limit (src/task_config.py COMMAND_BRIDGE_CFG max_joint_velocity_rad_s); without it the sleep is off [SF-72]. A command step faster than that x dt x (1 + safety_buffer) wakes the pairs of that arm for that tick.
     "safety_buffer": 0.20,          # fraction [SF-72]: extra on the speed bound for the capsule fitting error and the looseness of the lever arms (David's value)
     "state_change_m": 2.0e-4,       # m [SF-72]: if the base position and orientation (as numbers), the pedestal and the finger travel together change by more than this since the tick before, every pair wakes for that tick (they are not part of the speed bound)
     "command_step_slack_rad": 1.0e-12,   # rad [SF-72]: added to the largest command step allowed by the speed bound, so rounding never turns an exactly-at-the-bound step into a "fast" one

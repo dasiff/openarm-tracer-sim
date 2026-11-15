@@ -165,7 +165,9 @@ def make_sim_plugin(model, data, cfg, loop_handles):
     root = Path(__file__).resolve().parent.parent
     pcfg = {**tc.SAFETY_FILTER_PLUGIN_CFG, **{k: v for k, v in (cfg.get("safety_filter_cfg") or {}).items()}}
     shapes = RobotShapes(load_robot_only_model(), root / sfcfg.SHAPES_FILE)
-    resolver = Resolver(shapes, 1.0 / float(cfg["source_hz"]), make_solver())
+    bcfg = {**tc.COMMAND_BRIDGE_CFG, **(cfg.get("command_bridge") or {})}       # the loop's own merge (src/control_loop.py): the command bridge limit the arms obey
+    speed = float(bcfg["max_joint_velocity_rad_s"]) if bcfg["enabled"] and cfg.get("replay") is None else None   # no bridge, no speed bound: the pair sleep stays off (SF-72)
+    resolver = Resolver(shapes, 1.0 / float(cfg["source_hz"]), make_solver(), joint_speed_rad_s=speed)
     try:
         world_model = make_sim_world_model(model, data)             # the stand-in the pick and place uses (ground truth objects)
     except KeyError as e:                                           # a scene without the task beaker (e.g. the manual bench scene): no objects, said out loud

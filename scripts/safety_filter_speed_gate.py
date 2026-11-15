@@ -46,9 +46,7 @@ TOL_GAP_MM = 1.0          # mm: part B, smallest true gap (overall and per pair 
 TOL_HAND_MM = 0.5         # mm: part B, hand position error mean and max
 # Ticks where the changed code is KNOWN to decide differently from the golden recording, investigated and explained; they are listed in the result
 # as accepted differences (with their numbers) and do not fail part A. Chosen by the assistant; David to confirm. Keyed by recording name, then tick.
-ACCEPTED_DIFFERENCES = {
-    "cat_kong_style": {5672: "step 3 change 2 (conservative advancement): on this tick a pair is below the guard gap from 10.6 percent of the step onward (fine scan of the path, 3000 poses); the golden sampled test jumped through it and chose fraction 0.742, the advancement stops at 0.0955. The new decision is the safer one; command difference 1.9 mrad."},
-}
+ACCEPTED_DIFFERENCES = {}   # none: the guard's advancement is verified by the old sampled test, so no accepted difference is needed (see kong_style._guard)
 MAX_LISTED = 300          # count: failing ticks written out per recording (all are counted)
 INFO_FIELDS = ("status", "active", "rounds", "pairs_pushed", "pairs_skipped", "pairs_shortened", "solver_calls", "fraction")
 

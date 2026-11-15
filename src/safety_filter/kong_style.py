@@ -223,30 +223,19 @@ def _path_samples(res, t):
 
 def _guard(res, t, methods, targets, st):
     """Shorten the step when the path last -> raw passes a pair closer than tunnel_guard_min_gap_m (SF-46). Returns True if shortened.
-    tunnel_guard_search "advance" (SF-73): conservative advancement along the path, the shortened fraction on the grid of the halving
-    search; "halving" (temporary, until the gate has passed): the sampled poses and the halving search of SF-46."""
+
+    The decision is the sampled test and the halving search of SF-46. Conservative advancement along the path (SF-73, tick.guard_fraction)
+    only saves work, it never decides alone:
+      - it proves the whole path clear (no pair below the guard gap at ANY pose of the path, so none at any sample): no shortening;
+      - where it finds a contact, it proposes the grid cell the halving would end in; the sampled test then confirms it with three
+        evaluations (the full step fails, the proposed fraction passes, the next grid step fails) instead of the 13 of the halving;
+      - if the confirmation fails (the sampled test and the true path disagree, as when its samples jump through a thin contact), the
+        full halving search runs as before."""
     min_gap = cfg.RESOLVER["tunnel_guard_min_gap_m"]
     skip_below = cfg.RESOLVER["tunnel_guard_skip_already_below"]
-    mode = cfg.RESOLVER["tunnel_guard_search"]
-    if mode == "advance":
-        f = t.guard_fraction(min_gap, skip_below)
-        if f is None:
-            return False
-        steps = 2 ** cfg.RESOLVER["shorten_halvings"]
-        k = math.floor(f * steps)                       # the advancement stopped on the safe side: walk up the grid while the next grid pose is clear
-        for _ in range(cfg.RESOLVER["tunnel_guard_grid_walk_max"]):
-            if k >= steps or t.any_gap_below(t.last + ((k + 1) / steps) * (t.raw - t.last), min_gap, skip_below):
-                break
-            k += 1
-        if k >= steps:
-            return False
-        q = np.array(t.raw, float)
-        res._shorten(t, q, list(SIDES), methods, targets, st, fraction=k / steps)
-        t.raw = q
-        t._closing = {}
-        return True
-    if mode != "halving":
-        raise ValueError(f"RESOLVER['tunnel_guard_search'] must be 'advance' or 'halving', not {mode!r}")
+    f_adv = t.guard_fraction(min_gap, skip_below)
+    if f_adv is None:
+        return False
     n = _path_samples(res, t)
 
     def violates(qs):
@@ -260,8 +249,17 @@ def _guard(res, t, methods, targets, st):
 
     if passes(1.0):
         return False
+    steps = 2 ** cfg.RESOLVER["shorten_halvings"]
+    k = math.floor(f_adv * steps)                       # the advancement stopped on the safe side: walk up the grid while the next grid pose is clear
+    for _ in range(cfg.RESOLVER["tunnel_guard_grid_walk_max"]):
+        if k + 1 >= steps or violates(t.last + ((k + 1) / steps) * (t.raw - t.last)):
+            break
+        k += 1
     q = np.array(t.raw, float)
-    res._shorten(t, q, list(SIDES), methods, targets, st, passes=passes)
+    if passes(k / steps) and not passes((k + 1) / steps):
+        res._shorten(t, q, list(SIDES), methods, targets, st, fraction=k / steps)
+    else:
+        res._shorten(t, q, list(SIDES), methods, targets, st, passes=passes)
     t.raw = q                                           # the shortened command is the raw command for the rest of the tick
     t._closing = {}
     return True

@@ -732,3 +732,13 @@ Status: BUILT on branch safety-filter-plugin, not pushed. Report: docs/reports/s
 - **SF-67**: Its picture is visual-only geoms in a separate scene file, moved in the viewer scene only.
 - **SF-68**: Ghost arm at the raw command (red) and the caption "SAFETY FILTER ACTIVE" while the filter is not PASS.
 
+### Stage 5 speed (decision rows SF-69 to SF-74, 2026-11-15; full text in docs/mpvi_decisions.md)
+
+Status: BUILT (partly) on branch safety-filter-speed, not pushed. Report: docs/reports/safety_filter_speed_20261115.md; step log docs/reports/safety_filter_speed_log.md. The filter decides what it decided before (gate A: 0 failing ticks and identical counters on six golden recordings; gate B: closed loop identical to golden on punch original, punch reactive and cat); time per call: punch original 1041 to 60 ms, punch reactive 28.2 to 8.8 ms, cat 37.0 to 5.3 ms, shadow pick and place 6.2 to 1.9 ms. Targets met: cat mean, reactive p95; not met: punch original, reactive mean, cat p95, pass-through 1 ms. Not built: compiled kernel, Part B (never-close extension).
+
+- **SF-69**: The equivalence gate and its thresholds (assistant's choice, David to confirm); the tag safety-filter-pre-speed and six golden recordings are the reference.
+- **SF-70**: Array form of a tick (pair table, pose arrays, one array broad phase); the scalar functions stay the definition of every value.
+- **SF-71**: The bounds that rule pairs out (box separation, travel, proven gap intervals) and their constants (config ARRAY_FORM).
+- **SF-72**: The pair scheduler (min-heap on wakeup tick, safety buffer 0.20, speed limit passed in from the command bridge config), its guards and the "no moving arm, not looked at" rule.
+- **SF-73**: Guard by conservative advancement as a verified fast path; pure advancement dropped because the cat closed loop diverged.
+- **SF-74**: Not built: swept broad phase, batched FK, compiled kernel, Part B.

@@ -170,3 +170,11 @@ A8. See (5): the threshold is the activation distance, not a larger one.
 ### Filter tests at HEAD 7209b57 (reference, data/logs/partb_tests_ref.txt)
 12 of 13 exit 0; safety_filter_spec_test exit 1 (the known old failure "the closing right arm moves"). Same as before the speed work.
 NEXT: step 2, tools/never_close_dc.py (only after this commit and the standing soundness file).
+
+## Part B step 2: tool built and run (tools/never_close_dc.py; settings config.NEVER_CLOSE_DC)
+- Before any pair the tool checks A1 and A2 on the model and shapes file, compares its batched placement with the filter's on 300 random states (largest difference 8.9e-16 m) and its lever arms with each point's real distance from each hinge axis at those states (never smaller).
+- Full run on the 518 pairs not on the Stage 1 list (logs data/logs/never_close_dc_20261115_181850.log and _185935.log; two pieces of at most 40 minutes, checkpointed): certified 219, reachable 265 (a real pose below the threshold was found), not certified 16 (a smallest box failed), time cap 18 (120 s). By type: arm vs body 200 certified of 273; arm vs arm 19 certified of 245.
+- Certified pairs by number of variables: 3: 1, 4: 39, 5: 27, 6: 42, 7: 20, 8: 62, 9: 28. Smallest (searched closest gap - threshold) among certified pairs: 23.5 mm.
+- Cost: 3597 s of pair time (about 60 minutes wall), 122.9 million boxes, peak memory 2.16 GB.
+- Output data/safety_filter/never_close_dc.json (git-ignored). NOT yet used by anything.
+NEXT: step 3 checks in tmux `dc3` (chain: certificate, falsification, golden replay, trial tree, gate A, gate B, profile); progress in data/logs/partb_chain.txt.

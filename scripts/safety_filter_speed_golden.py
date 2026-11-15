@@ -33,11 +33,11 @@ def git(*args):
 
 
 def build_ref_tree():
-    """The tag's src/ in data/safety_filter/speed_ref_tree (models, data and deps are links to the working tree's)."""
+    """The tag's src/ in data/safety_filter/speed_ref_tree (models, data, deps, experiments and assets are links to the working tree's)."""
     tree = sc.REF_TREE
     tree.mkdir(parents=True, exist_ok=True)
     subprocess.run(f"git archive {sc.REF_TAG} src | tar -x -C '{tree}'", shell=True, cwd=ROOT, check=True)
-    for name in ("models", "data", "deps"):
+    for name in ("models", "data", "deps", "experiments", "assets"):
         link = tree / name
         if not link.exists():
             link.symlink_to(ROOT / name)

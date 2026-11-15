@@ -33,6 +33,21 @@ Nothing is pushed; main and the main worktree are untouched.
   (c) step 2 gate proof on the tag's code (--src-root data/safety_filter/speed_ref_tree): perturbed copy (+2 mm on capsule gaps, scratch only) first 300 punch ticks, then part A `--label unchanged`, part B punch and cat.
   Results in data/safety_filter/speed_gate/<label>/gate_A.json, gate_B.json.
 
+## Step 1: profile of the tag's code (data/safety_filter/speed_profile/before.json; script scripts/safety_filter_speed_profile.py; timers add about 15 percent, shares are what counts)
+Replays of the golden inputs (400 ticks of each punch stream, all ticks of the others). Own time share of the tick, by tick class:
+- Pass-through ticks (all streams, 2 to 7 ms with timers): broad phase evaluate_pairs 64 to 71 percent inclusive (38 to 40 own; of it touch rule per pair 9 to 13, shape boxes 8 to 9, batched gaps 4); shape placement 12 to 25; world object conversion (as_placed) 14 percent on the simulator streams (72 conversions per tick: the 23 fixtures of the lab map rebuilt every tick); forward kinematics 3 to 6. Pair distance checks: 1.4 to 3.5 per tick, 3 to 5 percent.
+- Acting ticks, punch original: 504 ms per tick, 6680 pair distance checks per tick (5672 arm vs arm, 1008 arm vs body) = 55 percent; gap cache lookups 7 percent; broad phase 25 percent inclusive (138 calls per tick: one per sampled pose and trial); placement 7.
+- Acting ticks, punch reactive: 6.2 ms, 31 checks (9 percent), broad phase 42 inclusive, FK of S/E/W points 18, placement 9.
+- Acting ticks, cat: 208 ms, 124 pair checks per tick (42 percent), broad phase 45 inclusive (18 calls per tick; capsule-box batch 15 own), world conversion 4.
+- Layered, punch original acting: 199 ms, 1111 checks (57 percent).
+Reading: the 3 ms pass-through is almost all fixed cost (rebuilding objects and listing pairs by Python loops, two poses, two kinematics runs), not distance work; near contact the cost is the number of exact pair checks inside the guard and shortening.
+
+## Step 2 and the array-form work (state)
+- Gate scripts: scripts/safety_filter_speed_gate.py (part A replay, part B closed loop, thresholds in the script as the assistant's choice).
+- src changes applied, WIP, not yet gated: new src/safety_filter/tick.py (_Tick moved out of resolver.py, array form, bounds, pair scheduler), tick_arrays.py (pair table, pose arrays, gap intervals), shapes.py (set_state skips unchanged state, place_arrays), gap_rule.py (bounds_valid, array rule), resolver.py/kong_style.py (begin(), use of the bounds), config.py (SLEEP).
+- Scheduler per David's latest message: min-heap on wakeup tick, interval floor((G - release) / (v dt (1 + 0.20))), at least 1; world or hold change wakes the affected pairs; report of the interval distribution per pair type and mean pairs checked per tick via Resolver.statics.sleep.report().
+  My additions, flagged: a command step faster than the speed bound (0.5 rad/s, the bridge limit) wakes that arm's pairs; a state change of the base, pedestal or fingers above 0.2 mm wakes all pairs. The punch streams move far faster than 0.5 rad/s, so there the scheduler is mostly off by design.
+
 NEXT: read chain2 results; write the profile table and the gate proof here; commit steps 1 and 2. Then apply the drafted array-form tick (scratchpad newsrc/tick_arrays.py, tick.py) and gate it.
 
 ## Plan change (David, 2026-11-15, during step 0)

@@ -1,0 +1,172 @@
+{
+ "tag": "safety-filter-pre-speed",
+ "tag_hash": "01398b734a005404203838d1f7e72941995b19ce",
+ "folder": "data/safety_filter/speed_golden (git-ignored)",
+ "sim_seeds": {
+  "sampler": 1944726090,
+  "full_check_pin": 4242
+ },
+ "files": {
+  "cat_kong_style.npz": {
+   "sha256": "95fb004f99a6f732d26d777952358ed355d1c63fa31274c2d41cfa617f603a9e",
+   "bytes": 1976185
+  },
+  "cat_layered.npz": {
+   "sha256": "6e3f4b44298c95540803c04d13c7ee3b72d8ef3bd5c4e6f25d864733fa8ec117",
+   "bytes": 1924641
+  },
+  "punch_original_kong_style.npz": {
+   "sha256": "90d27d91be12513b6d70210765f56b112c2bb0ae9079dded5843c33311228b4f",
+   "bytes": 736457
+  },
+  "punch_original_layered.npz": {
+   "sha256": "54d728cac73ff1948d70815ab6c6bbce6da9a69b8da4a8cac321af36754c1f1f",
+   "bytes": 160458
+  },
+  "punch_reactive_kong_style.npz": {
+   "sha256": "2ad7675b98f91c9c9f45d6469dd8b4c26abb64111bf7aa8e0525820bfd9ad218",
+   "bytes": 485092
+  },
+  "punch_stream.npz": {
+   "sha256": "7304c528dac42a5f7e193c8613ffd88f7dcbfd758617523ffdc8286559584675",
+   "bytes": 177120
+  },
+  "shadow_pp_kong_style.npz": {
+   "sha256": "b5662eb1e32a313dd313d8a3c5f9c44a26be7672621ac908af8b43f843bf2e2c",
+   "bytes": 2414086
+  },
+  "cat_kong_style_summary.json": {
+   "sha256": "7705d6959006ccc5669d8d97ecb47bbf8b30dd09f86e6296db1ccd5d6eb06f5c",
+   "bytes": 1710,
+   "ticks": 6436,
+   "status_counts": {
+    "HOLD": 751,
+    "KONG_PUSH": 192,
+    "PASS": 5492,
+    "STEP_SHORTENED": 1
+   },
+   "hold_reason_counts": {
+    "SHORTEN_ZERO": 751
+   },
+   "min_true_gap_mm": -19.2204,
+   "hand_pos_err_mean_mm": 5.22923,
+   "hand_pos_err_max_mm": 82.23,
+   "max_joint_change_per_tick_rad": 0.003612,
+   "time_ms": {
+    "mean": 36.958,
+    "median": 5.969,
+    "p95": 165.528,
+    "max": 3322.118
+   }
+  },
+  "cat_layered_summary.json": {
+   "sha256": "393bb405223d167599af71f97d3fa6bf98b78535d0a0653f1407509f11cb2a65",
+   "bytes": 1673,
+   "ticks": 6348,
+   "status_counts": {
+    "HAND_SLIDE": 150,
+    "HOLD": 751,
+    "PASS": 5447
+   },
+   "hold_reason_counts": {
+    "ACCURACY": 751
+   },
+   "min_true_gap_mm": 0.4061,
+   "hand_pos_err_mean_mm": 5.22368,
+   "hand_pos_err_max_mm": 91.90168,
+   "max_joint_change_per_tick_rad": 0.0033333,
+   "time_ms": {
+    "mean": 34.203,
+    "median": 4.184,
+    "p95": 217.842,
+    "max": 877.982
+   }
+  },
+  "punch_original_kong_style_summary.json": {
+   "sha256": "6d101b84779f74ead378f5d30264c496441ff1a81a7cdf46e9158ceaa7a43861",
+   "bytes": 1220,
+   "ticks": 1576,
+   "status_counts": {
+    "KONG_PUSH": 1534,
+    "PASS": 42
+   },
+   "hold_reason_counts": {},
+   "min_true_gap_mm": 2.9065,
+   "hand_pos_err_mean_mm": 60.02067,
+   "hand_pos_err_max_mm": 124.19602,
+   "max_joint_change_per_tick_rad": 0.0701862,
+   "time_ms": {
+    "mean": 1041.353,
+    "median": 938.012,
+    "p95": 2239.563,
+    "max": 4970.113
+   }
+  },
+  "punch_original_layered_summary.json": {
+   "sha256": "5ffb3f7a1ec0fc5464e476c7ad535a4ea279cad7b4efc848f027216948e738ba",
+   "bytes": 1338,
+   "ticks": 1576,
+   "status_counts": {
+    "ELBOW_SWING": 13,
+    "HOLD": 1529,
+    "PASS": 33,
+    "STEP_SHORTENED": 1
+   },
+   "hold_reason_counts": {
+    "ACCURACY": 651,
+    "BRANCH_GUARD": 616,
+    "JOINT_LIMITS": 17,
+    "SHORTEN_ZERO": 245
+   },
+   "min_true_gap_mm": 2.9065,
+   "hand_pos_err_mean_mm": 72.18608,
+   "hand_pos_err_max_mm": 165.88697,
+   "max_joint_change_per_tick_rad": 0.3263365,
+   "time_ms": {
+    "mean": 128.763,
+    "median": 121.723,
+    "p95": 350.311,
+    "max": 603.158
+   }
+  },
+  "punch_reactive_kong_style_summary.json": {
+   "sha256": "9cd9ac1879e4cafd2b7b00947aa25860c05e21f009dba491d33d2138cd30c86a",
+   "bytes": 1206,
+   "ticks": 1576,
+   "status_counts": {
+    "KONG_PUSH": 1533,
+    "PASS": 43
+   },
+   "hold_reason_counts": {},
+   "min_true_gap_mm": 2.9065,
+   "hand_pos_err_mean_mm": 3.71649,
+   "hand_pos_err_max_mm": 9.53938,
+   "max_joint_change_per_tick_rad": 0.0285481,
+   "time_ms": {
+    "mean": 28.239,
+    "median": 21.668,
+    "p95": 72.391,
+    "max": 189.042
+   }
+  },
+  "shadow_pp_kong_style_summary.json": {
+   "sha256": "65396cd8423f0e5613beb2bf1b1b16252d110b353a5a4a7891a8388eba879af5",
+   "bytes": 1500,
+   "ticks": 7783,
+   "status_counts": {
+    "PASS": 7783
+   },
+   "hold_reason_counts": {},
+   "min_true_gap_mm": 2.9065,
+   "hand_pos_err_mean_mm": 0.0,
+   "hand_pos_err_max_mm": 0.0,
+   "max_joint_change_per_tick_rad": 0.0033333,
+   "time_ms": {
+    "mean": 6.212,
+    "median": 4.643,
+    "p95": 14.458,
+    "max": 37.16
+   }
+  }
+ }
+}

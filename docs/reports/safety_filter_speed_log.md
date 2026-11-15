@@ -57,3 +57,9 @@ NEXT: read chain2 results; write the profile table and the gate proof here; comm
 
 ## Config rule (David, 2026-11-15)
 Speed limits are read from the config and no number is hard coded: SLEEP["joint_speed_rad_s"] is COMMAND_BRIDGE_CFG["max_joint_velocity_rad_s"] (src/task_config.py, read in src/safety_filter/config.py, not copied); the cache sizes, bound tolerances and epsilons of the array form and the scheduler are in config.py (ARRAY_FORM, SLEEP), each with its unit and reason. Check again before every commit that touches src/safety_filter.
+
+## Step 2: the gate is proven (commit of this entry)
+- Unchanged code (the tag's src, --src-root data/safety_filter/speed_ref_tree): part A zero difference on all six golden recordings (0 failing ticks, largest command difference 0.0, exact status, active set after each tick, sweeps, pairs pushed, solver calls and step fraction all equal); part B on punch original, punch reactive and cat: summaries inside every tolerance and the commands and statuses bit-identical to golden (data/safety_filter/speed_gate/unchanged/gate_A.json, gate_B.json).
+- Perturbed scratch copy (+2 mm on every capsule-capsule gap, session scratchpad, never committed): part A on the first 300 punch ticks: 280 failing ticks, largest command difference 0.056 rad. Detected.
+- Part B note: the first cat run on the reference tree failed at the LLM cache (the cache folder experiments/llm_cache is looked up relative to the source tree; the reference tree now links experiments and assets). Rerun passed.
+- Thresholds (config values in the script, chosen by the assistant, to be confirmed by David): 1e-3 rad per joint; status class same (PASS / HOLD / changed); same hold reason; counts within 1 percent of the golden count; smallest true gap within 1 mm; hand error mean and max within 0.5 mm.

@@ -30,7 +30,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from src.safety_filter import config as cfg  # noqa: E402
-from src.safety_filter.touch import gap_between  # noqa: E402
+from src.safety_filter.geometry import capsule_box, capsule_capsule  # noqa: E402
 from tools.never_close_dc import setup, state_of  # noqa: E402
 
 # ---- Settings. Every number of this script is here, each with a plain-word comment: what it is, its unit, why this value. ----
@@ -56,10 +56,27 @@ ROLES = ("declared", "control")  # the two groups of rows in the checkpoint and 
 
 
 def gap_fn(names, ida, idb, m, vm, rs):
-    """The exact gap (m) between shapes ida and idb at the pose where the variables `names` take the values x."""
+    """The exact gap (m) between shapes ida and idb at the pose where the variables `names` take the values x.
+    The filter's scalar distance functions on the filter's own placement (the numbers touch.gap_between gets from RobotShapes.place);
+    only the two shapes of the pair are read from the placement arrays, so one evaluation does not build every shape object."""
+    ids = [s["id"] for s in rs.specs]
+    caps = [ids[k] for k in rs._cap_idx]
+    boxes = [ids[k] for k in rs._box_idx]
+    if ida in caps and idb in caps:
+        i, j = caps.index(ida), caps.index(idb)
+
+        def gap(x):
+            rs.set_state(state_of(names, [float(v) for v in x], m, vm))
+            A, B, _, _ = rs.place_arrays()
+            return float(capsule_capsule(A[i], B[i], float(rs._cap_r[i]), A[j], B[j], float(rs._cap_r[j])).gap)
+        return gap
+    cap, box = (ida, idb) if ida in caps else (idb, ida)
+    i, j = caps.index(cap), boxes.index(box)
+
     def gap(x):
-        placed = {p.id: p for p in rs.place(state_of(names, [float(v) for v in x], m, vm)) if p.id in (ida, idb)}
-        return float(gap_between(placed[ida], placed[idb])[0])
+        rs.set_state(state_of(names, [float(v) for v in x], m, vm))
+        A, B, C, R = rs.place_arrays()
+        return float(capsule_box(A[i], B[i], float(rs._cap_r[i]), C[j], R[j], rs._box_h[j]).gap)
     return gap
 
 

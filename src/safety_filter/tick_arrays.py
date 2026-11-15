@@ -22,12 +22,12 @@ Why the intervals are safe:
                              (largest per-axis distance, negative when they overlap) is never larger than the distance of what is inside
                              them. Overlapping: a capsule pair's gap is segment distance minus the radii and the boxes are the segments'
                              boxes grown by the radii; a point inside a box is never deeper in the box than in the box around it.
-  capsule against capsule    the batched function is the scalar function's formula; the interval is the value +- CC_EPS_M.
+  capsule against capsule    the batched function is the scalar function's formula; the interval is the value +- cfg.ARRAY_FORM['cc_eps_m'].
   capsule against box        both the scalar function (4001 samples along the segment) and the batched one (33 samples, then 14
                              golden-section steps) return the box distance at ONE point of the segment, so each is at least the true
                              minimum. The distance along the segment is convex (signed distance to a convex box, along a line), so the
                              4001-sample minimum is within segment length / 8000 of the true minimum, and the batched value within
-                             segment length x 3.7e-5 (half of the last bracket, (2 / 32) x 0.618^14). CB_LOW and CB_HIGH are those
+                             segment length x 3.7e-5 (half of the last bracket, (2 / 32) x 0.618^14). cfg.ARRAY_FORM['cb_low_per_m'] and cfg.ARRAY_FORM['cb_high_per_m'] are those
                              two numbers with a fifth added.
   travel                     a point of an arm shape moves, between the last command and any pose q, by at most the sum over the arm's
                              joints of (distance of the point from the joint's anchor AT THE LAST COMMAND) x |joint change|: turn the
@@ -38,13 +38,10 @@ Why the intervals are safe:
 
 import numpy as np
 
+from src.safety_filter import config as cfg
 from src.safety_filter.geometry import capsule_box, capsule_box_batch, capsule_capsule, capsule_capsule_batch
 from src.safety_filter.touch import Exempt, pair_rule
 
-CC_EPS_M = 1.0e-7      # m [SF-71]: half width of a batched capsule-capsule gap's interval around the scalar value (same formula; measured difference below 1e-12 m, see the test)
-CB_LOW = 4.5e-5        # per m of capsule segment [SF-71]: the exact (4001-sample) capsule-box gap is at least the batched value minus this x segment length
-CB_HIGH = 1.5e-4       # per m of capsule segment [SF-71]: the exact capsule-box gap is at most the batched value plus this x segment length
-BOUND_SLACK_M = 1.0e-9  # m [SF-71]: added to every bound comparison so that rounding can never turn "cannot decide" into "decided"
 SIDE_INDEX = {"left": 0, "right": 1}
 
 
@@ -132,12 +129,12 @@ def approx_gaps(tab, P, idx):
         if len(cc):
             a, b = tab.ka[cc], tab.kb[cc]
             g = capsule_capsule_batch(P.A[a], P.B[a], tab.radius[a], P.A[b], P.B[b], tab.radius[b], gap_only=True)
-            P.glo[cc], P.ghi[cc] = g - CC_EPS_M, g + CC_EPS_M
+            P.glo[cc], P.ghi[cc] = g - cfg.ARRAY_FORM['cc_eps_m'], g + cfg.ARRAY_FORM['cc_eps_m']
         cb = need[~tab.is_cc[need]]
         if len(cb):
             c, b = tab.cb_cap[cb], tab.cb_box[cb]
             v = capsule_box_batch(P.A[c], P.B[c], tab.radius[c], P.C[b], P.R[b], tab.half[b], gap_only=True)
             length = np.linalg.norm(P.B[c] - P.A[c], axis=1)
-            P.glo[cb] = v - CB_LOW * length - BOUND_SLACK_M
-            P.ghi[cb] = v + CB_HIGH * length + BOUND_SLACK_M
+            P.glo[cb] = v - cfg.ARRAY_FORM['cb_low_per_m'] * length - cfg.ARRAY_FORM['bound_slack_m']
+            P.ghi[cb] = v + cfg.ARRAY_FORM['cb_high_per_m'] * length + cfg.ARRAY_FORM['bound_slack_m']
     return P.glo[idx], P.ghi[idx]

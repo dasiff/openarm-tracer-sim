@@ -4,6 +4,8 @@ Kept here, not in src/task_config.py (task brief). Each provisional number is ta
 Plain-word comments: what the setting does, its unit, why this value.
 """
 
+from src.task_config import COMMAND_BRIDGE_CFG   # the one place the filter reads the command bridge limit from (SF-72)
+
 # Build tool (tools/build_filter_shapes.py): how the upper arm and forearm radii are sampled.
 SHAPE_BUILD = {
     "random_poses_first_set": 1000,   # count: random joint poses in the first sample set (plus the joint-limit corners); the radius at 1000 samples [SF-5]
@@ -121,8 +123,22 @@ OBJECT_CATALOG = {
 # while it cannot reach its release distance (margin + slowing band) within the sleep, by this speed bound.
 SLEEP = {
     "enabled": True,                # on/off [SF-72]: predictive sleep
-    "joint_speed_rad_s": 0.5,       # rad/s [SF-72]: the fastest any arm joint is assumed to move: the command bridge's joint speed limit (COMMAND_BRIDGE_CFG max_joint_velocity_rad_s, 0.5). A command step faster than this x dt x (1 + safety_buffer) wakes the pairs of that arm for that tick
+    "joint_speed_rad_s": COMMAND_BRIDGE_CFG["max_joint_velocity_rad_s"],   # rad/s [SF-72]: the fastest any arm joint is assumed to move: READ from the command bridge's joint speed limit (src/task_config.py COMMAND_BRIDGE_CFG), not copied. A command step faster than this x dt x (1 + safety_buffer) wakes the pairs of that arm for that tick
     "safety_buffer": 0.20,          # fraction [SF-72]: extra on the speed bound for the capsule fitting error and the looseness of the lever arms (David's value)
     "state_change_m": 2.0e-4,       # m [SF-72]: if the base position and orientation (as numbers), the pedestal and the finger travel together change by more than this since the tick before, every pair wakes for that tick (they are not part of the speed bound)
+    "command_step_slack_rad": 1.0e-12,   # rad [SF-72]: added to the largest command step allowed by the speed bound, so rounding never turns an exactly-at-the-bound step into a "fast" one
+    "same_pose_atol_rad": 1.0e-9,   # rad [SF-72]: the last command counts as "the pose the filter returned the tick before" when every joint is within this
+    "min_cost_m": 1.0e-12,          # m [SF-72]: floor of a pair's approach per tick in the sleep length formula (a pair whose two parts cannot move gets the longest sleep, not a division by zero)
     "stats_cap_ticks": 2000,        # ticks [SF-72]: the sleep length histogram (for the profile) stops counting at this many ticks
+}
+
+# Array form of a tick (Stage 5 speed, SF-69 to SF-71; src/safety_filter/tick.py, tick_arrays.py). Sizes and the tolerances of the bounds
+# that rule pairs out. The bounds only decide which pairs get the exact check; the exact number is always the scalar function's.
+ARRAY_FORM = {
+    "pose_cache": 64,               # count [SF-69]: poses kept per tick before the cache is emptied (keeps a long shortening search's memory flat; the value the object form used)
+    "table_cache": 12,              # count [SF-69]: pair tables kept per resolver (one per set of world objects and held shapes seen)
+    "cc_eps_m": 1.0e-7,             # m [SF-71]: half width of a batched capsule-capsule gap's interval around the scalar value (same formula; the test measures the difference, below 1e-12 m)
+    "cb_low_per_m": 4.5e-5,         # per m of capsule length [SF-71]: the exact (4001-sample) capsule-box gap is at least the batched value minus this x length (derivation in tick_arrays.py)
+    "cb_high_per_m": 1.5e-4,        # per m of capsule length [SF-71]: the exact capsule-box gap is at most the batched value plus this x length
+    "bound_slack_m": 1.0e-9,        # m [SF-71]: added to every bound comparison so that rounding can never turn "cannot decide" into "decided"
 }

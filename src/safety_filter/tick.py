@@ -24,8 +24,6 @@ from src.safety_filter.shapes import ARM_JOINTS, SIDES, PlacedShape
 from src.safety_filter.touch import Exempt, _aabb_arrays, as_placed, gap_between, pair_rule
 
 _ARM_INDEX = {"left": 0, "right": 1}
-POSE_CACHE = 64          # count: poses kept per tick before the cache is emptied (as before the speed work: keeps a long shortening search's memory flat)
-TABLE_CACHE = 12         # count: pair tables kept per resolver (one per set of world objects and held shapes seen)
 
 
 class _LazyGaps(dict):
@@ -101,7 +99,7 @@ class Statics:
                cfg.PUSH_START_BEYOND_M, cfg.PUSH_STOP_BEYOND_M, tuple(cfg.TORSO_EXEMPT_PARTS), id(never_close_pairs()))
         tab = self._tables.get(sig)
         if tab is None:
-            if len(self._tables) >= TABLE_CACHE:
+            if len(self._tables) >= cfg.ARRAY_FORM['table_cache']:
                 self._tables.clear()
             items = self.spec_items + list(held_shapes) + w["placed"]
             tab = self._tables[sig] = ta.PairTable(items, self.n_spec + len(held_shapes))
@@ -146,7 +144,7 @@ class _Tick:
         k = q.tobytes()
         P = self._poses.get(k)
         if P is None:
-            if len(self._poses) > POSE_CACHE:
+            if len(self._poses) > cfg.ARRAY_FORM['pose_cache']:
                 self._poses.clear()
                 self._gaps.clear()
             P = self._poses[k] = self._build(q)
@@ -342,7 +340,7 @@ class _Tick:
         idx = idx[self._moving()[idx]]
         if not len(idx) or not self._bounds_ok:
             return idx
-        tab, dt, slack = self.tab, self.res.dt, ta.BOUND_SLACK_M
+        tab, dt, slack = self.tab, self.res.dt, cfg.ARRAY_FORM['bound_slack_m']
         P0, P = self._place(self.last), self._place(q)
         lb0 = ta.box_separation(tab, P0)[idx]
         tr = self._travel(P, q)
@@ -364,7 +362,7 @@ class _Tick:
         pair already below limit at the last command does not count (the jump-through guard's test, SF-46)."""
         self.discover(q)
         idx = self._indices()
-        tab, slack = self.tab, ta.BOUND_SLACK_M
+        tab, slack = self.tab, cfg.ARRAY_FORM['bound_slack_m']
         if len(idx) and self._bounds_ok:
             P = self._place(q)
             idx = idx[ta.box_separation(tab, P)[idx] < limit + slack]
@@ -382,7 +380,7 @@ class _Tick:
     def active_keys(self, q):
         """The candidate pairs inside their release distance at the pose q or at the last command (what the resolver keeps for the next tick)."""
         idx = self._indices()
-        tab, slack = self.tab, ta.BOUND_SLACK_M
+        tab, slack = self.tab, cfg.ARRAY_FORM['bound_slack_m']
         out = set()
         if len(idx) and self._bounds_ok:
             P0, P = self._place(self.last), self._place(q)
@@ -496,7 +494,7 @@ class SleepTimers:
         objs = self.w_objs
         same_ids = len(objs) == len(world) and all(a.id == b.id for a, b in zip(objs, world))
         if (not same_ids or self._held_sig(held) != self.held_sig or self._settings != self._settings_now()
-                or not np.allclose(last, self.q_ref, rtol=0.0, atol=1e-9)):
+                or not np.allclose(last, self.q_ref, rtol=0.0, atol=cfg.SLEEP['same_pose_atol_rad'])):
             self.reset()
             return None
         tab, now = self.tab, self.now
@@ -510,7 +508,7 @@ class SleepTimers:
             w, p = heapq.heappop(self.heap)
             if self.wake[p] == w:
                 mask[p] = True
-        step_cap = cfg.SLEEP["joint_speed_rad_s"] * res.dt * (1.0 + cfg.SLEEP["safety_buffer"]) + 1e-12
+        step_cap = cfg.SLEEP["joint_speed_rad_s"] * res.dt * (1.0 + cfg.SLEEP["safety_buffer"]) + cfg.SLEEP["command_step_slack_rad"]
         fast = np.abs(np.asarray(raw, float) - np.asarray(last, float)).max(axis=1) > step_cap       # per arm: the command step is faster than the bound
         mask |= (tab.uses_side[0] & fast[0]) | (tab.uses_side[1] & fast[1])
         sv = self._state_vec(state)
@@ -547,12 +545,12 @@ class SleepTimers:
         P = t._place(np.asarray(q, float))
         idx = np.flatnonzero(redo)
         lb = ta.box_separation(tab, P)[idx].copy()
-        near = lb < tab.release[idx] + ta.BOUND_SLACK_M
+        near = lb < tab.release[idx] + cfg.ARRAY_FORM['bound_slack_m']
         if near.any():
             lo, _ = ta.approx_gaps(tab, P, idx[near])
             lb[near] = np.maximum(lb[near], lo)
         rem = lb - tab.release[idx]
-        cost = np.maximum(self.vpair[idx] * t.res.dt * (1.0 + cfg.SLEEP["safety_buffer"]), 1e-12)
+        cost = np.maximum(self.vpair[idx] * t.res.dt * (1.0 + cfg.SLEEP["safety_buffer"]), cfg.SLEEP["min_cost_m"])
         n = np.where(rem > 0.0, np.minimum(np.floor(rem / cost), cfg.SLEEP["stats_cap_ticks"]), 0).astype(np.int64)
         n = np.maximum(n, 1)                                 # a pair inside its release distance, or with no whole tick to spare, is looked at every tick
         self._push(idx, self.now + n)

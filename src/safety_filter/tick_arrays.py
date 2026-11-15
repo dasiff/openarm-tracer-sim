@@ -94,7 +94,7 @@ class PairTable:
 class PoseArrays:
     """All items at one pose: capsule ends A, B and box centre C, rotation R (rows of non-matching kind are unused), and the
     axis-aligned boxes lo, hi. sep, glo and ghi are filled when first asked for."""
-    __slots__ = ("A", "B", "C", "R", "lo", "hi", "sep", "glo", "ghi", "held", "objs", "travel")
+    __slots__ = ("A", "B", "C", "R", "lo", "hi", "sep", "glo", "ghi", "held", "objs", "travel", "anchors")
 
     def __init__(self, A, B, C, R, lo, hi, held):
         self.A, self.B, self.C, self.R, self.lo, self.hi, self.held = A, B, C, R, lo, hi, held

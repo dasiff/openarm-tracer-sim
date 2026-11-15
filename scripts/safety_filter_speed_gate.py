@@ -44,6 +44,11 @@ STATUS_CLASSES = {"PASS": "pass", "HOLD": "hold", "KONG_PUSH": "changed", "STEP_
 TOL_COUNT_SHARE = 0.01    # share: part B, a status or hold count may differ by this share of its golden count (rounded down; a golden count of 0 allows 0)
 TOL_GAP_MM = 1.0          # mm: part B, smallest true gap (overall and per pair type)
 TOL_HAND_MM = 0.5         # mm: part B, hand position error mean and max
+# Ticks where the changed code is KNOWN to decide differently from the golden recording, investigated and explained; they are listed in the result
+# as accepted differences (with their numbers) and do not fail part A. Chosen by the assistant; David to confirm. Keyed by recording name, then tick.
+ACCEPTED_DIFFERENCES = {
+    "cat_kong_style": {5672: "step 3 change 2 (conservative advancement): on this tick a pair is below the guard gap from 10.6 percent of the step onward (fine scan of the path, 3000 poses); the golden sampled test jumped through it and chose fraction 0.742, the advancement stops at 0.0955. The new decision is the safer one; command difference 1.9 mrad."},
+}
 MAX_LISTED = 300          # count: failing ticks written out per recording (all are counted)
 INFO_FIELDS = ("status", "active", "rounds", "pairs_pushed", "pairs_skipped", "pairs_shortened", "solver_calls", "fraction")
 
@@ -80,7 +85,8 @@ def replay(rec, ticks=0, say=print):
     """Part A on one recording. Returns the result dict."""
     a = rec.a
     n = rec.n if not ticks else min(ticks, rec.n)
-    fails, info = [], {k: 0 for k in INFO_FIELDS}
+    fails, accepted, info = [], [], {k: 0 for k in INFO_FIELDS}
+    frac_diffs = []   # (tick, golden fraction, new fraction) where the step fraction differs (not a failure by itself)
     max_diff, max_diff_tick = 0.0, -1
     times = np.zeros(n)
     with sc.resolver_mode(rec.mode):
@@ -97,7 +103,9 @@ def replay(rec, ticks=0, say=print):
             g_status, g_reason = str(a["status"][k]), str(a["reason"][k])
             reason = st.hold_reason or ""
             ok = d <= TOL_CMD_RAD and STATUS_CLASSES.get(st.status, st.status) == STATUS_CLASSES.get(g_status, g_status) and reason == g_reason
-            if not ok:
+            if not ok and k in ACCEPTED_DIFFERENCES.get(rec.path.stem, {}):
+                accepted.append({"tick": k, "max_cmd_diff_rad": d, "reason": ACCEPTED_DIFFERENCES[rec.path.stem][k]})
+            elif not ok:
                 if len(fails) < MAX_LISTED:
                     j = np.unravel_index(int(np.argmax(np.abs(out - a["filtered"][k]))), (2, 7))
                     fails.append({"tick": k, "max_cmd_diff_rad": d, "arm": sc.SIDES[j[0]], "joint": int(j[1]) + 1, "status": [g_status, st.status],
@@ -114,15 +122,19 @@ def replay(rec, ticks=0, say=print):
                 same = (np.isnan(g) and np.isnan(new[f])) or g == new[f] if f == "fraction" else str(g) == str(new[f])
                 if not same:
                     info[f] += 1
+                    if f == "fraction":
+                        frac_diffs.append([k, float(g), new[f]])
             if (k + 1) % 500 == 0:
                 say(f"{rec.path.stem}: tick {k + 1}/{n}, failing so far {len(fails)}, largest difference {max_diff:.3g} rad")
     gold_t = np.asarray(a["filter_time"][:n], float)
     not_pass = a["status"][:n] != "PASS"
-    return {"recording": rec.path.name, "mode": rec.mode, "ticks": n, "failing_ticks": len(fails), "pass": len(fails) == 0,
+    return {"recording": rec.path.name, "mode": rec.mode, "ticks": n, "failing_ticks": len(fails), "pass": len(fails) == 0, "accepted_differences": accepted,
             "largest_cmd_diff_rad": max_diff, "largest_cmd_diff_tick": max_diff_tick,
             "ticks_with_different": {("exact_status" if f == "status" else "active_set_after_tick" if f == "active" else f): v for f, v in info.items()},
             "time_ms": sc.time_stats_ms(times), "time_ms_golden": sc.time_stats_ms(gold_t),
             "time_ms_not_pass": sc.time_stats_ms(times[not_pass]), "time_ms_pass": sc.time_stats_ms(times[~not_pass]),
+            "fraction_differences": {"ticks": len(frac_diffs), "largest": max((abs(x[1] - x[2]) for x in frac_diffs if x[1] == x[1] and x[2] == x[2]), default=0.0),
+                                     "listed": frac_diffs[:MAX_LISTED]},
             "failing": fails[:MAX_LISTED]}
 
 
@@ -145,7 +157,7 @@ def part_a(args, out_dir):
         t = r["time_ms"]
         print(f"A {name:28s} ticks {r['ticks']:5d} failing {r['failing_ticks']:4d} largest diff {r['largest_cmd_diff_rad']:.3g} rad  "
               f"time mean {t['mean']} median {t['median']} p95 {t['p95']} max {t['max']} ms  (golden mean {r['time_ms_golden']['mean']})  "
-              f"different: {r['ticks_with_different']}", flush=True)
+              f"accepted {len(r['accepted_differences'])}  different: {r['ticks_with_different']}", flush=True)
     print(f"PART A {'PASS' if doc['pass'] else 'FAIL'} ({len(doc['recordings'])} recordings) -> {path}")
     return doc["pass"]
 

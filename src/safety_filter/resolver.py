@@ -260,7 +260,7 @@ class Resolver:
         return self.kin.hand_pose(self._state(t, t.raw), side)
 
     # ---- step shortening ----
-    def _shorten(self, t, q, sides, methods, targets, st, passes=None):
+    def _shorten(self, t, q, sides, methods, targets, st, passes=None, fraction=None):
         """Scale the joint-space step (last -> raw) of the given arms by the largest fraction at which every pair meets
         the gap rule (halving search); below shorten_min_fraction: hold still."""
         idx = [_ARM_INDEX[s] for s in sides]
@@ -271,21 +271,24 @@ class Resolver:
                 qq[i] = t.last[i] + f * (t.raw[i] - t.last[i])
             return qq
 
-        if passes is None:                       # default pass test: every pair meets the gap rule; kong_style's jump-through guard passes its own
-            def passes(f):
-                return t.worst_value_discover(trial(f)) < cfg.RESOLVER["stop_m"]
-
-        if passes(1.0):
-            f = 1.0
+        if fraction is not None:                 # the caller already found the fraction (conservative advancement of the guard, SF-73)
+            f = fraction
         else:
-            lo, hi = 0.0, 1.0
-            for _ in range(cfg.RESOLVER["shorten_halvings"]):
-                mid = 0.5 * (lo + hi)
-                if passes(mid):
-                    lo = mid
-                else:
-                    hi = mid
-            f = lo
+            if passes is None:                   # default pass test: every pair meets the gap rule; kong_style's jump-through guard passes its own
+                def passes(f):
+                    return t.worst_value_discover(trial(f)) < cfg.RESOLVER["stop_m"]
+
+            if passes(1.0):
+                f = 1.0
+            else:
+                lo, hi = 0.0, 1.0
+                for _ in range(cfg.RESOLVER["shorten_halvings"]):
+                    mid = 0.5 * (lo + hi)
+                    if passes(mid):
+                        lo = mid
+                    else:
+                        hi = mid
+                f = lo
         if f < cfg.RESOLVER["shorten_min_fraction"]:
             st.fraction = f
             raise _Hold("SHORTEN_ZERO")

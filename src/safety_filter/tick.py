@@ -186,7 +186,10 @@ class _Tick:
             lo[k], hi[k] = h.aabb()
         if n > nr:
             A[nr:], B[nr:], C[nr:], R[nr:], lo[nr:], hi[nr:] = w["A"], w["B"], w["C"], w["R"], w["lo"], w["hi"]
-        return ta.PoseArrays(A, B, C, R, lo, hi, held)
+        P = ta.PoseArrays(A, B, C, R, lo, hi, held)
+        d = sh.data
+        P.anchors = np.stack([d.xanchor[st.jids[side]] for side in SIDES]).copy()      # (2, 7, 3): the arm joints' anchors at this pose, for the travel bounds
+        return P
 
     def pose(self, q):
         """(shapes by id, list of shapes) of the robot and held shapes at the joint angles q (2, 7): the object form, built on request."""
@@ -300,30 +303,72 @@ class _Tick:
         return self.tab.capsule_radii
 
     # ---- bounds ----
+    def lever_at(self, P):
+        """Per item and arm joint: the item's largest distance from the joint's anchor at the pose P (capsule: either end; box: centre plus its
+        half diagonal), 0 for the joints that are not between the torso and the item. Moving only joint i by d moves any point of the item by
+        at most lever[i] x |d| (turning the joints one at a time from the shoulder outwards keeps the distances beyond the joint)."""
+        tab = self.tab
+        anc = P.anchors[np.maximum(tab.item_side, 0)]                                    # (n, 7, 3)
+        cap = np.maximum(np.linalg.norm(P.A[:, None, :] - anc, axis=2), np.linalg.norm(P.B[:, None, :] - anc, axis=2))
+        box = np.linalg.norm(P.C[:, None, :] - anc, axis=2) + np.linalg.norm(tab.half, axis=1)[:, None]
+        dist = np.where(tab.is_capsule[:, None], cap, box)
+        return np.where(np.arange(ARM_JOINTS)[None, :] < tab.link[:, None], dist, 0.0)
+
     def _travel(self, P, q):
         """Per item: how far any point of it can have moved between the last command and the pose q (m); see tick_arrays."""
         if P.travel is None:
-            tab, st = self.tab, self.st
             if self._lever is None:
-                P0 = self._P0
-                self.res.shapes.set_state(with_arms(self.state, self.last))
-                d = self.res.shapes.data
-                lever = np.zeros((tab.n, ARM_JOINTS))
-                for s, side in enumerate(SIDES):
-                    anc = d.xanchor[st.jids[side]]                                  # (7, 3) at the last command
-                    rows = np.flatnonzero(tab.item_side == s)
-                    if not len(rows):
-                        continue
-                    cap = tab.is_capsule[rows]
-                    dist = np.where(cap[:, None],
-                                    np.maximum(np.linalg.norm(P0.A[rows][:, None, :] - anc[None], axis=2), np.linalg.norm(P0.B[rows][:, None, :] - anc[None], axis=2)),
-                                    np.linalg.norm(P0.C[rows][:, None, :] - anc[None], axis=2) + np.linalg.norm(tab.half[rows], axis=1)[:, None])
-                    lever[rows] = np.where(np.arange(ARM_JOINTS)[None, :] < tab.link[rows][:, None], dist, 0.0)
-                self._lever = lever
+                self._lever = self.lever_at(self._P0)
             dq = np.abs(q - self.last)
-            side = np.maximum(tab.item_side, 0)
-            P.travel = np.einsum("ki,ki->k", self._lever, dq[side])
+            P.travel = np.einsum("ki,ki->k", self._lever, dq[np.maximum(self.tab.item_side, 0)])
         return P.travel
+
+    def guard_fraction(self, min_gap, skip_below):
+        """The jump-through guard by conservative advancement (SF-73): the fraction of the step last -> raw up to which no pair (other than
+        those already below min_gap at the last command, when skip_below) has a gap below min_gap along the straight joint-space path.
+        None when the whole path is clear. Starting at fraction 0, the fraction advances by (the smallest gap lower bound - min_gap) /
+        (the fastest the two parts of that pair can approach per unit of the step); it stops when that advance is under half a grid step
+        of the halving search (1 / 2^shorten_halvings), or after tunnel_guard_advance_max_iter advances (then the fraction so far, which is
+        on the safe side). Every pose along the way is a real pose of the path."""
+        tab, rc = self.tab, cfg.RESOLVER
+        slack = cfg.ARRAY_FORM["bound_slack_m"]
+        steps = 2 ** rc["shorten_halvings"]
+        dq = np.abs(np.asarray(self.raw, float) - self.last)
+        side = np.maximum(tab.item_side, 0)
+        cand = self._moving().copy()
+        P0 = self._place(self.last)
+        idx = np.flatnonzero(cand & (ta.box_separation(tab, P0) < min_gap + slack))
+        if skip_below and len(idx):
+            lo0, hi0 = ta.approx_gaps(tab, P0, idx)
+            sure = hi0 < min_gap - slack
+            out = list(idx[sure])
+            for p in idx[~sure & (lo0 < min_gap + slack)]:
+                if self.gap(self.last, tab.keys[p]) < min_gap:
+                    out.append(p)
+            cand[out] = False
+        ci = np.flatnonzero(cand)
+        if not len(ci):
+            return None
+        s, tol = 0.0, 0.5 / steps
+        for _ in range(rc["tunnel_guard_advance_max_iter"]):
+            q = self.last + s * (np.asarray(self.raw, float) - self.last)
+            P = self._place(q)
+            rate = np.einsum("ki,ki->k", self.lever_at(P), dq[side])
+            v = rate[tab.I[ci]] + rate[tab.J[ci]]
+            lb = ta.box_separation(tab, P)[ci].copy()
+            near = lb < min_gap + rc["tunnel_guard_advance_refine_m"]
+            if near.any():
+                lo, _ = ta.approx_gaps(tab, P, ci[near])
+                lb[near] = np.maximum(lb[near], lo)
+            with np.errstate(divide="ignore", invalid="ignore"):
+                adv = np.where(v > 0.0, (lb - min_gap - slack) / v, np.inf)
+            a = float(adv.min())
+            if a >= 1.0 - s:
+                return None
+            if a < tol:
+                return s
+            s += a
+        return s
 
     def _moving(self):
         """Per pair: one of its arms moves between the last and the raw command (otherwise no arm of it can be closing)."""

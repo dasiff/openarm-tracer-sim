@@ -25,3 +25,8 @@ Nothing is pushed; main and the main worktree are untouched.
   A killed chain is restarted with the same script (finished recordings are skipped, a punch run resumes from its checkpoint).
 
 NEXT: when the chain is done: manifest, filter test set on the tag's code (reference results), commit; then step 1 (profile).
+
+## Plan change (David, 2026-11-15, during step 0)
+- Step 3 candidates replaced, in this order unless measurement says otherwise: 1 pair sleep timers (a pair is not checked again until the travel bound of its two parts uses up its gap minus margin minus slowing band; pass-through = every pair asleep; reset when the world list or the holding verdict changes); 2 conservative advancement in place of the halving search of the guard (APPROVED within the gate tolerance; report every differing tick; remove the halving code once the gate passes); 3 one swept broad-phase pass per step (numpy, no tree); 4 batched closed-form forward kinematics and exact capsule distances only for pairs whose box gap is below margin plus travel; 5 allocation and overhead (preallocated arrays, no per-pair dicts, buffered recording); 6 compiled kernel (numba first) with a Python fallback.
+- Part B (never-close extension) moves AFTER step 5, "if time remains".
+- Design prepared while the golden runs go (no src change yet; drafts in the session scratchpad): array form of a tick (pair table built once per item set, pose arrays, box separation for all pairs at once, gap intervals from batched calls, exact scalar gap only where an interval does not decide or the value is used). The sleep timers and the "exact only when near" rule of candidates 1 and 4 sit on top of it.

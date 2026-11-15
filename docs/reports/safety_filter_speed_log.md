@@ -93,3 +93,6 @@ Time per call (gate B, mean / median / p95 / max ms): punch original 60.2 / 61.5
 
 ## Not done (decided to stop here, see the report)
 Step 3 candidates 3 (one swept broad-phase pass), 4 (batched closed-form FK) and 5 (allocation) were not built separately: the array form of change 1 already replaced the per-pair Python broad phase; the remaining cost is spread over many small numpy calls (pass-through 1.6 to 1.9 ms median). Step 5/6 compiled kernel: not built (numba is not installed and the shared environment must not be touched; a C kernel loaded with ctypes would need a bit-parity test against the scalar capsule distance). Step 4 / Part B (never-close extension): not started ("if time remains").
+
+## Full suite result (2026-11-15)
+speedfinal: 51 pass, 15 fail. 11 known old failures; the 4 others (elbow_guard, face, full_check, transit_clearance) fail identically on the tag's code (logs data/logs/maintree_*). No new failures.

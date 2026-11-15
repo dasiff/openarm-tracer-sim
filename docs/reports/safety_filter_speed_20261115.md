@@ -60,7 +60,7 @@ Existing source files changed: `src/safety_filter/{config,gap_rule,kong_style,re
 - The full suite result is in the section below.
 
 ## Tests
-Filter test set (13 tests): on the tag's code 12 pass, `safety_filter_spec_test` fails ("the closing right arm moves", a known old failure, docs/reports/safety_filter_merge_main_20261113.md); on every kept commit the same 12 pass and the same one fails. Full suite: see the last section of this file (written when it finished).
+Filter test set (13 tests): on the tag's code 12 pass, `safety_filter_spec_test` fails ("the closing right arm moves", a known old failure, docs/reports/safety_filter_merge_main_20261113.md); on every kept commit the same 12 pass and the same one fails. Full suite: no new failures (last section).
 
 ## Options for David (none implemented)
 - Use the pure conservative advancement for the guard (about 20 percent faster on punch original, 49 vs 60 ms): it changes one cat decision (the safer one) and the cat closed loop then diverges, so it would need the gate's cat part B tolerance to be judged on a different footing (for example by comparing safety outcomes, not trajectories).
@@ -79,3 +79,11 @@ Filter test set (13 tests): on the tag's code 12 pass, `safety_filter_spec_test`
 - Pure advancement dropped; keep it as an option or not.
 - Golden simulator runs use a pinned stance-search seed (sampler 1944726090, full check 4242, the moved-layout rerun of M320) because the old runs took seeds from the clock and could not be repeated; confirm.
 - Part B and compiled code not done: say whether to continue.
+
+## Full suite (run speedfinal, 13:43 to 16:36, ALL_DONE)
+
+51 tests exit 0, 15 exit non-zero. Summary: `data/logs/suite_speedfinal_summary.txt`.
+
+Failures that are already known on main (docs/reports/safety_filter_merge_main_20261113.md): gripper_force (27/29), target_mode (9/16), command_bridge (13/14), cc_mode_tests (33/39), nav_pipeline_follow (10/14), stance_select (EGL error), stance_select_pipeline (3/7), stance_select_moved (IndexError), mpvi_pipeline (10/14), mpvi_text (5/11), safety_filter_spec_test ("the closing right arm moves").
+
+Four failures were not on that list: elbow_guard (clamp check), face (24/27), full_check (30/31), transit_clearance (26/27). I re-ran those four on the tag's code (`git archive` of `safety-filter-pre-speed`, data/models/deps/assets linked) and they fail the same way there: elbow_guard exit 1 same check, face 24/27, full_check 30/31, transit_clearance 26/27. So there are no new failures from the speed changes. All 12 other filter tests pass, as on the tag.

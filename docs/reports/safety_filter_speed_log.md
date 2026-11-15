@@ -24,7 +24,16 @@ Nothing is pushed; main and the main worktree are untouched.
   (punch_original, punch_reactive, cat, shadow_pp with kong_style; punch_original, cat with layered). Progress lines: data/logs/speed_golden_chain.txt; logs data/logs/speed_golden_<stream>_<mode>_<stamp>.log.
   A killed chain is restarted with the same script (finished recordings are skipped, a punch run resumes from its checkpoint).
 
-NEXT: when the chain is done: manifest, filter test set on the tag's code (reference results), commit; then step 1 (profile).
+- 0.4 DONE 06:13: six golden recordings (manifest docs/reports/safety_filter_speed_golden_manifest.json). Time per call of the tag's code (ms, mean / median / p95 / max):
+  punch_original kong_style 1041 / 938 / 2240 / 4970 (1576 ticks, 1534 KONG_PUSH); punch_reactive kong_style 28.2 / 21.7 / 72.4 / 189; cat kong_style 37.0 / 6.0 / 165.5 / 3322 (6436 ticks; 944 not PASS at 211 mean; 751 HOLD SHORTEN_ZERO);
+  shadow_pp kong_style 6.2 / 4.6 / 14.5 / 37.2 (7783 ticks, all PASS, outcome SUCCESS); punch_original layered 129 / 122 / 350 / 603; cat layered 34.2 / 4.2 / 218 / 878.
+- RUN IN PROGRESS (started 08:24): tmux `chain2`, script <scratchpad>/chain2.sh, progress data/logs/speed_chain2.txt:
+  (a) the 13 filter tests on the unchanged working tree -> data/logs/speed_tests_ref.txt (do not edit src/ before the line TESTS_DONE);
+  (b) step 1 profile `--label before` on the tag's code (data/safety_filter/speed_profile/before.json);
+  (c) step 2 gate proof on the tag's code (--src-root data/safety_filter/speed_ref_tree): perturbed copy (+2 mm on capsule gaps, scratch only) first 300 punch ticks, then part A `--label unchanged`, part B punch and cat.
+  Results in data/safety_filter/speed_gate/<label>/gate_A.json, gate_B.json.
+
+NEXT: read chain2 results; write the profile table and the gate proof here; commit steps 1 and 2. Then apply the drafted array-form tick (scratchpad newsrc/tick_arrays.py, tick.py) and gate it.
 
 ## Plan change (David, 2026-11-15, during step 0)
 - Step 3 candidates replaced, in this order unless measurement says otherwise: 1 pair sleep timers (a pair is not checked again until the travel bound of its two parts uses up its gap minus margin minus slowing band; pass-through = every pair asleep; reset when the world list or the holding verdict changes); 2 conservative advancement in place of the halving search of the guard (APPROVED within the gate tolerance; report every differing tick; remove the halving code once the gate passes); 3 one swept broad-phase pass per step (numpy, no tree); 4 batched closed-form forward kinematics and exact capsule distances only for pairs whose box gap is below margin plus travel; 5 allocation and overhead (preallocated arrays, no per-pair dicts, buffered recording); 6 compiled kernel (numba first) with a Python fallback.

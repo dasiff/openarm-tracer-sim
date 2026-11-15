@@ -487,7 +487,7 @@ class SleepTimers:
         self.reset()
 
     def reset(self):
-        self.tab = self.w_objs = self.q_ref = None
+        self.tab = self.w_objs = self.q_ref = self.pending = None
         self.now = getattr(self, "now", 0)
         self.heap = []
 
@@ -549,17 +549,23 @@ class SleepTimers:
             hit = np.isin(tab.I, [tab.n_robot + i for i in moved]) | np.isin(tab.J, [tab.n_robot + i for i in moved])
             self._push(np.flatnonzero(hit), now)
             self.w_objs = list(world)
-        mask = np.zeros(len(tab), dtype=bool)
+        due = self.pending.copy()                           # pairs that were due (or forced) while no arm of theirs moved, and still have to be looked at
         while self.heap and self.heap[0][0] <= now:
             w, p = heapq.heappop(self.heap)
             if self.wake[p] == w:
-                mask[p] = True
+                due[p] = True
         step_cap = res.joint_speed_rad_s * res.dt * (1.0 + cfg.SLEEP["safety_buffer"]) + cfg.SLEEP["command_step_slack_rad"]
         fast = np.abs(np.asarray(raw, float) - np.asarray(last, float)).max(axis=1) > step_cap       # per arm: the command step is faster than the bound
-        mask |= (tab.uses_side[0] & fast[0]) | (tab.uses_side[1] & fast[1])
+        due |= (tab.uses_side[0] & fast[0]) | (tab.uses_side[1] & fast[1])
         sv = self._state_vec(state)
         if float(np.abs(sv - self.state_vec).sum()) > cfg.SLEEP["state_change_m"]:
-            mask[:] = True
+            due[:] = True
+        # a pair none of whose arms moves this tick cannot be closing (the resolver acts only on a pair with a closing arm), so it is not looked at;
+        # it stays pending until an arm of it moves
+        ml, mr = not np.array_equal(raw[0], last[0]), not np.array_equal(raw[1], last[1])
+        moving = (tab.uses_side[0] & ml) | (tab.uses_side[1] & mr)
+        mask = due & moving
+        self.pending = due & ~moving
         self.state_vec = sv
         self.q_ref = np.array(raw, float)                  # the next tick's last command if the filter passes the raw command on (after_tick sets it otherwise)
         self.n_ticks += 1
@@ -578,6 +584,7 @@ class SleepTimers:
             vitem = self._static_lever(t).sum(axis=1) * t.res.joint_speed_rad_s
             self.vpair = vitem[tab.I] + vitem[tab.J]
             self.wake = np.zeros(len(tab), dtype=np.int64)
+            self.pending = np.zeros(len(tab), dtype=bool)
             self.heap = []
             self.n_ticks += 1
             self.n_checked += len(tab)

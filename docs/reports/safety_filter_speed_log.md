@@ -63,3 +63,13 @@ Speed limits are read from the config and no number is hard coded: SLEEP["joint_
 - Perturbed scratch copy (+2 mm on every capsule-capsule gap, session scratchpad, never committed): part A on the first 300 punch ticks: 280 failing ticks, largest command difference 0.056 rad. Detected.
 - Part B note: the first cat run on the reference tree failed at the LLM cache (the cache folder experiments/llm_cache is looked up relative to the source tree; the reference tree now links experiments and assets). Rerun passed.
 - Thresholds (config values in the script, chosen by the assistant, to be confirmed by David): 1e-3 rad per joint; status class same (PASS / HOLD / changed); same hold reason; counts within 1 percent of the golden count; smallest true gap within 1 mm; hand error mean and max within 0.5 mm.
+
+## Step 3, change 1 (array-form tick + gap intervals + heap pair scheduler): part A PASSES (src commit before this entry; part B, tests, profile running: tmux chain4, data/logs/speed_chain4_s3_1.txt)
+Part A on all six golden recordings: 0 failing ticks, largest command difference 0, exact status, active set after tick, sweeps, pairs pushed/skipped/shortened, solver calls and fraction identical on every tick. Time per call, mean / median / p95 / max ms (golden mean in brackets):
+- punch original kong_style 81.9 / 85.5 / 139 / 271 (1041)
+- punch reactive kong_style 10.2 / 9.4 / 17.7 / 44.4 (28.2)
+- shadow pick and place 2.17 / 1.75 / 4.3 / 43.7 (6.21)
+- cat kong_style 7.79 / 2.20 / 41.7 / 186 (36.96)
+- punch original layered 48.5 / 46.5 / 94 / 211 (128.8); cat layered 14.5 / 2.29 / 116 / 197 (34.2)
+Targets (mean 6.7 ms, p95 20 ms on punch, reactive punch, cat): not yet met (punch original 82 ms, reactive 10.2 ms mean, cat 7.8 ms mean and p95 41.7). Pass-through target 1 ms: 2.17 ms mean on shadow, not met.
+NEXT: chain4 results; then step 3 change 2 (conservative advancement replacing the halving search of the guard), then 3 to 6 by measured payoff.

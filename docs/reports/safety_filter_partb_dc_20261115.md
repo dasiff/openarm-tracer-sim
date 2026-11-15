@@ -4,7 +4,7 @@ Branch safety-filter-speed, not pushed, main untouched. Written for David. Step 
 
 ## Outcome
 - `tools/never_close_dc.py` proves 219 of the 518 pairs that the Stage 1 list leaves checked can never come within margin + 1 cm inside the joint limits (200 arm vs body, 19 arm vs arm). 265 can come close (a real pose was found), 34 are unproven and stay checked.
-- All soundness checks pass (certificate, golden replay, gate A and B; falsification: see the table below).
+- All soundness checks pass (certificate, falsification, golden replay, gate A and B).
 - The list is NOT in use. The file format and the loader are structural decisions and are left to David (SF-77). The gate and the profile ran on a scratch copy of the source tree that points at a trial shapes file; nothing in `src/` changed except a new settings block `NEVER_CLOSE_DC` in `src/safety_filter/config.py`, which only the offline tool reads.
 - With the trial list the pair table shrinks from 518 to 299 robot pairs; the time per call improves by a few percent to about 15 percent, inside the run-to-run variation of this VM. No timing target changes status.
 
@@ -31,7 +31,7 @@ Tool cost: 3597 s of pair time (two pieces, 40 and 20 minutes wall), 122.9 milli
 | check | result |
 |---|---|
 | i. certificate | PASS, 219 of 219: proven again from scratch with no time cap, settled volume exactly 1 for every pair, same box counts and bounds as the first run (21.15 million settled boxes); 231,052 boxes re-checked with the filter's scalar functions at 1,848,416 random poses: gap never below the box bound (smallest surplus 21.6 mm) |
-| ii. falsification | FALSIFY_ROW |
+| ii. falsification | PASS, 219 of 219: 200 seeded restarts of L-BFGS-B per pair on the exact gap (7.1 million gap evaluations, 7742 s); the closest pose found for any declared pair is 23.5 mm above its threshold (left_link1_1 vs right_link4, 63.5 mm). Control, 5 pairs not declared (status reachable): all 5 found below the threshold (gaps -90.9, -73.9, -73.6, -63.5, +21.9 mm against 40 mm), so the search does find close poses |
 | iii. golden replay | PASS: six recordings, 75,885 poses (raw, last and filtered command of every call), no declared pair below its threshold; closest 131.5 mm (left_link3_2 vs right_link1_2, 91.5 mm above its threshold); no recorded command outside the joint limits |
 | iv. gate A (trial list) | PASS: 0 failing ticks on six recordings, largest command difference 0, every counter identical; the informational "active set" differs on the same 1483 and 1302 ticks as without the list |
 | iv. gate B (trial list) | PASS: punch original, punch reactive and cat closed loop identical to golden (commands and status) |
@@ -49,7 +49,7 @@ Pairs: robot pairs in the table 518 -> 299; mean pairs looked at per tick: punch
 Targets (mean 6.7 ms and p95 20 ms on punch, reactive punch, cat; pass-through 1 ms): unchanged. Met: cat mean, reactive p95 (19.7 in the closed loop, close to the line). Not met: punch original, reactive mean (closed loop 10.4), cat p95, pass-through 1.33.
 
 ## Tests
-Filter test set with the working tree (the list is not in use, so the tests see the same code as before): 12 of 13 pass, `safety_filter_spec_test` is the known old failure. TESTS_AFTER
+Filter test set with the working tree (the list is not in use, so the tests see the same code as before): 12 of 13 pass, `safety_filter_spec_test` is the known old failure. Run again after the work (config.py gained the settings block): the same 12 pass and the same one fails. No new failure.
 
 ## Decisions for David
 1. Loader and file format (SF-77, not built). Proposed: `tools/build_filter_shapes.py --merge-never-close` reads the sweep file, the DC file or both, refuses a stale fingerprint and writes the union into `robot_shapes.json` (`never_close.pairs`, each marked with its source); the runtime loader then needs no change. Alternative: `shapes.py` reads `never_close_dc.json` at run time.

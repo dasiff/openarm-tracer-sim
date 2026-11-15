@@ -193,3 +193,8 @@ NEXT: step 3 checks in tmux `dc3` (chain: certificate, falsification, golden rep
 - Summary tables: `python scripts/safety_filter_dc_summary.py` (every number above was compared with the raw JSON files).
 - Step 5 written: rows SF-75 to SF-79 (docs/mpvi_decisions.md), "Part B never-close DC" subsection (docs/design_plan.md), report docs/reports/safety_filter_partb_dc_20261115.md (falsification row and the after-tests line still to fill).
 RUN: tmux `dc4` falsification, 40-minute pieces, logs data/logs/partb_falsify_*.log, checkpoint data/safety_filter/never_close_dc_falsify.json.work.json; data/logs/partb_chain.txt ends with CHAIN_DONE.
+
+## Part B step 3 ii and wrap-up DONE
+- ii. Falsification PASS (data/safety_filter/never_close_dc_falsify.json; four pieces, logs data/logs/partb_falsify_*.log): 219 of 219 declared pairs, 200 restarts each, 7,095,888 gap evaluations, 7742 s; closest pose found 23.5 mm above its threshold (left_link1_1 vs right_link4, 63.5 mm against 40). Control (5 reachable pairs): 5 of 5 found below the threshold (-90.9, -73.9, -73.6, -63.5, +21.9 mm).
+- Filter tests after the work (data/logs/partb_tests_after.txt): identical to the reference, 12 of 13, spec_test the known failure.
+- Nothing running. Not pushed. The list is not in use (SF-77 open).

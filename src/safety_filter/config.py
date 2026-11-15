@@ -144,3 +144,24 @@ ARRAY_FORM = {
     "cb_high_per_m": 1.5e-4,        # per m of capsule length [SF-71]: the exact capsule-box gap is at most the batched value plus this x length
     "bound_slack_m": 1.0e-9,        # m [SF-71]: added to every bound comparison so that rounding can never turn "cannot decide" into "decided"
 }
+
+# Never-close pairs by divide and conquer (Part B, SF-75 to SF-79; tools/never_close_dc.py, offline only: the filter itself reads none of these).
+# The proof and its assumptions are in docs/safety_filter_never_close_soundness.md; change that file with any change here that touches the method.
+NEVER_CLOSE_DC = {
+    "min_split_rad": 0.05,          # rad [SF-75]: a hinge range of a box is not cut once it is this wide or narrower (David's default); a box with nothing left to cut and no proof leaves the pair checked
+    "min_split_m": 0.005,           # m [SF-75]: the same for a slide (pedestal, finger travel); 5 mm, so a slide adds at most 2.5 mm of travel at the smallest box (my choice)
+    "pair_time_cap_s": 120.0,       # s [SF-78]: longest the tool works on one pair; a pair not finished by then stays checked (David's default, SF-27 "about 2 minutes")
+    "batch_boxes": 8192,            # count [SF-75]: boxes evaluated in one numpy pass (memory: a capsule-box pass holds batch x (box_samples + 1) x 3 numbers, about 25 MB)
+    "box_samples": 128,             # count K [SF-79]: a capsule's distance to a box is sampled at K + 1 equally spaced points; the centre value is the smallest sample minus length / (2K) (1.2 mm for a 0.3 m capsule)
+    "eps_num_m": 1.0e-6,            # m [SF-79]: taken off every centre value and added to the threshold for rounding in the kinematics and the distance formula (their measured error is below 1e-9 m)
+    "pre_random": 20000,            # count [SF-75]: random poses tried first; a pose with the gap below the threshold ends the pair at once as "reachable" (cannot be never-close)
+    "pre_refine_rounds": 30,        # count [SF-75]: rounds of the local search that follows the random poses (keeps the closest poses and perturbs them, step halved every 5 rounds)
+    "pre_refine_keep": 64,          # count [SF-75]: poses kept per round of that search
+    "pre_refine_children": 8,       # count [SF-75]: perturbed copies per kept pose and round
+    "pre_refine_step": 0.2,         # fraction of each variable's range [SF-75]: first perturbation size of that search
+    "seed": 0,                      # the random generator seed (repeatable runs)
+    "fk_check_poses": 300,          # count [SF-76]: random joint states on which the tool's batched kinematics is compared with the filter's (RobotShapes.place) before any pair is tested
+    "fk_check_tol_m": 1.0e-9,       # m [SF-76]: the tool stops if any shape point differs by more than this in that comparison
+    "verify_leaves": 2000,          # count [SF-76]: certificate check: settled boxes per declared pair re-checked with the filter's own scalar functions (the lowest-bound boxes first, the rest at random)
+    "verify_poses_per_leaf": 8,     # count [SF-76]: random poses inside each such box whose filter gap must be at least the box's lower bound
+}

@@ -167,7 +167,9 @@ def profile(rec, ticks, say=print):
                     say(f"{rec.path.stem}: profiled tick {k + 1}/{n}")
     finally:
         tm.remove()
-    out = {"recording": rec.path.name, "ticks": n, "ticks_pass": n_class["pass"], "ticks_acted": n_class["acted"], "missing_stages": tm.missing, "classes": {}}
+    sleep = getattr(getattr(res, "statics", None), "sleep", None)
+    out = {"recording": rec.path.name, "ticks": n, "ticks_pass": n_class["pass"], "ticks_acted": n_class["acted"], "missing_stages": tm.missing, "classes": {},
+           "pair_scheduler": sleep.report() if sleep is not None else None}
     for c in ("pass", "acted"):
         m = n_class[c]
         if not m:
@@ -191,6 +193,8 @@ def print_table(r):
         for s in d["stages"]:
             print(f"  {s['stage'][:58]:58s} {s['calls_per_tick']:9.1f} {s['incl_ms_per_tick']:10.3f} {100 * s['incl_share']:7.1f} {s['own_ms_per_tick']:10.3f} {100 * s['own_share']:7.1f}")
         print(f"  pair distance checks per tick: {d['pair_checks_per_tick']}")
+    if r.get("pair_scheduler"):
+        print(f"  pair scheduler (wakeup intervals in ticks per pair type; pairs checked per tick): {r['pair_scheduler']}")
     if r["missing_stages"]:
         print(f"  stages not found (skipped): {r['missing_stages']}")
 

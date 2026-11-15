@@ -55,6 +55,7 @@ class PairTable:
     def __init__(self, items, n_robot):
         n = len(items)
         self.n, self.n_robot = n, n_robot
+        self.st_n_spec = 0                                  # set by Statics.table: how many items are the robot's own shapes (the rest of the robot items are held shapes)
         self.ids = [s.id for s in items]
         self.item_index = {s.id: k for k, s in enumerate(items)}
         self.item_side = np.array([SIDE_INDEX.get(s.arm, -1) for s in items], dtype=np.int64)

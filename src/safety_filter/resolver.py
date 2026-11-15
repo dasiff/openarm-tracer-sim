@@ -93,7 +93,7 @@ class Resolver:
         awake = sleep.awake(self, raw, last, state, world_objects, held)
         if awake is not None and not awake.any():
             self._active = set()
-            return None, None
+            return None, None             # the filter returns the raw command: sleep.awake() already took it as the pose the next tick starts from
         t = _Tick(self, raw, last, state, world_objects, held, awake=awake)
         for _ in (0, 1):
             t.discover(last)
@@ -167,7 +167,7 @@ class Resolver:
     # ------------------------------------------------------------------
     def _update_active(self, t, q):
         self._active = t.active_keys(q)                      # the pairs with min(gap at q, gap at the last command) below their release distance
-        self.statics.sleep.after_tick(t)
+        self.statics.sleep.after_tick(t, q)
 
     def _state(self, t, q):
         return with_arms(t.state, q)

@@ -115,3 +115,14 @@ OBJECT_CATALOG = {
         "source": "models/objects/hotplate.xml geom task_hotplate_base: box half sizes 0.09 0.09 0.03 at z 0.03",
     },
 }
+
+# Predictive pair sleep (Stage 5 speed, SF-72; src/safety_filter/tick.py SleepTimers). A pair far from every other part is not looked at
+# for as many ticks as its gap lets it close at the fastest speed the arms are allowed. Not a change of the rule: a pair is only skipped
+# while it cannot reach its release distance (margin + slowing band) within the sleep, by this speed bound.
+SLEEP = {
+    "enabled": True,                # on/off [SF-72]: predictive sleep
+    "joint_speed_rad_s": 0.5,       # rad/s [SF-72]: the fastest any arm joint is assumed to move: the command bridge's joint speed limit (COMMAND_BRIDGE_CFG max_joint_velocity_rad_s, 0.5). A command step faster than this x dt x (1 + safety_buffer) wakes the pairs of that arm for that tick
+    "safety_buffer": 0.20,          # fraction [SF-72]: extra on the speed bound for the capsule fitting error and the looseness of the lever arms (David's value)
+    "state_change_m": 2.0e-4,       # m [SF-72]: if the base position and orientation (as numbers), the pedestal and the finger travel together change by more than this since the tick before, every pair wakes for that tick (they are not part of the speed bound)
+    "stats_cap_ticks": 2000,        # ticks [SF-72]: the sleep length histogram (for the profile) stops counting at this many ticks
+}

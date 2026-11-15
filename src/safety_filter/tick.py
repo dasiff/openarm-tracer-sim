@@ -10,6 +10,8 @@ asleep (not looked at) while the travel of its two parts since the reference can
 cannot make the gap rule act. A tick with every pair asleep is a pass-through with no kinematics at all.
 """
 
+import heapq
+
 import mujoco
 import numpy as np
 
@@ -24,11 +26,6 @@ from src.safety_filter.touch import Exempt, _aabb_arrays, as_placed, gap_between
 _ARM_INDEX = {"left": 0, "right": 1}
 POSE_CACHE = 64          # count: poses kept per tick before the cache is emptied (as before the speed work: keeps a long shortening search's memory flat)
 TABLE_CACHE = 12         # count: pair tables kept per resolver (one per set of world objects and held shapes seen)
-SLEEP = {
-    "enabled": True,          # on/off [SF-72]: pair sleep timers
-    "reref_extra_awake": 6,   # count [SF-72]: a new reference pose is taken when this many more pairs are awake than right after the last reference
-    "base_reach_extra_m": 0.05,  # m [SF-72]: added to the largest distance of any robot shape from the base origin when a base rotation is turned into travel
-}
 
 
 class _LazyGaps(dict):
@@ -108,6 +105,7 @@ class Statics:
                 self._tables.clear()
             items = self.spec_items + list(held_shapes) + w["placed"]
             tab = self._tables[sig] = ta.PairTable(items, self.n_spec + len(held_shapes))
+            tab.st_n_spec = self.n_spec
             tab.never_close = never_close_pairs()           # kept alive so that its id stays unique while the table lives
             tab.link = np.concatenate([self.spec_link, np.full(len(held_shapes), ARM_JOINTS, dtype=np.int64), np.zeros(len(w["placed"]), dtype=np.int64)])
             rad = {}
@@ -138,7 +136,8 @@ class _Tick:
         self.tab = None
         P0 = self._place(np.asarray(last, float))             # the pose of the last command: fixes the held shapes, hence the pair table
         self._in = np.zeros(len(self.tab), dtype=bool)
-        self._awake = awake                                    # None: every pair; else a bool mask over the table's pairs (sleep timers)
+        self._awake = self.awake0 = awake                      # None: every pair; else a bool mask over the table's pairs (sleep timers)
+        self.woke_all = False
         self._lever = None
         self._P0 = P0
 
@@ -267,6 +266,7 @@ class _Tick:
     def wake_all(self):
         """Drops the sleep mask (a tick that acts looks at every pair, as before the sleep timers)."""
         self._awake = None
+        self.woke_all = True
 
     def _indices(self):
         if self._karr is None:
@@ -423,15 +423,41 @@ class _Tick:
 
 
 class SleepTimers:
-    """Pair sleep timers (see the module text). Kept by the resolver between ticks; any change of the pair table (held shapes,
-    settings) or of the world list starts again from nothing."""
+    """Priority-queue pair scheduler (SF-72). A min-heap keyed on wakeup_tick, the tick at which a pair must next be looked at.
+    Each tick every pair with wakeup_tick <= now is popped and is the only pair the broad phase and the resolver see; after the tick
+    each popped pair gets wakeup_tick = now + max(1, floor((G - release) / (v x dt x (1 + safety_buffer)))), G a lower bound of its gap at the
+    pose the filter returns, release = margin + slowing band, v the fastest the pair's two parts can approach each other (the sum over each
+    part's arm joints of the part's largest distance from the joint, for any pose, x config SLEEP["joint_speed_rad_s"]).
+    A pair at or inside its release distance gets now + 1 (looked at every tick). A tick with no pair popped is a pass-through
+    without any kinematics.
+
+    Woken at once (every pair, or the affected pairs): the world list has other objects, the held objects change, the pair table or the
+    settings change, the last command is not the pose the filter returned the tick before (all pairs); an object of the world list moved
+    (the pairs of that object); a command step faster than the speed bound allows (the pairs of that arm, this tick); the base, pedestal
+    or fingers moved by more than SLEEP["state_change_m"] since the tick before (all pairs, this tick).
+    A tick that acts looks at every pair and reschedules every pair."""
 
     def __init__(self, statics):
         self.st = statics
+        self.hist = None
+        self.n_ticks = self.n_checked = 0          # statistics for the profile; kept over resets
         self.reset()
 
     def reset(self):
-        self.tab = self.w = None
+        self.tab = self.w_objs = self.q_ref = None
+        self.now = getattr(self, "now", 0)
+        self.heap = []
+
+    @staticmethod
+    def _held_sig(held):
+        if held is None or not hasattr(held, "held"):
+            return None if held is None else id(held)
+        return tuple(sorted((side, id(rec), rec["kind"]) for side, rec in held.held.items()))
+
+    def _settings_now(self):
+        from src.safety_filter.shapes import never_close_pairs
+        return (tuple(sorted(cfg.MARGINS.items())), cfg.NEVER_TOUCH_MARGIN_M, cfg.PUSH_START_BEYOND_M, cfg.PUSH_STOP_BEYOND_M, tuple(cfg.TORSO_EXEMPT_PARTS),
+                id(never_close_pairs()), tuple(sorted(cfg.GAP_RULE.items())), cfg.RESOLVER["trigger_m"], tuple(sorted(cfg.SLEEP.items())))
 
     def _static_lever(self, t):
         """Per item and arm joint: an upper bound, for EVERY pose, of the distance of any point of the item from the joint's anchor:
@@ -440,11 +466,9 @@ class SleepTimers:
         t.res.shapes.set_state(with_arms(t.state, t.last))
         d = t.res.shapes.data
         lever = np.zeros((tab.n, ARM_JOINTS))
-        reach = 0.0
         for s, side in enumerate(SIDES):
             anc = d.xanchor[st.jids[side]].copy()
             seg = np.linalg.norm(np.diff(anc, axis=0), axis=1)                      # fixed distances between consecutive joint anchors
-            reach = max(reach, float(seg.sum()))
             for k in np.flatnonzero(tab.item_side == s):
                 L = int(tab.link[k])
                 if L == 0:
@@ -453,79 +477,96 @@ class SleepTimers:
                 e = max(np.linalg.norm(P.A[k] - a), np.linalg.norm(P.B[k] - a)) if tab.is_capsule[k] else np.linalg.norm(P.C[k] - a) + np.linalg.norm(tab.half[k])
                 for i in range(L):
                     lever[k, i] = seg[i:L - 1].sum() + e
-        nr = tab.n_robot
-        base = np.asarray(t.state.base_xyz, float)
-        far = max([np.linalg.norm(P.A[:nr] - base, axis=1).max(), np.linalg.norm(P.B[:nr][tab.is_capsule[:nr]] - base, axis=1).max()] if nr else [0.0])
-        return lever, float(far) + 2.0 * reach + SLEEP["base_reach_extra_m"]
-
-    def reference(self, t):
-        """Takes the tick's last command as the reference pose: a lower bound of every pair's gap there (box separation, or the batched
-        gap interval's low end for the pairs whose boxes are inside the release distance)."""
-        tab = t.tab
-        P0 = t._place(t.last)
-        lb = ta.box_separation(tab, P0).copy()
-        near = np.flatnonzero(lb < tab.release + ta.BOUND_SLACK_M)
-        if len(near):
-            lo, _ = ta.approx_gaps(tab, P0, near)
-            lb[near] = np.maximum(lb[near], lo)
-        self.tab, self.w, self.lb = tab, t._w, lb
-        self.q = np.array(t.last, float)
-        s = t.state
-        self.base = np.asarray(s.base_xyz, float)
-        self.quat = np.asarray(s.base_quat, float)
-        self.other = np.array([s.pedestal_m, s.finger_left, s.finger_right], float)
-        self.held_sig = self._held_sig(t.held)
-        self.lever, self.base_reach = self._static_lever(t)
-        self.side = np.maximum(tab.item_side, 0)
-        self.awake0 = int((~self._asleep(self.q, self.q, s)).sum())
+        return lever
 
     @staticmethod
-    def _held_sig(held):
-        if held is None or not hasattr(held, "held"):
-            return None if held is None else id(held)
-        return tuple(sorted((side, id(rec), rec["kind"]) for side, rec in held.held.items()))
+    def _state_vec(state):
+        return np.concatenate([np.asarray(state.base_xyz, float), np.asarray(state.base_quat, float), [state.pedestal_m, state.finger_left, state.finger_right]])
 
-    def _asleep(self, raw, last, state):
-        tab, dt = self.tab, self._dt
-        dq = np.maximum(np.abs(raw - self.q), np.abs(last - self.q))
-        tr = np.einsum("ki,ki->k", self.lever, dq[self.side])
-        quat = np.asarray(state.base_quat, float)
-        turn = 2.0 * np.arccos(min(1.0, abs(float(quat @ self.quat))))
-        common = (float(np.linalg.norm(np.asarray(state.base_xyz, float) - self.base)) + turn * self.base_reach
-                  + float(np.abs(np.array([state.pedestal_m, state.finger_left, state.finger_right]) - self.other).sum()))
-        lb = self.lb - tr[tab.I] - tr[tab.J] - common
-        step = np.einsum("ki,ki->k", self.lever, np.abs(raw - last)[self.side])
-        ub = gap_rule.required_gap_next_array(lb, tab.margin, dt) - lb + step[tab.I] + step[tab.J]
-        return (lb >= tab.release + ta.BOUND_SLACK_M) & (ub <= cfg.RESOLVER["trigger_m"] - ta.BOUND_SLACK_M)
+    def _push(self, idx, ticks):
+        self.wake[idx] = ticks
+        for p, w in zip(idx.tolist(), np.broadcast_to(ticks, idx.shape).tolist()):
+            heapq.heappush(self.heap, (w, p))
 
     def awake(self, res, raw, last, state, world, held):
-        """The mask of the pairs that must be looked at this tick, or None when there is no valid reference (look at every pair).
-        An all-False mask means every pair is asleep."""
-        if not SLEEP["enabled"] or self.tab is None or not gap_rule.bounds_valid(res.dt):
+        """The mask of the pairs that woke this tick, or None (look at every pair: no valid schedule). All False = pass-through."""
+        self.now += 1
+        if not cfg.SLEEP["enabled"] or self.tab is None or not gap_rule.bounds_valid(res.dt):
             return None
-        w = self.w
-        if len(w["objs"]) != len(world) or not all(a is b or a == b for a, b in zip(w["objs"], world)) or self._held_sig(held) != self.held_sig:
+        objs = self.w_objs
+        same_ids = len(objs) == len(world) and all(a.id == b.id for a, b in zip(objs, world))
+        if (not same_ids or self._held_sig(held) != self.held_sig or self._settings != self._settings_now()
+                or not np.allclose(last, self.q_ref, rtol=0.0, atol=1e-9)):
             self.reset()
             return None
-        if self._settings != self._settings_now():
-            self.reset()
-            return None
-        self._dt = res.dt
-        mask = ~self._asleep(np.asarray(raw, float), np.asarray(last, float), state)
-        self.n_awake = int(mask.sum())
+        tab, now = self.tab, self.now
+        moved = [i for i, (a, b) in enumerate(zip(objs, world)) if a != b]
+        if moved:                                           # an object moved: its pairs wake now
+            hit = np.isin(tab.I, [tab.n_robot + i for i in moved]) | np.isin(tab.J, [tab.n_robot + i for i in moved])
+            self._push(np.flatnonzero(hit), now)
+            self.w_objs = list(world)
+        mask = np.zeros(len(tab), dtype=bool)
+        while self.heap and self.heap[0][0] <= now:
+            w, p = heapq.heappop(self.heap)
+            if self.wake[p] == w:
+                mask[p] = True
+        step_cap = cfg.SLEEP["joint_speed_rad_s"] * res.dt * (1.0 + cfg.SLEEP["safety_buffer"]) + 1e-12
+        fast = np.abs(np.asarray(raw, float) - np.asarray(last, float)).max(axis=1) > step_cap       # per arm: the command step is faster than the bound
+        mask |= (tab.uses_side[0] & fast[0]) | (tab.uses_side[1] & fast[1])
+        sv = self._state_vec(state)
+        if float(np.abs(sv - self.state_vec).sum()) > cfg.SLEEP["state_change_m"]:
+            mask[:] = True
+        self.state_vec = sv
+        self.q_ref = np.array(raw, float)                  # the next tick's last command if the filter passes the raw command on (after_tick sets it otherwise)
+        self.n_ticks += 1
+        self.n_checked += int(mask.sum())
         return mask
 
-    def _settings_now(self):
-        from src.safety_filter.shapes import never_close_pairs
-        return (tuple(sorted(cfg.MARGINS.items())), cfg.NEVER_TOUCH_MARGIN_M, cfg.PUSH_START_BEYOND_M, cfg.PUSH_STOP_BEYOND_M, tuple(cfg.TORSO_EXEMPT_PARTS),
-                id(never_close_pairs()), cfg.GAP_RULE["mode"], cfg.GAP_RULE["approach_per_s"], cfg.GAP_RULE["max_grow_speed_m_s"], cfg.RESOLVER["trigger_m"])
-
-    def after_tick(self, t):
-        """Called at the end of a tick that built its poses: takes a new reference when there is none or when too many pairs have woken."""
-        if not SLEEP["enabled"] or not t._bounds_ok:
+    def after_tick(self, t, q):
+        """Reschedules the pairs looked at this tick (all of them when the tick looked at every pair), from a lower bound of each pair's
+        gap at the pose q the filter returns."""
+        if not cfg.SLEEP["enabled"] or not t._bounds_ok:
             return
-        if self.tab is None or self.tab is not t.tab or self.n_awake - self.awake0 >= SLEEP["reref_extra_awake"]:
-            self._dt = t.res.dt
-            self._settings = self._settings_now()
-            self.reference(t)
-            self.n_awake = self.awake0
+        tab = t.tab
+        fresh = self.tab is not tab
+        if fresh:
+            self.tab, self.w_objs, self.held_sig, self._settings = tab, list(t.world_objects), self._held_sig(t.held), self._settings_now()
+            vitem = self._static_lever(t).sum(axis=1) * cfg.SLEEP["joint_speed_rad_s"]
+            self.vpair = vitem[tab.I] + vitem[tab.J]
+            self.wake = np.zeros(len(tab), dtype=np.int64)
+            self.heap = []
+            self.n_ticks += 1
+            self.n_checked += len(tab)
+            held_pair = ((tab.I >= tab.st_n_spec) & (tab.I < tab.n_robot)) | ((tab.J >= tab.st_n_spec) & (tab.J < tab.n_robot))
+            self.ptype = np.where(held_pair, 3, np.where((tab.item_side[tab.I] >= 0) & (tab.item_side[tab.J] >= 0), 0, np.where(tab.J >= tab.n_robot, 2, 1)))
+            if self.hist is None:
+                self.hist = np.zeros((4, cfg.SLEEP["stats_cap_ticks"] + 1), dtype=np.int64)
+        redo = np.ones(len(tab), dtype=bool) if (fresh or t.woke_all or t.awake0 is None) else t.awake0
+        self.state_vec = self._state_vec(t.state)
+        self.q_ref = np.array(q, float)
+        P = t._place(np.asarray(q, float))
+        idx = np.flatnonzero(redo)
+        lb = ta.box_separation(tab, P)[idx].copy()
+        near = lb < tab.release[idx] + ta.BOUND_SLACK_M
+        if near.any():
+            lo, _ = ta.approx_gaps(tab, P, idx[near])
+            lb[near] = np.maximum(lb[near], lo)
+        rem = lb - tab.release[idx]
+        cost = np.maximum(self.vpair[idx] * t.res.dt * (1.0 + cfg.SLEEP["safety_buffer"]), 1e-12)
+        n = np.where(rem > 0.0, np.minimum(np.floor(rem / cost), cfg.SLEEP["stats_cap_ticks"]), 0).astype(np.int64)
+        n = np.maximum(n, 1)                                 # a pair inside its release distance, or with no whole tick to spare, is looked at every tick
+        self._push(idx, self.now + n)
+        np.add.at(self.hist, (self.ptype[idx], n), 1)
+
+    def report(self):
+        """The distribution of the wakeup intervals (ticks) per pair type and the mean number of pairs looked at per tick."""
+        out = {"mean_pairs_checked_per_tick": (self.n_checked / self.n_ticks if self.n_ticks else None), "pairs": None if self.tab is None else len(self.tab)}
+        if self.hist is None:
+            return out
+        for k, name in enumerate(("arm_vs_arm", "arm_vs_body", "arm_vs_world", "held_object")):
+            h = self.hist[k]
+            tot = int(h.sum())
+            if tot:
+                cum = np.cumsum(h)
+                out[name] = {"n": tot, "mean": float((h * np.arange(len(h))).sum() / tot), "median": int(np.searchsorted(cum, tot / 2.0)), "max": int(np.flatnonzero(h)[-1])}
+        return out

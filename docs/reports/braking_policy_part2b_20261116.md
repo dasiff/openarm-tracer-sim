@@ -19,6 +19,7 @@ Date: 2026-11-16. Branch safety-filter, not pushed. Written for David. Phase A i
 | 38b8c7b | Step 9: bridge override with error log |
 | 8a06433, 7fd15cf, c5017c6, 7e57688 | Layer repairs found while setting up step 10 (section 4.3) |
 | 726eac5, dbd005a, e7f8d16, 8561be9 | Look-ahead repairs and the hotplate adapter fix (section 4.3), experiment switch |
+| (latest commits of the branch) | Latch guard, restart rule (a stricter rule deadlocked the pick and was reverted), progress notes |
 | 78136c2, e512bc7, c7da54e, 611370e, 5335355, 2edbec8, e4fa71d | Integration driver, analysis tool, progress notes (WIP commits) |
 
 ## 3. Derived constants (placeholders: cap 0.20 m/s, accel 0.50 m/s^2, jerk 2.00 m/s^3)
@@ -65,7 +66,7 @@ Look-ahead failure (stopping distance exceeds the room by more than `emergency_o
 
 ## 5. Tests
 
-Run on the final code: braking_test 70 PASS, braking_b_test 60 PASS, plugin 18, touch 57, never_touch 14, kong_style 39, resolver 38, gap_rule 18, link_rules 66, structure 7, shapes 1, distance 1: all exit 0. Two fail for reasons not caused by this work: `safety_filter_spec_test` (the check "the closing right arm moves" fails identically on the Phase A baseline, exit 1) and `safety_filter_sequential_push_test` (needs data/safety_filter/kong_single_pair_fixtures.json, which does not exist). The full suite (about an hour) was not run.
+Run on the final code: braking_test 72 PASS, braking_b_test 60 PASS, plugin 18, touch 57, never_touch 14, kong_style 39, resolver 38, gap_rule 18, link_rules 66, structure 7, shapes 1, distance 1: all exit 0. Two fail for reasons not caused by this work: `safety_filter_spec_test` (the check "the closing right arm moves" fails identically on the Phase A baseline, exit 1) and `safety_filter_sequential_push_test` (needs data/safety_filter/kong_single_pair_fixtures.json, which does not exist). The full suite (about an hour) was not run.
 
 Step 7 tests: catalog flags; `held-surface` zero margin with the surface named; `held-world` margin; fingers exempt; held 5 mm above and touching the hotplate; identity by name, by pad, name vs pad disagreement, unknown name, empty gripper, release. Step 8: reach equals an independent calculation and follows the tool offset; cutoffs widened and kept where smaller; sleep at worst_stop_dist - 1 cm awake and, for a part without joints, at +1 cm asleep; with arm lag the sleep needs the lag and the drift allowance on top; drift wake; feed candidates; ceiling slow-down (arrives at the ceiling, within the limits). Step 9: forced failure sets the override and the error log; a normal approach never does; the bridge function jumps only when needed; the plug-in passes the request on once.
 
@@ -73,10 +74,10 @@ Step 7 tests: catalog flags; `held-surface` zero margin with the surface named; 
 
 | Run | Margin held-vs-surface | Jerk source | Wall | Outcome | Calls |
 |---|---|---|---|---|---|
-| brkG_plain_sent | 0.0 (decided) | sent | no | PLAN_FAILED (DOWN 29 mm short, then retry) | 13335 |
-| brkH_plain_sent | -0.04 (EXPERIMENT) | sent | no | **SUCCESS** | 8280 |
-| brkH_plain_state | -0.04 (EXPERIMENT) | state | no | PLAN_FAILED (BACK blocked, 45.6 mm) | 9399 |
-| brkH_wall_sent | -0.04 (EXPERIMENT) | sent | yes | PLAN_FAILED (DOWN 8.2 mm short) | 10094 |
+| brkG_plain_sent | 0.0 (decided) | sent | no | PLAN_FAILED (DOWN 29 mm short, then retry); run on the code of commit e7f8d16 | 13335 |
+| brkJ_plain_sent | -0.04 (EXPERIMENT) | sent | no | **SUCCESS** (100.7 s plan; 8280 calls) | 8280 |
+| brkJ_plain_state | -0.04 (EXPERIMENT) | state | no | PLAN_FAILED (BACK blocked, 45.6 mm) | 9399 |
+| brkJ_wall_sent | -0.04 (EXPERIMENT) | sent | yes | PLAN_FAILED (DOWN 8.2 mm short) | 10094 |
 
 The experiment margin only exists to let the rounded capsule bottom reach the plate (switch `--held-surface-margin`; the config default stays 0.0). Recordings: data/braking_episode/<run>/ and data/safety_filter/plugin_runs/<run>.npz.
 
@@ -86,17 +87,17 @@ Checks of the brief:
 |---|---|
 | Hand speed never above hand_speed_cap_m_s (0.20) | **Yes** in every run: commanded peak 0.1785 to 0.1974 m/s, measured peak 0.160 to 0.180 m/s (brkG reached 0.273 measured in its failing second attempt; its commanded series stayed at 0.197) |
 | Acceleration and jerk within limits | **No** (section 5.2) |
-| Beaker stops smoothly at the midpoint | **Partly**: wall run, from a peak of 0.152 m/s the beaker braked over 1.47 s and stopped with 9.82 mm gap, target 5 mm: 4.8 mm early; smooth (no single-tick drop above accel_limit x dt in the layer's own tests). It then restarted: 0.076 m/s one second after the wall was removed. The bench itself was never approached closely in the scripted task (the wall is a test hook) |
+| Beaker stops smoothly at the midpoint | **Not at the midpoint.** Wall run: from a peak of 0.152 m/s the beaker braked on the S-curve (1.47 s from the peak to rest, braking started at a gap of 41 mm) and first stopped at a gap of 3.7 mm (target 5 mm: 1.3 mm past it, 3.7 mm from the surface). It then restarted and crept (stop-go, up to 106 mm/s for a moment) to a minimum gap of **-1.4 mm** (the conservative beaker capsule overlapping the wall model), and was finally pushed back by the resolver's gap rule to 9.5 to 9.8 mm (the margin boundary, 10 mm). After the wall was removed it speeds up again: 0.076 m/s one second later. The bench itself was never approached closely in the scripted task (the wall is a test hook) |
 | Beaker reaches the hotplate at the approach ceiling | **Partly**: with the decided margin the ceiling engaged on 652 ticks and the beaker slowed to 0.050 m/s by a gap of 12 mm and to 3.6 mm/s at 0.3 mm (then blocked, finding 1). With the experiment margin it never had to engage: the scripted DOWN already approaches at about the ceiling value (commanded 0.0525 m/s within 5 mm, measured up to 0.082 m/s) |
 | No bridge override errors | **No for the "sent" source**: 3 look-ahead failures at t = 77.77 s (palm and link 7 against the bench, 22 to 27 mm gap, 0.03 m/s), all one tick; the "state" source had none. No `[bridge] ERROR` lines in any run (the jump was within the bridge's usual limits) and 0 bridge log events |
-| Closest distances | held-vs-hotplate (capsule) -29 mm at contact with the experiment margin, speed 6e-6 m/s commanded at the closest tick; wall run: 9.82 mm to the wall (min while present 0.0014 m below zero is the analysis geometry before the stop; the stop itself was at 9.82 mm) |
-| Filter time per call | sent runs mean 4.7 ms (p95 10.3, max 60); runs with HOLD ticks mean 12.5 to 27.6 ms (max 344 ms) |
+| Closest distances | held-vs-hotplate (capsule) -29 mm at contact with the experiment margin, speed 6e-6 m/s commanded at the closest tick; wall run: minimum -1.4 mm to the wall model while it was present, resting at 9.5 to 9.8 mm |
+| Filter time per call | plain sent run mean 4.0 ms (p95 8.3, max 97); runs with HOLD ticks mean 11.0 to 11.9 ms (p95 52 to 96, max 255 ms); the failed default-margin run mean 27.6 ms (max 344 ms) |
 
 ### 5.2 Acceleration and jerk, and the jerk source
 
-Tool point, brkH_plain_sent (whole run): commanded peak acceleration 26.8 m/s^2 and jerk 5421 m/s^3 (the source's own pulsed commands: it advances its clock on some ticks only), 5-tick smoothed 5.3 m/s^2 and 830 m/s^3; **measured** (the physical arm, which the bridge smooths): peak 1.33 m/s^2, jerk 242 m/s^3, p99 jerk 5.1 m/s^3; smoothed 0.54 m/s^2. Limits are 0.5 m/s^2 and 2 m/s^3. The layer does not shape free motion under the cap, so these are the source's and the bridge's numbers. The layer's own S-curves (braking, restart, ceiling, HOLD) are within the limits in the tests.
+Tool point, brkJ_plain_sent (whole run): commanded peak acceleration 26.8 m/s^2 and jerk 5421 m/s^3 (the source's own pulsed commands: it advances its clock on some ticks only), 5-tick smoothed 5.3 m/s^2 and 830 m/s^3; **measured** (the physical arm, which the bridge smooths): peak 1.33 m/s^2, jerk 242 m/s^3, p99 jerk 5.1 m/s^3; smoothed 0.54 m/s^2. Limits are 0.5 m/s^2 and 2 m/s^3. The layer does not shape free motion under the cap, so these are the source's and the bridge's numbers. The layer's own S-curves (braking, restart, ceiling, HOLD) are within the limits in the tests.
 
-Jerk source comparison (brkH_plain_sent against brkH_plain_state; first 95 s of sim time, before the state run diverged; the default stays "sent"):
+Jerk source comparison (brkJ_plain_sent against brkJ_plain_state; first 95 s of sim time, before the state run diverged; the default stays "sent"):
 
 | Series (peak jerk m/s^3) | sent | state |
 |---|---|---|
@@ -116,9 +117,10 @@ The two sources give **no visible difference in the free-motion series**. The vi
 4. **The commanded series of the scripted sources is pulsed**, so "sent" is a poor basis for acceleration; the "state" source behaves better in the look-ahead but its run failed for the reason in 2. Default left on "sent" as you asked.
 5. **The scripted manipulation does not emit `held_object`**; identity came from the pad match in all runs.
 6. The look-ahead brakes for the **closing component** of the speed (`lookahead_speed` "closing"); the whole hand speed ("full") stopped a hand that only moved along the bench (a false emergency in the first plain run).
-7. Sleep: with the arm lag added, "an obstacle at worst_stop_dist + 1 cm can sleep" holds only for parts without joints (shoulder mounts); for arm parts the sleep threshold is worst_stop_dist + lag + drift allowance. Tested both ways.
-8. The wall test hook (a time-based plan keeps running while the arm is held) failed the DOWN step in both wall runs by 8 to 13 mm; the beaker stop and restart themselves worked.
-9. The Part 1 report said the hotplate enters the filter as a world object; in the live run it did not until now (finding in section 1).
+7. **The stop target lies inside the resolver's push-out zone.** The look-ahead stops the hand at the midpoint of the margin (5 mm for a 10 mm margin), but the gap rule inside the resolver (unchanged, as decided) treats every gap below the margin as a violation to push out of. So the hand cannot rest at the midpoint: it settles at the margin boundary (9.5 to 9.8 mm in the wall run). Also, when the stop comes early (the S-curve stops 2 to 3 cm short of the target because the formula is cautious), the hand restarts and approaches in stop-go steps; a stricter restart rule deadlocked the pick (the hand stopped 23 mm early for the bench and never restarted: brkI run, outcome PLAN_FAILED at IN, 72.5 mm short), so the one-tick-cushion restart stayed. A speed limit that falls with the remaining room would approach smoothly; that changes the algorithm, so it is yours to decide.
+8. Sleep: with the arm lag added, "an obstacle at worst_stop_dist + 1 cm can sleep" holds only for parts without joints (shoulder mounts); for arm parts the sleep threshold is worst_stop_dist + lag + drift allowance. Tested both ways.
+9. The wall test hook (a time-based plan keeps running while the arm is held) failed the DOWN step in both wall runs by 8 to 13 mm; the beaker stop and restart themselves worked.
+10. The Part 1 report said the hotplate enters the filter as a world object; in the live run it did not until now (finding in section 1).
 
 ## 7. Config values added (all in config.py, placeholders marked "PLACEHOLDER — tuned by test")
 

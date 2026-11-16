@@ -27,24 +27,51 @@ def stopping_distance(v, a0, a_lim, j_lim, cushion=0.0):
 
 
 class JerkRamp:
-    """Jerk-limited speed ramp: moves (v, a) toward a target speed with |a| <= a_lim and |da/dt| <= j_lim, giving an S-shaped speed curve
-    both when speeding up and when slowing down. One call = one tick."""
+    """Jerk-limited speed ramp: moves (v, a) toward a target speed with |a| <= a_lim and |da| <= j_lim*dt per tick, giving an S-shaped
+    speed curve both when speeding up and when slowing down. One call = one tick. Discrete and exact: the acceleration chosen each tick is
+    the largest one from which ramping the acceleration back to 0 at the jerk limit still ends at or below the target speed, so the
+    acceleration reaches 0 smoothly (no snap) when the speed arrives."""
+
+    LAND_TOL = 1e-5   # m/s: this close to the target (with the acceleration within one jerk step of 0) the speed lands on it
 
     def __init__(self, a_lim, j_lim, dt):
         self.a_lim, self.j_lim, self.dt = float(a_lim), float(j_lim), float(dt)
 
+    def _ramp_down_gain(self, a):
+        """Speed gained (or lost, for a < 0) while the acceleration a is ramped to 0 at the jerk limit, one trapezoid per tick."""
+        sgn = 1.0 if a >= 0 else -1.0
+        a = abs(a)
+        d = self.j_lim * self.dt
+        n = math.floor(a / d)
+        r = a / d - n
+        return sgn * self.dt * (n * a - d * n * n / 2.0 + r * d / 2.0)
+
     def step(self, v, a, v_target):
-        """Returns (v_new, a_new) after one tick. The acceleration wanted is the largest one from which the jerk limit can still bring the
-        acceleration to 0 exactly when the speed reaches the target: sign(dv) * sqrt(2 j |dv|), capped at a_lim; the acceleration then
-        follows it by at most j*dt per tick."""
-        dt, j = self.dt, self.j_lim
-        dv = v_target - v
-        a_des = math.copysign(min(self.a_lim, math.sqrt(2.0 * j * abs(dv))), dv) if dv != 0.0 else 0.0
-        a_new = a + max(-j * dt, min(j * dt, a_des - a))
-        a_new = max(-self.a_lim, min(self.a_lim, a_new))
-        v_new = v + 0.5 * (a + a_new) * dt            # trapezoid: exact for the piecewise linear acceleration
-        if (v_new - v_target) * (v - v_target) < 0.0 or abs(v_new - v_target) < 1e-9:   # crossed or reached the target: land on it
-            v_new, a_new = v_target, 0.0
+        """Returns (v_new, a_new) after one tick."""
+        dt, d = self.dt, self.j_lim * self.dt
+        sgn = 1.0 if v_target >= v else -1.0          # work in the direction of the speed change
+        dv, ap = abs(v_target - v), sgn * a
+        if dv <= self.LAND_TOL and abs(a) <= d + 1e-12:
+            return v_target, 0.0
+        lo, hi = max(ap - d, -self.a_lim), min(ap + d, self.a_lim)
+
+        def total(an):                                  # speed change this tick plus the ramp-down afterwards
+            return 0.5 * (ap + an) * dt + self._ramp_down_gain(an)
+
+        if total(lo) > dv:
+            an = lo                                     # already too fast for the target: bring the acceleration down as fast as allowed
+        elif total(hi) <= dv:
+            an = hi
+        else:
+            for _ in range(60):
+                mid = 0.5 * (lo + hi)
+                if total(mid) <= dv:
+                    lo = mid
+                else:
+                    hi = mid
+            an = lo
+        v_new = v + sgn * 0.5 * (ap + an) * dt
+        a_new = sgn * an
         if v_new < 0.0:
             v_new, a_new = 0.0, 0.0
         return v_new, a_new

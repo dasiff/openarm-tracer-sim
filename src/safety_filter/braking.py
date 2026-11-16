@@ -41,6 +41,10 @@ class BrakingLayer:
         self._prev_pos = None          # (2, 3) tool points of the previous measure() call
         self._prev_speed = None        # (2,) speeds of the previous measure() call
         self.last_measure = None
+        self.ramp = JerkRamp(self.d["effective_accel_limit"], float(self.tun["jerk_limit_m_s3"]), self.dt)
+        self.v = np.zeros(2)           # profile speed of each arm (m/s), the speed of the last command this layer produced
+        self.a = np.zeros(2)           # profile acceleration of each arm (m/s^2)
+        self._dir = np.zeros((2, 7))   # unit joint direction of each arm's last step (the way it was going; used when stopping)
 
     # ---- step 2: hand speed ----
     def measure(self, q, state):
@@ -69,6 +73,9 @@ class BrakingLayer:
 
     def reset(self):
         self._prev_pos = self._prev_speed = self.last_measure = None
+        self.v[:] = 0.0
+        self.a[:] = 0.0
+        self._dir[:] = 0.0
 
     # ---- step 3: hand speed cap ----
     def scale_step(self, i, q_from, step, speed, state):
@@ -111,3 +118,45 @@ class BrakingLayer:
                 out[i] = last[i] + self.scale_step(i, last, raw[i] - last[i], capv, state)
                 capped[i] = True
         return out, capped
+
+    # ---- step 4: S-curve profile with the jerk limit ----
+    def _va(self, i):
+        """Speed and acceleration the ramp starts from: the profile of the commands sent ("sent"), or the measured ones ("state")."""
+        if self.tun["speed_source"] == "state" and self.last_measure is not None:
+            return float(self.last_measure["speed"][i]), float(self.last_measure["accel"][i])
+        return float(self.v[i]), float(self.a[i])
+
+    def step(self, last, raw, state, stop=None, speed_limit=None):
+        """One tick of the profile. Each arm's speed moves toward its target through the jerk-limited ramp (S-shaped both ways); the joint
+        step is the commanded direction scaled to the ramp's speed.
+        stop: (2,) bool or None; True = target speed 0 along the way the arm was going (a stop; the command is not followed).
+        speed_limit: (2,) extra speed limit per arm (m/s) or None (used by the look-ahead for allowed-contact surfaces).
+        Otherwise the target is min(commanded speed, hand speed cap); the arm never goes past the commanded pose. Returns (command (2,7), info)."""
+        last, raw = np.asarray(last, float), np.asarray(raw, float)
+        out = last.copy()
+        stop = np.zeros(2, bool) if stop is None else np.asarray(stop, bool)
+        vs = self.commanded_speed(last, raw, state)
+        capv = float(self.tun["hand_speed_cap_m_s"])
+        for i in range(2):
+            v0, a0 = self._va(i)
+            delta = raw[i] - last[i]
+            if stop[i] or not np.any(delta):
+                direction = self._dir[i]
+                target = 0.0 if stop[i] else 0.0
+            else:
+                direction = delta
+                target = min(float(vs[i]), capv)
+            if speed_limit is not None:
+                target = min(target, float(speed_limit[i]))
+            v1, a1 = self.ramp.step(v0, a0, target)
+            if not np.any(direction):
+                v1, a1 = 0.0, 0.0
+            step = self.scale_step(i, last, direction, v1, state) if v1 > 0.0 else np.zeros(7)
+            if not stop[i] and np.any(step) and np.linalg.norm(step) > np.linalg.norm(delta):   # never past the commanded pose
+                step = delta
+            out[i] = last[i] + step
+            n = np.linalg.norm(step)
+            if n > 0:
+                self._dir[i] = step / n
+            self.v[i], self.a[i] = v1, a1
+        return out, {"speed": self.v.copy(), "accel": self.a.copy()}

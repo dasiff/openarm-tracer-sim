@@ -138,6 +138,56 @@ slow[0, 0] += 0.0005
 out, capped = real2.cap(home, slow, st)
 check("speed cap (real model): a slow command passes unchanged", np.array_equal(out, slow) and not capped.any())
 
+# ---- step 4: S-curve profile, jerk limit ----
+A_LIM = cfg.BRAKING_DERIVED["effective_accel_limit"]
+J_LIM = cfg.BRAKING["jerk_limit_m_s3"]
+EPS = 1e-9
+
+
+def run_profile(layer, ticks, stop_from=None):
+    """Feeds a source that always wants far more than the cap (a 'step' to full speed), then optionally a stop; returns per-tick (v, a, pos)."""
+    last = np.zeros((2, 7))
+    rec = []
+    for k in range(ticks):
+        raw = last.copy()
+        raw[0, 0] += 0.5                       # far ahead: the wanted speed is 0.5 * 0.5 / dt = way above the cap
+        stop = np.array([stop_from is not None and k >= stop_from, False])
+        out, info = layer.step(last, raw, None, stop=stop)
+        rec.append((float(layer.v[0]), float(layer.a[0]), float(out[0, 0] * 0.5)))
+        last = out
+    return np.array(rec)
+
+
+Lp = BrakingLayer(fake_tool)
+rec = run_profile(Lp, 400)
+v, a = rec[:, 0], rec[:, 1]
+jerk = np.diff(np.concatenate([[0.0], a])) / DT
+check("S-curve up: speed never above the cap and ends on it", v.max() <= CAPV + EPS and abs(v[-1] - CAPV) < 1e-9, f"{v.max()} {v[-1]}")
+check("S-curve up: speed never decreases", np.all(np.diff(v) >= -EPS))
+check("S-curve up: acceleration never above the limit", a.max() <= A_LIM + EPS and a.min() >= -EPS, f"{a.max()}")
+check("S-curve up: jerk never above the limit", np.abs(jerk).max() <= J_LIM + 1e-6, f"{np.abs(jerk).max()}")
+k_top = int(np.argmax(a >= A_LIM - EPS))
+plateau = int(np.sum(a >= A_LIM - EPS))
+check("S-curve up: acceleration ramps up, holds at the limit, ramps down (S shape)",
+      a[0] < A_LIM / 2 and a[k_top - 1] < A_LIM and plateau >= 5 and a[-1] == 0.0 and np.all(np.diff(a[:k_top + 1]) >= -EPS) and np.all(np.diff(a[k_top + plateau:]) <= EPS),
+      f"top {k_top} plateau {plateau}")
+fd_acc = np.diff(np.concatenate([[0.0], v])) / DT
+check("S-curve up: acceleration seen by finite difference of the speed also within the limit", fd_acc.max() <= A_LIM + 1e-6)
+Lp2 = BrakingLayer(fake_tool)
+rec2 = run_profile(Lp2, 600, stop_from=300)
+v2, a2, pos2 = rec2[:, 0], rec2[:, 1], rec2[:, 2]
+jerk2 = np.diff(np.concatenate([[0.0], a2])) / DT
+check("S-curve down: reached the cap before the stop", abs(v2[299] - CAPV) < 1e-9)
+check("S-curve down: speed ends at 0, never negative, never rises", v2[-1] == 0.0 and v2.min() >= 0.0 and np.all(np.diff(v2[300:]) <= EPS))
+check("S-curve down: acceleration within the limit (braking side)", a2[300:].min() >= -A_LIM - EPS and a2[300:].max() <= EPS, f"{a2[300:].min()}")
+check("S-curve down: jerk within the limit", np.abs(jerk2).max() <= J_LIM + 1e-6, f"{np.abs(jerk2).max()}")
+kb = 300 + int(np.argmax(a2[300:] <= -A_LIM + EPS))
+check("S-curve down: acceleration ramps to -limit, holds, ramps back to 0",
+      np.sum(a2[300:] <= -A_LIM + EPS) >= 5 and a2[-1] == 0.0 and a2[kb - 1] > -A_LIM, f"plateau {np.sum(a2[300:] <= -A_LIM + EPS)}")
+dist = pos2[-1] - pos2[299]
+want = stopping_distance(CAPV, 0.0, A_LIM, J_LIM, CAPV * DT)
+check("S-curve down: stopping distance within the formula's distance", dist <= want + 1e-9, f"{dist:.5f} vs {want:.5f}")
+
 if __name__ == "__main__":
     print(f"\n{len(fails)} failed" if fails else "\nall passed")
     sys.exit(1 if fails else 0)

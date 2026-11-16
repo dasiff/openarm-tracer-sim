@@ -26,6 +26,25 @@ def stopping_distance(v, a0, a_lim, j_lim, cushion=0.0):
     return d1 + d2 + float(cushion)
 
 
+def stopping_time(v, a0, a_lim, j_lim):
+    """Time the same two-step stop takes (ease off a0, then brake from v1): a0/j + (v1/a + a/j, or 2 sqrt(v1/j))."""
+    v = max(0.0, float(v))
+    a0 = max(0.0, float(a0))
+    a, j = float(a_lim), float(j_lim)
+    v1 = v + a0 * a0 / (2.0 * j)
+    t2 = v1 / a + a / j if v1 >= a * a / j else 2.0 * math.sqrt(v1 / j)
+    return a0 / j + t2
+
+
+def slowing_distance(v, a0, c, a_lim, j_lim, cushion=0.0):
+    """Distance the hand travels while it slows from speed v (acceleration a0) to the ceiling c and arrives at c with zero acceleration:
+    the stopping distance of the excess speed (v - c) plus c times the slowing time, plus the cushion. 0 if v <= c."""
+    if v <= c:
+        return 0.0
+    u = v - c
+    return stopping_distance(u, a0, a_lim, j_lim, 0.0) + c * stopping_time(u, a0, a_lim, j_lim) + float(cushion)
+
+
 class JerkRamp:
     """Jerk-limited speed ramp: moves (v, a) toward a target speed with |a| <= a_lim and |da| <= j_lim*dt per tick, giving an S-shaped
     speed curve both when speeding up and when slowing down. One call = one tick. Discrete and exact: the acceleration chosen each tick is

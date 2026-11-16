@@ -70,8 +70,9 @@ def table():
             check(name, isinstance(r, Exempt), f"-> exempt ({getattr(r, 'reason', '')})")
         else:
             ok = isinstance(r, Rule) and r.kind == kind and abs(r.margin - margin) < 1e-12
-            ok = ok and abs(r.activation - (margin + cfg.PUSH_START_BEYOND_M)) < 1e-12
-            ok = ok and abs(r.release - (margin + cfg.PUSH_STOP_BEYOND_M)) < 1e-12
+            wake = cfg.derived()["worst_stop_dist_m"]       # Part 2: every cutoff is max(its old value, the worst stopping distance)
+            ok = ok and abs(r.activation - max(margin + cfg.PUSH_START_BEYOND_M, wake)) < 1e-12
+            ok = ok and abs(r.release - max(margin + cfg.PUSH_STOP_BEYOND_M, wake)) < 1e-12
             check(name, ok, f"-> {getattr(r, 'kind', r)} margin {getattr(r, 'margin', 0) * 100:.0f} cm")
 
 

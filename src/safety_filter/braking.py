@@ -10,9 +10,11 @@ from dataclasses import replace
 import numpy as np
 
 from src.safety_filter import config as cfg
-from src.safety_filter.braking_math import JerkRamp, stopping_distance
+from src.safety_filter.braking_math import JerkRamp, slowing_distance, stopping_distance
+from src.safety_filter.touch import Exempt, as_placed, gap_between, pair_rule, wake_dist
 
 SIDES = ("left", "right")
+HAND_SHAPE_PARTS = ("palm", "finger", "link7", "held")      # the shapes of one arm the look-ahead brakes for (the hand and what it holds)
 
 
 def make_tool_fn(shapes, offset=None):
@@ -31,6 +33,74 @@ def make_tool_fn(shapes, offset=None):
     return tool_fn
 
 
+class ObstacleFeed:
+    """The look-ahead's obstacle query. feed(q, state) -> [None or (gap_m, margin_m, ceiling_m_s or None)] for the two arms: the pair of the
+    arm's hand shapes (palm, fingers, link 7, the held object) with any other shape that has the smallest room (gap - margin/2) at pose q.
+    Every pair within worst_stop_dist_m is considered (the cutoff of each pair rule is widened to at least that); the pair rules are the
+    filter's own (touch.pair_rule), so exemptions, margins and allowed-contact surfaces are the same. The ceiling is set for a held object
+    against an allowed-contact surface (its approach ceiling, config.approach_ceiling)."""
+
+    def __init__(self, shapes):
+        self.shapes = shapes                  # its own RobotShapes (the resolver's kinematics are not shared)
+        self.world, self.held = [], None
+        self._wkey, self._wplaced = None, []
+
+    def bind(self, world_objects, held):
+        """Sets this tick's world objects and held-object tracker."""
+        key = tuple(id(o) for o in world_objects)
+        if key != self._wkey:
+            self._wkey, self._wplaced = key, [as_placed(o) for o in world_objects]
+        self.world, self.held = world_objects, held
+
+    def pairs(self, q, state):
+        """For each arm, every candidate pair within its (widened) cutoff at pose q: a list of (room, gap, margin, ceiling, hand shape id,
+        other shape id)."""
+        q = np.asarray(q, float)
+        items = list(self.shapes.place(replace(state, q_left=tuple(q[0]), q_right=tuple(q[1]))))
+        held = []
+        if self.held is not None:
+            for side in SIDES:
+                pos, rot = self.shapes.hand_frame(side)
+                hs = self.held.placed(side, pos, rot)
+                if hs is not None:
+                    held.append(hs)
+        allp = items + held + list(self._wplaced)
+        lo = np.array([_aabb(x)[0] for x in allp])
+        hi = np.array([_aabb(x)[1] for x in allp])
+        out = [[], []]
+        for i, side in enumerate(SIDES):
+            for ia, a in enumerate(allp):
+                if a.arm != side or a.part not in HAND_SHAPE_PARTS:
+                    continue
+                for ib, b in enumerate(allp):
+                    if ib == ia or (b.arm == side):
+                        continue
+                    if a.kind == "box" and b.kind == "box":
+                        continue
+                    rule = pair_rule(a, b)
+                    if isinstance(rule, Exempt):
+                        continue
+                    sep = float(np.maximum(lo[ia] - hi[ib], lo[ib] - hi[ia]).max())
+                    if sep > rule.activation:
+                        continue
+                    gap = float(gap_between(a, b)[0])
+                    ceiling = cfg.approach_ceiling(rule.surface) if rule.kind == "held-surface" else None
+                    out[i].append((gap - 0.5 * rule.margin, gap, rule.margin, ceiling, a.id, b.id))
+        return out
+
+    def __call__(self, q, state):
+        out = [None, None]
+        for i, cands in enumerate(self.pairs(q, state)):
+            if cands:
+                best = min(cands, key=lambda c: c[0])
+                out[i] = (best[1], best[2], best[3])
+        return out
+
+
+def _aabb(sh):
+    return sh.aabb()
+
+
 class BrakingLayer:
     def __init__(self, tool_fn, tun=None, bridge=None):
         """tool_fn(q (2, 7), state) -> (2, 3). tun: tunables (default config.BRAKING); the derived constants are computed once here."""
@@ -45,6 +115,7 @@ class BrakingLayer:
         self.v = np.zeros(2)           # profile speed of each arm (m/s), the speed of the last command this layer produced
         self.a = np.zeros(2)           # profile acceleration of each arm (m/s^2)
         self._braking = np.zeros(2, bool)   # look-ahead latch: this arm is braking for an obstacle
+        self._ceiling = np.zeros(2, bool)   # look-ahead latch: this arm is held to an allowed-contact surface's approach ceiling
         self._dir = np.zeros((2, 7))   # unit joint direction of each arm's last step (the way it was going; used when stopping)
 
     # ---- step 2: hand speed ----
@@ -78,6 +149,7 @@ class BrakingLayer:
         self.a[:] = 0.0
         self._dir[:] = 0.0
         self._braking[:] = False
+        self._ceiling[:] = False
 
     # ---- step 3: hand speed cap ----
     def scale_step(self, i, q_from, step, speed, state):
@@ -167,43 +239,61 @@ class BrakingLayer:
     def check(self, last, raw, state, obstacle_fn):
         """The look-ahead, part of the safety check: for each arm, can the hand still brake from its current speed and acceleration to the
         stop target (the midpoint of the margin: margin/2 from the modelled surface) within the gap to the nearest obstacle?
-        obstacle_fn(q (2,7), state) -> [None or (gap_m, margin_m)] for the two arms: the nearest obstacle of that arm's hand at pose q
-        (gap between the modelled surfaces; the caller makes sure every obstacle within worst_stop_dist_m is in it).
+        obstacle_fn(q (2,7), state) -> [None or (gap_m, margin_m[, ceiling_m_s])] for the two arms (ObstacleFeed): the nearest obstacle of that
+        arm's hand at pose q; every obstacle within worst_stop_dist_m is in it. A ceiling marks an allowed-contact surface (zero margin).
         An arm brakes when the stopping distance (config two-step formula + tick cushion) reaches the distance to the target, and the wanted
         command is closing on that obstacle. A braking arm stays braking while the wanted command keeps closing; it is released when the
         obstacle clears (none, or the command no longer closes), and then speeds up again along the same S-curve.
-        Returns (stop (2,) bool, info list of dicts)."""
+        For an allowed-contact surface the hand is not stopped: when the distance needed to slow from the current speed to the ceiling
+        reaches the distance to the surface, the speed target becomes the ceiling (through the same jerk-limited ramp).
+        Returns (stop (2,) bool, limit (2,) speed limit in m/s (inf = none), info list of dicts)."""
         last, raw = np.asarray(last, float), np.asarray(raw, float)
         at_last = obstacle_fn(last, state)
         at_raw = obstacle_fn(raw, state)
         eps = float(self.tun["closing_eps_m"])
+        a_eff, jl, cush = self.d["effective_accel_limit"], float(self.tun["jerk_limit_m_s3"]), self.d["tick_cushion_m"]
         stop = np.zeros(2, bool)
+        limit = np.full(2, np.inf)
         info = [None, None]
         for i in range(2):
             ol, orr = at_last[i], at_raw[i]
             if ol is None:
-                self._braking[i] = False
+                self._braking[i] = self._ceiling[i] = False
                 continue
             gap, margin = float(ol[0]), float(ol[1])
+            ceiling = ol[2] if len(ol) > 2 else None
             closing = orr is not None and float(orr[0]) < gap - eps
             v, a = self._va(i)
-            sd = stopping_distance(v, a, self.d["effective_accel_limit"], float(self.tun["jerk_limit_m_s3"]), self.d["tick_cushion_m"])
+            sd = stopping_distance(v, a, a_eff, jl, cush)
             room = gap - 0.5 * margin
-            if self._braking[i] and not closing:
-                self._braking[i] = False                 # the obstacle cleared
-            elif closing and sd >= room:
-                self._braking[i] = True
-            stop[i] = self._braking[i]
-            info[i] = {"gap": gap, "margin": margin, "stop_dist": sd, "room": room, "closing": closing, "braking": bool(self._braking[i])}
-        return stop, info
+            if ceiling is None:
+                self._ceiling[i] = False
+                if self._braking[i] and not closing:
+                    self._braking[i] = False                 # the obstacle cleared
+                elif closing and sd >= room:
+                    self._braking[i] = True
+                stop[i] = self._braking[i]
+            else:
+                self._braking[i] = False
+                c = float(ceiling)
+                if self._ceiling[i] and not closing:
+                    self._ceiling[i] = False
+                elif closing and v > c and slowing_distance(v, a, c, a_eff, jl, cush) >= room:
+                    self._ceiling[i] = True                  # time to slow down to the ceiling
+                if self._ceiling[i]:
+                    limit[i] = c
+            info[i] = {"gap": gap, "margin": margin, "ceiling": ceiling, "stop_dist": sd, "room": room, "closing": closing,
+                       "braking": bool(self._braking[i]), "ceiling_active": bool(self._ceiling[i])}
+        return stop, limit, info
 
     def process(self, last, raw, state, obstacle_fn=None, hold=False):
         """The whole layer for one tick: look-ahead, hand speed cap and S-curve. hold: True (or (2,) bool) = a HOLD trigger (collision,
         timeout, error): both arms follow the S-curve to rest instead of following the command. Returns (command (2,7), info dict)."""
         stop = np.zeros(2, bool)
+        limit = None
         info = [None, None]
         if obstacle_fn is not None:
-            stop, info = self.check(last, raw, state, obstacle_fn)
+            stop, limit, info = self.check(last, raw, state, obstacle_fn)
         stop = stop | np.asarray(hold, bool)
-        out, prof = self.step(last, raw, state, stop=stop)
-        return out, {"stop": stop, "lookahead": info, **prof}
+        out, prof = self.step(last, raw, state, stop=stop, speed_limit=limit)
+        return out, {"stop": stop, "limit": limit, "lookahead": info, **prof}

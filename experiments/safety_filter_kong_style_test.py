@@ -404,6 +404,10 @@ def sec_forced_checks():
     print("11. each check forced to fail gives hold-still with its reason")
     last, raw = left_closing(new_resolver())
     forced = {}
+    # these forced failures set stop_m = -1, which makes EVERY candidate pair need action; Part 2 widens the candidate set to the worst stopping
+    # distance, so the stopping distance is shrunk here and the old cutoffs apply (what this section tests is the hold reasons, not the cutoffs)
+    _shrink = patched(cfg.BRAKING, hand_speed_cap_m_s=0.01, accel_limit_m_s2=0.05)
+    _shrink.__enter__()
     with patched(cfg.__dict__, BRANCH_GUARD_RAD=1e-9):
         forced["BRANCH_GUARD"] = new_resolver().step(raw, last, BASE)
     with patched(cfg.RESOLVER, stop_m=-1.0):
@@ -413,6 +417,7 @@ def sec_forced_checks():
     forced["JOINT_LIMITS"] = r.step(raw, last, BASE)
     with patched(cfg.RESOLVER, accuracy_pos_m=0.0):
         forced["ACCURACY"] = new_resolver().step(raw, last, BASE)
+    _shrink.__exit__(None, None, None)
     for reason, (out, st) in forced.items():
         check(f"{reason}: status HOLD with that reason; the last filtered command comes back",
               st.status == "HOLD" and st.hold_reason == reason and np.array_equal(out, last) and out is not last, f"({st.status} {st.hold_reason})")

@@ -60,8 +60,9 @@ check("palm vs ordinary: margin 0.01 as before", pair_rule(palm, as_placed(ordin
 rep = [r for r in evaluate_pairs([finger], [cat]) if r.b == "cat" or r.a == "cat"]
 check("evaluate_pairs: finger 4 cm from the cat is in margin", len(rep) == 1 and rep[0].in_margin and abs(rep[0].gap - 0.04) < 1e-6, str(rep))
 check("evaluate_pairs: the same finger vs an ordinary object gives no pair", evaluate_pairs([finger], [ordinary]) == [])
-far = cat_at(finger, 0.075)
-check("evaluate_pairs: finger 7.5 cm away is not an active pair (activation 6 cm)", evaluate_pairs([finger], [far]) == [])
+wake = cfg.derived()["worst_stop_dist_m"]                      # Part 2: activation = max(6 cm, the worst stopping distance)
+far = cat_at(finger, max(0.06, wake) + 0.015)
+check("evaluate_pairs: a finger 1.5 cm beyond the (widened) activation distance is not an active pair", evaluate_pairs([finger], [far]) == [])
 mid = cat_at(palm, 0.055)
 rep = evaluate_pairs([palm], [mid])
 check("evaluate_pairs: palm 5.5 cm away is an active pair but not in margin", len(rep) == 1 and not rep[0].in_margin)

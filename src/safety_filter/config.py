@@ -129,6 +129,7 @@ SLEEP = {
     "enabled": True,                # on/off [SF-72]: predictive sleep
     # the joint speed bound is NOT a setting here: the caller passes it to Resolver(joint_speed_rad_s=...), read from the command bridge limit (src/task_config.py COMMAND_BRIDGE_CFG max_joint_velocity_rad_s); without it the sleep is off [SF-72]. A command step faster than that x dt x (1 + safety_buffer) wakes the pairs of that arm for that tick.
     "safety_buffer": 0.20,          # fraction [SF-72]: extra on the speed bound for the capsule fitting error and the looseness of the lever arms (David's value)
+    "drift_budget_m": 0.005,        # m (sum of the base, pedestal and finger changes), PLACEHOLDER — tuned by test [Part 2]: slow drift of the base, pedestal and fingers is added up since a pair was scheduled; a pair wakes when the total passes this, and its sleep length leaves this much room
     "state_change_m": 2.0e-4,       # m [SF-72]: if the base position and orientation (as numbers), the pedestal and the finger travel together change by more than this since the tick before, every pair wakes for that tick (they are not part of the speed bound)
     "command_step_slack_rad": 1.0e-12,   # rad [SF-72]: added to the largest command step allowed by the speed bound, so rounding never turns an exactly-at-the-bound step into a "fast" one
     "same_pose_atol_rad": 1.0e-9,   # rad [SF-72]: the last command counts as "the pose the filter returned the tick before" when every joint is within this
@@ -178,7 +179,7 @@ BRAKING = {
     "approach_ceiling_m_s": {"hotplate": 0.05},  # m/s per allowed-contact surface name (the object id); PLACEHOLDER — tuned by test; a surface not listed gets hand_speed_cap_m_s
     # ---- settings the brief leaves implicit: simplest reading, named so they can change (listed as decisions) ----
     "tick_hz": 150.0,               # Hz: the filter tick = the control loop's source_hz (src/control_loop.py cfg); the jerk limit is counted per tick of this rate
-    "bridge_reach_m": 0.56,         # m, PLACEHOLDER — tuned by test: lever arm that turns the bridge's joint speed cap into a tool speed (shoulder-to-wrist length of the model, Part 1b)
+    "bridge_reach_m": None,         # m: lever arm that turns the bridge's joint speed cap into a tool speed. None = DERIVED at startup from the arm model (sum of the link lengths from joint 1 to the tool point, larger arm); a number overrides it (tests)
     "tool_offset_local_m": (0.0, 0.0, 0.0),  # m in the link 7 frame: tool point = link 7 origin + this (PLACEHOLDER: the tool point is the link 7 origin until David names another)
     "speed_source": "sent",         # text: which joint series the measured speed is taken from: "sent" (the commands the filter sent) or "state" (the measured joints, which lag the command)
     "stop_speed_m_s": 0.002,        # m/s: below this the hand counts as stopped (leaves braking, ends a hold)
@@ -192,12 +193,43 @@ def approach_ceiling(surface, tun=None):
     return float(t["approach_ceiling_m_s"].get(surface, t["hand_speed_cap_m_s"]))
 
 
+_REACH_CACHE = {}
+
+
+def arm_reach_m(tun=None):
+    """The reach of an arm from the robot model, computed once per process: the sum of the link lengths from the first joint's anchor to
+    the last joint's anchor (distances between consecutive arm joint anchors; fixed, pose independent) plus the distance from the last
+    anchor to the tool point (link 7 origin + the tool offset); the larger of the two arms. Used as the lever arm of the bridge cap."""
+    t = BRAKING if tun is None else tun
+    off = tuple(float(x) for x in t["tool_offset_local_m"])
+    if off not in _REACH_CACHE:
+        import mujoco
+        import numpy as np
+        from src.safety_filter.robot_model import load_robot_only_model
+        m = load_robot_only_model()
+        d = mujoco.MjData(m)
+        mujoco.mj_kinematics(m, d)
+        best = 0.0
+        for side in ("left", "right"):
+            jids = [mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_JOINT, f"openarm_{side}_joint{k}") for k in range(1, 8)]
+            anc = d.xanchor[jids]
+            links = float(np.linalg.norm(np.diff(anc, axis=0), axis=1).sum())
+            b = mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_BODY, f"openarm_{side}_link7")
+            R7 = d.xmat[b].reshape(3, 3)
+            tool = d.xpos[b] + R7 @ np.asarray(off)
+            best = max(best, links + float(np.linalg.norm(tool - anc[-1])))
+        _REACH_CACHE[off] = best
+    return _REACH_CACHE[off]
+
+
 def derive(tun=None, bridge=None):
-    """The derived constants of the braking layer, computed from the tunables, the tick rate and the bridge limits (not hard-coded):
-      tick_dt_s, tick_cushion_m (= hand speed cap x tick), effective_accel_limit (= min(accel limit, what the bridge can deliver per tick)),
-      worst_stop_dist_m (stopping distance from the hand speed cap with the acceleration at its limit; the fixed wake radius for pruning and
-      the smallest activation cutoff of the look-ahead).
-    bridge: COMMAND_BRIDGE_CFG-like dict (max_joint_velocity_rad_s); None reads src/task_config.py."""
+    """The derived constants of the braking layer, computed from the tunables, the tick rate, the arm model and the bridge limits (not
+    hard-coded):
+      tick_dt_s, tick_cushion_m (= hand speed cap x tick), bridge_reach_m (from the arm model unless overridden), effective_accel_limit
+      (= min(accel limit, what the bridge can deliver per tick)), worst_stop_dist_m (stopping distance from the hand speed cap with the
+      acceleration at its limit: the fixed wake radius for pruning and the smallest activation cutoff of the look-ahead), arm_lag_rad (the
+      bridge's tracking error limit: how far the measured arm may be from the command).
+    bridge: COMMAND_BRIDGE_CFG-like dict; None reads src/task_config.py."""
     from src.safety_filter.braking_math import stopping_distance
     t = BRAKING if tun is None else tun
     if bridge is None:
@@ -205,12 +237,21 @@ def derive(tun=None, bridge=None):
         bridge = tc.COMMAND_BRIDGE_CFG
     dt = 1.0 / float(t["tick_hz"])
     cap, a, j = float(t["hand_speed_cap_m_s"]), float(t["accel_limit_m_s2"]), float(t["jerk_limit_m_s3"])
-    bridge_tool_speed = float(bridge["max_joint_velocity_rad_s"]) * float(t["bridge_reach_m"])   # m/s the bridge's joint cap allows at the tool, at most
+    reach = t["bridge_reach_m"] if t["bridge_reach_m"] is not None else arm_reach_m(t)
+    bridge_tool_speed = float(bridge["max_joint_velocity_rad_s"]) * float(reach)   # m/s the bridge's joint cap allows at the tool, at most
     a_eff = min(a, bridge_tool_speed / dt)            # the bridge can change the tool speed by at most its own tool speed cap in one tick
     cushion = cap * dt
-    return {"tick_dt_s": dt, "tick_cushion_m": cushion, "effective_accel_limit": a_eff,
-            "bridge_tool_speed_m_s": bridge_tool_speed,
+    return {"tick_dt_s": dt, "tick_cushion_m": cushion, "effective_accel_limit": a_eff, "bridge_reach_m": float(reach),
+            "bridge_tool_speed_m_s": bridge_tool_speed, "arm_lag_rad": float(bridge["max_tracking_error_rad"]),
             "worst_stop_dist_m": stopping_distance(cap, a_eff, a_eff, j, cushion)}
 
 
-BRAKING_DERIVED = derive()   # computed once at import; rebuild with derive() after a tunable changes
+def derived():
+    """derive() for the current tunables (cheap: the arm reach is computed once)."""
+    return derive()
+
+
+def __getattr__(name):                 # BRAKING_DERIVED is computed on first use (it needs the arm model), not at import
+    if name == "BRAKING_DERIVED":
+        return derive()
+    raise AttributeError(name)

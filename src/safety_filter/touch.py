@@ -45,9 +45,16 @@ class Exempt:
     reason: str
 
 
+def wake_dist():
+    """Part 2: worst_stop_dist_m, the derived stopping distance from the hand speed cap (config.derive). Every activation cutoff and
+    release (sleep wake) distance is at least this, so a pair within the stopping distance is awake and checked."""
+    return cfg.derived()["worst_stop_dist_m"]
+
+
 def _rule(kind, margin, surface=""):
-    return Rule(kind=kind, margin=margin, activation=margin + cfg.PUSH_START_BEYOND_M,
-                release=margin + cfg.PUSH_STOP_BEYOND_M, surface=surface)
+    w = wake_dist()
+    return Rule(kind=kind, margin=margin, activation=max(margin + cfg.PUSH_START_BEYOND_M, w),
+                release=max(margin + cfg.PUSH_STOP_BEYOND_M, w), surface=surface)
 
 
 def pair_rule(a: PlacedShape, b: PlacedShape, use_never_close=True):
@@ -177,7 +184,7 @@ def evaluate_pairs(robot_shapes, world_objects):
     if n < 2:
         return []
     lo, hi = _aabb_arrays(items)
-    max_act = max(max(cfg.MARGINS.values()), cfg.NEVER_TOUCH_MARGIN_M if any(o.never_touch for o in world_objects) else 0.0) + cfg.PUSH_START_BEYOND_M
+    max_act = max(max(max(cfg.MARGINS.values()), cfg.NEVER_TOUCH_MARGIN_M if any(o.never_touch for o in world_objects) else 0.0) + cfg.PUSH_START_BEYOND_M, wake_dist())
     I, J = np.triu_indices(n, k=1)
     sep = np.maximum(lo[I] - hi[J], lo[J] - hi[I]).max(axis=1)
     keep = sep <= max_act

@@ -95,7 +95,7 @@ class Statics:
     def table(self, held_shapes, w):
         """The pair table for these held shapes and this world list under the present settings (built once, kept)."""
         from src.safety_filter.shapes import never_close_pairs
-        sig = (tuple((h.id, h.kind, h.arm) for h in held_shapes), w["sig"], tuple(sorted(cfg.MARGINS.items())), cfg.NEVER_TOUCH_MARGIN_M,
+        sig = (round(cfg.derived()["worst_stop_dist_m"], 9), tuple((h.id, h.kind, h.arm) for h in held_shapes), w["sig"], tuple(sorted(cfg.MARGINS.items())), cfg.NEVER_TOUCH_MARGIN_M,
                cfg.PUSH_START_BEYOND_M, cfg.PUSH_STOP_BEYOND_M, tuple(cfg.TORSO_EXEMPT_PARTS), id(never_close_pairs()))
         tab = self._tables.get(sig)
         if tab is None:
@@ -484,6 +484,7 @@ class SleepTimers:
         self.st = statics
         self.hist = None
         self.n_ticks = self.n_checked = 0          # statistics for the profile; kept over resets
+        self.drift_total = 0.0                     # running sum of the per-tick change of the base, pedestal and fingers (Part 2: slow drift adds up)
         self.reset()
 
     def reset(self):
@@ -499,7 +500,7 @@ class SleepTimers:
 
     def _settings_now(self):
         from src.safety_filter.shapes import never_close_pairs
-        return (tuple(sorted(cfg.MARGINS.items())), cfg.NEVER_TOUCH_MARGIN_M, cfg.PUSH_START_BEYOND_M, cfg.PUSH_STOP_BEYOND_M, tuple(cfg.TORSO_EXEMPT_PARTS),
+        return (round(cfg.derived()["worst_stop_dist_m"], 9), tuple(sorted(cfg.MARGINS.items())), cfg.NEVER_TOUCH_MARGIN_M, cfg.PUSH_START_BEYOND_M, cfg.PUSH_STOP_BEYOND_M, tuple(cfg.TORSO_EXEMPT_PARTS),
                 id(never_close_pairs()), tuple(sorted(cfg.GAP_RULE.items())), cfg.RESOLVER["trigger_m"], tuple(sorted(cfg.SLEEP.items())), self._speed)
 
     def _static_lever(self, t):
@@ -528,6 +529,7 @@ class SleepTimers:
 
     def _push(self, idx, ticks):
         self.wake[idx] = ticks
+        self.drift_at[idx] = self.drift_total
         for p, w in zip(idx.tolist(), np.broadcast_to(ticks, idx.shape).tolist()):
             heapq.heappush(self.heap, (w, p))
 
@@ -558,8 +560,11 @@ class SleepTimers:
         fast = np.abs(np.asarray(raw, float) - np.asarray(last, float)).max(axis=1) > step_cap       # per arm: the command step is faster than the bound
         due |= (tab.uses_side[0] & fast[0]) | (tab.uses_side[1] & fast[1])
         sv = self._state_vec(state)
-        if float(np.abs(sv - self.state_vec).sum()) > cfg.SLEEP["state_change_m"]:
+        delta = float(np.abs(sv - self.state_vec).sum())
+        self.drift_total += delta
+        if delta > cfg.SLEEP["state_change_m"]:
             due[:] = True
+        due |= (self.drift_total - self.drift_at) > cfg.SLEEP["drift_budget_m"]    # Part 2: slow drift since a pair was scheduled adds up
         # a pair none of whose arms moves this tick cannot be closing (the resolver acts only on a pair with a closing arm), so it is not looked at;
         # it stays pending until an arm of it moves
         ml, mr = not np.array_equal(raw[0], last[0]), not np.array_equal(raw[1], last[1])
@@ -583,7 +588,11 @@ class SleepTimers:
             self.tab, self.w_objs, self.held_sig, self._settings = tab, list(t.world_objects), self._held_sig(t.held), self._settings_now()
             vitem = self._static_lever(t).sum(axis=1) * t.res.joint_speed_rad_s
             self.vpair = vitem[tab.I] + vitem[tab.J]
+            lever = self._static_lever(t)
+            lmax = lever.max(axis=1)                                   # per item: its largest lever arm over the arm joints
+            self.lagpair = cfg.derived()["arm_lag_rad"] * (lmax[tab.I] + lmax[tab.J])   # Part 2: the measured arm may be this far (tracking error x lever) from the command
             self.wake = np.zeros(len(tab), dtype=np.int64)
+            self.drift_at = np.zeros(len(tab))
             self.pending = np.zeros(len(tab), dtype=bool)
             self.heap = []
             self.n_ticks += 1
@@ -602,7 +611,7 @@ class SleepTimers:
         if near.any():
             lo, _ = ta.approx_gaps(tab, P, idx[near])
             lb[near] = np.maximum(lb[near], lo)
-        rem = lb - tab.release[idx]
+        rem = lb - tab.release[idx] - self.lagpair[idx] - cfg.SLEEP["drift_budget_m"]   # Part 2: room left after the arm lag and the drift allowance
         cost = np.maximum(self.vpair[idx] * t.res.dt * (1.0 + cfg.SLEEP["safety_buffer"]), cfg.SLEEP["min_cost_m"])
         n = np.where(rem > 0.0, np.minimum(np.floor(rem / cost), cfg.SLEEP["stats_cap_ticks"]), 0).astype(np.int64)
         n = np.maximum(n, 1)                                 # a pair inside its release distance, or with no whole tick to spare, is looked at every tick

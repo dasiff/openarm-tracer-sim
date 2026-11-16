@@ -93,6 +93,8 @@ class SafetyFilterPlugin:
         dt_filter = self.clock() - t0
         filtered = np.asarray(filtered, dtype=float)
         if self.braking is not None:
+            if hasattr(self.obstacle_fn, "bind"):
+                self.obstacle_fn.bind(world_objects, held)               # this tick's world and held object for the look-ahead
             filtered, binfo = self.braking.process(self.last_sent, filtered, state, self.obstacle_fn, hold=(status.status == "HOLD"))
             self.ctx["braking"] = binfo
         elif status.status == "HOLD":
@@ -230,10 +232,13 @@ def make_sim_plugin(model, data, cfg, loop_handles):
         return state, view.objects(), tracker
 
     policy = pcfg["hold_policy"]
-    braking = None
+    braking, feed = None, None
     if policy == "braking":                                         # Part 2: HOLD is a smooth stop (the braking S-curve), repeat_last_safe is not used
         from src.safety_filter.braking import BrakingLayer, make_tool_fn
-        braking = BrakingLayer(make_tool_fn(shapes))
+        from src.safety_filter.braking import ObstacleFeed
+        feed_shapes = RobotShapes(load_robot_only_model(), root / sfcfg.SHAPES_FILE)   # its own kinematics, apart from the resolver's
+        braking = BrakingLayer(make_tool_fn(feed_shapes))
+        feed = ObstacleFeed(feed_shapes)
         policy = repeat_last_safe                                   # only the constructor's default; the layer replaces it
     if isinstance(policy, str):
         if policy not in HOLD_POLICIES:
@@ -244,6 +249,7 @@ def make_sim_plugin(model, data, cfg, loop_handles):
                               out_dir=root / pcfg["out_dir"], history_len=pcfg["history_len"], flush_every=pcfg["flush_every"],
                               max_minutes=cfg.get("safety_filter_max_minutes", pcfg["max_minutes"]),
                               max_ticks=cfg.get("safety_filter_max_ticks", pcfg["max_ticks"]),
-                              hold_stop_s=cfg.get("safety_filter_hold_stop_s", pcfg["hold_stop_s"]), braking=braking)
+                              hold_stop_s=cfg.get("safety_filter_hold_stop_s", pcfg["hold_stop_s"]), braking=braking,
+                              obstacle_fn=feed if braking is not None else None)
     plugin_ref.append(plugin)
     return plugin

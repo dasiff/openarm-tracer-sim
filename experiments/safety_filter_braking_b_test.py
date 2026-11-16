@@ -113,6 +113,167 @@ check("empty gripper uses the gripper-only shape set (no held pairs); held adds 
 ev = t1.update("left", False, placed, pos, rot, name=None)
 check("release: verdict off and no name returns the object to the world with its flag", ev == "release" and w1.find("beaker") is not None and w1.find("beaker").allowed_contact is False)
 
+# ---- step 8: reach from the model, widened cutoffs, sleep bound, obstacle feed, approach ceiling ----
+import copy  # noqa: E402
+
+import mujoco  # noqa: E402
+from src.safety_filter.braking import BrakingLayer, ObstacleFeed  # noqa: E402
+from src.safety_filter.resolver import Resolver  # noqa: E402
+from src.safety_filter.touch import gap_between  # noqa: E402
+
+d0 = cfg.derive()
+rs.set_state(st)
+indep = 0.0
+for side in ("left", "right"):
+    anc = rs.data.xanchor[rs._joint[side]]
+    links = sum(float(np.linalg.norm(anc[k + 1] - anc[k])) for k in range(6))
+    b = mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_BODY, f"openarm_{side}_link7")
+    indep = max(indep, links + float(np.linalg.norm(rs.data.xpos[b] - anc[6])))
+check("bridge_reach_m is derived from the arm model, not hard-coded", cfg.BRAKING["bridge_reach_m"] is None and abs(d0["bridge_reach_m"] - indep) < 1e-9 and 0.4 < indep < 0.8, f"{d0['bridge_reach_m']:.4f} vs {indep:.4f}")
+t_ov = copy.deepcopy(cfg.BRAKING)
+t_ov["bridge_reach_m"] = 0.30
+check("bridge_reach_m: an explicit number overrides the derived one", abs(cfg.derive(t_ov)["bridge_reach_m"] - 0.30) < 1e-12)
+t_off = copy.deepcopy(cfg.BRAKING)
+t_off["tool_offset_local_m"] = (0.0, 0.0, 0.10)
+check("bridge_reach_m: moving the tool point changes the derived reach", abs(cfg.derive(t_off)["bridge_reach_m"] - d0["bridge_reach_m"]) > 0.05)
+check("derived: arm lag is the bridge's tracking error limit", d0["arm_lag_rad"] == tc.COMMAND_BRIDGE_CFG["max_tracking_error_rad"])
+
+WAKE = d0["worst_stop_dist_m"]
+rules = {k: pair_rule(held_beaker(0.02, hot_top), hp) for k in ("held-surface",)}
+cut = {"hand-hand": cfg.MARGINS["hand_hand_m"], "robot-robot": cfg.MARGINS["robot_robot_m"], "arm-world": cfg.MARGINS["arm_world_m"], "held-world": cfg.MARGINS["held_world_margin_m"], "held-surface": 0.0}
+from src.safety_filter.touch import _rule  # noqa: E402
+ok = all(abs(_rule(k, mg).activation - max(mg + cfg.PUSH_START_BEYOND_M, WAKE)) < 1e-12 and abs(_rule(k, mg).release - max(mg + cfg.PUSH_STOP_BEYOND_M, WAKE)) < 1e-12 for k, mg in cut.items())
+check("cutoffs: every activation and release distance is max(old value, worst_stop_dist_m)", ok)
+check("cutoffs: at the placeholders the stopping distance is the larger one (all widened)", all(_rule(k, mg).activation == WAKE for k, mg in cut.items()))
+saved = dict(cfg.BRAKING)
+try:
+    cfg.BRAKING["hand_speed_cap_m_s"] = 0.01          # a very slow cap and a gentle acceleration: the stopping distance is small, the old cutoffs win again
+    cfg.BRAKING["accel_limit_m_s2"] = 0.05
+    small = cfg.derived()["worst_stop_dist_m"]
+    check("cutoffs: the existing cutoffs stay where the stopping distance is smaller (not removed)", small < 0.04 and abs(_rule("robot-robot", 0.03).activation - 0.04) < 1e-12, f"{small}")
+finally:
+    cfg.BRAKING.clear()
+    cfg.BRAKING.update(saved)
+
+
+def obstacle_at(shape, direction, gap):
+    """A world box whose gap to the capsule `shape` is `gap` (bisection on its offset along `direction`)."""
+    mid = 0.5 * (shape.a + shape.b)
+    direction = np.asarray(direction, float) / np.linalg.norm(direction)
+    lo_, hi_ = 0.0, 1.5
+    for _ in range(60):
+        off = 0.5 * (lo_ + hi_)
+        o = WorldObject(id="obst", shape="box", size=(0.05, 0.05, 0.05), centre=tuple(mid + direction * (shape.r + off + 0.05)), rot=tuple(np.eye(3).ravel()))
+        g = float(gap_between(shape, as_placed(o))[0])
+        if g > gap:
+            hi_ = off
+        else:
+            lo_ = off
+    return o
+
+
+def sleep_interval(shape_id, direction, gap):
+    res = Resolver(rs, 1 / 150.0, None, joint_speed_rad_s=float(tc.COMMAND_BRIDGE_CFG["max_joint_velocity_rad_s"]))
+    shp = next(p for p in placed if p.id == shape_id)
+    o = obstacle_at(shp, direction, gap)
+    q = np.array([tc.TASK_CFG["home_q_left"], tc.TASK_CFG["home_q_right"]], float)
+    res.step(q.copy(), q.copy(), st, [o], None)
+    sl = res.statics.sleep
+    p = sl.tab.key_index[tuple(sorted((shape_id, "obst")))]
+    return res, sl, p, int(sl.wake[p] - sl.now), o, shp
+
+
+for sid in ("left_shoulder_mount", "left_palm_2"):
+    shp = next(p for p in placed if p.id == sid)
+    dirn = np.array([0.0, 1.0, 0.0])
+    _, sl, p, n, o, _ = sleep_interval(sid, dirn, WAKE - 0.01)
+    check(f"sleep ({sid}): an obstacle at worst_stop_dist - 1 cm is awake every tick", n == 1 and abs(float(gap_between(shp, as_placed(o))[0]) - (WAKE - 0.01)) < 1e-4, f"n {n}")
+_, sl, p, n, o, shp = sleep_interval("left_shoulder_mount", np.array([0.0, 1.0, 0.0]), WAKE + 0.01)
+check("sleep (fixed part, no joints): an obstacle at worst_stop_dist + 1 cm can sleep", n > 1, f"n {n}")
+_, sl, p, n_p, o, shp = sleep_interval("left_palm_2", np.array([0.0, 1.0, 0.0]), WAKE + 0.01)
+lagp, D = float(sl.lagpair[p]), cfg.SLEEP["drift_budget_m"]
+check("sleep (palm): the arm lag (0.25 rad x lever arms) and the drift allowance are added, so +1 cm is still awake", lagp > 0.01 and n_p == 1, f"lag {lagp:.4f} n {n_p}")
+_, sl, p, n_far, o, shp = sleep_interval("left_palm_2", np.array([0.0, 1.0, 0.0]), WAKE + lagp + D + 0.05)
+check("sleep (palm): beyond worst_stop_dist + lag + drift allowance it can sleep", n_far > 1, f"n {n_far}")
+check("sleep: the lag term is 0.25 rad x the lever arms", abs(float(sl.lagpair[p]) - 0.25 * (float(sl.lagpair[p]) / 0.25)) < 1e-12 and cfg.derived()["arm_lag_rad"] == 0.25)
+
+# drift: base motion below the per-tick wake threshold adds up and wakes the sleeping pair
+res, sl, p, n0, o, shp = sleep_interval("left_shoulder_mount", np.array([0.0, 1.0, 0.0]), WAKE + 0.30)
+q = np.array([tc.TASK_CFG["home_q_left"], tc.TASK_CFG["home_q_right"]], float)
+step_x = 1e-4                                                       # per tick, below state_change_m (2e-4): the old test never wakes
+check("drift: the per-tick step is below the per-tick wake threshold", step_x < cfg.SLEEP["state_change_m"])
+woke_at, x = None, 0.0
+for k in range(1, 120):
+    x += step_x
+    stk = RobotState(q_left=st.q_left, q_right=st.q_right, base_xyz=(x, 0.0, 0.0))
+    res.step(q.copy(), q.copy(), stk, [o], None)
+    if woke_at is None and sl.pending[p]:
+        woke_at = k
+exp = int(np.ceil(cfg.SLEEP["drift_budget_m"] / step_x))
+check("drift: slow base drift adds up and wakes the pair after the drift budget", woke_at is not None and abs(woke_at - exp) <= 2 and n0 > exp, f"woke {woke_at} expected about {exp}, n0 {n0}")
+
+# obstacle feed
+feed_shapes = RobotShapes(load_robot_only_model(), ROOT / cfg.SHAPES_FILE)
+feed = ObstacleFeed(feed_shapes)
+q_home = np.array([tc.TASK_CFG["home_q_left"], tc.TASK_CFG["home_q_right"]], float)
+tr = HeldTracker(WorldView(Src([])))
+tr.update("left", False, placed, pos, rot, name="beaker")
+lowest = pad[2] - 0.085
+hot_under = catalog_object("hotplate", np.array([pad[0], pad[1], lowest - 0.01 - 0.06]))
+feed.bind([hot_under], tr)
+o_ = feed(q_home, st)
+check("feed: held beaker 1 cm over the hotplate gives its gap, zero margin and the hotplate's ceiling", o_[0] is not None and abs(o_[0][0] - 0.01) < 2e-3 and o_[0][1] == 0.0 and o_[0][2] == cfg.approach_ceiling("hotplate"), str(o_))
+other = WorldObject(id="bench_top", shape="box", size=(0.3, 0.3, 0.02), centre=(pad[0], pad[1], lowest - 0.01 - 0.02), rot=tuple(np.eye(3).ravel()), fixture=True)
+feed.bind([other], tr)
+o2 = feed(q_home, st)
+check("feed: held beaker over an ordinary object gives held_world_margin_m and no ceiling", o2[0] is not None and o2[0][1] == cfg.MARGINS["held_world_margin_m"] and o2[0][2] is None, str(o2))
+far = WorldObject(id="far", shape="box", size=(0.05, 0.05, 0.05), centre=(pad[0], pad[1], lowest - WAKE - 0.2), rot=tuple(np.eye(3).ravel()), fixture=True)
+feed.bind([far], tr)
+ids = lambda arm: {c[5] for c in feed.pairs(q_home, st)[arm]}  # noqa: E731
+check("feed: an obstacle beyond worst_stop_dist_m is not a candidate (left arm)", "far" not in ids(0))
+near_wake = WorldObject(id="near", shape="box", size=(0.05, 0.05, 0.05), centre=(pad[0], pad[1], lowest - (WAKE - 0.01) - 0.05), rot=tuple(np.eye(3).ravel()), fixture=True)
+feed.bind([near_wake], tr)
+check("feed: an obstacle at worst_stop_dist_m - 1 cm is a candidate", "near" in ids(0))
+tr_empty = HeldTracker(WorldView(Src([])))
+feed.bind([hot_under], tr_empty)
+o3 = feed(q_home, st)
+check("feed: empty gripper: no candidate from a held shape or a finger (fingers stay exempt from the world)", not any(c[5] == "hotplate" and ("held" in c[4] or "finger" in c[4]) for c in feed.pairs(q_home, st)[0]) and any("held" in c[4] for c in (feed.bind([hot_under], tr) or feed.pairs(q_home, st)[0])))
+
+# approach ceiling through the look-ahead (fake arm: x = 0.5 * joint 1; the surface is at x = 0.6)
+from src.safety_filter.braking_math import stopping_distance  # noqa: E402
+DT = 1 / 150.0
+CAP = cfg.BRAKING["hand_speed_cap_m_s"]
+CEIL = cfg.approach_ceiling("hotplate")
+
+
+def fake_tool(q, state):
+    return np.asarray(q)[:, :3] * np.array([[0.5, 0.3, 0.2], [0.1, 0.4, 0.6]])
+
+
+def surface(q, state):
+    return [(0.60 - np.asarray(q)[0, 0] * 0.5, 0.0, CEIL), None]
+
+
+Lc = BrakingLayer(fake_tool)
+last = np.zeros((2, 7))
+recs = []
+for k in range(900):
+    raw = last.copy()
+    raw[0, 0] += 0.5
+    out, info = Lc.process(last, raw, None, surface)
+    recs.append((0.60 - last[0, 0] * 0.5, float(Lc.v[0]), float(Lc.a[0]), bool(info["stop"][0])))
+    last = out
+    if recs[-1][0] < -0.01:
+        break
+g_, v_, a_, st_ = (np.array([r[i] for r in recs]) for i in range(4))
+k0 = int(np.argmax(g_ <= 0.0))
+check("ceiling: the hand slows to the ceiling before the allowed-contact surface and reaches it at that speed", abs(v_[k0] - CEIL) < 1e-3 and v_.max() >= CAP - 1e-9, f"v at contact {v_[k0]:.5f}, max {v_.max():.4f}")
+check("ceiling: never stopped (an allowed-contact surface may be touched)", not st_.any() and v_[k0:].min() > 0.0)
+jerk_ = np.abs(np.diff(np.concatenate([[0.0], a_]))) / DT
+check("ceiling: the slow-down is an S-curve within the acceleration and jerk limits", a_.min() >= -d0["effective_accel_limit"] - 1e-9 and jerk_.max() <= cfg.BRAKING["jerk_limit_m_s3"] + 1e-6, f"a {a_.min():.3f} jerk {jerk_.max():.3f}")
+drop = -np.diff(v_)
+check("ceiling: no single-tick speed drop above accel_limit x dt", drop.max() <= d0["effective_accel_limit"] * DT + 1e-9, f"{drop.max():.6f}")
+
 if __name__ == "__main__":
     print(f"\n{len(fails)} failed" if fails else "\nall passed")
     sys.exit(1 if fails else 0)

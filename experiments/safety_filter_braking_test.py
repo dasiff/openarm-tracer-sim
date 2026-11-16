@@ -139,7 +139,7 @@ out, capped = real2.cap(home, slow, st)
 check("speed cap (real model): a slow command passes unchanged", np.array_equal(out, slow) and not capped.any())
 
 # ---- step 4: S-curve profile, jerk limit ----
-A_LIM = cfg.BRAKING_DERIVED["effective_accel_limit"]
+A_LIM = cfg.derived()["effective_accel_limit"]
 J_LIM = cfg.BRAKING["jerk_limit_m_s3"]
 EPS = 1e-9
 

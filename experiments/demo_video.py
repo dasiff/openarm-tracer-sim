@@ -16,11 +16,14 @@ recording is deleted when the video is complete.
 """
 
 import argparse
+import fcntl
 import json
 import os
+import queue
 import shutil
 import subprocess
 import sys
+import threading
 import time
 from pathlib import Path
 
@@ -31,6 +34,7 @@ if not os.environ.get("DISPLAY"):
 
 import cv2  # noqa: E402
 import imageio_ffmpeg  # noqa: E402
+import numpy as np  # noqa: E402
 
 import src.replay as replay_mod  # noqa: E402
 from src.episode_runner import run_episode  # noqa: E402
@@ -60,22 +64,54 @@ def intro_for(recording_dir):
 
 
 class X264Writer:
-    """Writes BGR frames (numpy arrays, like cv2.VideoWriter.write) to an H.264 MP4 through a pipe to ffmpeg."""
+    """Writes BGR frames (numpy arrays, like cv2.VideoWriter.write) to an H.264 MP4 through a pipe to ffmpeg.
 
-    def __init__(self, path, fps, size, log_path):
+    The frames go through a queue of `queue_frames` frames to a writer thread, so the caller draws the next frame while this one is still
+    being pushed through the pipe (the push blocked the caller for about 18 ms per 1920x1080 frame; video export speed task, 2026-11-16).
+    The pipe is widened to 1 MB where the kernel allows it. The frame array is handed over as is (no copy): the caller must not change it
+    afterwards (the replay and the search video never do).
+    """
+
+    def __init__(self, path, fps, size, log_path, queue_frames=4):
         w, h = size
         cmd = [imageio_ffmpeg.get_ffmpeg_exe(), "-y", "-loglevel", "warning", "-f", "rawvideo", "-pix_fmt", "bgr24", "-s", f"{w}x{h}", "-r", str(fps), "-i", "-",
                "-c:v", "libx264", "-preset", "medium", "-crf", "18", "-pix_fmt", "yuv420p", "-movflags", "+faststart", "-f", "mp4", str(path)]
         self.log = open(log_path, "w")
         self.proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stderr=self.log)
+        try:
+            fcntl.fcntl(self.proc.stdin.fileno(), 1031, 1 << 20)          # F_SETPIPE_SZ: a 1 MB pipe instead of 64 KB (fewer hand-overs per frame)
+        except OSError:
+            pass
+        self.queue = queue.Queue(maxsize=queue_frames)
+        self.error = None
+        self.thread = threading.Thread(target=self._drain, daemon=True)
+        self.thread.start()
+
+    def _drain(self):
+        """The writer thread: pushes queued frames into ffmpeg until the end marker (None); a failed write is kept in `error`."""
+        while True:
+            frame = self.queue.get()
+            if frame is None:
+                return
+            if self.error is None:
+                try:
+                    self.proc.stdin.write(memoryview(frame))
+                except Exception as e:                                   # noqa: BLE001  (reported by write() or release())
+                    self.error = e
 
     def write(self, frame):
-        self.proc.stdin.write(frame.tobytes())
+        if self.error is not None:
+            raise RuntimeError(f"ffmpeg pipe failed: {self.error}")
+        self.queue.put(np.ascontiguousarray(frame))
 
     def release(self):
+        self.queue.put(None)
+        self.thread.join()
         self.proc.stdin.close()
         rc = self.proc.wait()
         self.log.close()
+        if self.error is not None:
+            raise RuntimeError(f"ffmpeg pipe failed: {self.error}")
         if rc != 0:
             raise RuntimeError(f"ffmpeg exited with {rc}")
 

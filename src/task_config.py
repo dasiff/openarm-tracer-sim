@@ -831,7 +831,7 @@ SEARCH_DISPLAY_CFG = {
 # The safety filter plug-in (src/safety_filter_plugin.py; design plan section 16, Stage 4 build; decision rows SF-59 to SF-64). Plain words for every value.
 SAFETY_FILTER_PLUGIN_CFG = {
     "mode": "off",                  # text [SF-59]: "off" = the filter is not imported, not called, nothing recorded (the control loop behaves exactly as without it, default); "shadow" = the filter runs and is recorded but the robot still gets the RAW command; "on" = the robot gets the filtered command. Runner flag --safety-filter
-    "hold_policy": "repeat_last_safe",  # text [SF-61]: what is sent when the filter finds no safe pose: "repeat_last_safe" = the last command actually sent again. A smooth stop is not built (next week); the slot takes any function(last_sent, status, history) -> command
+    "hold_policy": "braking",  # text [SF-61, Part 2]: "braking" (default since Part 2) = a HOLD, or an error inside the filter, is a smooth stop along the braking S-curve (src/safety_filter/braking.py); "repeat_last_safe" = the old behaviour. Old text:  what is sent when the filter finds no safe pose: "repeat_last_safe" = the last command actually sent again. A smooth stop is not built (next week); the slot takes any function(last_sent, status, history) -> command
     "history_len": 300,             # ticks [SF-61]: how many recent ticks (raw, sent, status) the hold policy gets as history: 2 seconds at 150 Hz, enough for a slow-down policy to see the speed
     "out_dir": "data/safety_filter/plugin_runs",  # folder [SF-63]: where the recording <run name>.npz goes (git-ignored)
     "flush_every": 3000,            # ticks [SF-63]: the recording file is rewritten (temporary file, then rename) this often, so a crash loses at most this many ticks

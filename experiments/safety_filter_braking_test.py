@@ -256,6 +256,80 @@ sd_cruise = stopping_distance(CAPV, 0.0, A_LIM, J_LIM, CAPV * DT)
 sd_acc = stopping_distance(CAPV, A_LIM, A_LIM, J_LIM, CAPV * DT)
 check("look-ahead: the formula counts current acceleration (a0 > 0 stops later)", sd_acc > sd_cruise)
 
+# ---- step 6: HOLD is a smooth stop (braking S-curve), not repeat_last_safe ----
+from types import SimpleNamespace  # noqa: E402
+
+from src import task_config as _tc  # noqa: E402
+from src.safety_filter_plugin import SafetyFilterPlugin  # noqa: E402
+
+
+def run_hold(hold_at, ticks):
+    Lh = BrakingLayer(fake_tool)
+    last = np.zeros((2, 7))
+    vs, accs, speeds_prev = [], [], 0.0
+    for k in range(ticks):
+        raw = last.copy()
+        raw[0, 0] += 0.5
+        out, info = Lh.process(last, raw, None, None, hold=(k >= hold_at))
+        vs.append(float(Lh.v[0]))
+        accs.append(float(Lh.a[0]))
+        last = out
+    return np.array(vs), np.array(accs)
+
+
+vh, ah = run_hold(300, 600)
+drops = -np.diff(vh[299:])
+check("HOLD: the hand was at the cap when HOLD triggered", abs(vh[299] - CAPV) < 1e-9)
+check("HOLD: no single-tick speed drop above accel_limit x dt", drops.max() <= A_LIM * DT + 1e-9, f"{drops.max():.6f} vs {A_LIM * DT:.6f}")
+jh = np.abs(np.diff(np.concatenate([[ah[299]], ah[300:]]))) / DT
+check("HOLD: jerk never above the limit", jh.max() <= J_LIM + 1e-6, f"{jh.max():.4f}")
+check("HOLD: the hand ends at rest and stays there", vh[-1] == 0.0 and np.all(vh[-50:] == 0.0))
+check("HOLD: the old behaviour (speed to 0 in one tick) would have broken the limit", CAPV > A_LIM * DT)
+
+
+def pstatus(s, reason=""):
+    return SimpleNamespace(status=s, hold_reason=reason, rounds=0, worst_gap=float("nan"), worst_shortfall=0.0, fraction=float("nan"),
+                           worst_pair=None, methods=(), pairs_pushed=0, pairs_skipped=0, pairs_shortened=0, solver_calls=0)
+
+
+class HoldAfter:
+    """Stub filter: passes the raw command for n calls, then HOLD (returns the last command, as the real filter does)."""
+
+    def __init__(self, n, error=False):
+        self.n, self.calls, self.error = n, 0, error
+
+    def __call__(self, raw, last, state, world, held):
+        self.calls += 1
+        if self.calls > self.n:
+            if self.error:
+                raise RuntimeError("boom")
+            return last.copy(), pstatus("HOLD", "NO_SOLVER")
+        return raw, pstatus("PASS")
+
+
+def plugin_run(error):
+    pl = SafetyFilterPlugin("on", HoldAfter(300, error), lambda holding: (None, [], None), braking=BrakingLayer(fake_tool), run_name="t", out_dir=None)
+    cur = {"left": [0.0] * 7, "right": [0.0] * 7}
+    x, sent_x = 0.0, []
+    for k in range(600):
+        x += 0.5
+        out = pl.process({"left": [x] + [0.0] * 6, "right": [0.0] * 7}, {}, cur, t=k * DT)
+        cur = out
+        x = out["left"][0] if k >= 300 else x            # a source keeps asking for more; its own pose follows what was sent only after the hold
+        sent_x.append(out["left"][0] * 0.5)
+    return np.array(sent_x), pl
+
+
+sx, pl = plugin_run(False)
+sv_ = np.diff(sx) / DT
+drop = -np.diff(sv_)
+check("HOLD via the plug-in: speed ramps down smoothly and ends at rest", sv_[-1] == 0.0 and drop.max() <= A_LIM * DT + 1e-6, f"{drop.max():.6f}")
+check("HOLD via the plug-in: moved past the hold point (it did not freeze in one tick)", sx[-1] - sx[299] > 0.01, f"{sx[-1] - sx[299]:.4f}")
+sx2, pl2 = plugin_run(True)
+sv2 = np.diff(sx2) / DT
+check("filter error: treated as HOLD, smooth stop", sv2[-1] == 0.0 and (-np.diff(sv2)).max() <= A_LIM * DT + 1e-6)
+check("config: the plug-in default hold policy is braking", _tc.SAFETY_FILTER_PLUGIN_CFG["hold_policy"] == "braking")
+
 if __name__ == "__main__":
     print(f"\n{len(fails)} failed" if fails else "\nall passed")
     sys.exit(1 if fails else 0)

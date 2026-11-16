@@ -37,15 +37,19 @@ HOLD_POLICIES = {"repeat_last_safe": repeat_last_safe}
 
 class SafetyFilterPlugin:
     def __init__(self, mode, filter_step, inputs_fn, hold_policy=repeat_last_safe, run_name="run", out_dir=None,
-                 history_len=300, flush_every=3000, max_minutes=None, max_ticks=None, hold_stop_s=None, clock=time.perf_counter):
+                 history_len=300, flush_every=3000, max_minutes=None, max_ticks=None, hold_stop_s=None, clock=time.perf_counter,
+                 braking=None, obstacle_fn=None):
         """mode: "off" | "shadow" | "on" (anything else raises ValueError).
         filter_step(raw, last, state, world_objects, held) -> (filtered, status): the filter's entry function (Resolver.step).
         inputs_fn(holding) -> (state, world_objects, held): builds the filter inputs for this call; holding is {side: bool}.
         hold_policy(last_sent, status, history) -> (2, 7) command. history: list of the recent ticks' dicts (raw, sent, status, reason).
-        out_dir: folder of the recording <run_name>.npz (None: no file, the records stay in memory)."""
+        out_dir: folder of the recording <run_name>.npz (None: no file, the records stay in memory).
+        braking: a BrakingLayer (src/safety_filter/braking.py) or None. With it, every command goes through the layer (hand speed cap, S-curve,
+        look-ahead with obstacle_fn) and a HOLD (or an error inside the filter) is a smooth stop along the S-curve; hold_policy is then not used."""
         if mode not in MODES:
             raise ValueError(f"safety filter mode must be one of {MODES}, not {mode!r}")
         self.mode, self.filter_step, self.inputs_fn, self.hold_policy = mode, filter_step, inputs_fn, hold_policy
+        self.braking, self.obstacle_fn = braking, obstacle_fn
         self.run_name, self.out_dir, self.flush_every, self.clock = run_name, out_dir, int(flush_every), clock
         self.max_minutes, self.max_ticks, self.hold_stop_s = max_minutes, max_ticks, hold_stop_s
         self._hold_t0, self.stop_reason = None, None     # start (sim s) of the current run of held ticks; why limit_reached() said yes
@@ -75,10 +79,22 @@ class SafetyFilterPlugin:
                 raw[i] = np.asarray(arm_targets[s], dtype=float)
         state, world_objects, held = self.inputs_fn(holding)
         t0 = self.clock()
-        filtered, status = self.filter_step(raw, self.last_sent, state, world_objects, held)
+        try:
+            filtered, status = self.filter_step(raw, self.last_sent, state, world_objects, held)
+        except Exception as exc:                        # an error inside the filter is a HOLD trigger too: with braking it stops smoothly
+            if self.braking is None:
+                raise
+            from src.safety_filter.resolver import FilterStatus
+            self._n_errors = getattr(self, "_n_errors", 0) + 1
+            if self._n_errors == 1 or self._n_errors % 150 == 0:     # the first one, then about once a second at 150 Hz
+                print(f"[safety filter] ERROR in the filter (error {self._n_errors}), braking: {type(exc).__name__}: {exc}")
+            filtered, status = self.last_sent.copy(), FilterStatus(status="HOLD", hold_reason="FILTER_ERROR")
         dt_filter = self.clock() - t0
         filtered = np.asarray(filtered, dtype=float)
-        if status.status == "HOLD":
+        if self.braking is not None:
+            filtered, binfo = self.braking.process(self.last_sent, filtered, state, self.obstacle_fn, hold=(status.status == "HOLD"))
+            self.ctx["braking"] = binfo
+        elif status.status == "HOLD":
             filtered = np.asarray(self.hold_policy(self.last_sent.copy(), status, list(self.history)), dtype=float)
         sent = raw if self.mode == "shadow" else filtered
         self._record(t, raw, filtered, sent, status, dt_filter, state)
@@ -213,6 +229,11 @@ def make_sim_plugin(model, data, cfg, loop_handles):
         return state, view.objects(), tracker
 
     policy = pcfg["hold_policy"]
+    braking = None
+    if policy == "braking":                                         # Part 2: HOLD is a smooth stop (the braking S-curve), repeat_last_safe is not used
+        from src.safety_filter.braking import BrakingLayer, make_tool_fn
+        braking = BrakingLayer(make_tool_fn(shapes))
+        policy = repeat_last_safe                                   # only the constructor's default; the layer replaces it
     if isinstance(policy, str):
         if policy not in HOLD_POLICIES:
             raise ValueError(f"unknown hold policy {policy!r}; known: {sorted(HOLD_POLICIES)}")
@@ -222,6 +243,6 @@ def make_sim_plugin(model, data, cfg, loop_handles):
                               out_dir=root / pcfg["out_dir"], history_len=pcfg["history_len"], flush_every=pcfg["flush_every"],
                               max_minutes=cfg.get("safety_filter_max_minutes", pcfg["max_minutes"]),
                               max_ticks=cfg.get("safety_filter_max_ticks", pcfg["max_ticks"]),
-                              hold_stop_s=cfg.get("safety_filter_hold_stop_s", pcfg["hold_stop_s"]))
+                              hold_stop_s=cfg.get("safety_filter_hold_stop_s", pcfg["hold_stop_s"]), braking=braking)
     plugin_ref.append(plugin)
     return plugin

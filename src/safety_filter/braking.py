@@ -85,7 +85,7 @@ class ObstacleFeed:
                         continue
                     gap = float(gap_between(a, b)[0])
                     ceiling = cfg.approach_ceiling(rule.surface) if rule.surface else None      # any allowed-contact surface pair (held beaker or palm)
-                    out[i].append((gap - 0.5 * rule.margin, gap, rule.margin, ceiling, a.id, b.id))
+                    out[i].append((gap - stop_gap(rule.margin, ceiling), gap, rule.margin, ceiling, a.id, b.id))
         return out
 
     def __call__(self, q, state):
@@ -94,6 +94,13 @@ class ObstacleFeed:
         for i, cands in enumerate(self.pairs(q, state)):
             out[i] = [(c[1], c[2], c[3], c[4], c[5]) for c in sorted(cands, key=lambda c: c[0])]
         return out
+
+
+def stop_gap(margin, ceiling):
+    """Phase C step 4 (David): the gap at which the hand stops, measured from the modelled surface. Plain obstacle pairs stop just outside the
+    resolver's push-out zone (margin + PUSH_STOP_BEYOND_M: the gap rule leaves a pair alone beyond its release distance); an allowed-contact
+    surface (a ceiling pair) is approached up to its margin boundary, which the palm and the held beaker both reach by design."""
+    return margin if ceiling is not None else margin + cfg.PUSH_STOP_BEYOND_M
 
 
 def _aabb(sh):
@@ -289,7 +296,7 @@ class BrakingLayer:
 
     def check(self, last, raw, state, obstacle_fn):
         """The look-ahead, part of the safety check: for each arm and each obstacle pair, can the hand still brake from its current speed and
-        acceleration to the stop target (the midpoint of the margin: margin/2 from the modelled surface) within the gap?
+        acceleration to the stop target (stop_gap: margin + PUSH_STOP_BEYOND_M from the modelled surface, or the margin for an allowed-contact surface) within the gap?
         obstacle_fn(q (2,7), state) -> per arm a list of (gap_m, margin_m, ceiling_m_s or None, hand shape id, other shape id) (ObstacleFeed; a
         single tuple or None is accepted): every pair within worst_stop_dist_m is in it. A ceiling marks an allowed-contact surface (zero margin).
         A pair counts when the wanted command is closing on it (its gap at the command is smaller than at the last command). The speed used for a
@@ -326,7 +333,7 @@ class BrakingLayer:
             for gap, margin, ceiling, ida, idb in pl:
                 pr = raw_by.get((ida, idb))
                 closing = pr is not None and pr[0] < gap - eps
-                room = gap - (margin if ceiling is not None else 0.5 * margin)     # a stop target is the midpoint of the margin; an allowed-contact surface is approached up to its margin boundary (0 for the decided zero margin)
+                room = gap - stop_gap(margin, ceiling)     # Phase C step 4 (David): the stop target is just outside the resolver's push-out zone, not the midpoint (0 for the decided zero margin)
                 vp = v if mode == "full" else min(v, max(0.0, (gap - pr[0]) / self.dt)) if pr is not None else 0.0
                 sd = stopping_distance(vp, a, a_eff, jl, cush)
                 if worst is None or room < worst["room"]:

@@ -127,6 +127,34 @@ for k in range(600):
     last5 = out5
 check("step 3: a small target below the stop speed is still reached", np.abs(last5 - raw5).max() < 1e-9, f"{np.abs(last5 - raw5).max()}")
 
+# ---- step 4: the hand stops at margin + PUSH_STOP_BEYOND_M and stays still (no creeping) ----
+from src.safety_filter.braking import stop_gap  # noqa: E402
+
+WALL_X = 0.30                                              # the obstacle surface, along the fake arm's x (x = 0.5 * joint 1)
+MARG4 = 0.01
+SG4 = MARG4 + cfg.PUSH_STOP_BEYOND_M
+
+
+def wall4(q, state):
+    return [[(WALL_X - np.asarray(q)[0, 0] * 0.5, MARG4, None, "left_palm_2", "bench_top")], None]
+
+
+L4s = BrakingLayer(tool3)
+last4s = np.zeros((2, 7))
+gaps4, outs4 = [], []
+for k in range(2000):                                       # a source that keeps commanding toward the wall at 0.1 rad per tick
+    raw4s = last4s.copy()
+    raw4s[0, 0] += 0.1
+    out4s, _ = L4s.process(last4s, raw4s, None, wall4)
+    gaps4.append(WALL_X - out4s[0, 0] * 0.5)
+    outs4.append(out4s[0, 0])
+    last4s = out4s
+gaps4 = np.array(gaps4)
+check("step 4: the stop target is margin + PUSH_STOP_BEYOND_M (not the midpoint)", abs(stop_gap(MARG4, None) - SG4) < 1e-12 and stop_gap(MARG4, "hotplate") == MARG4)
+check("step 4: the hand stops at the stop target, on the safe side and within 5 mm of it", SG4 - 1e-6 <= gaps4[-1] <= SG4 + 0.005, f"final gap {gaps4[-1] * 1000:.3f} mm, target {SG4 * 1000:.1f} mm")
+check("step 4: the hand stays still once stopped (no creeping for 300 ticks)", np.max(np.abs(np.diff(outs4[-300:]))) < 1e-12, f"{np.max(np.abs(np.diff(outs4[-300:])))}")
+check("step 4: the hand never gets closer than the stop target", gaps4.min() >= SG4 - 0.005, f"min gap {gaps4.min() * 1000:.3f} mm")
+
 if __name__ == "__main__":
     print(f"\n{len(fails)} failed" if fails else "\nall passed")
     sys.exit(1 if fails else 0)

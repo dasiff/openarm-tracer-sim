@@ -215,13 +215,13 @@ Lk = BrakingLayer(fake_tool)
 rec = run_toward(Lk, 700)
 first = next(k for k, r in enumerate(rec) if r["braking"])
 # independent expectation: the first tick whose state (v, a, gap) has stopping distance >= gap - margin/2 while closing
-exp = next(k for k, r in enumerate(rec) if stopping_distance(r["v"], r["a"], A_LIM, J_LIM, CAPV * DT) >= r["gap"] - MARGIN / 2)
+exp = next(k for k, r in enumerate(rec) if stopping_distance(r["v"], r["a"], A_LIM, J_LIM, CAPV * DT) >= r["gap"] - (MARGIN + cfg.PUSH_STOP_BEYOND_M))   # Phase C step 4: the stop target is margin + PUSH_STOP_BEYOND_M
 check("look-ahead: braking starts at the tick where the stopping distance reaches the distance to the target", first == exp, f"{first} vs {exp}")
 check("look-ahead: not braking before that tick", not any(r["braking"] for r in rec[:first]))
-x_stop = X_OBS - MARGIN / 2
+x_stop = X_OBS - (MARGIN + cfg.PUSH_STOP_BEYOND_M)
 x_end, v_end = rec[-1]["x"], rec[-1]["v"]
 check("look-ahead: the hand stops (speed 0)", v_end == 0.0 and all(r["v"] >= 0 for r in rec))
-check("look-ahead: the hand stops at the midpoint of the margin or just short of it", x_stop - 0.005 <= x_end <= x_stop + 1e-9, f"{x_end:.5f} vs {x_stop:.5f}")
+check("look-ahead: the hand stops at the stop target (margin + PUSH_STOP_BEYOND_M) or just short of it", x_stop - 0.005 <= x_end <= x_stop + 1e-9, f"{x_end:.5f} vs {x_stop:.5f}")
 dec = np.array([r["a"] for r in rec[first:]])
 check("look-ahead: the stop is an S-curve within the acceleration limit", dec.min() >= -A_LIM - EPS)
 check("look-ahead: speed reached the cap before braking (obstacle far enough)", max(r["v"] for r in rec) >= CAPV - 1e-9)
@@ -438,12 +438,16 @@ stop4, _, _ = Ld3.check(np.zeros((2, 7)), np.zeros((2, 7)), None, lambda q, s_: 
 check("look-ahead: a tick where the source commands no motion does not release the latch (pulsed commands)", stop4[0] and Ld3._braking[0])
 Ld4 = BrakingLayer(fake_tool)
 Ld4._braking[0] = True
-stop5, _, _ = Ld4.check(np.zeros((2, 7)), raw, None, lambda q, s_: [(0.012 - np.asarray(q)[0, 0] * 0.5, 0.01), None])
-check("look-ahead: a stopped hand with more room than the one-tick cushion restarts (an early stop must not deadlock the task)", not stop5[0] and not Ld4._braking[0])
+stop5, _, _ = Ld4.check(np.zeros((2, 7)), raw, None, lambda q, s_: [(0.05 - np.asarray(q)[0, 0] * 0.5, 0.01), None])
+check("look-ahead: a stopped hand with room beyond the stop target and the one-tick cushion restarts (an early stop must not deadlock the task)", not stop5[0] and not Ld4._braking[0])
+Ld5 = BrakingLayer(fake_tool)
+Ld5._braking[0] = True
+stop6, _, _ = Ld5.check(np.zeros((2, 7)), raw, None, lambda q, s_: [(0.012 - np.asarray(q)[0, 0] * 0.5, 0.01), None])
+check("look-ahead: a stopped hand inside the stop target (1.2 cm, target 3 cm) does not restart toward the obstacle", stop6[0] and Ld5._braking[0])
 Ld2 = BrakingLayer(fake_tool)
 Ld2._braking[0] = True
 stop3, _, _ = Ld2.check(np.zeros((2, 7)), raw, None, lambda q, s_: [(0.005 - np.asarray(q)[0, 0] * 0.5, 0.01), None])
-check("look-ahead: stopped at the midpoint (no room) stays stopped while the command closes", stop3[0] and Ld2._braking[0])
+check("look-ahead: stopped at the stop target (no room) stays stopped while the command closes", stop3[0] and Ld2._braking[0])
 
 if __name__ == "__main__":
     print(f"\n{len(fails)} failed" if fails else "\nall passed")

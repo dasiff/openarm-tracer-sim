@@ -18,7 +18,7 @@ sampler() {
             [ "$dt" -gt 0 ] && busy=$(( (dt - di) * 100 / dt ))
         fi
         prev_total=$total; prev_idle=$idle
-        local rss=$(ps -eo rss,args | grep -E "python experiments/|ffmpeg-linux" | grep -v grep | awk '{s+=$1} END {printf "%.0f", s/1024}')
+        local rss=$(ps -eo rss,args | grep -E "python.*experiments/|ffmpeg-linux" | grep -v grep | awk '{s+=$1} END {printf "%.0f", s/1024}')
         echo "SAMPLE $(date +%T) tree_rss_mb=${rss:-0} swap_used_mb=$(free -m | awk '/Swap/ {print $3}') cpu_busy_pct=$busy" >> "$LOG"
         sleep 5
     done

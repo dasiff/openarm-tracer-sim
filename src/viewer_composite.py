@@ -12,7 +12,7 @@ the same plan block (src/viewer_layout.py), but no key legend. The simulated cam
 the corner.
 
 Differences from the live viewer, all deliberate and made for a video: shadows are on in the follow view and in
-all the cameras; the tiles come from full-size (640 by 480 pixel) renders of the policy cameras, updated every frame
+all the cameras unless the renderer is made with shadows=False (the stance-search video, row M322); the tiles come from full-size (640 by 480 pixel) renders of the policy cameras, updated every frame
 (the live insets are 320 by 240 pixels, have shadows off and update once per second per camera); and the rows that only
 mean something live are left out or replaced (the key legend, the frame time and the F6 recording state are not drawn,
 the keyboard's own normalised command is left out, and a "twist lin, ang" row shows the applied base command). The
@@ -55,7 +55,7 @@ class CompositeRenderer:
             tracks (1 if the model has no such body).
     """
 
-    def __init__(self, model, context, camera_specs, size=(1920, 1080), legend_extra=(), panel_static=None):
+    def __init__(self, model, context, camera_specs, size=(1920, 1080), legend_extra=(), panel_static=None, shadows=True):
         """Set up the follow camera, the scene and the camera rig.
 
         Sets model.vis.global_.fovy to FOVY_DEG (90 degrees), as the live
@@ -67,7 +67,7 @@ class CompositeRenderer:
                 offscreen buffer must be at least `size` large.
             camera_specs (list[dict]): Camera definitions as in
                 robot_specs.CAMERA_SPECS (name, resolution and so on). Each is
-                copied with "shadows" set to True.
+                copied with "shadows" set to `shadows`.
             size (tuple[int, int]): Frame (width, height) in pixels. Defaults
                 to (1920, 1080).
             legend_extra (Sequence[tuple[str, str]]): Extra (key, label)
@@ -75,6 +75,8 @@ class CompositeRenderer:
                 Defaults to an empty tuple. Not drawn: the video has no key legend.
             panel_static (dict or None): The static part of the plan block (the typed instruction and the plan's steps, see
                 viewer_layout.panel_from_status). Defaults to None (no plan block).
+            shadows (bool): Whether the follow view and every camera tile draw shadows (each view with shadows redraws the scene's
+                shadow maps, most of the frame's cost on software GL; SEARCH_DISPLAY_CFG["shadows"], row M322). Defaults to True.
         """
         self.model, self.context = model, context
         self.panel_static = panel_static
@@ -89,9 +91,9 @@ class CompositeRenderer:
         self.face = Face(model)                                        # turned to face this view's camera while it is drawn
         setup_follow_camera(self.cam)
         self.scene = mujoco.MjvScene(model, maxgeom=10_000)
-        self.scene.flags[mujoco.mjtRndFlag.mjRND_SHADOW] = 1
+        self.scene.flags[mujoco.mjtRndFlag.mjRND_SHADOW] = int(bool(shadows))
         self.scene.flags[mujoco.mjtRndFlag.mjRND_REFLECTION] = 1
-        self.rig = CameraRig(model, [{**cs, "shadows": True} for cs in camera_specs], context, shadows=True)
+        self.rig = CameraRig(model, [{**cs, "shadows": bool(shadows)} for cs in camera_specs], context, shadows=bool(shadows))
         self.base_body = max(mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, "base_link"), 1)
         self.ghost2 = None
         self.ghost = None                                              # created on first use (the stance-search display, M321)

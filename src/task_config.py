@@ -823,6 +823,7 @@ SEARCH_DISPLAY_CFG = {
     "fps": 30,                      # video frames per second (the existing notebook video's rate) [row M321]
     "size": (1920, 1080),           # video size in pixels (the existing notebook video's) [row M321]
     "clock_text_scale": 2.2,        # size of the clock digits relative to the panel text (readable at a glance; implementer's choice) [row M321]
+    "shadows": False,               # whether the video's follow view and camera tiles draw shadows (on/off). Off: the two 2048-pixel shadow maps that every view redrew took about 1.4 of the 1.7 s per frame on this machine's software GL (export 5 to 6 times faster); David 2026-11-16 [row M322]
     # --- the fixed overview camera of parts 1 and 2: where it looks (m), distance (m), azimuth and elevation (deg). Chosen so that the bench with the beaker and hotplate, the robot at home and the ghost all show. [row M321]
     "overview_camera": {"lookat": (0.95, 2.0, 0.8), "distance": 3.6, "azimuth": 25.0, "elevation": -38.0},
 }

@@ -10,6 +10,7 @@ only reads the logs and replays the recording (verified bit-identical, as demo_v
 Files (not in Git): <out>/<name>_search.mp4 and <out>/<name>_full.mp4 (under temporary names until complete), <name>_search_info.json.
 
 Parts 1 and 2 use a fixed overview camera and the three camera tiles of the notebook layout; part 3 is the existing notebook layout with the clock continuing (search end plus the run's simulated time).
+Shadows follow SEARCH_DISPLAY_CFG["shadows"] (off since 2026-11-16, row M322: the shadow maps were most of the render time; the picture is otherwise the same).
 """
 
 import argparse
@@ -62,7 +63,7 @@ def render_search(run, rec, out_path, only_times=None, log=print):
     gl, ctx = _headless_context(model)
     mujoco.mj_setState(model, data, rec["initial_state"], STATE_SPEC)
     mujoco.mj_forward(model, data)
-    comp = CompositeRenderer(model, ctx, meta["robot_specs"]["CAMERA_SPECS"], size=(W, H), panel_static=(meta.get("task") or {}).get("panel"))
+    comp = CompositeRenderer(model, ctx, meta["robot_specs"]["CAMERA_SPECS"], size=(W, H), panel_static=(meta.get("task") or {}).get("panel"), shadows=CFG["shadows"])
     writer = None if only_times else X264Writer(out_path, CFG["fps"], (W, H), str(out_path) + ".ffmpeg.log")
 
     def frame_at(t):
@@ -93,7 +94,8 @@ def render_real(rec_dir, out_path, clock_offset_s, verify=False, log=print, info
     """Part 3: the recording replayed in the notebook layout (no intro), the clock continuing from the search's end. Returns the replay report."""
     work = Path(out_path).parent / (Path(out_path).stem + "_work")
     replay_mod.open_video = lambda path, fps, size, codec="mp4v", quality=None: X264Writer(path, fps, size, str(path) + ".ffmpeg.log")
-    r = replay_mod.replay_run(rec_dir, out_dir=work, video="viewer", hz=float(CFG["fps"]), size=tuple(CFG["size"]), name="real", quiet=True, intro=None, clock_offset_s=clock_offset_s, verify=verify, info_hook=info_hook)
+    r = replay_mod.replay_run(rec_dir, out_dir=work, video="viewer", hz=float(CFG["fps"]), size=tuple(CFG["size"]), name="real", quiet=True, intro=None, clock_offset_s=clock_offset_s, verify=verify, info_hook=info_hook,
+                              shadows="on" if CFG["shadows"] else "off")
     log(f"  replay ok {r['ok']} ({r.get('n_ticks_recorded')} ticks, mismatch {r.get('mismatch')}); frames {r.get('frames_rendered')}")
     if verify and not r["ok"]:
         raise RuntimeError(f"the replay did not reproduce the run: {r.get('mismatch')}")

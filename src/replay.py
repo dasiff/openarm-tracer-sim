@@ -22,7 +22,7 @@ as in robot_specs.CAMERA_SPECS). The argument `video` says what is written:
     "training"  lossless Portable Network Graphics (PNG) frames, one folder per camera, out_dir/<camera>/<tick:06d>.png (the control
                 tick the frame was rendered in)
     "viewer"    one MP4 of the live viewer's picture (src/viewer_composite.py: the follow camera, the status panel, the three camera
-                tiles), 1920x1080 by default, shadows on everywhere, out_dir/<name>.mp4, plus a PNG of the same picture at the
+                tiles), 1920x1080 by default, shadows on everywhere unless shadows="off", out_dir/<name>.mp4, plus a PNG of the same picture at the
                 handoff frame, out_dir/<name>_handoff.png
 In the "preview" and "training" modes the run also writes out_dir/frames.csv (comma-separated values with the columns frame, tick,
 sim_time) and out_dir/replay_report.json; in the "viewer" mode these files are named out_dir/<name>_frames.csv and
@@ -196,8 +196,8 @@ def replay_run(run_dir, out_dir=None, cameras=None, video="preview", hz=30.0, si
             mode it must not exceed the control tick rate recorded in the metadata. Defaults to 30.0.
         size (tuple or None): (width, height) in pixels that replaces the camera resolution; in "viewer" mode it is the size of the
             whole picture and defaults to (1920, 1080) when None. Defaults to None (the recorded camera resolution).
-        shadows (str): "policy" (each camera as recorded), "on" or "off" for all cameras; "viewer" mode always uses "on".
-            Defaults to "policy".
+        shadows (str): "policy" (each camera as recorded), "on" or "off" for all cameras; in "viewer" mode "policy" means "on"
+            (the follow view and the tiles with shadows, as before) and "off" draws none anywhere (row M322). Defaults to "policy".
         codec (str): OpenCV four-character code (fourcc) of the videos; it also selects the file extension of the "preview" videos
             through CONTAINER. Defaults to "mp4v".
         quality (int or None): Writer quality from 0 to 100, if the codec honours it. Defaults to None (the codec's default).
@@ -298,7 +298,7 @@ def replay_run(run_dir, out_dir=None, cameras=None, video="preview", hz=30.0, si
     composite, still = None, {"path": None, "saved": False, "done": set()}
     if video == "viewer":
         size = tuple(size) if size else (1920, 1080)
-        shadows = "on"
+        shadows = "off" if shadows == "off" else "on"
         model.vis.global_.offwidth = max(model.vis.global_.offwidth, size[0])      # the offscreen buffer must hold the follow view (before the GL context exists)
         model.vis.global_.offheight = max(model.vis.global_.offheight, size[1])
     if video == "training" and hz > meta["source_hz"] + 1e-9:
@@ -328,7 +328,7 @@ def replay_run(run_dir, out_dir=None, cameras=None, video="preview", hz=30.0, si
             from src.viewer_composite import CompositeRenderer
             if legend_extra is None:
                 legend_extra = ([("F9", "take over"), ("Enter", "hand back")] if meta.get("mode") == "auto" else []) + [("Del", "abort")]
-            composite = CompositeRenderer(model, context, specs, size=size, legend_extra=legend_extra, panel_static=(meta.get("task") or {}).get("panel"))
+            composite = CompositeRenderer(model, context, specs, size=size, legend_extra=legend_extra, panel_static=(meta.get("task") or {}).get("panel"), shadows=shadows == "on")
             path = out / f"{name}.mp4"
             writers["viewer"] = open_video(path, hz, size, codec, quality)
             report["videos"]["viewer"] = str(path)

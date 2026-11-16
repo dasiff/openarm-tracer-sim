@@ -153,7 +153,8 @@ def main(a):
     work = real.parent / (real.stem + "_work")
     replay_mod.open_video = lambda path, fps, size, codec="mp4v", quality=None: dv.X264Writer(path, fps, size, str(path) + ".ffmpeg.log")
     r = replay_mod.replay_run(run_dir / "recording", out_dir=work, video="viewer", hz=float(CFG["fps"]), size=tuple(CFG["size"]), name="real", quiet=True, intro=None,
-                              clock_offset_s=run.search_end_s, verify=False, info_hook=None, max_ticks=a.real_max_ticks)   # render_real's call, plus max_ticks
+                              clock_offset_s=run.search_end_s, verify=False, info_hook=None, max_ticks=a.real_max_ticks,   # render_real's call, plus max_ticks
+                              shadows="on" if CFG["shadows"] else "off")
     shutil.move(str(work / "real.mp4"), str(real))
     shutil.rmtree(work, ignore_errors=True)
     t_real = time.perf_counter() - t0

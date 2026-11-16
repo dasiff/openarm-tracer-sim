@@ -106,7 +106,7 @@ class Wall:
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--speed-source", choices=["sent", "state"], default="sent")
+    ap.add_argument("--speed-source", choices=["sent", "state"], default="state", help="Phase C step 5: default state (measured joints)")
     ap.add_argument("--no-shelf", action="store_true", help="no phantom wall (the plain episode)")
     ap.add_argument("--max-ticks", type=int, default=None, help="stop cleanly after this many filter calls (a quick check)")
     ap.add_argument("--hold-policy", default=None, choices=["braking", "repeat_last_safe"], help="override SAFETY_FILTER_PLUGIN_CFG hold_policy (repeat_last_safe = the old behaviour, no braking layer: a control run)")

@@ -358,9 +358,12 @@ qm = np.zeros((2, 7))
 qm[0, 0] = 0.04                                     # the measured left joint moved: 0.5 * 0.04 = 2 cm in one tick = 3 m/s
 Ls.process(np.zeros((2, 7)), np.zeros((2, 7)), Meas(qm))
 check('speed_source "state": the ramp starts from the measured speed (3 m/s), not from the profile', abs(Ls.last_measure["speed"][0] - 3.0) < 1e-6 and abs(Ls._va(0)[0] - 3.0) < 1e-6)
-Lsent = BrakingLayer(fake_tool)
+tun_sent = copy.deepcopy(cfg.BRAKING)
+tun_sent["speed_source"] = "sent"
+Lsent = BrakingLayer(fake_tool, tun_sent)
 Lsent.process(np.zeros((2, 7)), np.zeros((2, 7)), Meas(qm))
-check('speed_source "sent" (default): measured joints are not read', Lsent.last_measure is None and Lsent._va(0)[0] == 0.0)
+check('speed_source "sent" (kept behind the flag): measured joints are not read', Lsent.last_measure is None and Lsent._va(0)[0] == 0.0)
+check('speed_source default is "state" (Phase C step 5)', cfg.BRAKING["speed_source"] == "state" and BrakingLayer(fake_tool).tun["speed_source"] == "state")
 
 # Phase C step 3 made free motion shaped by default; these checks are the Phase B pass-through, switched on explicitly
 LEGACY = copy.deepcopy(cfg.BRAKING)

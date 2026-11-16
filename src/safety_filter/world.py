@@ -86,7 +86,7 @@ def catalog_object(entry_id, position, axis=None):
     else:
         centre = np.asarray(position, float) + np.array([0.0, 0.0, spec["centre_above_bottom_m"]])
     if spec["shape"] == "capsule":
-        size = (spec["radius_m"], spec["half_height_m"])
+        size = (spec["radius_m"], spec["half_height_m"] - spec["radius_m"])   # the segment half length: the cylinder's half height less the radius (see OBJECT_CATALOG)
     else:
         size = tuple(spec["half_m"])
     return WorldObject(id=entry_id, shape=spec["shape"], size=tuple(size), centre=tuple(centre),

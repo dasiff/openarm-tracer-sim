@@ -47,7 +47,7 @@ bench_top = 0.80
 def held_beaker(z_gap, top, x=1.0, y=0.0):
     """A held beaker capsule (the catalog beaker) whose lowest point is z_gap above the plane `top`."""
     rot = np.eye(3)
-    return shape_of("left_held", "capsule", (0.035, 0.05), np.array([x, y, top + z_gap + 0.085]), rot, "left", "held", body="openarm_left_link7")
+    return shape_of("left_held", "capsule", (0.035, 0.015), np.array([x, y, top + z_gap + 0.05]), rot, "left", "held", body="openarm_left_link7")   # Phase C: the beaker capsule's segment half length is 0.015 m (its bottom is 0.05 m below the centre)
 
 
 hp, bp = as_placed(HOT), as_placed(bench)
@@ -218,7 +218,7 @@ feed = ObstacleFeed(feed_shapes)
 q_home = np.array([tc.TASK_CFG["home_q_left"], tc.TASK_CFG["home_q_right"]], float)
 tr = HeldTracker(WorldView(Src([])))
 tr.update("left", False, placed, pos, rot, name="beaker")
-lowest = pad[2] - 0.085
+lowest = pad[2] - 0.05      # Phase C: the beaker's bottom is 0.05 m below the pad centre (was 0.085 with the old capsule)
 hot_under = catalog_object("hotplate", np.array([pad[0], pad[1], lowest - 0.01]))     # its top face 1 cm under the beaker
 feed.bind([hot_under], tr)
 o_ = feed(q_home, st)

@@ -529,7 +529,7 @@ def verify(dc_path, budget_s=None):
 
 class TorsoBound:
     """Torso proximity of joint boxes ("blocked by the torso" extension, DNC-1 to DNC-3): a lower bound, over a box of a pair's variables,
-    of the smallest gap between the guard set's arm shapes (of the arms the pair involves) and the torso shapes. Same bound as the proof
+    of the smallest gap between the guard set's arm shapes (both arms, as the run-time guard) and the torso shapes. Same bound as the proof
     (centre value minus travel, soundness file); an arm variable the box does not hold ranges over its full limits."""
 
     def __init__(self, vm, kins, doc, stage1, mode, determined_only=False):
@@ -555,9 +555,7 @@ class TorsoBound:
         """(N,) lower bound of the arm-to-torso gap over each box [lo, hi] (N, nv) of `pair`; +inf where no shape counts."""
         out = np.full(len(lo), np.inf)
         col = {v: k for k, v in enumerate(pair.names)}
-        for side in SIDES:
-            if not any(v.startswith(side + "_") for v in pair.names):
-                continue                                      # the pair does not involve this arm: its pose is not part of the box
+        for side in SIDES:                                    # both arms, as the run-time guard: an arm the pair does not involve is free over its full limits
             todo_shapes = []
             for sid in self.shapes[side]:
                 for tid in self.torso:

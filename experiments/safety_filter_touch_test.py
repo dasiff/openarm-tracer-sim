@@ -240,7 +240,16 @@ def never_close_list():
             bad_checked.append((p["a"], p["b"]))
     check("the touch rules exempt every listed pair", not bad_exempt, str(bad_exempt[:3]))
     check("every listed pair is a checked robot-vs-robot pair without the list", not bad_checked, str(bad_checked[:3]))
-    listed = {frozenset((p["a"], p["b"])) for p in pairs}
+    stage1 = {frozenset((p["a"], p["b"])) for p in pairs}
+    listed = set(rs.never_close)                          # the list the filter uses: Stage 1 alone, or the merged list (never_close_pairs, DNC-4)
+    if rs.doc.get("never_close_pairs"):
+        check("merged list holds every Stage 1 pair, none of them torso-dependent", stage1 <= listed and not (stage1 & rs.torso_dependent))
+        dep = [tuple(sorted(k)) for k in sorted(rs.torso_dependent, key=sorted)][:50]
+        rs.set_torso_proximate(True)                      # torso guard on (DNC-1): torso-dependent pairs are not trusted
+        on = all(isinstance(pair_rule(stub(a), stub(b)), Rule) for a, b in dep) and all(isinstance(pair_rule(stub(p["a"]), stub(p["b"])), Exempt) for p in pairs)
+        rs.set_torso_proximate(False)
+        off = all(isinstance(pair_rule(stub(a), stub(b)), Exempt) for a, b in dep)
+        check("torso guard on: torso-dependent pairs are checked again, Stage 1 pairs stay exempt; guard off: exempt", on and off, f"({len(rs.torso_dependent)} torso-dependent)")
     unlisted = [(a, b) for a in rs.specs for b in rs.specs if a["id"] < b["id"] and frozenset((a["id"], b["id"])) not in listed
                 and isinstance(pair_rule(stub(a["id"]), stub(b["id"]), use_never_close=False), Rule)]
     check("pairs not on the list keep their rule", all(isinstance(pair_rule(stub(a["id"]), stub(b["id"])), Rule) for a, b in unlisted[:200]))

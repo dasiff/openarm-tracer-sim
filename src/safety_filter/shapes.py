@@ -16,6 +16,7 @@ import mujoco
 import numpy as np
 
 from src.safety_filter import config as cfg
+from src.safety_filter.geometry import capsule_capsule_batch
 from src.safety_filter.robot_model import robot_fingerprint
 
 SIDES = ("left", "right")
@@ -162,6 +163,52 @@ class RobotShapes:
         self._adr_fing = {s: np.array([model.jnt_qposadr[j] for j in self._finger[s]]) for s in SIDES}
         self._qbuf, self._kin_q, self._kin_done = np.array(model.qpos0, float), np.array(model.qpos0, float), False
         self.largest_radius = max((s["radius"] for s in self.specs if s["kind"] == "capsule"), default=0.0)
+        self._prepare_torso_guard(merged, nc)
+
+    def _prepare_torso_guard(self, merged, nc):
+        """Index arrays of the torso guard (DNC-1, DNC-2): every (arm shape of the guard set, torso shape) pair, as positions among the capsules."""
+        caps = [self.specs[k] for k in self._cap_idx]
+        torso = [n for n, sp in enumerate(caps) if sp["part"] == "torso"]
+        if any(sp["part"] == "torso" and sp["kind"] != "capsule" for sp in self.specs):
+            raise NotImplementedError("the torso guard measures capsule against capsule; a torso box is not supported")
+        # the Stage 1 pairs (for the "checked" guard set), whether or not this instance uses the never-close list
+        if merged is not None:
+            stage1 = {frozenset((p["a"], p["b"])) for p in merged["pairs"] if p["source"] == "stage1"}
+        else:
+            stage1 = {frozenset((p["a"], p["b"])) for p in nc.get("pairs", [])}
+        mode = cfg.NEVER_CLOSE_DC["torso_guard_shapes"]
+        if mode not in ("all_arm", "checked"):
+            raise ValueError(f"NEVER_CLOSE_DC['torso_guard_shapes'] must be 'all_arm' or 'checked', not {mode!r}")
+        I, J, side = [], [], []
+        for n, sp in enumerate(caps):
+            if sp["arm"] not in SIDES or sp["part"] in cfg.TORSO_EXEMPT_PARTS:
+                continue
+            if mode == "checked" and torso and all(frozenset((sp["id"], caps[t]["id"])) in stage1 for t in torso):
+                continue
+            for t in torso:
+                I.append(n)
+                J.append(t)
+                side.append(sp["arm"])
+        self._tg_i, self._tg_j, self._tg_side = np.array(I, int), np.array(J, int), np.array(side, dtype=object)
+
+    def torso_gap(self, sides=None):
+        """The smallest gap (m) between an arm shape of the guard set and a torso shape, at the state last set (set_state or place).
+        The filter's own capsule distance. sides: only the shapes of these arms (default both; the filter always uses both).
+        +inf when no shape counts."""
+        i, j = self._tg_i, self._tg_j
+        if sides is not None:
+            keep = np.isin(self._tg_side, list(sides))
+            i, j = i[keep], j[keep]
+        if not len(i):
+            return float("inf")
+        A, B, _, _ = self.place_arrays()
+        return float(capsule_capsule_batch(A[i], B[i], self._cap_r[i], A[j], B[j], self._cap_r[j], gap_only=True).min())
+
+    def set_torso_proximate(self, proximate):
+        """Torso guard (DNC-1): while an arm shape is within the torso proximity margin, the torso-dependent never-close pairs are not
+        trusted: the touch rules then see the list without them, so those pairs are checked like any other pair."""
+        global _NEVER_CLOSE
+        _NEVER_CLOSE = self.never_close_torso_free if proximate else self.never_close
 
     def _jid(self, name):
         j = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_JOINT, name)

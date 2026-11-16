@@ -19,6 +19,7 @@ Output: (filtered command, FilterStatus).
 Robot state may come from the simulator; the resolver never reads world data from it (it takes world objects as numbers).
 """
 
+import logging
 from dataclasses import dataclass, field
 
 import numpy as np
@@ -63,6 +64,9 @@ class FilterStatus:
     pair_log: list = field(default_factory=list)   # [(pair name, "pushed" | "skipped" | "shortened")] in processing order
 
 
+_LOG = logging.getLogger(__name__)   # debug lines only (torso guard switching on and off); nothing is printed unless the caller turns debug on
+
+
 class _Hold(Exception):
     def __init__(self, reason):
         super().__init__(reason)
@@ -83,6 +87,10 @@ class Resolver:
         self.kin = ArmKinematics(shapes, solver)
         self._active = set()
         self.statics = Statics(shapes)                      # array form kept between ticks: pair tables, world arrays, sleep timers (SF-69, SF-72)
+        # torso guard (DNC-1): is an arm shape within the torso proximity margin at this tick's last or raw command
+        self.torso_proximate = False                        # this tick
+        self.torso_gap_m = float("inf")                     # the smallest arm-to-torso gap of this tick (inf while the guard has nothing to protect)
+        self.torso_proximate_ticks = 0                      # ticks so far on which the guard fired
 
     def reset(self):
         self._active = set()
@@ -92,6 +100,7 @@ class Resolver:
         """The start of a tick, shared by the resolvers: the candidate pairs and the worst pair at the raw command.
         Returns (tick, worst pair or None); tick is None when every pair is asleep (pass-through without any kinematics, SF-72).
         A tick that will act looks at every pair, as before the sleep timers."""
+        self._torso_guard(raw, last, state)
         sleep = self.statics.sleep
         awake = sleep.awake(self, raw, last, state, world_objects, held)
         if awake is not None and not awake.any():
@@ -108,6 +117,25 @@ class Resolver:
                 break
             t.wake_all()
         return t, first
+
+    def _torso_guard(self, raw, last, state):
+        """Torso guard (DNC-1, DNC-3), before the never-close list is consulted: the smallest gap between an arm shape and a torso shape
+        at the raw and at the last command. At or inside the margin the tick is torso-proximate and the torso-dependent never-close
+        pairs are treated as not proven for this tick. Nothing is measured when the list has no torso-dependent pair."""
+        sh = self.shapes
+        if not sh.torso_dependent:
+            return
+        sh.set_state(with_arms(state, np.asarray(raw, float)))
+        gap = sh.torso_gap()
+        sh.set_state(with_arms(state, np.asarray(last, float)))          # last: the pose the tick places first, so its kinematics is reused
+        gap = min(gap, sh.torso_gap())
+        proximate = gap <= cfg.NEVER_CLOSE_DC["torso_proximity_margin_m"]
+        if proximate != self.torso_proximate:
+            _LOG.debug("torso guard %s: smallest arm-to-torso gap %.1f mm (%d torso-proximate ticks so far)",
+                       "on" if proximate else "off", gap * 1e3, self.torso_proximate_ticks)
+        self.torso_proximate, self.torso_gap_m = proximate, gap
+        self.torso_proximate_ticks += int(proximate)
+        sh.set_torso_proximate(proximate)
 
     # ------------------------------------------------------------------
     def step(self, raw, last, state: RobotState, world_objects=(), held=None):

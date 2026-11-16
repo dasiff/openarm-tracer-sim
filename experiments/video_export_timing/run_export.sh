@@ -26,7 +26,7 @@ sampler() {
             [ "$dt" -gt 0 ] && busy=$(( (dt - di) * 100 / dt ))
         fi
         prev_total=$total; prev_idle=$idle
-        local rss=$(ps -eo rss,args | grep -E "experiments/search_video.py|ffmpeg-linux|export_timed.py" | grep -v grep | awk '{s+=$1} END {printf "%.0f", s/1024}')
+        local rss=$(ps -eo rss,args | grep -E "experiments/search_video.py|ffmpeg-linux|export_timed.py|multiprocessing" | grep -v grep | awk '{s+=$1} END {printf "%.0f", s/1024}')
         local swap=$(free -m | awk '/Swap/ {print $3}')
         echo "SAMPLE $(date +%T) tree_rss_mb=${rss:-0} swap_used_mb=$swap cpu_busy_pct=$busy" >> "$LOG"
         sleep 5
@@ -34,7 +34,7 @@ sampler() {
 }
 sampler &
 SAMPLER=$!
-systemd-run --user --scope -q -p MemoryMax=6G -p ManagedOOMPreference=omit /usr/bin/time -v python experiments/search_video.py "$RUN" --out "$OUT" --name moved "$@" >> "$LOG" 2>&1
+systemd-run --user --scope -q -p MemoryMax=${MEMCAP:-6G} -p ManagedOOMPreference=omit /usr/bin/time -v python experiments/search_video.py "$RUN" --out "$OUT" --name moved "$@" >> "$LOG" 2>&1
 RC=$?
 kill $SAMPLER 2>/dev/null
 { echo "=== exit $RC at $(date '+%F %T')"; echo "=== free -m after"; free -m

@@ -34,6 +34,7 @@ import mujoco  # noqa: E402
 
 import src.replay as replay_mod  # noqa: E402
 from src.control_loop import _headless_context  # noqa: E402
+from src.robot_specs import SIMULATION_TIMESTEP  # noqa: E402
 from src.run_record import STATE_SPEC, load_recording  # noqa: E402
 from src.search_timeline import SearchRun  # noqa: E402
 from src.task_config import SEARCH_DISPLAY_CFG as CFG  # noqa: E402
@@ -52,10 +53,18 @@ def stills_times(run):
             "3_mid_accepted_poses": keys["t0"] + keys["dur"] / 2, "4_mid_dryrun": dry["t0"] + dry["dur"] / 2, "5_green_hold": hold["t0"] + hold["dur"] / 2}
 
 
-def render_search(run, rec, out_path, only_times=None, log=print):
-    """Draws parts 1 and 2 frame by frame. Returns the number of frames (or {label: image} when only_times is given)."""
+def render_search(run, rec, out_path, only_times=None, log=print, frames=None, on_built=None):
+    """Draws parts 1 and 2 frame by frame. Returns the number of frames (or {label: image} when only_times is given).
+
+    Args:
+        frames (tuple or None): (first, end) frame numbers of the part to draw (end not included); None draws all of it (the parallel export draws a piece per worker).
+        on_built (callable or None): Called with no arguments once the model is built and its build memory released.
+    """
     meta = rec["meta"]
     model, data, reset = replay_mod.build_model(meta)
+    replay_mod.release_build_memory()
+    if on_built is not None:
+        on_built()
     reset(model, data)
     W, H = CFG["size"]
     model.vis.global_.offwidth = max(model.vis.global_.offwidth, W)
@@ -78,24 +87,42 @@ def render_search(run, rec, out_path, only_times=None, log=print):
     try:
         if only_times:
             return {label: frame_at(t) for label, t in only_times.items()}
-        n = int(round(run.duration_s * CFG["fps"]))
-        for i in range(n):
+        total = int(round(run.duration_s * CFG["fps"]))
+        first, end = frames if frames else (0, total)
+        for i in range(first, end):
             writer.write(frame_at(i / CFG["fps"]))
-            if i % 60 == 0:
-                log(f"  search frame {i}/{n}")
-        return n
+            if (i - first) % 60 == 0:
+                log(f"  search frame {i}/{end}")
+        return end - first
     finally:
         if writer:
             writer.release()
         gl.free()
 
 
-def render_real(rec_dir, out_path, clock_offset_s, verify=False, log=print, info_hook=None):
-    """Part 3: the recording replayed in the notebook layout (no intro), the clock continuing from the search's end. Returns the replay report."""
+def real_frame_tick(meta, frame):
+    """The control tick in which real-part frame number `frame` is drawn (replay_run draws one every physics_hz / fps steps, at the end of a step)."""
+    every = int(round(1.0 / (SIMULATION_TIMESTEP * CFG["fps"])))
+    return (every * (frame + 1) - 1) // meta["steps_per_tick"]
+
+
+def render_real(rec_dir, out_path, clock_offset_s, verify=False, log=print, info_hook=None, frames=None, on_built=None):
+    """Part 3: the recording replayed in the notebook layout (no intro), the clock continuing from the search's end. Returns the replay report.
+
+    Args:
+        frames (tuple or None): (first, end) real-part frame numbers to draw (end not included); None draws all. The physics is replayed from the start up to the last of them
+            (the parallel export gives each worker a piece).
+        on_built (callable or None): Called with no arguments once the model is rebuilt and its build memory released.
+    """
+    extra = {}
+    if frames:
+        meta = json.loads((Path(rec_dir) / "meta.json").read_text())
+        last = real_frame_tick(meta, frames[1] - 1)
+        extra = {"render_ticks": (real_frame_tick(meta, frames[0]), last), "max_ticks": last + 1}
     work = Path(out_path).parent / (Path(out_path).stem + "_work")
     replay_mod.open_video = lambda path, fps, size, codec="mp4v", quality=None: X264Writer(path, fps, size, str(path) + ".ffmpeg.log")
     r = replay_mod.replay_run(rec_dir, out_dir=work, video="viewer", hz=float(CFG["fps"]), size=tuple(CFG["size"]), name="real", quiet=True, intro=None, clock_offset_s=clock_offset_s, verify=verify, info_hook=info_hook,
-                              shadows="on" if CFG["shadows"] else "off")
+                              shadows="on" if CFG["shadows"] else "off", on_model_built=on_built, **extra)
     log(f"  replay ok {r['ok']} ({r.get('n_ticks_recorded')} ticks, mismatch {r.get('mismatch')}); frames {r.get('frames_rendered')}")
     if verify and not r["ok"]:
         raise RuntimeError(f"the replay did not reproduce the run: {r.get('mismatch')}")
@@ -112,6 +139,117 @@ def concat(parts, out_path):
     lst.unlink()
 
 
+PHYSICS_COST = 0.08         # one real-part frame of physics replay (about 20 ms) as a fraction of one frame's drawing time (about 250 ms): how much later pieces cost more
+BUILD_COST = 24             # a second model build in one worker (about 6 s) in frames of drawing time
+
+
+def plan_pieces(n_search, n_real, workers):
+    """Cuts the frames [search part | real part] into one contiguous piece per worker so that the workers finish together.
+
+    A piece that reaches into the real part also pays the physics replay from the recording's start up to its last frame (PHYSICS_COST per real frame up to there),
+    and a piece that holds both parts pays a second model build (BUILD_COST). Finds, by bisection, the smallest finishing time at which a greedy fill uses all frames.
+
+    Returns:
+        list[tuple]: (first, end) global frame numbers (the search frames come first), one per worker; an empty piece is (end, end).
+    """
+    total = n_search + n_real
+
+    def cost(a, b):
+        c = b - a
+        if b > n_search:
+            c += PHYSICS_COST * (b - n_search)
+            if a < n_search:
+                c += BUILD_COST
+        return c
+
+    def fill(limit):
+        pieces, g = [], 0
+        for _ in range(workers):
+            lo, hi = g, total               # the largest end with cost(g, end) <= limit (cost grows with end)
+            while lo < hi:
+                mid = (lo + hi + 1) // 2
+                lo, hi = (mid, hi) if cost(g, mid) <= limit else (lo, mid - 1)
+            pieces.append((g, lo))
+            g = lo
+        return pieces, g >= total
+
+    lo, hi = 0.0, float(total) * (1 + PHYSICS_COST) + BUILD_COST
+    for _ in range(60):
+        mid = (lo + hi) / 2
+        lo, hi = (lo, mid) if fill(mid)[1] else (mid, hi)
+    return fill(hi)[0]
+
+
+def render_piece(run_dir, jobs, seg_dir, built, log=print):
+    """One worker's share: renders its search frames and real frames (each as its own MP4) and returns the file names in video order.
+
+    Args:
+        run_dir (pathlib.Path): The run folder.
+        jobs (dict): {"search": (first, end) or None, "real": (first, end) or None}, piece-local frame numbers of the two parts.
+        seg_dir (pathlib.Path): Where the pieces go.
+        built (callable): Called when a model build is finished (the parent starts the next worker after the first call).
+    """
+    out = []
+    run = SearchRun(run_dir, CFG)
+    tag = f"{jobs['id']:02d}"
+    if jobs["search"]:
+        rec = load_recording(run_dir / "recording")
+        path = seg_dir / f"seg_{tag}_a_search.mp4"
+        render_search(run, rec, path, log=log, frames=jobs["search"], on_built=built)
+        out.append(str(path))
+    if jobs["real"]:
+        path = seg_dir / f"seg_{tag}_b_real.mp4"
+        render_real(run_dir / "recording", path, run.search_end_s, log=log, frames=jobs["real"], on_built=built)
+        out.append(str(path))
+    return out
+
+
+def worker_main(run_dir, jobs, seg_dir, built_event, results):
+    """Entry point of a worker process (see render_piece); puts (job id, file names or an error text) in `results`."""
+    try:
+        names = render_piece(Path(run_dir), jobs, Path(seg_dir), built_event.set, log=lambda m: print(f"[worker {jobs['id']}] {m}", flush=True))
+        results.put((jobs["id"], names, None))
+    except BaseException as e:  # noqa: BLE001  (the parent reports it)
+        results.put((jobs["id"], None, f"{type(e).__name__}: {e}"))
+        raise
+    finally:
+        built_event.set()
+
+
+def render_parallel(run_dir, run, workers, seg_dir):
+    """Draws the whole video with `workers` processes and returns the MP4 pieces in video order. Starts the workers one after the other (each after the previous
+    one has built its model) because a model build briefly needs about 2 GB."""
+    import multiprocessing as mp
+    n_search, n_real = int(round(run.duration_s * CFG["fps"])), None
+    rec_meta = json.loads((Path(run_dir) / "recording" / "meta.json").read_text())
+    n_real = int(rec_meta["n_ticks"] * rec_meta["steps_per_tick"] // int(round(1.0 / (SIMULATION_TIMESTEP * CFG["fps"]))))
+    pieces = plan_pieces(n_search, n_real, workers)
+    seg_dir.mkdir(parents=True, exist_ok=True)
+    ctx = mp.get_context("spawn")
+    results, procs = ctx.Queue(), []
+    for k, (a, b) in enumerate(pieces):
+        if b <= a:
+            continue
+        jobs = {"id": k, "search": (a, min(b, n_search)) if a < n_search else None, "real": (max(a, n_search) - n_search, b - n_search) if b > n_search else None}
+        ev = ctx.Event()
+        pr = ctx.Process(target=worker_main, args=(str(run_dir), jobs, str(seg_dir), ev, results))
+        pr.start()
+        procs.append((pr, ev, jobs))
+        print(f"worker {k}: global frames {a} to {b} ({b - a}); search {jobs['search']}, real {jobs['real']}", flush=True)
+        ev.wait(timeout=300)                                  # the next worker starts after this one's first model build
+    names = {}
+    for _ in procs:
+        k, files, err = results.get()
+        if err:
+            for pr, _e, _j in procs:
+                pr.terminate()
+            raise RuntimeError(f"worker {k} failed: {err}")
+        names[k] = files
+    for pr, _e, _j in procs:
+        pr.join()
+    return [f for k in sorted(names) for f in names[k]], n_search, n_real
+
+
 def main(a):
     run_dir = Path(a.run_dir)
     out = Path(a.out)
@@ -126,6 +264,20 @@ def main(a):
         print("stills written to", out)
         return 0
     stamp = time.strftime("%Y%m%d_%H%M%S")
+    workers = a.workers if a.workers else CFG["workers"]
+    if workers > 1 and not a.search_only and not a.search_file:
+        t0 = time.time()
+        seg_dir = out / f".{name}_pieces_{stamp}"
+        files, n_search, n_real = render_parallel(run_dir, run, workers, seg_dir)
+        full_final, full_tmp = out / f"{name}_full_{stamp}.mp4", out / f".{name}_full_{stamp}.mp4.tmp"
+        concat(files, full_tmp)
+        os.replace(full_tmp, full_final)
+        shutil.rmtree(seg_dir, ignore_errors=True)
+        info = {"run": str(run_dir), "full_video": str(full_final), "workers": workers, "search_frames": n_search, "real_frames": n_real, "search_end_s": run.search_end_s, "other_candidates": run.other_numbers,
+                "accepted": run.accepted, "settings": {k: (list(v) if isinstance(v, tuple) else v) for k, v in CFG.items()}, "render_wall_s": time.time() - t0}
+        (out / f"{name}_search_info_{stamp}.json").write_text(json.dumps(info, indent=1, default=str))
+        print(f"full video: {full_final} ({n_search + n_real} frames, {workers} workers, {time.time() - t0:.0f} s wall)", flush=True)
+        return 0
     search_tmp, search_final = out / f".{name}_search_{stamp}.mp4.tmp", out / f"{name}_search_{stamp}.mp4"
     t0 = time.time()
     if a.search_file:
@@ -158,5 +310,6 @@ if __name__ == "__main__":
     ap.add_argument("--stills-only", action="store_true")
     ap.add_argument("--search-only", action="store_true")
     ap.add_argument("--search-file", default=None, help="use this already rendered search part instead of rendering it again")
+    ap.add_argument("--workers", type=int, default=None, help="render with this many processes (default: SEARCH_DISPLAY_CFG[\"workers\"])")
     ap.add_argument("--verify", action="store_true", help="stop if the replay is not bit-identical to the recording (the recordings of 2026-11-13 are not: see the report)")
     sys.exit(main(ap.parse_args()))

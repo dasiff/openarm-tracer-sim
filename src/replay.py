@@ -30,6 +30,7 @@ out_dir/<name>_report.json.
 """
 
 import csv
+import ctypes
 import importlib
 import json
 import math
@@ -109,6 +110,18 @@ def build_model(meta):
     return sim.model, sim.data, reset
 
 
+def release_build_memory():
+    """Gives the memory that the model build (MjSpec.compile) freed but the C allocator kept back to the operating system (glibc malloc_trim).
+
+    Compiling the scene transiently needs about 2 GB; the compiled model is 0.4 GB, but without this the process keeps about 1.9 GB resident (video export speed task,
+    2026-11-16, row M323). It changes no value and only does something on Linux with glibc; elsewhere it does nothing.
+    """
+    try:
+        ctypes.CDLL("libc.so.6").malloc_trim(0)
+    except (OSError, AttributeError):
+        pass
+
+
 CONTAINER = {"mp4v": ".mp4", "avc1": ".mp4", "VP90": ".webm", "VP80": ".webm", "MJPG": ".avi", "XVID": ".avi"}   # file extension per fourcc
 
 
@@ -177,7 +190,7 @@ class PngFrames:
 
 
 def replay_run(run_dir, out_dir=None, cameras=None, video="preview", hz=30.0, size=None, shadows="policy", codec="mp4v", quality=None,
-               verify=True, max_ticks=None, render_ticks=None, quiet=False, name="viewer", after_handoff_s=None, legend_extra=None, face=None, intro=None, still_ticks=None, step_hook=None, render_at_ticks=None, clock_offset_s=None, info_hook=None):
+               verify=True, max_ticks=None, render_ticks=None, quiet=False, name="viewer", after_handoff_s=None, legend_extra=None, face=None, intro=None, still_ticks=None, step_hook=None, render_at_ticks=None, clock_offset_s=None, info_hook=None, on_model_built=None):
     """Replays a recorded run: verifies its states and optionally renders its cameras.
 
     The recording is rebuilt and re-simulated through src/control_loop.run_loop (see the module docstring for what is checked and
@@ -224,6 +237,7 @@ def replay_run(run_dir, out_dir=None, cameras=None, video="preview", hz=30.0, si
             whole video. None renders every rendering tick. Defaults to None.
         info_hook (callable or None): "viewer" mode only: called as info_hook(info, data, tick) for every picture; it may add display keys. Defaults to None.
         clock_offset_s (float or None): "viewer" mode only: draws the stance-search video's big clock, reading this many real seconds plus the simulated time (M321). None draws none. Defaults to None.
+        on_model_built (callable or None): Called with no arguments once the model is rebuilt and its build memory released (the parallel video export staggers its workers' starts with it). Defaults to None.
         step_hook (callable or None): Called as step_hook(step_count, data) after every physics step (for measurements; it must only read `data`). Defaults to None.
 
     Returns:
@@ -275,6 +289,9 @@ def replay_run(run_dir, out_dir=None, cameras=None, video="preview", hz=30.0, si
         model, data, reset = build_model(meta)
     finally:
         face_mod.set_enabled(previous_face)
+    release_build_memory()
+    if on_model_built is not None:
+        on_model_built()
     head = face_mod.Face(model)
     smile_check = _load_entry(meta["model"].get("success")) if head.textured and isinstance(meta.get("model"), dict) else None
     if model_hash(model) != meta["model_sha256"]:

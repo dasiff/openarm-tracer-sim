@@ -43,9 +43,9 @@ WALL_GAP = 0.13               # m: the phantom wall appears this far (surface to
 WALL_HALF = (0.02, 0.30, 0.30)   # m: half sizes (along the motion, across, up): a thin tall wall
 MOVE_SPEED = 0.02             # m/s: "moving" means a horizontal speed above this, over WINDOW ticks
 WINDOW = 15
-STILL_SPEED = 0.002           # m/s, for STILL_TICKS ticks: the hand has stopped
-STILL_TICKS = 75
-REMOVE_AFTER_STOP_S = 1.0     # s after the hand has stopped the wall disappears
+STILL_SPEED = 0.005           # m/s, for STILL_TICKS ticks: the hand has stopped
+STILL_TICKS = 30
+REMOVE_AFTER_STOP_S = 0.5     # s after the hand has stopped the wall disappears (a short hold: the carry plan is time-based)
 
 
 class Wall:

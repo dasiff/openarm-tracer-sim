@@ -253,6 +253,25 @@ check("step 7: the route filter keeps held_object for the gripper the source own
 kept7b = _filter_by_route({"mode": "arms", "arm_targets": {"right": [0.0] * 7}, "gripper": {"right": 0.0}, "held_object": {"right": "beaker"}}, "mpvi", routes7)
 check("step 7: and drops it for a gripper the source does not own", kept7b is None or "held_object" not in kept7b, str(kept7b))
 
+# ---- step 7 follow-up: the measured acceleration is a 5-tick average (a noisy speed does not look like an emergency) ----
+def measured_acc(noise, accel_true):
+    L8 = BrakingLayer(tool3, copy.deepcopy(cfg.BRAKING))
+    rng8 = np.random.default_rng(4)
+    out8 = []
+    for k in range(80):
+        t8 = k * DT3
+        q8 = np.zeros((2, 7))
+        q8[0, 0] = 0.5 * accel_true * t8 ** 2 / 0.5 + rng8.normal(0, noise)   # tool travel 0.5 * a * t^2 (joint 1 times 0.5)
+        L8.measure(q8, SimpleNamespace(q_left=tuple(q8[0]), q_right=tuple(q8[1])))
+        out8.append(float(L8.last_measure["accel"][0]))
+    return np.array(out8[20:])
+
+
+acc_noisy = measured_acc(3e-5, 0.0)                          # a steady arm with servo-level noise (3e-5 rad)
+check("step 7 follow-up: a steady arm with servo-level noise reads below the acceleration limit (no spike of the size of the limit)", np.abs(acc_noisy).max() < cfg.derived()["effective_accel_limit"], f"max |a| {np.abs(acc_noisy).max():.3f} m/s2 vs limit {cfg.derived()['effective_accel_limit']}")
+acc_true = measured_acc(3e-5, 0.4)
+check("step 7 follow-up: a real acceleration of 0.4 m/s2 is still measured (the window is short, the signal is kept)", abs(np.median(acc_true) - 0.4) < 0.1, f"median {np.median(acc_true):.3f} m/s2")
+
 if __name__ == "__main__":
     print(f"\n{len(fails)} failed" if fails else "\nall passed")
     sys.exit(1 if fails else 0)

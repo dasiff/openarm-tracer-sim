@@ -70,7 +70,10 @@ exp_right = 0.6 * 0.030 / DT
 check("hand speed: measured matches displacement / dt (fake arm)", np.allclose(m["speed"], [exp_left, exp_right]), str(m["speed"]))
 check("hand speed: commanded matches displacement / dt", np.allclose(L.commanded_speed(q0, q1, None), [exp_left, exp_right]))
 m2 = L.measure(q1, None)
-check("hand speed: standing still gives speed 0 and acceleration -v/dt", np.allclose(m2["speed"], 0) and np.allclose(m2["accel"], -m["speed"] / DT))
+check("hand speed: standing still gives speed 0 and no acceleration above zero (the window's slope; Phase C: no longer a two-point difference)", np.allclose(m2["speed"], 0) and np.all(m2["accel"] <= 1e-12) and np.all(m2["accel"] >= -m["speed"] / DT - 1e-9))
+for _ in range(12):
+    m2 = L.measure(q1, None)
+check("hand speed: after the window fills, standing still reads zero acceleration", np.allclose(m2["speed"], 0) and np.allclose(m2["accel"], 0, atol=1e-9))
 check("hand speed: first call gives zeros", np.allclose(BrakingLayer(fake_tool).measure(q1, None)["speed"], 0))
 
 # real model: joint 1 of the left arm turned by a known angle moves the tool point by r * angle, r = its distance from the joint axis

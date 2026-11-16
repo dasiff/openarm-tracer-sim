@@ -5,6 +5,7 @@ Works on (2, 7) joint arrays (left arm, right arm, rad) like the plug-in. Everyt
   commanded_speed()  speed of a commanded joint change: forward kinematics of the change at the tool point (base contributes zero)
 """
 import math
+from collections import deque
 from dataclasses import replace
 
 import numpy as np
@@ -14,6 +15,7 @@ from src.safety_filter.braking_math import JerkRamp, slowing_distance, stopping_
 from src.safety_filter.touch import Exempt, as_placed, gap_between, pair_rule, wake_dist
 
 SIDES = ("left", "right")
+ACCEL_WINDOW_TICKS = 5    # ticks: the measured acceleration is the average over this many ticks (Phase C fix; PLACEHOLDER — tuned by test)
 HAND_SHAPE_PARTS = ("palm", "finger", "link7", "held")      # the shapes of one arm the look-ahead brakes for (the hand and what it holds)
 
 
@@ -130,6 +132,7 @@ class BrakingLayer:
         self._emergency = np.zeros(2, bool)
         self.errors = []                    # error log: every override (the look-ahead failed to catch an obstacle early enough: a bug to investigate)
         self._ceiling = np.zeros(2, bool)   # look-ahead latch: this arm is held to an allowed-contact surface's approach ceiling
+        self._speed_hist = deque(maxlen=ACCEL_WINDOW_TICKS + 1)   # measured speeds of the last ticks (the acceleration window)
         self._tool_prev = None              # tool points of the last sent pose (the hand velocity when the jerk source is "sent")
         self._shaping = np.zeros(2, bool)   # this arm's command is going through the S-curve (it stays so until the ramp has converged on the commanded speed)
         self._dir = np.zeros((2, 7))   # unit joint direction of each arm's last step (the way it was going; used when stopping)
@@ -147,7 +150,20 @@ class BrakingLayer:
         else:
             vel = (pos - self._prev_pos) / self.dt
             speed = np.linalg.norm(vel, axis=1)
-            acc = (speed - self._prev_speed) / self.dt
+            # Phase C fix: the acceleration is the average over the last ACCEL_WINDOW_TICKS ticks, not the difference of two neighbouring
+            # speeds: the measured speed is noisy at the tick scale, and a noise spike fed the cautious stopping formula as a large
+            # acceleration (false look-ahead emergencies in run brkR_plain)
+            self._speed_hist.append(speed.copy())
+            n = len(self._speed_hist)
+            if n > 2:                                   # the least-squares slope of the speed over the window (noise averages out)
+                tt = (np.arange(n) - (n - 1) / 2.0) * self.dt
+                hist = np.array(self._speed_hist)
+                acc = (tt[:, None] * (hist - hist.mean(axis=0))).sum(axis=0) / (tt @ tt)
+            else:
+                acc = (speed - self._prev_speed) / self.dt
+        if self._prev_pos is None:
+            self._speed_hist.clear()
+            self._speed_hist.append(speed.copy())
         self._prev_pos, self._prev_speed = pos, speed
         self.last_measure = {"pos": pos, "vel": vel, "speed": speed, "accel": acc}
         return self.last_measure

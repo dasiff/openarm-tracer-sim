@@ -190,7 +190,7 @@ class PngFrames:
 
 
 def replay_run(run_dir, out_dir=None, cameras=None, video="preview", hz=30.0, size=None, shadows="policy", codec="mp4v", quality=None,
-               verify=True, max_ticks=None, render_ticks=None, quiet=False, name="viewer", after_handoff_s=None, legend_extra=None, face=None, intro=None, still_ticks=None, step_hook=None, render_at_ticks=None, clock_offset_s=None, info_hook=None, on_model_built=None):
+               verify=True, max_ticks=None, render_ticks=None, quiet=False, name="viewer", after_handoff_s=None, legend_extra=None, face=None, intro=None, still_ticks=None, step_hook=None, render_at_ticks=None, clock_offset_s=None, info_hook=None, on_model_built=None, tile_reuse_tol=None):
     """Replays a recorded run: verifies its states and optionally renders its cameras.
 
     The recording is rebuilt and re-simulated through src/control_loop.run_loop (see the module docstring for what is checked and
@@ -237,6 +237,7 @@ def replay_run(run_dir, out_dir=None, cameras=None, video="preview", hz=30.0, si
             whole video. None renders every rendering tick. Defaults to None.
         info_hook (callable or None): "viewer" mode only: called as info_hook(info, data, tick) for every picture; it may add display keys. Defaults to None.
         clock_offset_s (float or None): "viewer" mode only: draws the stance-search video's big clock, reading this many real seconds plus the simulated time (M321). None draws none. Defaults to None.
+        tile_reuse_tol (float or None): "viewer" mode only: see CompositeRenderer; None draws the tiles every picture. Defaults to None.
         on_model_built (callable or None): Called with no arguments once the model is rebuilt and its build memory released (the parallel video export staggers its workers' starts with it). Defaults to None.
         step_hook (callable or None): Called as step_hook(step_count, data) after every physics step (for measurements; it must only read `data`). Defaults to None.
 
@@ -345,7 +346,7 @@ def replay_run(run_dir, out_dir=None, cameras=None, video="preview", hz=30.0, si
             from src.viewer_composite import CompositeRenderer
             if legend_extra is None:
                 legend_extra = ([("F9", "take over"), ("Enter", "hand back")] if meta.get("mode") == "auto" else []) + [("Del", "abort")]
-            composite = CompositeRenderer(model, context, specs, size=size, legend_extra=legend_extra, panel_static=(meta.get("task") or {}).get("panel"), shadows=shadows == "on")
+            composite = CompositeRenderer(model, context, specs, size=size, legend_extra=legend_extra, panel_static=(meta.get("task") or {}).get("panel"), shadows=shadows == "on", tile_reuse_tol=tile_reuse_tol)
             path = out / f"{name}.mp4"
             writers["viewer"] = open_video(path, hz, size, codec, quality)
             report["videos"]["viewer"] = str(path)

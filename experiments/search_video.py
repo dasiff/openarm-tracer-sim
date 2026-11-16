@@ -72,7 +72,7 @@ def render_search(run, rec, out_path, only_times=None, log=print, frames=None, o
     gl, ctx = _headless_context(model)
     mujoco.mj_setState(model, data, rec["initial_state"], STATE_SPEC)
     mujoco.mj_forward(model, data)
-    comp = CompositeRenderer(model, ctx, meta["robot_specs"]["CAMERA_SPECS"], size=(W, H), panel_static=(meta.get("task") or {}).get("panel"), shadows=CFG["shadows"])
+    comp = CompositeRenderer(model, ctx, meta["robot_specs"]["CAMERA_SPECS"], size=(W, H), panel_static=(meta.get("task") or {}).get("panel"), shadows=CFG["shadows"], tile_reuse_tol=CFG["tile_reuse_tol"])
     writer = None if only_times else X264Writer(out_path, CFG["fps"], (W, H), str(out_path) + ".ffmpeg.log")
 
     def frame_at(t):
@@ -122,7 +122,7 @@ def render_real(rec_dir, out_path, clock_offset_s, verify=False, log=print, info
     work = Path(out_path).parent / (Path(out_path).stem + "_work")
     replay_mod.open_video = lambda path, fps, size, codec="mp4v", quality=None: X264Writer(path, fps, size, str(path) + ".ffmpeg.log")
     r = replay_mod.replay_run(rec_dir, out_dir=work, video="viewer", hz=float(CFG["fps"]), size=tuple(CFG["size"]), name="real", quiet=True, intro=None, clock_offset_s=clock_offset_s, verify=verify, info_hook=info_hook,
-                              shadows="on" if CFG["shadows"] else "off", on_model_built=on_built, **extra)
+                              shadows="on" if CFG["shadows"] else "off", on_model_built=on_built, tile_reuse_tol=CFG["tile_reuse_tol"], **extra)
     log(f"  replay ok {r['ok']} ({r.get('n_ticks_recorded')} ticks, mismatch {r.get('mismatch')}); frames {r.get('frames_rendered')}")
     if verify and not r["ok"]:
         raise RuntimeError(f"the replay did not reproduce the run: {r.get('mismatch')}")

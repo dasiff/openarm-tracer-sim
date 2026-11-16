@@ -55,7 +55,7 @@ class CompositeRenderer:
             tracks (1 if the model has no such body).
     """
 
-    def __init__(self, model, context, camera_specs, size=(1920, 1080), legend_extra=(), panel_static=None, shadows=True):
+    def __init__(self, model, context, camera_specs, size=(1920, 1080), legend_extra=(), panel_static=None, shadows=True, tile_reuse_tol=None):
         """Set up the follow camera, the scene and the camera rig.
 
         Sets model.vis.global_.fovy to FOVY_DEG (90 degrees), as the live
@@ -77,8 +77,12 @@ class CompositeRenderer:
                 viewer_layout.panel_from_status). Defaults to None (no plan block).
             shadows (bool): Whether the follow view and every camera tile draw shadows (each view with shadows redraws the scene's
                 shadow maps, most of the frame's cost on software GL; SEARCH_DISPLAY_CFG["shadows"], row M322). Defaults to True.
+            tile_reuse_tol (float or None): If not None, the three camera tiles are not drawn again when no entry of the position vector (qpos) differs by more than this
+                (metres or radians) from the state the tiles were last drawn for, and the previous tile pictures are used (the policy cameras see nothing else that
+                changes; SEARCH_DISPLAY_CFG["tile_reuse_tol"], row M324). 0 reuses only for exactly the same state. Defaults to None (always draw).
         """
         self.model, self.context = model, context
+        self.tile_reuse_tol, self._tile_q = tile_reuse_tol, None
         self.panel_static = panel_static
         self.W, self.H = size
         self.s = self.H / REFERENCE_HEIGHT
@@ -136,7 +140,9 @@ class CompositeRenderer:
         """
         model, W, H = self.model, self.W, self.H
         # --- the three cameras, then the follow view ---
-        self.rig.render(data)
+        if self.tile_reuse_tol is None or self._tile_q is None or float(np.max(np.abs(data.qpos - self._tile_q))) > self.tile_reuse_tol:
+            self.rig.render(data)
+            self._tile_q = data.qpos.copy()
         yaw_deg = update_follow_camera(self.cam, data, self.base_body)
         if info.get("camera"):                                          # the stance-search display's fixed overview camera
             cam = info["camera"]

@@ -1,5 +1,6 @@
 """Braking Phase C (David's fixes after the Phase B review): unit tests per step.
 Run: python experiments/safety_filter_braking_c_test.py   (exit 0 = pass)"""
+import copy
 import sys
 import xml.etree.ElementTree as ET
 from pathlib import Path
@@ -225,6 +226,23 @@ check("step 7: with the verdict, the named object is attached and the identity c
 t8 = HeldTracker(WorldView(_Src7([ob7])))
 ev8 = t8.update("left", True, pl7, pos7, rot7)
 check("step 7: no name, the verdict on and the pads match: the pad match is the fallback identity", ev8 == "attach" and t8.identity_source == "pads", f"{ev8} {t8.identity_source}")
+
+# ---- step 5 fix: "state" with a stationary arm still ramps (the measured speed does not restart the ramp) ----
+from types import SimpleNamespace  # noqa: E402
+
+tun_s5 = copy.deepcopy(cfg.BRAKING)
+tun_s5["speed_source"] = "state"
+L5s = BrakingLayer(tool3, tun_s5)
+still5 = SimpleNamespace(q_left=(0.0,) * 7, q_right=(0.0,) * 7)     # the physical arm does not move (its measured speed stays zero)
+last5s = np.zeros((2, 7))
+target5s = last5s.copy()
+target5s[0, 0] = 0.5
+for k in range(300):                                    # the source is far ahead: the layer must accelerate on its own profile
+    out5s, _ = L5s.process(last5s, target5s, still5, None)
+    last5s = out5s
+v5s = np.linalg.norm(tool3(out5s, None)[0] - tool3(np.zeros((2, 7)), None)[0])
+check("step 5 fix: with the measured arm still, the output still accelerates (no stall from a zero measured speed)", float(np.abs(out5s[0]).max()) > 0.02, f"output travel {np.abs(out5s[0]).max():.4f} rad after 300 ticks")
+check("step 5 fix: the accelerating output respects the limits (speed cap)", float(np.linalg.norm(tool3(out5s, None)[0] - tool3(np.zeros((2, 7)), None)[0])) >= 0.0 and L5s.v[0] <= cfg.BRAKING["hand_speed_cap_m_s"] + 1e-9)
 
 if __name__ == "__main__":
     print(f"\n{len(fails)} failed" if fails else "\nall passed")

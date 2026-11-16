@@ -150,11 +150,13 @@ def analyse(run, log=None, until=None):
             vb_s = np.convolve(np.where(np.isfinite(vb), vb, 0.0), np.ones(5) / 5, mode="same")
             ks = int(np.nanargmin(np.where(win, gaps, np.nan)))
             kst = int(np.argmin(np.abs(t - sh["stopped"]))) if sh.get("stopped") is not None else ks
-            midpoint = sfcfg.MARGINS["held_world_margin_m"] / 2.0
+            # Phase C step 4: the stop target is margin + PUSH_STOP_BEYOND_M (plain obstacles); the midpoint of Phase B is gone
+            midpoint = sfcfg.MARGINS["held_world_margin_m"] + sfcfg.PUSH_STOP_BEYOND_M
             kpk = int(np.nanargmax(np.where(win & (t <= t[kst]), vb_s, np.nan)))
             out["shelf"] = {"placed_t": sh["placed"], "stopped_t": sh.get("stopped"), "removed_t": sh.get("removed"),
-                            "min_gap_m": float(np.nanmin(gaps[win])), "gap_when_stopped_m": float(gaps[kst]), "midpoint_target_m": midpoint,
-                            "stop_error_mm": float((gaps[kst] - midpoint) * 1000.0), "beaker_speed_when_placed_m_s": float(vb_s[np.flatnonzero(win)[0]]),
+                            "min_gap_m": float(np.nanmin(gaps[win])), "gap_when_stopped_m": float(gaps[kst]), "stop_target_m": midpoint,
+                            "stop_error_mm": float((gaps[kst] - midpoint) * 1000.0),
+                            "beaker_speed_0p5s_after_stop_max_m_s": float(np.nanmax(vb_s[(t >= t[kst]) & (t <= t[kst] + 0.5)])) if np.any((t >= t[kst]) & (t <= t[kst] + 0.5)) else None, "beaker_speed_when_placed_m_s": float(vb_s[np.flatnonzero(win)[0]]),
                             "peak_beaker_speed_before_stop_m_s": float(vb_s[kpk]), "time_from_peak_speed_to_stop_s": float(t[kst] - t[kpk])}
             # restart: the speed after the shelf is removed
             if sh.get("removed"):
@@ -179,6 +181,40 @@ def analyse(run, log=None, until=None):
             kmin = int(np.nanargmin(np.where(fin, sg, np.nan)))
             h["at_closest_approach"] = {"t": float(t[kmin]), "gap_m": float(sg[kmin]), "commanded_speed_m_s": float(vcmd[kmin]), "measured_speed_m_s": float(vm[kmin])}
         out["hotplate"] = h
+    # Phase C checklist: free motion vs braking (the commanded series), closest approaches, held identity
+    ck = {}
+    if "brake_stop" in rec:
+        v_s, a_s, j_s = kinematics(t, pos["sent"][:, arm], False)
+        stp = rec["brake_stop"][:, arm] > 0
+        def split(x, off):
+            m = stp[off:off + len(x)]
+            fx = np.abs(x)[~m[:len(x)]] if (~m[:len(x)]).any() else np.array([])
+            bx = np.abs(x)[m[:len(x)]] if m[:len(x)].any() else np.array([])
+            return {"free_peak": float(np.nanmax(fx)) if len(fx) else None, "braking_peak": float(np.nanmax(bx)) if len(bx) else None}
+        ck["commanded_accel_m_s2"] = split(a_s, 1)
+        ck["commanded_jerk_m_s3"] = split(j_s, 2)
+        ck["commanded_speed_peak_m_s"] = float(np.nanmax(np.abs(v_s))) if len(v_s) else None
+        ck["limits"] = {"accel": out["accel_limit_m_s2"], "jerk": out["jerk_limit_m_s3"], "cap": out["cap_m_s"]}
+        gap = rec["brake_gap"]
+        pairs = rec["brake_pair"]
+        fin = np.isfinite(gap)
+        if fin.any():
+            g_arm = np.where(fin[:, arm], gap[:, arm], np.nan)
+            kmin = int(np.nanargmin(g_arm))
+            ck["closest_any_obstacle"] = {"gap_m": float(g_arm[kmin]), "t": float(t[kmin]), "pair": str(pairs[kmin]).split(",")[arm]}
+        if "brake_sgap" in rec:
+            sg = rec["brake_sgap"][:, arm]
+            if np.isfinite(sg).any():
+                kk = int(np.nanargmin(sg))
+                ck["closest_allowed_contact_surface"] = {"gap_m": float(sg[kk]), "t": float(t[kk])}
+        ck["stop_ticks"] = int(stp.sum())
+        ck["override_ticks"] = int(rec["brake_override"][:, arm].sum()) if "brake_override" in rec else None
+    if "held_name" in rec:
+        hn = rec["held_name"]
+        ck["held_identity_ticks"] = {"left": int(sum(1 for x in hn if str(x).split(",")[0])), "right": int(sum(1 for x in hn if str(x).split(",")[-1]))}
+        names = sorted({n for x in hn for n in str(x).split(",") if n})
+        ck["held_names_seen"] = names
+    out["checklist"] = ck
     # stop and override events from the look-ahead record
     if "brake_stop" in rec:
         stp = rec["brake_stop"][:, arm] > 0
@@ -204,7 +240,7 @@ def show(o):
         print(f"    {k:22s} {v['peak_speed_m_s']:8.4f} | {v['peak_accel_m_s2']:9.3f} | {v['peak_jerk_m_s3']:11.2f}   moving {v['moving_ticks']:5d} ticks: {v['moving_peak_accel_m_s2']:8.3f} | {v['moving_peak_jerk_m_s3']:9.2f} | {v['moving_p99_jerk_m_s3']:8.2f}")
     print("  checks on the sent series:", json.dumps(o["checks"]))
     print("  statuses:", o["status_counts"], " filter ms:", {k: round(v, 1) for k, v in o["filter_ms"].items()})
-    for k in ("shelf", "hotplate", "braking_events", "log"):
+    for k in ("checklist", "shelf", "hotplate", "braking_events", "log"):
         if k in o:
             print(f"  {k}:", json.dumps({a: (round(b, 5) if isinstance(b, float) else b) for a, b in o[k].items()}))
 

@@ -224,10 +224,18 @@ class BrakingLayer:
 
     # ---- step 4: S-curve profile with the jerk limit ----
     def _va(self, i):
-        """Speed and acceleration the ramp starts from: the profile of the commands sent ("sent"), or the measured ones ("state")."""
+        """Speed and acceleration the ramp starts from. The profile (the layer's own speed and acceleration) always carries the ramp; with
+        speed_source "state" the measured tool speed is used when it is FASTER than the profile (the arm is moving faster than the layer
+        thinks: a safety fact, taken at its word, with its acceleration clipped to the limit). Phase C fix: a measured speed that is simply
+        zero (the arm has not moved yet) used to restart the ramp every tick, so a stationary arm could never accelerate (replay of run
+        brkP_plain: the output stayed still while the source moved 2 rad away)."""
+        v, a = float(self.v[i]), float(self.a[i])
         if self.tun["speed_source"] == "state" and self.last_measure is not None:
-            return float(self.last_measure["speed"][i]), float(self.last_measure["accel"][i])
-        return float(self.v[i]), float(self.a[i])
+            mv = float(self.last_measure["speed"][i])
+            if mv > v:
+                v = mv
+                a = float(np.clip(self.last_measure["accel"][i], -self.d["effective_accel_limit"], self.d["effective_accel_limit"]))
+        return v, a
 
     def _accel_of(self, i, vs):
         """Acceleration of arm i if its speed goes from the last sent speed to vs (m/s) in one tick, on the speed ABOVE the at-rest level

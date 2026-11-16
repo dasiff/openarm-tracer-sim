@@ -75,7 +75,7 @@ class X264Writer:
     def __init__(self, path, fps, size, log_path, queue_frames=4):
         w, h = size
         cmd = [imageio_ffmpeg.get_ffmpeg_exe(), "-y", "-loglevel", "warning", "-f", "rawvideo", "-pix_fmt", "bgr24", "-s", f"{w}x{h}", "-r", str(fps), "-i", "-",
-               "-c:v", "libx264", "-preset", "veryfast", "-crf", "18", "-pix_fmt", "yuv420p", "-movflags", "+faststart", "-f", "mp4", str(path)]
+               "-c:v", "libx264", "-preset", "medium", "-crf", "18", "-pix_fmt", "yuv420p", "-movflags", "+faststart", "-f", "mp4", str(path)]
         self.log = open(log_path, "w")
         self.proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stderr=self.log)
         try:

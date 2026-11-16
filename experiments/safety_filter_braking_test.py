@@ -429,6 +429,14 @@ Ld = BrakingLayer(fake_tool)
 Ld._braking[0] = True                                        # braking latched, the hand is stopped far from the obstacle (an early stop)
 stop2, _, info3 = Ld.check(np.zeros((2, 7)), raw, None, lambda q, s_: [(0.30 - np.asarray(q)[0, 0] * 0.5, 0.01), None])
 check("look-ahead: stopped with room left releases the latch (no deadlock after an early stop)", not stop2[0] and not Ld._braking[0])
+Ld3 = BrakingLayer(fake_tool)
+Ld3._braking[0] = True
+stop4, _, _ = Ld3.check(np.zeros((2, 7)), np.zeros((2, 7)), None, lambda q, s_: [(0.0095 - np.asarray(q)[0, 0] * 0.5, 0.01), None])
+check("look-ahead: a tick where the source commands no motion does not release the latch (pulsed commands)", stop4[0] and Ld3._braking[0])
+Ld4 = BrakingLayer(fake_tool)
+Ld4._braking[0] = True
+stop5, _, _ = Ld4.check(np.zeros((2, 7)), raw, None, lambda q, s_: [(0.012 - np.asarray(q)[0, 0] * 0.5, 0.01), None])
+check("look-ahead: a stopped hand with only 7 mm of room does not restart (it could not stop again): no creeping toward the obstacle", stop5[0] and Ld4._braking[0])
 Ld2 = BrakingLayer(fake_tool)
 Ld2._braking[0] = True
 stop3, _, _ = Ld2.check(np.zeros((2, 7)), raw, None, lambda q, s_: [(0.005 - np.asarray(q)[0, 0] * 0.5, 0.01), None])

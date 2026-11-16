@@ -346,9 +346,11 @@ class BrakingLayer:
                     ceil_pairs.append(float(ceiling))
                     if v > float(ceiling) and slowing_distance(vp, a, float(ceiling), a_eff, jl, cush) >= room:
                         need_ceiling = True
+            commanded_motion = bool(np.any(raw[i] != last[i]))     # a tick where the source commands no motion says nothing about whether the obstacle cleared
+            restart_room = stopping_distance(0.0, a_eff, a_eff, jl, cush)     # a stopped hand may only restart if it could accelerate and still stop: the distance after one tick at the effective acceleration
             if need_brake:
                 self._braking[i] = True
-            elif self._braking[i] and (not brake_pairs or (v <= rest and all(r_ > cush for r_ in brake_pairs))):
+            elif self._braking[i] and ((not brake_pairs and commanded_motion) or (v <= rest and brake_pairs and all(r_ > restart_room for r_ in brake_pairs))):
                 self._braking[i] = False                 # nothing closes any more, or stopped with room left (an early stop): speed up again on the S-curve
             if need_ceiling:
                 self._ceiling[i] = True

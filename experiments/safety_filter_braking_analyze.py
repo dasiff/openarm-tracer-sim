@@ -91,8 +91,12 @@ def series_stats(t, pos, label, out):
                   "moving_p99_jerk_m_s3": float(np.nanpercentile(np.abs(j[j_m]), 99)) if j_m.any() and np.isfinite(j[j_m]).any() else float("nan")}
 
 
-def analyse(run, log=None):
+def analyse(run, log=None, until=None):
     rec, hook, info = load(run)
+    if until is not None:                                          # only the first `until` seconds of sim time
+        n0 = len(rec["t"])
+        keep = rec["t"] <= until
+        rec = {k: (v[keep] if getattr(v, "shape", ())[:1] == (n0,) else v) for k, v in rec.items()}
     m = load_robot_only_model()
     shapes = RobotShapes(m, ROOT / sfcfg.SHAPES_FILE)
     tool_fn = make_tool_fn(shapes)
@@ -135,7 +139,7 @@ def analyse(run, log=None):
         if sh:
             obj = WorldObject(id="phantom_wall", shape="box", size=tuple(sh["half"]), centre=tuple(sh["centre"]), rot=tuple(sh.get("rot", np.eye(3).ravel())), fixture=True)
             sp = as_placed(obj)
-            win = hh & (t >= sh["placed"]) & (t <= (sh["removed"] or t[-1]) + 3.0)
+            win = hh & (t >= sh["placed"]) & (t <= (sh["removed"] or t[-1]))               # while the wall was present
             gaps = np.full(n, np.nan)
             for k in np.flatnonzero(win):
                 cap = shape_of("held", "capsule", (float(r[k]), 0.5 * float(np.linalg.norm(b[k] - a[k]))), cen[k], np.eye(3), "left", "held")
@@ -186,7 +190,9 @@ def analyse(run, log=None):
         txt = Path(log).read_text(errors="ignore")
         out["log"] = {"braking_ERROR_lines": txt.count("[braking] ERROR"), "bridge_override_ERROR_lines": txt.count("[bridge] ERROR"),
                       "filter_error_lines": txt.count("ERROR in the filter")}
-    (ROOT / "data" / "braking_episode" / run / "analysis.json").write_text(json.dumps(out, indent=1))
+    out["until_s"] = until
+    suffix = "" if until is None else f"_until{int(until)}"
+    (ROOT / "data" / "braking_episode" / run / f"analysis{suffix}.json").write_text(json.dumps(out, indent=1))
     return out
 
 
@@ -208,10 +214,12 @@ def main():
     ap.add_argument("run", nargs="?")
     ap.add_argument("--log", default=None)
     ap.add_argument("--compare", nargs=2, metavar=("RUN_A", "RUN_B"))
+    ap.add_argument("--until", type=float, default=None, help="analyse only the first N seconds of sim time (written to analysis_untilN.json); with --compare read those files")
     args = ap.parse_args()
     if args.compare:
-        a = json.loads((ROOT / "data" / "braking_episode" / args.compare[0] / "analysis.json").read_text())
-        b = json.loads((ROOT / "data" / "braking_episode" / args.compare[1] / "analysis.json").read_text())
+        suffix = "" if args.until is None else f"_until{int(args.until)}"
+        a = json.loads((ROOT / "data" / "braking_episode" / args.compare[0] / f"analysis{suffix}.json").read_text())
+        b = json.loads((ROOT / "data" / "braking_episode" / args.compare[1] / f"analysis{suffix}.json").read_text())
         print(f"{'series':26s} {'A: ' + str(a['speed_source']):>14s} {'B: ' + str(b['speed_source']):>14s}   (jerk m/s3; smooth = 5-tick average speed)")
         for field in ("peak_jerk_m_s3", "moving_peak_jerk_m_s3", "moving_p99_jerk_m_s3"):
             for k in a["tool_point"]:
@@ -220,7 +228,7 @@ def main():
             for k in ("sent", "measured"):
                 print(f"{key + ' ' + k:26s} {a['tool_point'][k][key]:14.4f} {b['tool_point'][k][key]:14.4f}")
         return 0
-    show(analyse(args.run, args.log))
+    show(analyse(args.run, args.log, args.until))
     return 0
 
 

@@ -156,21 +156,32 @@ def analyse(run, log=None):
             if sh.get("removed"):
                 after = hh & (t >= sh["removed"])
                 out["shelf"]["speed_1s_after_removal_m_s"] = float(np.nanmean(vb_s[after & (t <= sh["removed"] + 1.0)])) if np.any(after & (t <= sh["removed"] + 1.0)) else None
-        # hotplate approach: the beaker's lowest point above the hotplate top
-        top = info.get("plate_top_z")
-        if top is not None:
-            low = np.minimum(a[:, 2], b[:, 2]) - r
-            above = low - top
-            dz = np.full(n, np.nan)
-            dz[1:] = np.where(np.diff(t) < 1.5 * DT, (cen[1:, 2] - cen[:-1, 2]) / np.maximum(np.diff(t), 1e-12), np.nan)
-            dzs = np.convolve(np.where(np.isfinite(dz), dz, 0.0), np.ones(5) / 5, mode="same")
-            ceil = sfcfg.approach_ceiling("hotplate")
-            near = hh & (above <= 0.02) & (above > -0.02) & (dzs < 0)
-            near5 = hh & (above <= 0.05) & (above > 0.0) & (dzs < 0)
-            out["hotplate"] = {"ceiling_m_s": ceil, "lowest_point_above_plate_min_m": float(np.nanmin(above[hh])),
-                               "descent_speed_within_2cm_max_m_s": float(np.nanmax(-dzs[near])) if near.any() else None,
-                               "descent_speed_within_5cm_max_m_s": float(np.nanmax(-dzs[near5])) if near5.any() else None,
-                               "descent_speed_peak_overall_m_s": float(np.nanmax(-dzs[hh & (above > 0.0)])) if np.any(hh & (above > 0.0)) else None}
+    # hotplate approach, from the look-ahead's own record of the held-vs-allowed-contact pair (its gap and the speeds at that moment)
+    if "brake_sgap" in rec:
+        sg = rec["brake_sgap"][:, arm]
+        vcmd = rec["brake_speed"][:, arm]
+        vm_all, _, _ = kinematics(t, pos["q_meas"][:, arm], True)
+        vm = np.concatenate([[np.nan], vm_all])
+        lim = rec["brake_limit"][:, arm]
+        fin = np.isfinite(sg)
+        ceil = sfcfg.approach_ceiling("hotplate")
+        h = {"ceiling_m_s": ceil, "ticks_with_surface_pair": int(fin.sum()), "ceiling_limit_active_ticks": int(np.isfinite(lim).sum())}
+        if fin.any():
+            h["surface_gap_min_m"] = float(np.nanmin(sg))
+            for band in (0.10, 0.05, 0.02, 0.005):
+                m_ = fin & (sg <= band)
+                h[f"commanded_speed_max_within_{int(band * 1000)}mm_m_s"] = float(np.nanmax(vcmd[m_])) if m_.any() else None
+                h[f"measured_speed_max_within_{int(band * 1000)}mm_m_s"] = float(np.nanmax(vm[m_])) if m_.any() else None
+            kmin = int(np.nanargmin(np.where(fin, sg, np.nan)))
+            h["at_closest_approach"] = {"t": float(t[kmin]), "gap_m": float(sg[kmin]), "commanded_speed_m_s": float(vcmd[kmin]), "measured_speed_m_s": float(vm[kmin])}
+        out["hotplate"] = h
+    # stop and override events from the look-ahead record
+    if "brake_stop" in rec:
+        stp = rec["brake_stop"][:, arm] > 0
+        edges = np.flatnonzero(np.diff(np.concatenate([[0], stp.astype(int)])) == 1)
+        ov = np.flatnonzero(rec["brake_override"].any(axis=1))
+        out["braking_events"] = {"stop_ticks": int(stp.sum()), "stop_starts_t": [float(t[k]) for k in edges][:12], "override_ticks": [int(k) for k in ov][:12],
+                                 "override_t": [float(t[k]) for k in ov][:12]}
     if log:
         txt = Path(log).read_text(errors="ignore")
         out["log"] = {"braking_ERROR_lines": txt.count("[braking] ERROR"), "bridge_override_ERROR_lines": txt.count("[bridge] ERROR"),
@@ -187,7 +198,7 @@ def show(o):
         print(f"    {k:22s} {v['peak_speed_m_s']:8.4f} | {v['peak_accel_m_s2']:9.3f} | {v['peak_jerk_m_s3']:11.2f}   moving {v['moving_ticks']:5d} ticks: {v['moving_peak_accel_m_s2']:8.3f} | {v['moving_peak_jerk_m_s3']:9.2f} | {v['moving_p99_jerk_m_s3']:8.2f}")
     print("  checks on the sent series:", json.dumps(o["checks"]))
     print("  statuses:", o["status_counts"], " filter ms:", {k: round(v, 1) for k, v in o["filter_ms"].items()})
-    for k in ("shelf", "hotplate", "log"):
+    for k in ("shelf", "hotplate", "braking_events", "log"):
         if k in o:
             print(f"  {k}:", json.dumps({a: (round(b, 5) if isinstance(b, float) else b) for a, b in o[k].items()}))
 

@@ -89,11 +89,10 @@ class ObstacleFeed:
         return out
 
     def __call__(self, q, state):
-        out = [None, None]
+        """For each arm, every candidate pair at pose q as (gap, margin, ceiling or None, hand shape id, other shape id), nearest room first."""
+        out = [[], []]
         for i, cands in enumerate(self.pairs(q, state)):
-            if cands:
-                best = min(cands, key=lambda c: c[0])
-                out[i] = (best[1], best[2], best[3], best[4], best[5])      # gap, margin, ceiling, hand shape id, other shape id
+            out[i] = [(c[1], c[2], c[3], c[4], c[5]) for c in sorted(cands, key=lambda c: c[0])]
         return out
 
 
@@ -276,21 +275,38 @@ class BrakingLayer:
         return out, {"speed": self.v.copy(), "accel": self.a.copy()}
 
     # ---- step 5: look-ahead ----
+    @staticmethod
+    def _pairs_of(entry):
+        """An obstacle_fn entry for one arm as a list of (gap, margin, ceiling, id_a, id_b): None -> [], one tuple -> [tuple], a list stays."""
+        if entry is None:
+            return []
+        items = [entry] if (len(entry) and not isinstance(entry[0], (tuple, list))) else list(entry)
+        out = []
+        for e in items:
+            e = tuple(e)
+            out.append((float(e[0]), float(e[1]), e[2] if len(e) > 2 else None, e[3] if len(e) > 3 else "", e[4] if len(e) > 4 else ""))
+        return out
+
     def check(self, last, raw, state, obstacle_fn):
-        """The look-ahead, part of the safety check: for each arm, can the hand still brake from its current speed and acceleration to the
-        stop target (the midpoint of the margin: margin/2 from the modelled surface) within the gap to the nearest obstacle?
-        obstacle_fn(q (2,7), state) -> [None or (gap_m, margin_m[, ceiling_m_s])] for the two arms (ObstacleFeed): the nearest obstacle of that
-        arm's hand at pose q; every obstacle within worst_stop_dist_m is in it. A ceiling marks an allowed-contact surface (zero margin).
-        An arm brakes when the stopping distance (config two-step formula + tick cushion) reaches the distance to the target, and the wanted
-        command is closing on that obstacle. A braking arm stays braking while the wanted command keeps closing; it is released when the
-        obstacle clears (none, or the command no longer closes), and then speeds up again along the same S-curve.
-        For an allowed-contact surface the hand is not stopped: when the distance needed to slow from the current speed to the ceiling
-        reaches the distance to the surface, the speed target becomes the ceiling (through the same jerk-limited ramp).
+        """The look-ahead, part of the safety check: for each arm and each obstacle pair, can the hand still brake from its current speed and
+        acceleration to the stop target (the midpoint of the margin: margin/2 from the modelled surface) within the gap?
+        obstacle_fn(q (2,7), state) -> per arm a list of (gap_m, margin_m, ceiling_m_s or None, hand shape id, other shape id) (ObstacleFeed; a
+        single tuple or None is accepted): every pair within worst_stop_dist_m is in it. A ceiling marks an allowed-contact surface (zero margin).
+        A pair counts when the wanted command is closing on it (its gap at the command is smaller than at the last command). The speed used for a
+        pair is the hand speed (config lookahead_speed "full") or its closing component, the rate the gap shrinks at the wanted command, never
+        more than the hand speed ("closing"). An arm brakes when, for any closing pair, the stopping distance (config two-step formula + tick
+        cushion) reaches the distance to the target. A braking arm stays braking while a closing pair is left, and is released when none closes
+        any more, or when it has stopped with room left (an early stop). A hand that goes faster than its stopping distance allows while it is
+        really moving (above stop_speed_m_s) has failed the look-ahead: that is the emergency (the caller overrides the bridge and logs an error).
+        For an allowed-contact surface the hand is not stopped: when the distance needed to slow from the current speed to the ceiling reaches
+        the distance to the surface, the speed target becomes the ceiling (through the same jerk-limited ramp).
         Returns (stop (2,) bool, limit (2,) speed limit in m/s (inf = none), info list of dicts)."""
         last, raw = np.asarray(last, float), np.asarray(raw, float)
         at_last = obstacle_fn(last, state)
         at_raw = obstacle_fn(raw, state)
         eps = float(self.tun["closing_eps_m"])
+        rest = float(self.tun["stop_speed_m_s"])
+        mode = self.tun["lookahead_speed"]
         a_eff, jl, cush = self.d["effective_accel_limit"], float(self.tun["jerk_limit_m_s3"]), self.d["tick_cushion_m"]
         stop = np.zeros(2, bool)
         limit = np.full(2, np.inf)
@@ -298,44 +314,51 @@ class BrakingLayer:
         self._emergency = emergency
         info = [None, None]
         for i in range(2):
-            ol, orr = at_last[i], at_raw[i]
-            if ol is None:
+            pl = self._pairs_of(at_last[i])
+            if not pl:
                 self._braking[i] = self._ceiling[i] = False
                 continue
-            gap, margin = float(ol[0]), float(ol[1])
-            ceiling = ol[2] if len(ol) > 2 else None
-            closing = orr is not None and float(orr[0]) < gap - eps
+            raw_by = {(p[3], p[4]): p for p in self._pairs_of(at_raw[i])}
             v, a = self._va(i)
             a = min(max(a, 0.0), a_eff)             # the acceleration of the formula never exceeds the effective limit (the worst case the derived constants assume); a per-tick difference of pulsed commands can be far larger
-            sd = stopping_distance(v, a, a_eff, jl, cush)
-            room = gap - 0.5 * margin
             was_braking = bool(self._braking[i])
-            if ceiling is None:
+            need_brake, brake_pairs, ceil_pairs, need_ceiling, worst = False, [], [], False, None
+            for gap, margin, ceiling, ida, idb in pl:
+                pr = raw_by.get((ida, idb))
+                closing = pr is not None and pr[0] < gap - eps
+                room = gap - 0.5 * margin
+                vp = v if mode == "full" else min(v, max(0.0, (gap - pr[0]) / self.dt)) if pr is not None else 0.0
+                sd = stopping_distance(vp, a, a_eff, jl, cush)
+                if worst is None or room < worst["room"]:
+                    worst = {"gap": gap, "margin": margin, "ceiling": ceiling, "stop_dist": sd, "room": room, "closing": closing, "pair": f"{ida}|{idb}", "speed": v}
+                if not closing:
+                    continue
+                if ceiling is None:
+                    brake_pairs.append(room)
+                    if sd >= room:
+                        need_brake = True
+                        if sd - room > float(self.tun["emergency_overshoot_ticks"]) * cush and v > rest and not was_braking:
+                            emergency[i] = True          # even the S-curve cannot stop in time: braking must exceed its limits
+                            self.errors.append(f"look-ahead failed ({SIDES[i]}): stopping distance {sd:.4f} m exceeds the room {room:.4f} m "
+                                               f"(speed {vp:.3f} m/s, gap {gap:.4f} m, margin {margin:.4f} m, pair {ida}|{idb})")
+                            print(f"[braking] ERROR {self.errors[-1]}: braking beyond the limits, overriding the bridge")
+                else:
+                    ceil_pairs.append(float(ceiling))
+                    if v > float(ceiling) and slowing_distance(vp, a, float(ceiling), a_eff, jl, cush) >= room:
+                        need_ceiling = True
+            if need_brake:
+                self._braking[i] = True
+            elif self._braking[i] and (not brake_pairs or (v <= rest and all(r_ > cush for r_ in brake_pairs))):
+                self._braking[i] = False                 # nothing closes any more, or stopped with room left (an early stop): speed up again on the S-curve
+            if need_ceiling:
+                self._ceiling[i] = True
+            elif self._ceiling[i] and not ceil_pairs:
                 self._ceiling[i] = False
-                if self._braking[i] and not closing:
-                    self._braking[i] = False                 # the obstacle cleared
-                elif self._braking[i] and v <= float(self.tun["stop_speed_m_s"]) and stopping_distance(0.0, 0.0, a_eff, jl, cush) < room:
-                    self._braking[i] = False                 # stopped with room left (an early stop): the look-ahead says it can brake again, so it speeds up on the S-curve
-                elif closing and sd >= room:
-                    self._braking[i] = True
-                    if sd - room > float(self.tun["emergency_overshoot_ticks"]) * cush and not was_braking:
-                        emergency[i] = True                  # even the S-curve cannot stop in time: braking must exceed its limits
-                        self.errors.append(f"look-ahead failed ({SIDES[i]}): stopping distance {sd:.4f} m exceeds the room {room:.4f} m "
-                                           f"(speed {v:.3f} m/s, gap {gap:.4f} m, margin {margin:.4f} m)")
-                        print(f"[braking] ERROR {self.errors[-1]}: braking beyond the limits, overriding the bridge")
-                stop[i] = self._braking[i]
-            else:
-                self._braking[i] = False
-                c = float(ceiling)
-                if self._ceiling[i] and not closing:
-                    self._ceiling[i] = False
-                elif closing and v > c and slowing_distance(v, a, c, a_eff, jl, cush) >= room:
-                    self._ceiling[i] = True                  # time to slow down to the ceiling
-                if self._ceiling[i]:
-                    limit[i] = c
-            info[i] = {"gap": gap, "margin": margin, "ceiling": ceiling, "stop_dist": sd, "room": room, "closing": closing,
-                       "pair": "|".join(ol[3:5]) if len(ol) > 4 else "", "speed": v,
-                       "braking": bool(self._braking[i]), "ceiling_active": bool(self._ceiling[i])}
+            if self._ceiling[i] and ceil_pairs:
+                limit[i] = min(ceil_pairs)
+            stop[i] = self._braking[i]
+            info[i] = {**worst, "braking": bool(self._braking[i]), "ceiling_active": bool(self._ceiling[i]),
+                       "surface_gap": min([p[0] for p in pl if p[2] is not None], default=float("nan"))}
         return stop, limit, info
 
     def process(self, last, raw, state, obstacle_fn=None, hold=False):

@@ -222,11 +222,14 @@ lowest = pad[2] - 0.085
 hot_under = catalog_object("hotplate", np.array([pad[0], pad[1], lowest - 0.01 - 0.06]))
 feed.bind([hot_under], tr)
 o_ = feed(q_home, st)
-check("feed: held beaker 1 cm over the hotplate gives its gap, zero margin and the hotplate's ceiling", o_[0] is not None and abs(o_[0][0] - 0.01) < 2e-3 and o_[0][1] == 0.0 and o_[0][2] == cfg.approach_ceiling("hotplate"), str(o_))
+hp_pair = [c for c in o_[0] if c[2] is not None]
+check("feed: held beaker 1 cm over the hotplate gives its pair with the gap, zero margin and the hotplate's ceiling (among all candidate pairs)",
+      len(hp_pair) == 1 and abs(hp_pair[0][0] - 0.01) < 2e-3 and hp_pair[0][1] == 0.0 and hp_pair[0][2] == cfg.approach_ceiling("hotplate") and hp_pair[0][4] == "hotplate", str(o_[0][:3]))
 other = WorldObject(id="bench_top", shape="box", size=(0.3, 0.3, 0.02), centre=(pad[0], pad[1], lowest - 0.01 - 0.02), rot=tuple(np.eye(3).ravel()), fixture=True)
 feed.bind([other], tr)
 o2 = feed(q_home, st)
-check("feed: held beaker over an ordinary object gives held_world_margin_m and no ceiling", o2[0] is not None and o2[0][1] == cfg.MARGINS["held_world_margin_m"] and o2[0][2] is None, str(o2))
+hb = [c for c in o2[0] if c[4] == "bench_top" and "held" in c[3]]
+check("feed: held beaker over an ordinary object gives held_world_margin_m and no ceiling", len(hb) == 1 and hb[0][1] == cfg.MARGINS["held_world_margin_m"] and hb[0][2] is None, str(o2[0][:3]))
 far = WorldObject(id="far", shape="box", size=(0.05, 0.05, 0.05), centre=(pad[0], pad[1], lowest - WAKE - 0.2), rot=tuple(np.eye(3).ravel()), fixture=True)
 feed.bind([far], tr)
 ids = lambda arm: {c[5] for c in feed.pairs(q_home, st)[arm]}  # noqa: E731
@@ -251,7 +254,9 @@ def fake_tool(q, state):
 
 
 def surface(q, state):
-    return [(0.60 - np.asarray(q)[0, 0] * 0.5, 0.0, CEIL), None]
+    # the surface (ceiling pair) AND an ordinary pair with a smaller room that does not close (a torso 2.5 cm from the palm, constant): the ceiling must still apply
+    g = 0.60 - np.asarray(q)[0, 0] * 0.5
+    return [[(0.0254, 0.03, None, "left_palm_2", "torso"), (g, 0.0, CEIL, "left_held", "hotplate")], None]
 
 
 Lc = BrakingLayer(fake_tool)
@@ -344,6 +349,34 @@ pl = SafetyFilterPlugin("on", lambda raw, last, state, world, held: (raw, pst("P
 with contextlib.redirect_stdout(io.StringIO()):
     pl.process({"left": [0.01] + [0.0] * 6, "right": [0.0] * 7}, {}, {"left": [0.0] * 7, "right": [0.0] * 7}, t=1.5)
 check("plug-in: the override request is available once, with a log entry", pl.take_override() is True and pl.take_override() is False and len(pl.override_log) == 1 and pl.override_log[0][0] == 1.5)
+
+# closing speed versus full speed; no emergency for a hand at rest
+def tangential(q, state):                            # 1 % of the motion of joint 1 closes on the obstacle (the rest is along it)
+    return [[(0.0226 - 0.01 * np.asarray(q)[0, 0] * 0.5, 0.01, None, "left_held", "bench_top")], None]
+
+
+def run_tangential(mode):
+    tun = copy.deepcopy(cfg.BRAKING)
+    tun["lookahead_speed"] = mode
+    Lm = BrakingLayer(fake_tool, tun)
+    Lm.v[0] = 0.12
+    last = np.zeros((2, 7))
+    raw = last.copy()
+    raw[0, 0] = 0.12 * DT / 0.5
+    stop, limit, info = Lm.check(last, raw, None, tangential)
+    return bool(stop[0]), info[0]
+
+
+stop_c, inf_c = run_tangential("closing")
+stop_f, inf_f = run_tangential("full")
+check('look-ahead "closing": a hand moving along a surface (gap closing at 1 % of its motion) is not braked', not stop_c and inf_c["closing"] and inf_c["stop_dist"] < inf_c["room"], str(inf_c))
+check('look-ahead "full": the whole hand speed counts, the same motion is braked (the first, cautious reading)', stop_f and inf_f["stop_dist"] >= inf_f["room"], str(inf_f))
+Lr = BrakingLayer(fake_tool)
+Lr.v[0] = 0.0015                                     # at rest (below stop_speed_m_s), the shape overlapping the obstacle by 35 mm (the conservative beaker capsule on the bench)
+buf3 = io.StringIO()
+with contextlib.redirect_stdout(buf3):
+    stop_r, _, info_r = Lr.check(np.zeros((2, 7)), np.array([[0.001] + [0.0] * 6, [0.0] * 7]), None, lambda q, s_: [[(-0.035 - np.asarray(q)[0, 0] * 0.5, 0.01, None, "left_held", "bench_top")], None])
+check("look-ahead: a hand at rest inside a (model) overlap is not an emergency (nothing to stop), and the arm stays put while the command closes", not Lr.errors and not Lr._emergency.any() and stop_r[0])
 
 if __name__ == "__main__":
     print(f"\n{len(fails)} failed" if fails else "\nall passed")

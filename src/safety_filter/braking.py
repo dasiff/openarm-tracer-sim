@@ -203,9 +203,15 @@ class BrakingLayer:
             return float(self.last_measure["speed"][i]), float(self.last_measure["accel"][i])
         return float(self.v[i]), float(self.a[i])
 
+    def _accel_of(self, i, vs):
+        """Acceleration of arm i if its speed goes from the last sent speed to vs (m/s) in one tick, on the speed ABOVE the at-rest level
+        (stop_speed_m_s): micro-motion below it is not counted, so leaving rest is not a jump in acceleration."""
+        rest = float(self.tun["stop_speed_m_s"])
+        return (max(vs - rest, 0.0) - max(float(self.v[i]) - rest, 0.0)) / self.dt
+
     def _within_limits(self, i, vs, speed_limit):
         """True when arm i's commanded tool speed vs (m/s) respects the hand speed cap, the speed limit of the look-ahead, the acceleration limit and
-        the jerk limit, judged against the last command sent (self.v, self.a), or is at rest (below stop_speed_m_s after a tick at rest). Such a
+        the jerk limit, judged against the last command sent (self.v, self.a), on the speed above the at-rest level (stop_speed_m_s). Such a
         command is not reshaped: a source that plans within the limits (the staging move, a minimum-jerk plan) gets exactly what it asked for, and
         sources that need their command applied as given keep working."""
         tol = 1e-9
@@ -214,10 +220,7 @@ class BrakingLayer:
             lim = min(lim, float(speed_limit[i]))
         if vs > lim * (1.0 + tol):
             return False
-        rest = float(self.tun["stop_speed_m_s"])
-        if vs <= rest and float(self.v[i]) <= rest:
-            return True
-        a_c = (vs - float(self.v[i])) / self.dt
+        a_c = self._accel_of(i, vs)
         j_c = (a_c - float(self.a[i])) / self.dt
         return abs(a_c) <= self.d["effective_accel_limit"] * (1.0 + tol) and abs(j_c) <= float(self.tun["jerk_limit_m_s3"]) * (1.0 + tol)
 
@@ -237,8 +240,8 @@ class BrakingLayer:
             delta = raw[i] - last[i]
             if not stop[i] and self._within_limits(i, float(vs[i]), speed_limit):
                 out[i] = raw[i]                           # the commanded motion already respects every limit: sent as it is, to the last digit
-                a_c = (float(vs[i]) - float(self.v[i])) / self.dt
-                self.v[i], self.a[i] = float(vs[i]), a_c
+                self.a[i] = self._accel_of(i, float(vs[i]))
+                self.v[i] = float(vs[i])
                 n = np.linalg.norm(delta)
                 if n > 0:
                     self._dir[i] = delta / n

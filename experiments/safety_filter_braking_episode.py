@@ -110,12 +110,16 @@ def main():
     ap.add_argument("--no-shelf", action="store_true", help="no phantom wall (the plain episode)")
     ap.add_argument("--max-ticks", type=int, default=None, help="stop cleanly after this many filter calls (a quick check)")
     ap.add_argument("--hold-policy", default=None, choices=["braking", "repeat_last_safe"], help="override SAFETY_FILTER_PLUGIN_CFG hold_policy (repeat_last_safe = the old behaviour, no braking layer: a control run)")
+    ap.add_argument("--held-surface-margin", type=float, default=None, help="EXPERIMENT: override config HELD_SURFACE_MARGIN_M (the decided value is 0.0): a negative number lets the held beaker's rounded capsule bottom (3.5 cm below the real beaker) reach an allowed-contact surface")
     ap.add_argument("--no-pin", action="store_true", help="do not pin the stance search's seeds (the clock seeds it; the search can take a long time)")
     ap.add_argument("--name", default=None)
     ap.add_argument("--instruction", default=None)
     args = ap.parse_args()
     run = args.name or f"braking_{args.speed_source}{'_noshelf' if args.no_shelf else ''}_{time.strftime('%Y%m%d_%H%M%S')}"
     sfcfg.BRAKING["speed_source"] = args.speed_source
+    if args.held_surface_margin is not None:
+        sfcfg.HELD_SURFACE_MARGIN_M = args.held_surface_margin
+        print(f"[experiment] HELD_SURFACE_MARGIN_M = {args.held_surface_margin} (decided value 0.0)", flush=True)
     if not args.no_pin:
         import src.edge_sampling as es
         import src.stance_sampling as ss
@@ -153,7 +157,7 @@ def main():
     info = {"run": run, "speed_source": args.speed_source, "outcome": s["outcome"], "wall_s": wall, "plate_top_z": shelf.plate_top,
             "shelf": None if shelf.obj is None else {"centre": list(shelf.obj.centre), "half": list(shelf.obj.size), "rot": [float(x) for x in np.asarray(shelf.obj.rot)], "placed": shelf.t_placed,
                                                      "stopped": shelf.t_stopped, "removed": shelf.t_removed},
-            "braking": {k: v for k, v in sfcfg.BRAKING.items()}, "derived": sfcfg.derive()}
+            "braking": {k: v for k, v in sfcfg.BRAKING.items()}, "derived": sfcfg.derive(), "held_surface_margin_m": sfcfg.HELD_SURFACE_MARGIN_M}
     (out / "hook_info.json").write_text(json.dumps(info, indent=1, default=str))
     print(f"outcome {s['outcome']}; wall {wall:.0f} s; shelf {info['shelf']}", flush=True)
     return 0 if s["outcome"] == "SUCCESS" else 1

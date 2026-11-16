@@ -403,6 +403,13 @@ check("adapter: the hotplate (a fixture entry in the world model) is passed to t
 check("adapter: the hotplate's entry position is its top face (its box ends exactly there)", hp_o is not None and abs((hp_o.centre[2] + hp_o.size[2]) - 1.0825) < 1e-12 and hp_o.allowed_contact, str(hp_o))
 check("adapter: the beaker is placed from its bottom centre as before", abs(objs["beaker"].centre[2] - (1.0825 + 0.05)) < 1e-12)
 
+# the ceiling pair's distance to the target is measured to its margin boundary (identical for the decided zero margin)
+Lneg = BrakingLayer(fake_tool)
+Lneg.v[0] = 0.2
+_, limn, infon = Lneg.check(np.zeros((2, 7)), np.array([[0.02] + [0.0] * 6, [0.0] * 7]), None,
+                            lambda q, s_: [[(0.05 - np.asarray(q)[0, 0] * 0.5, -0.04, CEIL, "left_held", "hotplate")], None])
+check("ceiling pair: room is the distance to the margin boundary (gap - margin, not gap - margin / 2)", abs(infon[0]["room"] - 0.09) < 1e-9, str(infon[0]))
+
 if __name__ == "__main__":
     print(f"\n{len(fails)} failed" if fails else "\nall passed")
     sys.exit(1 if fails else 0)

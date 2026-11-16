@@ -326,7 +326,7 @@ class BrakingLayer:
             for gap, margin, ceiling, ida, idb in pl:
                 pr = raw_by.get((ida, idb))
                 closing = pr is not None and pr[0] < gap - eps
-                room = gap - 0.5 * margin
+                room = gap - (margin if ceiling is not None else 0.5 * margin)     # a stop target is the midpoint of the margin; an allowed-contact surface is approached up to its margin boundary (0 for the decided zero margin)
                 vp = v if mode == "full" else min(v, max(0.0, (gap - pr[0]) / self.dt)) if pr is not None else 0.0
                 sd = stopping_distance(vp, a, a_eff, jl, cush)
                 if worst is None or room < worst["room"]:

@@ -48,6 +48,61 @@ t5["tick_hz"] = 75.0
 check("derived: tick rate change changes dt", math.isclose(cfg.derive(t5)["tick_dt_s"], 1 / 75.0))
 check("derived: module-level constants equal derive()", cfg.BRAKING_DERIVED == cfg.derive())
 
+# ---- step 2: hand speed ----
+from src.safety_filter.braking import BrakingLayer, make_tool_fn  # noqa: E402
+
+DT = 1 / 150.0
+LIN = np.array([[0.5, 0.3, 0.2], [0.1, 0.4, 0.6]])
+
+
+def fake_tool(q, state):                      # linear fake arm: tool point = LIN[side] * first three joints (exact displacement)
+    return np.asarray(q)[:, :3] * LIN
+
+
+L = BrakingLayer(fake_tool)
+q0 = np.zeros((2, 7))
+q1 = q0.copy()
+q1[0, 0], q1[0, 1], q1[1, 2] = 0.010, -0.020, 0.030
+L.measure(q0, None)
+m = L.measure(q1, None)
+exp_left = math.hypot(0.5 * 0.010, 0.3 * 0.020) / DT
+exp_right = 0.6 * 0.030 / DT
+check("hand speed: measured matches displacement / dt (fake arm)", np.allclose(m["speed"], [exp_left, exp_right]), str(m["speed"]))
+check("hand speed: commanded matches displacement / dt", np.allclose(L.commanded_speed(q0, q1, None), [exp_left, exp_right]))
+m2 = L.measure(q1, None)
+check("hand speed: standing still gives speed 0 and acceleration -v/dt", np.allclose(m2["speed"], 0) and np.allclose(m2["accel"], -m["speed"] / DT))
+check("hand speed: first call gives zeros", np.allclose(BrakingLayer(fake_tool).measure(q1, None)["speed"], 0))
+
+# real model: joint 1 of the left arm turned by a known angle moves the tool point by r * angle, r = its distance from the joint axis
+import mujoco  # noqa: E402
+from src import task_config as tc  # noqa: E402
+from src.safety_filter.robot_model import load_robot_only_model  # noqa: E402
+from src.safety_filter.shapes import RobotShapes, RobotState  # noqa: E402
+
+m_ = load_robot_only_model()
+shapes = RobotShapes(m_, ROOT / cfg.SHAPES_FILE)
+real = BrakingLayer(make_tool_fn(shapes))
+home = np.array([tc.TASK_CFG["home_q_left"], tc.TASK_CFG["home_q_right"]], float)
+st = RobotState(q_left=tuple(home[0]), q_right=tuple(home[1]))
+qa, qb = home.copy(), home.copy()
+ang = 0.002
+qb[0, 0] += ang
+real.measure(qa, st)
+mr = real.measure(qb, st)
+shapes.set_state(st)
+jid = shapes._joint["left"][0]
+axis, anchor = shapes.data.xaxis[jid].copy(), shapes.data.xanchor[jid].copy()
+hand = shapes.hand_frame("left")[0]
+rvec = hand - anchor
+r = np.linalg.norm(rvec - axis * (rvec @ axis))
+check("hand speed: real model, joint 1 turn gives r * angle / dt", abs(mr["speed"][0] - r * ang / DT) < 0.02 * r * ang / DT, f"{mr['speed'][0]:.4f} vs {r * ang / DT:.4f}")
+check("hand speed: real model, the other arm did not move", mr["speed"][1] < 1e-9)
+base_moved = RobotState(q_left=tuple(qb[0]), q_right=tuple(qb[1]), base_xyz=(0.003, 0.0, 0.0))
+mb = real.measure(qb, base_moved)
+check("hand speed: the base's motion is in the measured speed (world frame)", abs(mb["speed"][0] - 0.003 / DT) < 1e-6 and abs(mb["speed"][1] - 0.003 / DT) < 1e-6, str(mb["speed"]))
+cs = real.commanded_speed(qa, qb, base_moved)
+check("hand speed: the commanded speed has no base term", abs(cs[0] - r * ang / DT) < 0.02 * r * ang / DT and cs[1] < 1e-9, str(cs))
+
 if __name__ == "__main__":
     print(f"\n{len(fails)} failed" if fails else "\nall passed")
     sys.exit(1 if fails else 0)

@@ -81,7 +81,10 @@ def catalog_object(entry_id, position, axis=None):
     spec = OBJECT_CATALOG.get(entry_id)
     if spec is None:
         raise KeyError(f"no catalog entry for {entry_id!r}")
-    centre = np.asarray(position, float) + np.array([0.0, 0.0, spec["centre_above_bottom_m"]])
+    if spec.get("entry_at_top"):                      # the entry's position is the centre of the top face: the shape centre is one half height below it
+        centre = np.asarray(position, float) - np.array([0.0, 0.0, spec["half_m"][2]])
+    else:
+        centre = np.asarray(position, float) + np.array([0.0, 0.0, spec["centre_above_bottom_m"]])
     if spec["shape"] == "capsule":
         size = (spec["radius_m"], spec["half_height_m"])
     else:
@@ -103,9 +106,12 @@ class WorldModelAdapter:
 
     def objects(self):
         out = []
-        for e in self.world_model.entries(kind="object"):
+        for e in self.world_model.entries():           # objects, and the catalog's fixtures (the hotplate is a fixture entry of the world model)
+            if e.kind not in ("object", "fixture"):
+                continue
             if e.id not in OBJECT_CATALOG:
-                self.skipped.append(e.id)
+                if e.kind == "object":
+                    self.skipped.append(e.id)
                 continue
             out.append(catalog_object(e.id, e.position))
         return out

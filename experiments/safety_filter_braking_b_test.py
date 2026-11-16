@@ -38,8 +38,8 @@ check("config: approach ceiling of the hotplate is the placeholder 0.05, an unli
       cfg.approach_ceiling("hotplate") == 0.05 and cfg.approach_ceiling("bench_top") == cfg.BRAKING["hand_speed_cap_m_s"])
 check("config: no fallback capsule setting", not hasattr(cfg, "HELD_FALLBACK_HEIGHT_M"))
 
-HOT = catalog_object("hotplate", np.array([1.0, 0.0, 0.80]))               # bottom centre at z 0.80: top face at z 0.86
-hot_top = 0.80 + 0.06
+hot_top = 0.86
+HOT = catalog_object("hotplate", np.array([1.0, 0.0, hot_top]))            # the world model keeps the hotplate at the centre of its top face (z 0.86)
 bench = WorldObject(id="bench_top", shape="box", size=(0.5, 0.5, 0.02), centre=(1.0, 1.0, 0.78), rot=tuple(np.eye(3).ravel()), fixture=True)
 bench_top = 0.80
 
@@ -219,7 +219,7 @@ q_home = np.array([tc.TASK_CFG["home_q_left"], tc.TASK_CFG["home_q_right"]], flo
 tr = HeldTracker(WorldView(Src([])))
 tr.update("left", False, placed, pos, rot, name="beaker")
 lowest = pad[2] - 0.085
-hot_under = catalog_object("hotplate", np.array([pad[0], pad[1], lowest - 0.01 - 0.06]))
+hot_under = catalog_object("hotplate", np.array([pad[0], pad[1], lowest - 0.01]))     # its top face 1 cm under the beaker
 feed.bind([hot_under], tr)
 o_ = feed(q_home, st)
 hp_pair = [c for c in o_[0] if c[2] is not None]
@@ -377,6 +377,31 @@ buf3 = io.StringIO()
 with contextlib.redirect_stdout(buf3):
     stop_r, _, info_r = Lr.check(np.zeros((2, 7)), np.array([[0.001] + [0.0] * 6, [0.0] * 7]), None, lambda q, s_: [[(-0.035 - np.asarray(q)[0, 0] * 0.5, 0.01, None, "left_held", "bench_top")], None])
 check("look-ahead: a hand at rest inside a (model) overlap is not an emergency (nothing to stop), and the arm stays put while the command closes", not Lr.errors and not Lr._emergency.any() and stop_r[0])
+
+# the hotplate reaches the filter: the simulator's world model keeps it as a FIXTURE entry at the centre of its top face
+from src.safety_filter.world import WorldModelAdapter  # noqa: E402
+
+
+class _Entry:
+    def __init__(self, id_, kind, position):
+        self.id, self.kind, self.position = id_, kind, np.asarray(position, float)
+
+
+class _WM:
+    def __init__(self, entries):
+        self._e = entries
+
+    def entries(self, kind=None):
+        return [e for e in self._e if kind is None or e.kind == kind]
+
+
+ad = WorldModelAdapter(_WM([_Entry("beaker", "object", (0.85, 0.66, 1.0825)), _Entry("hotplate", "fixture", (0.65, 0.66, 1.0825)),
+                            _Entry("bench", "fixture", (0.75, 0.66, 1.0125))]))
+objs = {o.id: o for o in ad.objects()}
+hp_o = objs.get("hotplate")
+check("adapter: the hotplate (a fixture entry in the world model) is passed to the filter, the bench (not in the catalog) is not", hp_o is not None and "bench" not in objs and "beaker" in objs)
+check("adapter: the hotplate's entry position is its top face (its box ends exactly there)", hp_o is not None and abs((hp_o.centre[2] + hp_o.size[2]) - 1.0825) < 1e-12 and hp_o.allowed_contact, str(hp_o))
+check("adapter: the beaker is placed from its bottom centre as before", abs(objs["beaker"].centre[2] - (1.0825 + 0.05)) < 1e-12)
 
 if __name__ == "__main__":
     print(f"\n{len(fails)} failed" if fails else "\nall passed")

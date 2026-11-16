@@ -337,7 +337,7 @@ class BrakingLayer:
                     brake_pairs.append(room)
                     if sd >= room:
                         need_brake = True
-                        if sd - room > float(self.tun["emergency_overshoot_ticks"]) * cush and v > rest and not was_braking:
+                        if sd - room > float(self.tun["emergency_overshoot_ticks"]) * cush and vp > rest and not was_braking:
                             emergency[i] = True          # even the S-curve cannot stop in time: braking must exceed its limits
                             self.errors.append(f"look-ahead failed ({SIDES[i]}): stopping distance {sd:.4f} m exceeds the room {room:.4f} m "
                                                f"(speed {vp:.3f} m/s, gap {gap:.4f} m, margin {margin:.4f} m, pair {ida}|{idb})")

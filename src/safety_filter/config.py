@@ -117,7 +117,7 @@ OBJECT_CATALOG = {
     },
     "hotplate": {
         "shape": "box", "half_m": (0.09, 0.09, 0.03),
-        "centre_above_bottom_m": 0.03, "graspable": False, "round": False, "allowed_contact": True,   # a held object may touch it (zero margin, approach ceiling)
+        "centre_above_bottom_m": 0.03, "graspable": False, "round": False, "allowed_contact": True, "entry_at_top": True,   # the world model keeps the hotplate (a fixture entry) at the centre of its top face (site hotplate_top), not at its bottom   # a held object may touch it (zero margin, approach ceiling)
         "source": "models/objects/hotplate.xml geom task_hotplate_base: box half sizes 0.09 0.09 0.03 at z 0.03",
     },
 }

@@ -436,7 +436,7 @@ check("look-ahead: a tick where the source commands no motion does not release t
 Ld4 = BrakingLayer(fake_tool)
 Ld4._braking[0] = True
 stop5, _, _ = Ld4.check(np.zeros((2, 7)), raw, None, lambda q, s_: [(0.012 - np.asarray(q)[0, 0] * 0.5, 0.01), None])
-check("look-ahead: a stopped hand with only 7 mm of room does not restart (it could not stop again): no creeping toward the obstacle", stop5[0] and Ld4._braking[0])
+check("look-ahead: a stopped hand with more room than the one-tick cushion restarts (an early stop must not deadlock the task)", not stop5[0] and not Ld4._braking[0])
 Ld2 = BrakingLayer(fake_tool)
 Ld2._braking[0] = True
 stop3, _, _ = Ld2.check(np.zeros((2, 7)), raw, None, lambda q, s_: [(0.005 - np.asarray(q)[0, 0] * 0.5, 0.01), None])

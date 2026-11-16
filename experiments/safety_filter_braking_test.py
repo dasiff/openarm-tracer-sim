@@ -397,13 +397,20 @@ raw = last.copy()
 raw[0, 0] = 0.04                                             # a jump of 2 cm in one tick = 3 m/s: far above the cap
 out, info = Lv.process(last, raw, None, None)
 check("transparent: a command that breaks the cap is still shaped", not np.array_equal(out, raw) and Lv.commanded_speed(last, out, None)[0] < CAPV * 0.01)
+# shaping starts when the cap is broken and ends when the ramp has converged on the commanded speed
 Lw = BrakingLayer(fake_tool)
-Lw.v[0], Lw.a[0] = 0.05, 0.0
-raw = np.zeros((2, 7))
-raw[0, 0] = 0.0                                              # from 0.05 m/s to 0 in one tick: a = -7.5 m/s2, beyond the acceleration limit
-Lw._dir[0, 0] = 1.0
-out, info = Lw.process(np.zeros((2, 7)), raw, None, None)
-check("transparent: a command whose acceleration breaks the limit is shaped (not passed)", Lw.v[0] > 0.0 and abs(Lw.v[0] - 0.05) <= A_LIM * DT + 1e-9, f"{Lw.v[0]}")
+last = np.zeros((2, 7))
+seq, shaped = [], []
+for k in range(500):
+    raw = last.copy()
+    raw[0, 0] += (0.5 if k < 300 else 0.05 / 0.5 / 150.0 * 0.5 * 2)   # first far ahead (above the cap), then a command at 0.05 m/s (0.5 * 0.1 rad.. = 0.05 m/s)
+    out, info = Lw.process(last, raw, None, None)
+    seq.append(float(Lw.commanded_speed(last, out, None)[0]))
+    shaped.append(bool(Lw._shaping[0]))
+    last = out
+seq = np.array(seq)
+check("shaping: a source that itself commands a slower speed is followed (never past the commanded pose); no overshoot", abs(seq[-1] - 0.05) < 1e-6 and seq[300:].max() <= 0.2 + 1e-9, f"{seq[-1]}")
+check("shaping: ends when the ramp has converged on the command, which is then passed exactly (free motion)", (not shaped[-1]) and not shaped[0] is None and any(shaped[:300]))
 
 if __name__ == "__main__":
     print(f"\n{len(fails)} failed" if fails else "\nall passed")

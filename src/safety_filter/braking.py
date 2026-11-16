@@ -118,6 +118,7 @@ class BrakingLayer:
         self._emergency = np.zeros(2, bool)
         self.errors = []                    # error log: every override (the look-ahead failed to catch an obstacle early enough: a bug to investigate)
         self._ceiling = np.zeros(2, bool)   # look-ahead latch: this arm is held to an allowed-contact surface's approach ceiling
+        self._shaping = np.zeros(2, bool)   # this arm's command is going through the S-curve (it stays so until the ramp has converged on the commanded speed)
         self._dir = np.zeros((2, 7))   # unit joint direction of each arm's last step (the way it was going; used when stopping)
 
     # ---- step 2: hand speed ----
@@ -152,6 +153,7 @@ class BrakingLayer:
         self._dir[:] = 0.0
         self._braking[:] = False
         self._ceiling[:] = False
+        self._shaping[:] = False
         self._emergency = np.zeros(2, bool)
 
     # ---- step 3: hand speed cap ----
@@ -209,20 +211,15 @@ class BrakingLayer:
         rest = float(self.tun["stop_speed_m_s"])
         return (max(vs - rest, 0.0) - max(float(self.v[i]) - rest, 0.0)) / self.dt
 
-    def _within_limits(self, i, vs, speed_limit):
-        """True when arm i's commanded tool speed vs (m/s) respects the hand speed cap, the speed limit of the look-ahead, the acceleration limit and
-        the jerk limit, judged against the last command sent (self.v, self.a), on the speed above the at-rest level (stop_speed_m_s). Such a
-        command is not reshaped: a source that plans within the limits (the staging move, a minimum-jerk plan) gets exactly what it asked for, and
-        sources that need their command applied as given keep working."""
-        tol = 1e-9
+    def _needs_shaping(self, i, vs, stop, speed_limit):
+        """True when arm i's command must go through the S-curve this tick: a stop (HOLD or look-ahead), the layer is still shaping (it started
+        and has not converged on the commanded speed yet), or the commanded tool speed vs is above the hand speed cap or the look-ahead's
+        speed limit. Anything else is free motion under the cap and passes untouched: sources that plan their own motion (the staging move)
+        and need their command applied as given keep working, and the bridge keeps interpolating them."""
         lim = float(self.tun["hand_speed_cap_m_s"])
         if speed_limit is not None:
             lim = min(lim, float(speed_limit[i]))
-        if vs > lim * (1.0 + tol):
-            return False
-        a_c = self._accel_of(i, vs)
-        j_c = (a_c - float(self.a[i])) / self.dt
-        return abs(a_c) <= self.d["effective_accel_limit"] * (1.0 + tol) and abs(j_c) <= float(self.tun["jerk_limit_m_s3"]) * (1.0 + tol)
+        return bool(stop[i]) or bool(self._shaping[i]) or vs > lim * (1.0 + 1e-9)
 
     def step(self, last, raw, state, stop=None, speed_limit=None):
         """One tick of the profile. Each arm's speed moves toward its target through the jerk-limited ramp (S-shaped both ways); the joint
@@ -238,8 +235,8 @@ class BrakingLayer:
         for i in range(2):
             v0, a0 = self._va(i)
             delta = raw[i] - last[i]
-            if not stop[i] and self._within_limits(i, float(vs[i]), speed_limit):
-                out[i] = raw[i]                           # the commanded motion already respects every limit: sent as it is, to the last digit
+            if not self._needs_shaping(i, float(vs[i]), stop, speed_limit):
+                out[i] = raw[i]                           # free motion under the cap: sent as it is, to the last digit
                 self.a[i] = self._accel_of(i, float(vs[i]))
                 self.v[i] = float(vs[i])
                 n = np.linalg.norm(delta)
@@ -260,6 +257,8 @@ class BrakingLayer:
             step = self.scale_step(i, last, direction, v1, state) if v1 > 0.0 else np.zeros(7)
             if not stop[i] and np.any(step) and np.linalg.norm(step) > np.linalg.norm(delta):   # never past the commanded pose
                 step = delta
+            capped_target = target < float(vs[i]) * (1.0 - 1e-12)
+            self._shaping[i] = bool(stop[i] or capped_target or abs(v1 - target) > 1e-12 or abs(a1) > 1e-12)   # converged on the commanded speed: free motion again
             clipped = (not stop[i]) and np.any(delta) and v1 > 0.0 and np.array_equal(step, delta)
             out[i] = last[i] + step
             n = np.linalg.norm(step)
@@ -272,6 +271,7 @@ class BrakingLayer:
                 q_new[i] = out[i]
                 v_act = float(self.commanded_speed(last, q_new, state)[i])
                 v1, a1 = v_act, (v_act - v0) / self.dt
+                self._shaping[i] = False                  # the ramp allowed more than the command asked for: the command goes through as it is
             self.v[i], self.a[i] = v1, a1
         return out, {"speed": self.v.copy(), "accel": self.a.copy()}
 

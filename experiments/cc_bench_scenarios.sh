@@ -12,7 +12,7 @@ export CC_INSETS=0 CC_HUD=0 CC_BENCH_LOG=$2
 case $1 in
  manual) export CC_BENCH_FRAMES=1248
    export CC_BENCH_KEYS="12-108:UP,108-228:SPACE,240-336:LEFT,336-456:SPACE,480-624:PAGE_DOWN,648-792:PAGE_UP,816-888:3,936-1008:E,1032-1128:A,1152-1188:8,1200-1248:I"
-   .venv/bin/python experiments/combined_controller.py ;;
+   .venv/bin/python experiments/combined_controller.py $CC_EXTRA_ARGS ;;
  teleop) export CC_BENCH_FRAMES=1152 CC_FAKE_TELEOP=1 CC_FAKE_TELEOP_SIMCLOCK=1
    export CC_BENCH_KEYS="48-144:UP,144-264:SPACE,288:F2,360-456:LEFT,456-576:SPACE,600-636:8,792-828:I,960:F2,984-1056:3"
    .venv/bin/python experiments/combined_controller.py --mode teleop --no-preview ;;

@@ -29,7 +29,8 @@ from src.safety_filter.arm_conversion import ArmKinematics, rotation_error_rad, 
 from src.safety_filter.link_rules import FOREARM, HAND, UPPER_ARM, category_of
 from src.safety_filter.push_direction import contact_fraction, elbow_displacement, pair_push
 from src.safety_filter.shapes import SIDES, RobotState
-from src.safety_filter.touch import Exempt, as_placed, evaluate_pairs, gap_between, pair_rule
+from src.safety_filter.tick import Statics, _Tick
+from src.safety_filter.touch import Exempt, as_placed, evaluate_pairs, gap_between, pair_rule  # noqa: F401  (names other scripts look up here)
 
 PASS, ELBOW_SWING, HAND_SLIDE, STEP_SHORTENED, HOLD, KONG_PUSH = "PASS", "ELBOW_SWING", "HAND_SLIDE", "STEP_SHORTENED", "HOLD", "KONG_PUSH"
 STATUSES = (PASS, ELBOW_SWING, HAND_SLIDE, STEP_SHORTENED, HOLD, KONG_PUSH)   # KONG_PUSH last: older recordings keep their indices
@@ -68,131 +69,45 @@ class _Hold(Exception):
         self.reason = reason
 
 
-class _Tick:
-    """The state of one tick: poses (placed shapes), gaps and closing flags, cached."""
-
-    def __init__(self, res, raw, last, state, world, held):
-        self.res, self.raw, self.last, self.state, self.held = res, raw, last, state, held
-        self.world = {o.id: as_placed(o) for o in world}
-        self.world_objects = list(world)
-        self._poses, self._gaps = {}, {}
-        self.rules, self.g0, self._closing = {}, {}, {}
-        self.keys = set()
-
-    # ---- poses ----
-    def pose(self, q):
-        """(robot shapes by id incl. the held shapes) at the joint angles q (2,7); cached by the bytes of q."""
-        k = q.tobytes()
-        p = self._poses.get(k)
-        if p is None:
-            sh = self.res.shapes
-            placed = sh.place(with_arms(self.state, q))
-            allp = list(placed)
-            if self.held is not None:
-                for side in SIDES:
-                    pos, rot = sh.hand_frame(side)
-                    hs = self.held.placed(side, pos, rot)
-                    if hs is not None:
-                        allp.append(hs)
-            p = ({s.id: s for s in allp}, allp)
-            if len(self._poses) > 64:
-                self._poses.clear()
-                self._gaps.clear()
-            self._poses[k] = p
-        return p
-
-    def shape(self, q, sid):
-        by_id, _ = self.pose(q)
-        return by_id.get(sid) or self.world.get(sid)
-
-    def gap(self, q, key):
-        """Scalar gap of a pair at the pose q (the shared layer's exact distance); +inf if a shape is missing."""
-        ck = (q.tobytes(), key)
-        g = self._gaps.get(ck)
-        if g is None:
-            a, b = self.shape(q, key[0]), self.shape(q, key[1])
-            g = np.inf if a is None or b is None else float(gap_between(a, b)[0])
-            self._gaps[ck] = g
-        return g
-
-    # ---- candidate pairs ----
-    def discover(self, q):
-        """Adds the pairs near at the pose q to the candidate set (with their rules and gaps at the last command)."""
-        _, allp = self.pose(q)
-        for rep in evaluate_pairs(allp, self.world_objects):
-            self._add(tuple(sorted((rep.a, rep.b))), rep.rule)
-
-    def _add(self, key, rule):
-        if key not in self.keys:
-            self.keys.add(key)
-            self.rules[key] = rule
-            self.g0[key] = self.gap(self.last, key)
-
-    def add_known(self, key):
-        if key not in self.keys:
-            a, b = self.shape(self.last, key[0]), self.shape(self.last, key[1])
-            if a is None or b is None:
-                return
-            rule = pair_rule(a, b)
-            if not isinstance(rule, Exempt):
-                self._add(key, rule)
-
-    def arms_of(self, key):
-        out = []
-        for sid in key:
-            s = self.shape(self.last, sid)
-            if s is not None and s.arm in SIDES and s.arm not in out:
-                out.append(s.arm)
-        return out
-
-    def closing(self, key):
-        """The arms of the pair that are closing: moving only that arm to its raw command makes the gap smaller (SF-30)."""
-        c = self._closing.get(key)
-        if c is None:
-            c = []
-            for side in self.arms_of(key):
-                q = self.last.copy()
-                i = _ARM_INDEX[side]
-                q[i] = self.raw[i]
-                if self.gap(q, key) < self.g0[key] - cfg.RESOLVER["closing_eps_m"]:
-                    c.append(side)
-            self._closing[key] = c
-        return c
-
-    # ---- shortfall ----
-    def shortfall(self, q, key):
-        return gap_rule.shortfall(self.g0[key], self.gap(q, key), self.rules[key].margin, self.res.dt)
-
-    def worst(self, q, discover=False):
-        """(key, shortfall) of the worst pair that needs action at the pose q, or None."""
-        if discover:
-            self.discover(q)
-        best = None
-        for key in self.keys:
-            s = self.shortfall(q, key)
-            if s > cfg.RESOLVER["trigger_m"] and self.closing(key) and (best is None or s > best[1]):
-                best = (key, s)
-        return best
-
-    def worst_value_discover(self, q):
-        """The worst shortfall at the pose q (0.0 if no pair needs action), after adding the pairs near at q."""
-        w = self.worst(q, discover=True)
-        return 0.0 if w is None else w[1]
-
-
 class Resolver:
     """The push-apart resolver. Holds the pairs being acted on between ticks (the release band) and nothing else."""
 
-    def __init__(self, shapes, dt, solver=None):
+    def __init__(self, shapes, dt, solver=None, joint_speed_rad_s=None):
         """Args: shapes (RobotShapes): the robot shapes (the robot-only model; its kinematics are ours).
         dt (float): tick length, s (1 / the control loop's source_hz). solver: the converter for the elbow swing (arm_conversion.make_solver()),
-        or None (an elbow swing then holds still with reason NO_SOLVER)."""
+        or None (an elbow swing then holds still with reason NO_SOLVER).
+        joint_speed_rad_s (float or None): the fastest an arm joint is allowed to move, rad/s, read by the caller from the command bridge limit
+        (COMMAND_BRIDGE_CFG max_joint_velocity_rad_s); the pair sleep (tick.SleepTimers) needs it and is off without it (SF-72)."""
         self.shapes, self.dt = shapes, float(dt)
+        self.joint_speed_rad_s = joint_speed_rad_s
         self.kin = ArmKinematics(shapes, solver)
         self._active = set()
+        self.statics = Statics(shapes)                      # array form kept between ticks: pair tables, world arrays, sleep timers (SF-69, SF-72)
 
     def reset(self):
         self._active = set()
+        self.statics.sleep.reset()
+
+    def begin(self, raw, last, state, world_objects, held):
+        """The start of a tick, shared by the resolvers: the candidate pairs and the worst pair at the raw command.
+        Returns (tick, worst pair or None); tick is None when every pair is asleep (pass-through without any kinematics, SF-72).
+        A tick that will act looks at every pair, as before the sleep timers."""
+        sleep = self.statics.sleep
+        awake = sleep.awake(self, raw, last, state, world_objects, held)
+        if awake is not None and not awake.any():
+            self._active = set()
+            return None, None             # the filter returns the raw command: sleep.awake() already took it as the pose the next tick starts from
+        t = _Tick(self, raw, last, state, world_objects, held, awake=awake)
+        for _ in (0, 1):
+            t.discover(last)
+            t.discover(t.raw)
+            for key in self._active:
+                t.add_known(key)
+            first = t.worst(t.raw)
+            if first is None or t._awake is None:
+                break
+            t.wake_all()
+        return t, first
 
     # ------------------------------------------------------------------
     def step(self, raw, last, state: RobotState, world_objects=(), held=None):
@@ -213,12 +128,9 @@ class Resolver:
         last = np.asarray(last, float)
         if not np.isfinite(np.asarray(raw, float)).all():
             return last.copy(), FilterStatus(status=HOLD, hold_reason="NOT_FINITE")
-        t = _Tick(self, np.asarray(raw), last, state, world_objects, held)
-        t.discover(last)
-        t.discover(t.raw)
-        for key in self._active:
-            t.add_known(key)
-        first = t.worst(t.raw)
+        t, first = self.begin(np.asarray(raw), last, state, world_objects, held)
+        if t is None:
+            return raw, FilterStatus()
         if first is None:
             self._update_active(t, t.raw)
             return raw, FilterStatus()
@@ -257,7 +169,8 @@ class Resolver:
 
     # ------------------------------------------------------------------
     def _update_active(self, t, q):
-        self._active = {k for k in t.keys if min(t.gap(q, k), t.g0[k]) < t.rules[k].release}
+        self._active = t.active_keys(q)                      # the pairs with min(gap at q, gap at the last command) below their release distance
+        self.statics.sleep.after_tick(t, q)
 
     def _state(self, t, q):
         return with_arms(t.state, q)
@@ -347,7 +260,7 @@ class Resolver:
         return self.kin.hand_pose(self._state(t, t.raw), side)
 
     # ---- step shortening ----
-    def _shorten(self, t, q, sides, methods, targets, st, passes=None):
+    def _shorten(self, t, q, sides, methods, targets, st, passes=None, fraction=None):
         """Scale the joint-space step (last -> raw) of the given arms by the largest fraction at which every pair meets
         the gap rule (halving search); below shorten_min_fraction: hold still."""
         idx = [_ARM_INDEX[s] for s in sides]
@@ -358,21 +271,24 @@ class Resolver:
                 qq[i] = t.last[i] + f * (t.raw[i] - t.last[i])
             return qq
 
-        if passes is None:                       # default pass test: every pair meets the gap rule; kong_style's jump-through guard passes its own
-            def passes(f):
-                return t.worst_value_discover(trial(f)) < cfg.RESOLVER["stop_m"]
-
-        if passes(1.0):
-            f = 1.0
+        if fraction is not None:                 # the caller already found the fraction (conservative advancement of the guard, SF-73)
+            f = fraction
         else:
-            lo, hi = 0.0, 1.0
-            for _ in range(cfg.RESOLVER["shorten_halvings"]):
-                mid = 0.5 * (lo + hi)
-                if passes(mid):
-                    lo = mid
-                else:
-                    hi = mid
-            f = lo
+            if passes is None:                   # default pass test: every pair meets the gap rule; kong_style's jump-through guard passes its own
+                def passes(f):
+                    return t.worst_value_discover(trial(f)) < cfg.RESOLVER["stop_m"]
+
+            if passes(1.0):
+                f = 1.0
+            else:
+                lo, hi = 0.0, 1.0
+                for _ in range(cfg.RESOLVER["shorten_halvings"]):
+                    mid = 0.5 * (lo + hi)
+                    if passes(mid):
+                        lo = mid
+                    else:
+                        hi = mid
+                f = lo
         if f < cfg.RESOLVER["shorten_min_fraction"]:
             st.fraction = f
             raise _Hold("SHORTEN_ZERO")

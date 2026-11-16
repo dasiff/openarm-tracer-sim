@@ -7,6 +7,7 @@ gives the body frames, and each shape's body-local ends or box are mapped to the
 Refuses to load when the model's fingerprint differs from the one stamped in the file (SF-5).
 """
 
+import hashlib
 import json
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -26,6 +27,16 @@ _NEVER_CLOSE = frozenset()   # pairs of shape ids that can never come close (SF-
 def never_close_pairs():
     """The never-close pairs of the robot shapes last loaded: a frozenset of frozenset({id_a, id_b}) (SF-23)."""
     return _NEVER_CLOSE
+
+
+def never_close_fingerprint(model_fp, pairs):
+    """The stamp of the merged never-close list (block never_close_pairs of robot_shapes.json, DNC-5): SHA-256 over the robot model's
+    fingerprint and the merged entries (pair and source). tools/build_never_close.py writes it; the loader recomputes it and refuses a
+    block that does not match (edited by hand, or built for another model)."""
+    rows = sorted((min(p["a"], p["b"]), max(p["a"], p["b"]), p["source"]) for p in pairs)
+    h = hashlib.sha256()
+    h.update(json.dumps([model_fp, rows], sort_keys=True).encode())
+    return h.hexdigest()
 
 
 class FingerprintMismatch(RuntimeError):
@@ -64,6 +75,7 @@ class PlacedShape:
     rot: np.ndarray = None
     half: np.ndarray = None
     geoms: tuple = ()
+    never_touch: bool = False  # SF-65: set on a world shape made from a never-touch object
     segment: str = ""  # the resolver's segment (SF-20): upper_arm (links 1-3: contacts move the elbow only), forearm (links 4-6), hand (link 7, palm, fingers), shoulder, body
 
     def aabb(self):
@@ -106,7 +118,18 @@ class RobotShapes:
         nc = doc.get("never_close", {})
         if use_never_close and nc and nc.get("fingerprint") != fp:
             raise FingerprintMismatch("the never-close list was built for another robot model")
-        self.never_close = frozenset(frozenset((p["a"], p["b"])) for p in nc.get("pairs", [])) if use_never_close else frozenset()
+        merged = doc.get("never_close_pairs")
+        if use_never_close and merged is not None:
+            # the merged list (Stage 1 sweep + Stage 2 divide and conquer, tools/build_never_close.py, DNC-4): the one the filter uses
+            if merged.get("model_fingerprint") != fp:
+                raise FingerprintMismatch("the merged never-close list was built for another robot model")
+            if merged.get("fingerprint") != never_close_fingerprint(fp, merged["pairs"]):
+                raise FingerprintMismatch("the merged never-close list does not match its stamp; rebuild with tools/build_never_close.py")
+            self.never_close = frozenset(frozenset((p["a"], p["b"])) for p in merged["pairs"])
+        elif use_never_close:
+            self.never_close = frozenset(frozenset((p["a"], p["b"])) for p in nc.get("pairs", []))
+        else:
+            self.never_close = frozenset()
         _NEVER_CLOSE = self.never_close
         self.specs = doc["shapes"]
         self._body = {s["id"]: mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, s["frame"]) for s in self.specs}
@@ -122,6 +145,10 @@ class RobotShapes:
         self._base = self._jid("base_float")
         self._pedestal = self._jid("pedestal_joint")
         self._prepare_arrays()
+        self._adr_base, self._adr_ped = int(model.jnt_qposadr[self._base]), int(model.jnt_qposadr[self._pedestal])
+        self._adr_arm = {s: np.array([model.jnt_qposadr[j] for j in self._joint[s]]) for s in SIDES}
+        self._adr_fing = {s: np.array([model.jnt_qposadr[j] for j in self._finger[s]]) for s in SIDES}
+        self._qbuf, self._kin_q, self._kin_done = np.array(model.qpos0, float), np.array(model.qpos0, float), False
         self.largest_radius = max((s["radius"] for s in self.specs if s["kind"] == "capsule"), default=0.0)
 
     def _jid(self, name):
@@ -131,22 +158,26 @@ class RobotShapes:
         return j
 
     def set_state(self, state: RobotState):
-        """Puts the joint state into the data and runs the kinematics (no dynamics, no stepping)."""
+        """Puts the joint state into the data and runs the kinematics (no dynamics, no stepping). When the joint state is the
+        one the kinematics was last run for, nothing is recomputed (SF-70)."""
         m, d = self.model, self.data
-        d.qpos[:] = m.qpos0
-        a = m.jnt_qposadr[self._base]
-        d.qpos[a:a + 3] = state.base_xyz
-        d.qpos[a + 3:a + 7] = state.base_quat
-        d.qpos[m.jnt_qposadr[self._pedestal]] = state.pedestal_m
-        for side, q, f in (("left", state.q_left, state.finger_left), ("right", state.q_right, state.finger_right)):
-            q = np.asarray(q, dtype=float)
-            if q.shape != (ARM_JOINTS,) or not np.isfinite(q).all():
+        q = self._qbuf
+        q[:] = m.qpos0
+        q[self._adr_base:self._adr_base + 3] = state.base_xyz
+        q[self._adr_base + 3:self._adr_base + 7] = state.base_quat
+        q[self._adr_ped] = state.pedestal_m
+        for side, qa, f in (("left", state.q_left, state.finger_left), ("right", state.q_right, state.finger_right)):
+            qa = np.asarray(qa, dtype=float)
+            if qa.shape != (ARM_JOINTS,) or not np.isfinite(qa).all():
                 raise ValueError(f"{side}: expected {ARM_JOINTS} finite joint angles")
-            for j, v in zip(self._joint[side], q):
-                d.qpos[m.jnt_qposadr[j]] = v
-            for j in self._finger[side]:
-                d.qpos[m.jnt_qposadr[j]] = f
+            q[self._adr_arm[side]] = qa
+            q[self._adr_fing[side]] = f
+        if self._kin_done and np.array_equal(q, self._kin_q) and np.array_equal(d.qpos, q):
+            return
+        d.qpos[:] = q
         mujoco.mj_kinematics(m, d)
+        self._kin_q[:] = q
+        self._kin_done = True
 
     def _prepare_arrays(self):
         """Index arrays so that place() is one vectorised pass (built once)."""
@@ -170,26 +201,35 @@ class RobotShapes:
             self._box_rl = np.array([_quat_to_mat(self.specs[k]["quat_local"]) for k in box_idx])
             self._box_h = np.array([self.specs[k]["half"] for k in box_idx], float)
 
-    def place(self, state: RobotState):
-        """All shapes in the world for this joint state (one vectorised pass). Returns a list of PlacedShape in spec order."""
-        self.set_state(state)
+    def place_arrays(self):
+        """The shapes of the state last set, as arrays: capsule ends A, B (in the order of the capsule shapes) and box centres C
+        and rotations R (in the order of the box shapes). The numbers place() puts into its PlacedShape objects."""
         d = self.data
         xpos = d.xpos
         xmat = d.xmat.reshape(-1, 3, 3)
-        out = [None] * len(self.specs)
+        A = B = C = Rw = None
         if len(self._cap_idx):
             A0 = xpos[self._cap_ba] + np.einsum("kij,kj->ki", xmat[self._cap_ba], self._cap_la)
             B0 = xpos[self._cap_bb] + np.einsum("kij,kj->ki", xmat[self._cap_bb], self._cap_lb)
             A = A0 + self._cap_t0[:, None] * (B0 - A0)
             B = A0 + self._cap_t1[:, None] * (B0 - A0)
+        if len(self._box_idx):
+            C = xpos[self._box_b] + np.einsum("kij,kj->ki", xmat[self._box_b], self._box_c)
+            Rw = np.einsum("kij,kjl->kil", xmat[self._box_b], self._box_rl)
+        return A, B, C, Rw
+
+    def place(self, state: RobotState):
+        """All shapes in the world for this joint state (one vectorised pass). Returns a list of PlacedShape in spec order."""
+        self.set_state(state)
+        A, B, C, Rw = self.place_arrays()
+        out = [None] * len(self.specs)
+        if len(self._cap_idx):
             for n, k in enumerate(self._cap_idx):
                 sp = self.specs[k]
                 out[k] = PlacedShape(id=sp["id"], arm=sp["arm"], part=sp["part"], kind="capsule", body=sp["frame"],
                                      a=A[n], b=B[n], r=float(self._cap_r[n]), geoms=tuple(sp["geoms"]),
                                      segment=sp.get("segment", ""))
         if len(self._box_idx):
-            C = xpos[self._box_b] + np.einsum("kij,kj->ki", xmat[self._box_b], self._box_c)
-            Rw = np.einsum("kij,kjl->kil", xmat[self._box_b], self._box_rl)
             for n, k in enumerate(self._box_idx):
                 sp = self.specs[k]
                 out[k] = PlacedShape(id=sp["id"], arm=sp["arm"], part=sp["part"], kind="box", body=sp["frame"],

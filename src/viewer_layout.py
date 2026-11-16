@@ -490,3 +490,18 @@ def clock_bitmap(text, scale=1.0, text_scale=2.2):
     cv2.putText(bmp, "Time", (S(15), S(12) + lh), font, fs_lab, (190, 190, 190), max(1, int(round(scale))), cv2.LINE_AA)
     cv2.putText(bmp, text, (w - S(15) - cv2.getTextSize(text, font, fs_big, thick_big)[0][0], S(22) + lh + th), font, fs_big, (255, 255, 255), thick_big, cv2.LINE_AA)
     return bmp
+
+
+def caption_bitmap(text, scale=1.0, text_scale=1.6):
+    """A caption in the clock's style (dark box, light border) with the text in orange-red: the safety filter demo's "SAFETY FILTER ACTIVE" (cat demo).
+
+    Returns: RGB bitmap (uint8) of a size that fits the text."""
+    S = lambda v: int(round(v * scale))
+    font = cv2.FONT_HERSHEY_DUPLEX
+    fs, th_ = 0.45 * scale * text_scale * 1.3, max(2, int(round(2.5 * scale)))
+    (tw, th), base = cv2.getTextSize(text, font, fs, th_)
+    w, h = tw + S(40), th + base + S(28)
+    bmp = np.full((h, w, 3), 30, np.uint8)
+    cv2.rectangle(bmp, (0, 0), (w - 1, h - 1), (200, 200, 200), max(1, int(round(scale))))
+    cv2.putText(bmp, text, (S(20), S(14) + th), font, fs, (255, 110, 40), th_, cv2.LINE_AA)
+    return bmp

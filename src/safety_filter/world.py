@@ -31,6 +31,7 @@ class WorldObject:
     graspable: bool = False
     round: bool = False
     fixture: bool = False
+    never_touch: bool = False  # SF-65: a never-touch object (e.g. a pet): no exemptions for fingers or held objects, own margin config.NEVER_TOUCH_MARGIN_M
 
     def rot_matrix(self):
         return np.asarray(self.rot, dtype=float).reshape(3, 3)

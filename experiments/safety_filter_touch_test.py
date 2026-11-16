@@ -240,7 +240,10 @@ def never_close_list():
             bad_checked.append((p["a"], p["b"]))
     check("the touch rules exempt every listed pair", not bad_exempt, str(bad_exempt[:3]))
     check("every listed pair is a checked robot-vs-robot pair without the list", not bad_checked, str(bad_checked[:3]))
-    listed = {frozenset((p["a"], p["b"])) for p in pairs}
+    stage1 = {frozenset((p["a"], p["b"])) for p in pairs}
+    listed = set(rs.never_close)                          # the list the filter uses: Stage 1 alone, or the merged list (never_close_pairs, DNC-4)
+    if rs.doc.get("never_close_pairs"):
+        check("merged list holds every Stage 1 pair", stage1 <= listed)
     unlisted = [(a, b) for a in rs.specs for b in rs.specs if a["id"] < b["id"] and frozenset((a["id"], b["id"])) not in listed
                 and isinstance(pair_rule(stub(a["id"]), stub(b["id"]), use_never_close=False), Rule)]
     check("pairs not on the list keep their rule", all(isinstance(pair_rule(stub(a["id"]), stub(b["id"])), Rule) for a, b in unlisted[:200]))

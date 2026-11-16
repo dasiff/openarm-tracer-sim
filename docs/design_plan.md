@@ -649,8 +649,8 @@ Source: the SEW-Mimic paper (arXiv 2602.01632, Sec. V and App. E). Its text is n
 - **14. Oracle checker** [DECIDED, M298; implemented in the later codebase cleanup, not now]: `src/mpvi_modules.py` oracle becomes scoring only (logs, decides nothing); the VLM checker judges steps, as in MPVI.
 
 PENDING:
-- Divide-and-conquer never-close test (SF-27; approved design, deferred to a later task). Split joint ranges; for each range compute a guaranteed region containing each part (each joint's range becomes an arc, stacked along the arm); a pair is settled for that range when the two regions stay apart by margin + 1 cm; split only ranges where they approach; stop at tiny pieces and use a real pose's gap. Works for any number of joints and for arm vs arm (each arm's part depends only on its own joints). Absorbs the approved reach-limit test (base, battery) as its first round and cross-checks the 3-joint sweep (SF-23). Per-pair time cap about 2 minutes; unproven pairs stay checked. Runs offline once per robot model, stored with the shapes fingerprint.
-  Includes 'blocked by the torso': flood from the home pose's range through ranges not certainly inside the torso; entries proven this way are labelled as depending on the torso check; a test fails if any torso pair they rely on is ever exempted; at run time those entries are not trusted (pairs re-checked) while any arm shape is inside its torso margin.
+- Divide-and-conquer never-close test (SF-27; approved design) [TOOL BUILT 2026-11-15, SF-75 to SF-79; list NOT yet loaded, loader is SF-77, open; see "Part B never-close DC" at the end of this section]. Split joint ranges; for each range compute a guaranteed region containing each part (each joint's range becomes an arc, stacked along the arm); a pair is settled for that range when the two regions stay apart by margin + 1 cm; split only ranges where they approach; stop at tiny pieces and use a real pose's gap. Works for any number of joints and for arm vs arm (each arm's part depends only on its own joints). Absorbs the approved reach-limit test (base, battery) as its first round and cross-checks the 3-joint sweep (SF-23). Per-pair time cap about 2 minutes; unproven pairs stay checked. Runs offline once per robot model, stored with the shapes fingerprint.
+  Includes 'blocked by the torso' [ABANDONED 2026-11-16: the torso label and its run-time guard were removed; the label and check A tested different things, and the label came out 219 of 219, so it added nothing; the 219 pairs stay valid]: flood from the home pose's range through ranges not certainly inside the torso; entries proven this way are labelled as depending on the torso check; a test fails if any torso pair they rely on is ever exempted; at run time those entries are not trusted (pairs re-checked) while any arm shape is inside its torso margin.
 - CLOSED (SF-3, 2026-11-10): palm capsule count k = 2 for the palm, one capsule for link 7, one capsule per finger attached to that finger's body. The palm study that stopped at the spread check is `docs/reports/safety_filter_palm_redo_20261109.md`.
 - CLOSED (2026-11-10, commit bc339ab): the held weight always comes from the robot's own weighing, never from the model's beaker mass. `src/gravity_ff.py` lines 83-84 read robot link masses only, and the held term uses the measured weighing estimate (traced in `docs/reports/safety_filter_palm_redo_20261109.md` section 1).
 - Demo generation vs Stage 4 order (SF-7): whether demo generation waits for the plug-in into `src/control_loop.py` (Stage 4) or runs before it. Open; David to decide.
@@ -696,7 +696,7 @@ Status: Stage 2b BUILT on branch safety-filter, not pushed (SF numbers may be re
 
 No handling of a late filter answer. The filter runs inside the control loop and the loop waits for it, so there is no 'filter busy' status for the bridge to act on. Accepted for now because the filter may never run in real time: in simulation the physics waits for the filter. If real-time use is ever needed, the filter must run alongside the control loop, report 'busy' when late, and send a checked fallback motion with each command for the bridge to use while it is busy.
 
-### Stage 4 design (decided, not built) [decision row SF-51]
+### Stage 4 design (decided; plug-in BUILT on branch safety-filter-plugin, smooth stop NOT built) [decision row SF-51]
 
 When the filter finds no safe pose it returns status 'no safe pose found' (today's HOLD, with its reason) together with the last safe command. The bridge hands control to a swappable slow-down policy, a function passed in to the bridge. Default: smooth stop, chosen for the materials lab (held glassware). Alternative: repeat the last safe command. The slow-down may never travel more than half the smallest margin (currently 5 mm); if the arm is moving too fast to stop gently within that, it brakes harder. The bridge reports each command it actually sent, and the filter's next check starts from that command. During a slow-down, the recorded action is the command the bridge sent, with a status saying it was braking and why.
 
@@ -711,3 +711,46 @@ Status: Stage 2g BUILT on branch safety-filter, not pushed. Report: docs/reports
 - **SF-56**: The closing-arm decision is fixed per tick.
 - **SF-57**: The reactive stream (scripts/safety_filter_reactive_stream.py) is test-only.
 - **SF-58**: Config pair_order: 'deepest_first' (default) or 'by_name'.
+
+### Stage 4 build: the plug-in (decision rows SF-59 to SF-64, 2026-11-13; full text in docs/mpvi_decisions.md)
+
+Status: BUILT on branch safety-filter-plugin (from safety-filter), not pushed. Glue: src/safety_filter_plugin.py; config SAFETY_FILTER_PLUGIN_CFG in src/task_config.py; runner flag --safety-filter {off,shadow,on}. Report: docs/reports/safety_filter_stage4_plugin_20261113.md. Smooth stop NOT built (only its slot).
+
+- **SF-59**: Three modes, default off. off = nothing (no import, no call, no recording; byte-identical). shadow = filter runs and is recorded, the robot gets the raw command. on = the robot gets the filtered command. The filter sits in the control loop after the helpers (open catch, weighing) and before the sag trim, on every arms command that carries arm targets.
+- **SF-60**: The last safe command the filter compares against is always the command actually sent (raw in shadow, filtered in on). At the first call it is the command the robot holds.
+- **SF-61**: Hold policy slot: hold_policy(last_sent, status, history) -> command, passed in when the plug-in is created. Default "repeat_last_safe". Smooth stop deferred (next week). The policy is asked in shadow too (for the record).
+- **SF-62**: The glue lives outside src/safety_filter/ (the structural test forbids simulator access inside it). The filter reads no world data from the simulator: objects from the world model stand-in (make_sim_world_model through WorldModelAdapter), fixtures from the lab map; joint state may come from the simulator.
+- **SF-63**: Recording (shadow and on only) per call: time, raw, filtered, sent command, status, hold reason, filter time, and the filter's status fields; data/safety_filter/plugin_runs/<run name>.npz, rewritten through a temporary file.
+- **SF-64**: Run limits max_minutes and max_ticks stop the run cleanly (stopped_by "safety_filter_limit"), recording saved.
+
+### Cat demo (decision rows SF-65 to SF-68, 2026-11-13; full text in docs/mpvi_decisions.md)
+
+Status: BUILT on branch safety-filter-plugin, not pushed. Report: docs/reports/safety_filter_cat_demo_20261113.md. Video data/videos/safety_filter_cat_20261113.mp4 (not in Git).
+
+- **SF-65**: Never-touch objects: no exemptions (fingers and held object checked), margin 0.05 m; the only change in src/safety_filter/ (flag on the world object and shape, one branch in the rule table, one config value).
+- **SF-66**: The cat is test and video only (a vertical capsule on the beaker-hotplate line), never in the lab map; it joins the world list when manipulation starts.
+- **SF-67**: Its picture is visual-only geoms in a separate scene file, moved in the viewer scene only.
+- **SF-68**: Ghost arm at the raw command (red) and the caption "SAFETY FILTER ACTIVE" while the filter is not PASS.
+
+### Stage 5 speed (decision rows SF-69 to SF-74, 2026-11-15; full text in docs/mpvi_decisions.md)
+
+Status: BUILT (partly) on branch safety-filter-speed, not pushed. Report: docs/reports/safety_filter_speed_20261115.md; step log docs/reports/safety_filter_speed_log.md. The filter decides what it decided before (gate A: 0 failing ticks and identical counters on six golden recordings; gate B: closed loop identical to golden on punch original, punch reactive and cat); time per call: punch original 1041 to 60 ms, punch reactive 28.2 to 8.8 ms, cat 37.0 to 5.3 ms, shadow pick and place 6.2 to 1.9 ms. Targets met: cat mean, reactive p95; not met: punch original, reactive mean, cat p95, pass-through 1 ms. Not built: compiled kernel, Part B (never-close extension).
+
+- **SF-69**: The equivalence gate and its thresholds (assistant's choice, David to confirm); the tag safety-filter-pre-speed and six golden recordings are the reference.
+- **SF-70**: Array form of a tick (pair table, pose arrays, one array broad phase); the scalar functions stay the definition of every value.
+- **SF-71**: The bounds that rule pairs out (box separation, travel, proven gap intervals) and their constants (config ARRAY_FORM).
+- **SF-72**: The pair scheduler (min-heap on wakeup tick, safety buffer 0.20, speed limit passed in from the command bridge config), its guards and the "no moving arm, not looked at" rule.
+- **SF-73**: Guard by conservative advancement as a verified fast path; pure advancement dropped because the cat closed loop diverged.
+- **SF-74**: Not built: swept broad phase, batched FK, compiled kernel, Part B.
+
+### Part B never-close DC (decision rows SF-75 to SF-79, 2026-11-15; full text in docs/mpvi_decisions.md)
+
+Status: tool BUILT and run on branch safety-filter-speed, not pushed; the list is NOT in use (loader and file format are open, SF-77). Report: docs/reports/safety_filter_partb_dc_20261115.md. Proof: docs/safety_filter_never_close_soundness.md (standing file; update it with any change of the method). 219 of the 518 pairs the Stage 1 list leaves checked are proven never-close (200 arm vs body, 19 arm vs arm); 265 can come close; 34 unproven stay checked.
+
+- **SF-75**: The divide-and-conquer method and its parameters (minimum split 0.05 rad, 5 mm for slides; split along the largest half range x lever arm; random search first); what of SF-27 is not built (real-pose rule for tiny pieces, torso flood, Stage 1 cross-check).
+- **SF-76**: The soundness gate: certificate check, falsification search, golden replay, equivalence gate A and B with the list in use.
+- **SF-77**: File format (layout of the sweep file, one shape pair per entry) and loader: PROPOSED, not built; David decides.
+- **SF-78**: Time cap 120 s per pair; run results and cost.
+- **SF-79**: The lever-arm bound formula and the centre value; assumptions (hinges and slides, rigid shapes, joint values inside the limits).
+
+Torso-dependent extension [ABANDONED 2026-11-16, branch safety-filter-dnc]: the torso labels, the run-time torso guard and their self-check were removed; the 219 pairs are merged without any torso field (tools/build_never_close.py, never_close_pairs).

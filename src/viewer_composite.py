@@ -93,6 +93,7 @@ class CompositeRenderer:
         self.scene.flags[mujoco.mjtRndFlag.mjRND_REFLECTION] = 1
         self.rig = CameraRig(model, [{**cs, "shadows": True} for cs in camera_specs], context, shadows=True)
         self.base_body = max(mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, "base_link"), 1)
+        self.ghost2 = None
         self.ghost = None                                              # created on first use (the stance-search display, M321)
 
     def render(self, data, info):
@@ -124,7 +125,7 @@ class CompositeRenderer:
                 "clock_scale" (float, optional): the clock's text size relative to the panel's. Defaults to 2.2.
                 "search_rows" (list of (label, text), optional): the status panel shows these rows alone instead of the usual ones.
                 "ghost" (tuple, optional): (pose dict of GhostRobot.set_pose's arguments x, y, yaw, pedestal, left_q, right_q; rgba): a see-through robot copy is drawn in the follow view only.
-                "camera" (dict, optional): a fixed camera {"lookat", "distance", "azimuth", "elevation"} instead of the follow camera.
+                "ghost2" (tuple, optional): like "ghost", a second one; "decor" (callable(scene, model), optional): adds or moves things in the follow scene; "caption" (str, optional): text at the top centre. "camera" (dict, optional): a fixed camera {"lookat", "distance", "azimuth", "elevation"} instead of the follow camera.
                 "tiles" (bool, optional): False leaves the camera tiles out. Defaults to True.
 
         Returns:
@@ -142,6 +143,14 @@ class CompositeRenderer:
         viewport = mujoco.MjrRect(0, 0, W, H)
         with self.face.facing(data, self.cam):
             mujoco.mjv_updateScene(model, data, self.opt, None, self.cam, mujoco.mjtCatBit.mjCAT_ALL, self.scene)
+            if info.get("decor"):                                       # cat demo: visual-only geoms moved to their place, in this scene only (before the ghosts, which hide non-robot geoms)
+                info["decor"](self.scene, model)
+            if info.get("ghost2"):                                      # a second ghost (cat demo: the arms at the raw command)
+                pose2, rgba2 = info["ghost2"]
+                if self.ghost2 is None:
+                    self.ghost2 = GhostRobot(model, data)
+                self.ghost2.set_pose(**pose2)
+                self.ghost2.draw(self.scene, self.opt, rgba2)
             if info.get("ghost"):                                       # appended to this scene only: no policy camera renders it
                 pose, rgba = info["ghost"]
                 if self.ghost is None:
@@ -183,4 +192,9 @@ class CompositeRenderer:
             clk = clock_bitmap(clock_text(info["clock_s"]), self.s, info.get("clock_scale", 2.2))
             m = int(round(8 * self.s))
             frame[m:m + clk.shape[0], W - m - clk.shape[1]:W - m] = clk
+        if info.get("caption"):                                         # cat demo: a caption at the top centre, in the clock's style
+            from src.viewer_layout import caption_bitmap
+            cap = caption_bitmap(info["caption"], self.s)
+            m = int(round(8 * self.s))
+            frame[m:m + cap.shape[0], (W - cap.shape[1]) // 2:(W - cap.shape[1]) // 2 + cap.shape[1]] = cap
         return frame

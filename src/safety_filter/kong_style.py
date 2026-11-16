@@ -115,7 +115,7 @@ def list_pairs(t, q):
     """[(key, shortfall)] of the pairs whose shortfall at the pose q is at or above stop_m and that have a closing arm."""
     stop = cfg.RESOLVER["stop_m"]
     out = []
-    for key in sorted(t.keys):
+    for key in sorted(t.maybe_short(q, stop)):          # the pairs the bounds cannot rule out (every pair at or above stop_m is among them)
         s = t.shortfall(q, key)
         if s >= stop and t.closing(key):
             out.append((key, s))
@@ -205,12 +205,7 @@ def _sweep(res, t, q, pairs, cons, r_cmd, targets, shorten, st):
 
 # ---------------------------------------------------------------- the jump-through guard
 def _capsule_radii(t, q):
-    rad = {}
-    for s in t.pose(q)[1]:
-        if getattr(s, "arm", None) in SIDES and s.kind == "capsule" and s.r > 0.0:
-            c = category_of(s)
-            rad[c] = min(rad.get(c, np.inf), s.r)
-    return rad
+    return t.capsule_radii()                            # smallest capsule radius per link category (the same at every pose)
 
 
 def _path_samples(res, t):
@@ -227,18 +222,24 @@ def _path_samples(res, t):
 
 
 def _guard(res, t, methods, targets, st):
-    """Shorten the step when the path last -> raw passes a pair closer than tunnel_guard_min_gap_m (SF-46). Returns True if shortened."""
-    n = _path_samples(res, t)
+    """Shorten the step when the path last -> raw passes a pair closer than tunnel_guard_min_gap_m (SF-46). Returns True if shortened.
+
+    The decision is the sampled test and the halving search of SF-46. Conservative advancement along the path (SF-73, tick.guard_fraction)
+    only saves work, it never decides alone:
+      - it proves the whole path clear (no pair below the guard gap at ANY pose of the path, so none at any sample): no shortening;
+      - where it finds a contact, it proposes the grid cell the halving would end in; the sampled test then confirms it with three
+        evaluations (the full step fails, the proposed fraction passes, the next grid step fails) instead of the 13 of the halving;
+      - if the confirmation fails (the sampled test and the true path disagree, as when its samples jump through a thin contact), the
+        full halving search runs as before."""
     min_gap = cfg.RESOLVER["tunnel_guard_min_gap_m"]
     skip_below = cfg.RESOLVER["tunnel_guard_skip_already_below"]
+    f_adv = t.guard_fraction(min_gap, skip_below)
+    if f_adv is None:
+        return False
+    n = _path_samples(res, t)
 
     def violates(qs):
-        t.discover(qs)
-        for key in t.keys:
-            g = t.gap(qs, key)
-            if g < min_gap and not (skip_below and t.g0[key] < min_gap):
-                return True
-        return False
+        return t.any_gap_below(qs, min_gap, skip_below)
 
     def passes(f):                                      # no sample from 0 to the fraction f violates
         for j in range(1, n + 1):
@@ -248,8 +249,17 @@ def _guard(res, t, methods, targets, st):
 
     if passes(1.0):
         return False
+    steps = 2 ** cfg.RESOLVER["shorten_halvings"]
+    k = math.floor(f_adv * steps)                       # the advancement stopped on the safe side: walk up the grid while the next grid pose is clear
+    for _ in range(cfg.RESOLVER["tunnel_guard_grid_walk_max"]):
+        if k + 1 >= steps or violates(t.last + ((k + 1) / steps) * (t.raw - t.last)):
+            break
+        k += 1
     q = np.array(t.raw, float)
-    res._shorten(t, q, list(SIDES), methods, targets, st, passes=passes)
+    if passes(k / steps) and not passes((k + 1) / steps):
+        res._shorten(t, q, list(SIDES), methods, targets, st, fraction=k / steps)
+    else:
+        res._shorten(t, q, list(SIDES), methods, targets, st, passes=passes)
     t.raw = q                                           # the shortened command is the raw command for the rest of the tick
     t._closing = {}
     return True
@@ -262,12 +272,9 @@ def step(res, raw, last, state, world_objects=(), held=None):
     last = np.asarray(last, float)
     if not np.isfinite(np.asarray(raw, float)).all():
         return last.copy(), R.FilterStatus(status=R.HOLD, hold_reason="NOT_FINITE")
-    t = R._Tick(res, np.asarray(raw), last, state, world_objects, held)
-    t.discover(last)
-    t.discover(t.raw)
-    for key in res._active:
-        t.add_known(key)
-    first = t.worst(t.raw)
+    t, first = res.begin(np.asarray(raw), last, state, world_objects, held)
+    if t is None:                                       # 1. pass-through, every pair asleep
+        return raw, R.FilterStatus()
     if first is None:                                   # 1. pass-through
         res._update_active(t, t.raw)
         return raw, R.FilterStatus()

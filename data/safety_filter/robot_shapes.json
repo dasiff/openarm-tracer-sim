@@ -4710,5 +4710,1857 @@
     "swept": 153,
     "not_swept": 512,
     "note": "listed only if min real gap - step-size bound >= margin + 1 cm (hand-hand 2 cm, other 4 cm); tools/never_close_sweep.py"
+  },
+  "never_close_pairs": {
+    "rule": "SF-23 (stage1, sweep) + SF-27 (stage2, divide and conquer); merge DNC-4",
+    "model_fingerprint": "781198f99c7e46e8e1f9c90414e4407575cb53a1b92e89d0530e162c02ecb75c",
+    "fingerprint": "d1a21b1e7550db52a0541d995c9121d632d8978a1c91bf6508bd69ede9a0ea1a",
+    "sources": {
+      "stage1": {
+        "file": "never_close_sweep.json",
+        "sha256": "b96c9d5d0fcaf060e3efbb4f30747583334ba9116e192a2aced02617dcad5d93"
+      },
+      "stage2": {
+        "file": "never_close_dc.json",
+        "sha256": "2b89cf041df3076c49d6ad5821037eb1777b75106dceb66bf517756326cac1e5"
+      }
+    },
+    "counts": {
+      "stage1": 147,
+      "stage2": 219,
+      "total": 366
+    },
+    "pairs": [
+      {
+        "a": "left_link1_1",
+        "b": "right_link1_1",
+        "source": "stage1"
+      },
+      {
+        "a": "left_link1_1",
+        "b": "right_link1_2",
+        "source": "stage1"
+      },
+      {
+        "a": "left_link1_1",
+        "b": "right_link1_3",
+        "source": "stage1"
+      },
+      {
+        "a": "left_link1_2",
+        "b": "right_link1_1",
+        "source": "stage1"
+      },
+      {
+        "a": "left_link1_2",
+        "b": "right_link1_2",
+        "source": "stage1"
+      },
+      {
+        "a": "left_link1_2",
+        "b": "right_link1_3",
+        "source": "stage1"
+      },
+      {
+        "a": "left_link1_3",
+        "b": "right_link1_1",
+        "source": "stage1"
+      },
+      {
+        "a": "left_link1_3",
+        "b": "right_link1_2",
+        "source": "stage1"
+      },
+      {
+        "a": "left_link1_3",
+        "b": "right_link1_3",
+        "source": "stage1"
+      },
+      {
+        "a": "left_link1_1",
+        "b": "right_link2",
+        "source": "stage1"
+      },
+      {
+        "a": "left_link1_2",
+        "b": "right_link2",
+        "source": "stage1"
+      },
+      {
+        "a": "left_link1_3",
+        "b": "right_link2",
+        "source": "stage1"
+      },
+      {
+        "a": "left_link1_1",
+        "b": "right_shoulder_mount",
+        "source": "stage1"
+      },
+      {
+        "a": "left_link1_2",
+        "b": "right_shoulder_mount",
+        "source": "stage1"
+      },
+      {
+        "a": "left_link1_3",
+        "b": "right_shoulder_mount",
+        "source": "stage1"
+      },
+      {
+        "a": "left_link1_1",
+        "b": "base_base_link_geom",
+        "source": "stage1"
+      },
+      {
+        "a": "left_link1_2",
+        "b": "base_base_link_geom",
+        "source": "stage1"
+      },
+      {
+        "a": "left_link1_3",
+        "b": "base_base_link_geom",
+        "source": "stage1"
+      },
+      {
+        "a": "left_link1_1",
+        "b": "base_right_link_geom",
+        "source": "stage1"
+      },
+      {
+        "a": "left_link1_2",
+        "b": "base_right_link_geom",
+        "source": "stage1"
+      },
+      {
+        "a": "left_link1_3",
+        "b": "base_right_link_geom",
+        "source": "stage1"
+      },
+      {
+        "a": "left_link1_1",
+        "b": "base_left_Link_geom",
+        "source": "stage1"
+      },
+      {
+        "a": "left_link1_2",
+        "b": "base_left_Link_geom",
+        "source": "stage1"
+      },
+      {
+        "a": "left_link1_3",
+        "b": "base_left_Link_geom",
+        "source": "stage1"
+      },
+      {
+        "a": "left_link1_1",
+        "b": "base_right_front_link_geom",
+        "source": "stage1"
+      },
+      {
+        "a": "left_link1_2",
+        "b": "base_right_front_link_geom",
+        "source": "stage1"
+      },
+      {
+        "a": "left_link1_3",
+        "b": "base_right_front_link_geom",
+        "source": "stage1"
+      },
+      {
+        "a": "left_link1_1",
+        "b": "base_right_rear_link_geom",
+        "source": "stage1"
+      },
+      {
+        "a": "left_link1_2",
+        "b": "base_right_rear_link_geom",
+        "source": "stage1"
+      },
+      {
+        "a": "left_link1_3",
+        "b": "base_right_rear_link_geom",
+        "source": "stage1"
+      },
+      {
+        "a": "left_link1_1",
+        "b": "base_left_front_link_geom",
+        "source": "stage1"
+      },
+      {
+        "a": "left_link1_2",
+        "b": "base_left_front_link_geom",
+        "source": "stage1"
+      },
+      {
+        "a": "left_link1_3",
+        "b": "base_left_front_link_geom",
+        "source": "stage1"
+      },
+      {
+        "a": "left_link1_1",
+        "b": "base_left_rear_link_geom",
+        "source": "stage1"
+      },
+      {
+        "a": "left_link1_2",
+        "b": "base_left_rear_link_geom",
+        "source": "stage1"
+      },
+      {
+        "a": "left_link1_3",
+        "b": "base_left_rear_link_geom",
+        "source": "stage1"
+      },
+      {
+        "a": "left_link1_1",
+        "b": "pedestal_base",
+        "source": "stage1"
+      },
+      {
+        "a": "left_link1_2",
+        "b": "pedestal_base",
+        "source": "stage1"
+      },
+      {
+        "a": "left_link1_3",
+        "b": "pedestal_base",
+        "source": "stage1"
+      },
+      {
+        "a": "left_link1_1",
+        "b": "pedestal_top",
+        "source": "stage1"
+      },
+      {
+        "a": "left_link1_2",
+        "b": "pedestal_top",
+        "source": "stage1"
+      },
+      {
+        "a": "left_link1_3",
+        "b": "pedestal_top",
+        "source": "stage1"
+      },
+      {
+        "a": "left_link1_1",
+        "b": "torso",
+        "source": "stage1"
+      },
+      {
+        "a": "left_link1_2",
+        "b": "torso",
+        "source": "stage1"
+      },
+      {
+        "a": "left_link1_3",
+        "b": "torso",
+        "source": "stage1"
+      },
+      {
+        "a": "left_link1_1",
+        "b": "eagle_cam_body",
+        "source": "stage1"
+      },
+      {
+        "a": "left_link1_2",
+        "b": "eagle_cam_body",
+        "source": "stage1"
+      },
+      {
+        "a": "left_link1_3",
+        "b": "eagle_cam_body",
+        "source": "stage1"
+      },
+      {
+        "a": "left_link1_1",
+        "b": "battery",
+        "source": "stage1"
+      },
+      {
+        "a": "left_link1_2",
+        "b": "battery",
+        "source": "stage1"
+      },
+      {
+        "a": "left_link1_3",
+        "b": "battery",
+        "source": "stage1"
+      },
+      {
+        "a": "left_link2",
+        "b": "right_link1_1",
+        "source": "stage1"
+      },
+      {
+        "a": "left_link2",
+        "b": "right_link1_2",
+        "source": "stage1"
+      },
+      {
+        "a": "left_link2",
+        "b": "right_link1_3",
+        "source": "stage1"
+      },
+      {
+        "a": "left_link2",
+        "b": "right_shoulder_mount",
+        "source": "stage1"
+      },
+      {
+        "a": "left_link2",
+        "b": "base_base_link_geom",
+        "source": "stage1"
+      },
+      {
+        "a": "left_link2",
+        "b": "base_right_link_geom",
+        "source": "stage1"
+      },
+      {
+        "a": "left_link2",
+        "b": "base_left_Link_geom",
+        "source": "stage1"
+      },
+      {
+        "a": "left_link2",
+        "b": "base_right_front_link_geom",
+        "source": "stage1"
+      },
+      {
+        "a": "left_link2",
+        "b": "base_right_rear_link_geom",
+        "source": "stage1"
+      },
+      {
+        "a": "left_link2",
+        "b": "base_left_front_link_geom",
+        "source": "stage1"
+      },
+      {
+        "a": "left_link2",
+        "b": "base_left_rear_link_geom",
+        "source": "stage1"
+      },
+      {
+        "a": "left_link2",
+        "b": "pedestal_base",
+        "source": "stage1"
+      },
+      {
+        "a": "left_link2",
+        "b": "pedestal_top",
+        "source": "stage1"
+      },
+      {
+        "a": "left_link2",
+        "b": "torso",
+        "source": "stage1"
+      },
+      {
+        "a": "left_link2",
+        "b": "eagle_cam_body",
+        "source": "stage1"
+      },
+      {
+        "a": "left_link2",
+        "b": "battery",
+        "source": "stage1"
+      },
+      {
+        "a": "left_link3_1",
+        "b": "right_shoulder_mount",
+        "source": "stage1"
+      },
+      {
+        "a": "left_link3_2",
+        "b": "right_shoulder_mount",
+        "source": "stage1"
+      },
+      {
+        "a": "left_link3_1",
+        "b": "pedestal_top",
+        "source": "stage1"
+      },
+      {
+        "a": "left_link3_2",
+        "b": "pedestal_top",
+        "source": "stage1"
+      },
+      {
+        "a": "left_shoulder_mount",
+        "b": "right_link1_1",
+        "source": "stage1"
+      },
+      {
+        "a": "left_shoulder_mount",
+        "b": "right_link1_2",
+        "source": "stage1"
+      },
+      {
+        "a": "left_shoulder_mount",
+        "b": "right_link1_3",
+        "source": "stage1"
+      },
+      {
+        "a": "left_shoulder_mount",
+        "b": "right_link2",
+        "source": "stage1"
+      },
+      {
+        "a": "left_shoulder_mount",
+        "b": "right_link3",
+        "source": "stage1"
+      },
+      {
+        "a": "left_shoulder_mount",
+        "b": "base_base_link_geom",
+        "source": "stage1"
+      },
+      {
+        "a": "left_shoulder_mount",
+        "b": "base_right_link_geom",
+        "source": "stage1"
+      },
+      {
+        "a": "left_shoulder_mount",
+        "b": "base_left_Link_geom",
+        "source": "stage1"
+      },
+      {
+        "a": "left_shoulder_mount",
+        "b": "base_right_front_link_geom",
+        "source": "stage1"
+      },
+      {
+        "a": "left_shoulder_mount",
+        "b": "base_right_rear_link_geom",
+        "source": "stage1"
+      },
+      {
+        "a": "left_shoulder_mount",
+        "b": "base_left_front_link_geom",
+        "source": "stage1"
+      },
+      {
+        "a": "left_shoulder_mount",
+        "b": "base_left_rear_link_geom",
+        "source": "stage1"
+      },
+      {
+        "a": "left_shoulder_mount",
+        "b": "pedestal_base",
+        "source": "stage1"
+      },
+      {
+        "a": "left_shoulder_mount",
+        "b": "pedestal_top",
+        "source": "stage1"
+      },
+      {
+        "a": "left_shoulder_mount",
+        "b": "eagle_cam_body",
+        "source": "stage1"
+      },
+      {
+        "a": "left_shoulder_mount",
+        "b": "battery",
+        "source": "stage1"
+      },
+      {
+        "a": "right_link1_1",
+        "b": "base_base_link_geom",
+        "source": "stage1"
+      },
+      {
+        "a": "right_link1_2",
+        "b": "base_base_link_geom",
+        "source": "stage1"
+      },
+      {
+        "a": "right_link1_3",
+        "b": "base_base_link_geom",
+        "source": "stage1"
+      },
+      {
+        "a": "right_link1_1",
+        "b": "base_right_link_geom",
+        "source": "stage1"
+      },
+      {
+        "a": "right_link1_2",
+        "b": "base_right_link_geom",
+        "source": "stage1"
+      },
+      {
+        "a": "right_link1_3",
+        "b": "base_right_link_geom",
+        "source": "stage1"
+      },
+      {
+        "a": "right_link1_1",
+        "b": "base_left_Link_geom",
+        "source": "stage1"
+      },
+      {
+        "a": "right_link1_2",
+        "b": "base_left_Link_geom",
+        "source": "stage1"
+      },
+      {
+        "a": "right_link1_3",
+        "b": "base_left_Link_geom",
+        "source": "stage1"
+      },
+      {
+        "a": "right_link1_1",
+        "b": "base_right_front_link_geom",
+        "source": "stage1"
+      },
+      {
+        "a": "right_link1_2",
+        "b": "base_right_front_link_geom",
+        "source": "stage1"
+      },
+      {
+        "a": "right_link1_3",
+        "b": "base_right_front_link_geom",
+        "source": "stage1"
+      },
+      {
+        "a": "right_link1_1",
+        "b": "base_right_rear_link_geom",
+        "source": "stage1"
+      },
+      {
+        "a": "right_link1_2",
+        "b": "base_right_rear_link_geom",
+        "source": "stage1"
+      },
+      {
+        "a": "right_link1_3",
+        "b": "base_right_rear_link_geom",
+        "source": "stage1"
+      },
+      {
+        "a": "right_link1_1",
+        "b": "base_left_front_link_geom",
+        "source": "stage1"
+      },
+      {
+        "a": "right_link1_2",
+        "b": "base_left_front_link_geom",
+        "source": "stage1"
+      },
+      {
+        "a": "right_link1_3",
+        "b": "base_left_front_link_geom",
+        "source": "stage1"
+      },
+      {
+        "a": "right_link1_1",
+        "b": "base_left_rear_link_geom",
+        "source": "stage1"
+      },
+      {
+        "a": "right_link1_2",
+        "b": "base_left_rear_link_geom",
+        "source": "stage1"
+      },
+      {
+        "a": "right_link1_3",
+        "b": "base_left_rear_link_geom",
+        "source": "stage1"
+      },
+      {
+        "a": "right_link1_1",
+        "b": "pedestal_base",
+        "source": "stage1"
+      },
+      {
+        "a": "right_link1_2",
+        "b": "pedestal_base",
+        "source": "stage1"
+      },
+      {
+        "a": "right_link1_3",
+        "b": "pedestal_base",
+        "source": "stage1"
+      },
+      {
+        "a": "right_link1_1",
+        "b": "pedestal_top",
+        "source": "stage1"
+      },
+      {
+        "a": "right_link1_2",
+        "b": "pedestal_top",
+        "source": "stage1"
+      },
+      {
+        "a": "right_link1_3",
+        "b": "pedestal_top",
+        "source": "stage1"
+      },
+      {
+        "a": "right_link1_1",
+        "b": "torso",
+        "source": "stage1"
+      },
+      {
+        "a": "right_link1_2",
+        "b": "torso",
+        "source": "stage1"
+      },
+      {
+        "a": "right_link1_3",
+        "b": "torso",
+        "source": "stage1"
+      },
+      {
+        "a": "right_link1_1",
+        "b": "eagle_cam_body",
+        "source": "stage1"
+      },
+      {
+        "a": "right_link1_2",
+        "b": "eagle_cam_body",
+        "source": "stage1"
+      },
+      {
+        "a": "right_link1_3",
+        "b": "eagle_cam_body",
+        "source": "stage1"
+      },
+      {
+        "a": "right_link1_1",
+        "b": "battery",
+        "source": "stage1"
+      },
+      {
+        "a": "right_link1_2",
+        "b": "battery",
+        "source": "stage1"
+      },
+      {
+        "a": "right_link1_3",
+        "b": "battery",
+        "source": "stage1"
+      },
+      {
+        "a": "right_link2",
+        "b": "base_base_link_geom",
+        "source": "stage1"
+      },
+      {
+        "a": "right_link2",
+        "b": "base_right_link_geom",
+        "source": "stage1"
+      },
+      {
+        "a": "right_link2",
+        "b": "base_left_Link_geom",
+        "source": "stage1"
+      },
+      {
+        "a": "right_link2",
+        "b": "base_right_front_link_geom",
+        "source": "stage1"
+      },
+      {
+        "a": "right_link2",
+        "b": "base_right_rear_link_geom",
+        "source": "stage1"
+      },
+      {
+        "a": "right_link2",
+        "b": "base_left_front_link_geom",
+        "source": "stage1"
+      },
+      {
+        "a": "right_link2",
+        "b": "base_left_rear_link_geom",
+        "source": "stage1"
+      },
+      {
+        "a": "right_link2",
+        "b": "pedestal_base",
+        "source": "stage1"
+      },
+      {
+        "a": "right_link2",
+        "b": "pedestal_top",
+        "source": "stage1"
+      },
+      {
+        "a": "right_link2",
+        "b": "torso",
+        "source": "stage1"
+      },
+      {
+        "a": "right_link2",
+        "b": "eagle_cam_body",
+        "source": "stage1"
+      },
+      {
+        "a": "right_link2",
+        "b": "battery",
+        "source": "stage1"
+      },
+      {
+        "a": "right_link3",
+        "b": "pedestal_top",
+        "source": "stage1"
+      },
+      {
+        "a": "right_shoulder_mount",
+        "b": "base_base_link_geom",
+        "source": "stage1"
+      },
+      {
+        "a": "right_shoulder_mount",
+        "b": "base_right_link_geom",
+        "source": "stage1"
+      },
+      {
+        "a": "right_shoulder_mount",
+        "b": "base_left_Link_geom",
+        "source": "stage1"
+      },
+      {
+        "a": "right_shoulder_mount",
+        "b": "base_right_front_link_geom",
+        "source": "stage1"
+      },
+      {
+        "a": "right_shoulder_mount",
+        "b": "base_right_rear_link_geom",
+        "source": "stage1"
+      },
+      {
+        "a": "right_shoulder_mount",
+        "b": "base_left_front_link_geom",
+        "source": "stage1"
+      },
+      {
+        "a": "right_shoulder_mount",
+        "b": "base_left_rear_link_geom",
+        "source": "stage1"
+      },
+      {
+        "a": "right_shoulder_mount",
+        "b": "pedestal_base",
+        "source": "stage1"
+      },
+      {
+        "a": "right_shoulder_mount",
+        "b": "pedestal_top",
+        "source": "stage1"
+      },
+      {
+        "a": "right_shoulder_mount",
+        "b": "eagle_cam_body",
+        "source": "stage1"
+      },
+      {
+        "a": "right_shoulder_mount",
+        "b": "battery",
+        "source": "stage1"
+      },
+      {
+        "a": "left_link1_1",
+        "b": "right_link3",
+        "source": "stage2"
+      },
+      {
+        "a": "left_link1_1",
+        "b": "right_link4",
+        "source": "stage2"
+      },
+      {
+        "a": "left_link1_1",
+        "b": "right_link5_1",
+        "source": "stage2"
+      },
+      {
+        "a": "left_link1_2",
+        "b": "right_link3",
+        "source": "stage2"
+      },
+      {
+        "a": "left_link1_3",
+        "b": "right_link3",
+        "source": "stage2"
+      },
+      {
+        "a": "left_link2",
+        "b": "right_link2",
+        "source": "stage2"
+      },
+      {
+        "a": "left_link2",
+        "b": "right_link3",
+        "source": "stage2"
+      },
+      {
+        "a": "left_link3_1",
+        "b": "right_link1_1",
+        "source": "stage2"
+      },
+      {
+        "a": "left_link3_1",
+        "b": "right_link1_2",
+        "source": "stage2"
+      },
+      {
+        "a": "left_link3_1",
+        "b": "right_link1_3",
+        "source": "stage2"
+      },
+      {
+        "a": "left_link3_1",
+        "b": "right_link2",
+        "source": "stage2"
+      },
+      {
+        "a": "left_link3_1",
+        "b": "right_link3",
+        "source": "stage2"
+      },
+      {
+        "a": "left_link3_1",
+        "b": "base_base_link_geom",
+        "source": "stage2"
+      },
+      {
+        "a": "left_link3_1",
+        "b": "base_right_link_geom",
+        "source": "stage2"
+      },
+      {
+        "a": "left_link3_1",
+        "b": "base_left_Link_geom",
+        "source": "stage2"
+      },
+      {
+        "a": "left_link3_1",
+        "b": "base_right_front_link_geom",
+        "source": "stage2"
+      },
+      {
+        "a": "left_link3_1",
+        "b": "base_right_rear_link_geom",
+        "source": "stage2"
+      },
+      {
+        "a": "left_link3_1",
+        "b": "base_left_front_link_geom",
+        "source": "stage2"
+      },
+      {
+        "a": "left_link3_1",
+        "b": "base_left_rear_link_geom",
+        "source": "stage2"
+      },
+      {
+        "a": "left_link3_1",
+        "b": "pedestal_base",
+        "source": "stage2"
+      },
+      {
+        "a": "left_link3_1",
+        "b": "battery",
+        "source": "stage2"
+      },
+      {
+        "a": "left_link3_2",
+        "b": "right_link1_1",
+        "source": "stage2"
+      },
+      {
+        "a": "left_link3_2",
+        "b": "right_link1_2",
+        "source": "stage2"
+      },
+      {
+        "a": "left_link3_2",
+        "b": "right_link1_3",
+        "source": "stage2"
+      },
+      {
+        "a": "left_link3_2",
+        "b": "right_link2",
+        "source": "stage2"
+      },
+      {
+        "a": "left_link3_2",
+        "b": "right_link3",
+        "source": "stage2"
+      },
+      {
+        "a": "left_link3_2",
+        "b": "base_base_link_geom",
+        "source": "stage2"
+      },
+      {
+        "a": "left_link3_2",
+        "b": "base_right_link_geom",
+        "source": "stage2"
+      },
+      {
+        "a": "left_link3_2",
+        "b": "base_left_Link_geom",
+        "source": "stage2"
+      },
+      {
+        "a": "left_link3_2",
+        "b": "base_right_front_link_geom",
+        "source": "stage2"
+      },
+      {
+        "a": "left_link3_2",
+        "b": "base_right_rear_link_geom",
+        "source": "stage2"
+      },
+      {
+        "a": "left_link3_2",
+        "b": "base_left_front_link_geom",
+        "source": "stage2"
+      },
+      {
+        "a": "left_link3_2",
+        "b": "base_left_rear_link_geom",
+        "source": "stage2"
+      },
+      {
+        "a": "left_link3_2",
+        "b": "pedestal_base",
+        "source": "stage2"
+      },
+      {
+        "a": "left_link3_2",
+        "b": "eagle_cam_body",
+        "source": "stage2"
+      },
+      {
+        "a": "left_link3_2",
+        "b": "battery",
+        "source": "stage2"
+      },
+      {
+        "a": "left_link4",
+        "b": "right_link1_1",
+        "source": "stage2"
+      },
+      {
+        "a": "left_link4",
+        "b": "base_base_link_geom",
+        "source": "stage2"
+      },
+      {
+        "a": "left_link4",
+        "b": "base_right_link_geom",
+        "source": "stage2"
+      },
+      {
+        "a": "left_link4",
+        "b": "base_left_Link_geom",
+        "source": "stage2"
+      },
+      {
+        "a": "left_link4",
+        "b": "base_right_front_link_geom",
+        "source": "stage2"
+      },
+      {
+        "a": "left_link4",
+        "b": "base_right_rear_link_geom",
+        "source": "stage2"
+      },
+      {
+        "a": "left_link4",
+        "b": "base_left_front_link_geom",
+        "source": "stage2"
+      },
+      {
+        "a": "left_link4",
+        "b": "base_left_rear_link_geom",
+        "source": "stage2"
+      },
+      {
+        "a": "left_link4",
+        "b": "pedestal_base",
+        "source": "stage2"
+      },
+      {
+        "a": "left_link4",
+        "b": "pedestal_top",
+        "source": "stage2"
+      },
+      {
+        "a": "left_link4",
+        "b": "battery",
+        "source": "stage2"
+      },
+      {
+        "a": "left_link5_1",
+        "b": "right_link1_1",
+        "source": "stage2"
+      },
+      {
+        "a": "left_link5_1",
+        "b": "base_base_link_geom",
+        "source": "stage2"
+      },
+      {
+        "a": "left_link5_1",
+        "b": "base_right_link_geom",
+        "source": "stage2"
+      },
+      {
+        "a": "left_link5_1",
+        "b": "base_left_Link_geom",
+        "source": "stage2"
+      },
+      {
+        "a": "left_link5_1",
+        "b": "base_right_front_link_geom",
+        "source": "stage2"
+      },
+      {
+        "a": "left_link5_1",
+        "b": "base_right_rear_link_geom",
+        "source": "stage2"
+      },
+      {
+        "a": "left_link5_1",
+        "b": "base_left_front_link_geom",
+        "source": "stage2"
+      },
+      {
+        "a": "left_link5_1",
+        "b": "base_left_rear_link_geom",
+        "source": "stage2"
+      },
+      {
+        "a": "left_link5_1",
+        "b": "pedestal_base",
+        "source": "stage2"
+      },
+      {
+        "a": "left_link5_1",
+        "b": "pedestal_top",
+        "source": "stage2"
+      },
+      {
+        "a": "left_link5_1",
+        "b": "battery",
+        "source": "stage2"
+      },
+      {
+        "a": "left_link5_2",
+        "b": "base_base_link_geom",
+        "source": "stage2"
+      },
+      {
+        "a": "left_link5_2",
+        "b": "base_right_link_geom",
+        "source": "stage2"
+      },
+      {
+        "a": "left_link5_2",
+        "b": "base_left_Link_geom",
+        "source": "stage2"
+      },
+      {
+        "a": "left_link5_2",
+        "b": "base_right_front_link_geom",
+        "source": "stage2"
+      },
+      {
+        "a": "left_link5_2",
+        "b": "base_right_rear_link_geom",
+        "source": "stage2"
+      },
+      {
+        "a": "left_link5_2",
+        "b": "base_left_front_link_geom",
+        "source": "stage2"
+      },
+      {
+        "a": "left_link5_2",
+        "b": "base_left_rear_link_geom",
+        "source": "stage2"
+      },
+      {
+        "a": "left_link5_2",
+        "b": "pedestal_base",
+        "source": "stage2"
+      },
+      {
+        "a": "left_link5_2",
+        "b": "pedestal_top",
+        "source": "stage2"
+      },
+      {
+        "a": "left_link5_2",
+        "b": "battery",
+        "source": "stage2"
+      },
+      {
+        "a": "left_link6",
+        "b": "base_base_link_geom",
+        "source": "stage2"
+      },
+      {
+        "a": "left_link6",
+        "b": "base_right_link_geom",
+        "source": "stage2"
+      },
+      {
+        "a": "left_link6",
+        "b": "base_left_Link_geom",
+        "source": "stage2"
+      },
+      {
+        "a": "left_link6",
+        "b": "base_right_front_link_geom",
+        "source": "stage2"
+      },
+      {
+        "a": "left_link6",
+        "b": "base_right_rear_link_geom",
+        "source": "stage2"
+      },
+      {
+        "a": "left_link6",
+        "b": "base_left_front_link_geom",
+        "source": "stage2"
+      },
+      {
+        "a": "left_link6",
+        "b": "base_left_rear_link_geom",
+        "source": "stage2"
+      },
+      {
+        "a": "left_link6",
+        "b": "pedestal_base",
+        "source": "stage2"
+      },
+      {
+        "a": "left_link6",
+        "b": "pedestal_top",
+        "source": "stage2"
+      },
+      {
+        "a": "left_link6",
+        "b": "battery",
+        "source": "stage2"
+      },
+      {
+        "a": "left_link7_1",
+        "b": "base_base_link_geom",
+        "source": "stage2"
+      },
+      {
+        "a": "left_link7_1",
+        "b": "base_right_link_geom",
+        "source": "stage2"
+      },
+      {
+        "a": "left_link7_1",
+        "b": "base_left_Link_geom",
+        "source": "stage2"
+      },
+      {
+        "a": "left_link7_1",
+        "b": "base_right_front_link_geom",
+        "source": "stage2"
+      },
+      {
+        "a": "left_link7_1",
+        "b": "base_right_rear_link_geom",
+        "source": "stage2"
+      },
+      {
+        "a": "left_link7_1",
+        "b": "base_left_front_link_geom",
+        "source": "stage2"
+      },
+      {
+        "a": "left_link7_1",
+        "b": "base_left_rear_link_geom",
+        "source": "stage2"
+      },
+      {
+        "a": "left_link7_1",
+        "b": "battery",
+        "source": "stage2"
+      },
+      {
+        "a": "left_link7_2",
+        "b": "base_base_link_geom",
+        "source": "stage2"
+      },
+      {
+        "a": "left_link7_2",
+        "b": "base_right_link_geom",
+        "source": "stage2"
+      },
+      {
+        "a": "left_link7_2",
+        "b": "base_left_Link_geom",
+        "source": "stage2"
+      },
+      {
+        "a": "left_link7_2",
+        "b": "base_right_front_link_geom",
+        "source": "stage2"
+      },
+      {
+        "a": "left_link7_2",
+        "b": "base_right_rear_link_geom",
+        "source": "stage2"
+      },
+      {
+        "a": "left_link7_2",
+        "b": "base_left_front_link_geom",
+        "source": "stage2"
+      },
+      {
+        "a": "left_link7_2",
+        "b": "base_left_rear_link_geom",
+        "source": "stage2"
+      },
+      {
+        "a": "left_link7_2",
+        "b": "pedestal_base",
+        "source": "stage2"
+      },
+      {
+        "a": "left_link7_2",
+        "b": "pedestal_top",
+        "source": "stage2"
+      },
+      {
+        "a": "left_link7_2",
+        "b": "battery",
+        "source": "stage2"
+      },
+      {
+        "a": "left_palm_1",
+        "b": "base_base_link_geom",
+        "source": "stage2"
+      },
+      {
+        "a": "left_palm_1",
+        "b": "base_right_link_geom",
+        "source": "stage2"
+      },
+      {
+        "a": "left_palm_1",
+        "b": "base_left_Link_geom",
+        "source": "stage2"
+      },
+      {
+        "a": "left_palm_1",
+        "b": "base_right_front_link_geom",
+        "source": "stage2"
+      },
+      {
+        "a": "left_palm_1",
+        "b": "base_right_rear_link_geom",
+        "source": "stage2"
+      },
+      {
+        "a": "left_palm_1",
+        "b": "base_left_front_link_geom",
+        "source": "stage2"
+      },
+      {
+        "a": "left_palm_1",
+        "b": "base_left_rear_link_geom",
+        "source": "stage2"
+      },
+      {
+        "a": "left_palm_2",
+        "b": "base_base_link_geom",
+        "source": "stage2"
+      },
+      {
+        "a": "left_palm_2",
+        "b": "base_right_link_geom",
+        "source": "stage2"
+      },
+      {
+        "a": "left_palm_2",
+        "b": "base_left_Link_geom",
+        "source": "stage2"
+      },
+      {
+        "a": "left_palm_2",
+        "b": "base_right_front_link_geom",
+        "source": "stage2"
+      },
+      {
+        "a": "left_palm_2",
+        "b": "base_right_rear_link_geom",
+        "source": "stage2"
+      },
+      {
+        "a": "left_palm_2",
+        "b": "base_left_front_link_geom",
+        "source": "stage2"
+      },
+      {
+        "a": "left_palm_2",
+        "b": "base_left_rear_link_geom",
+        "source": "stage2"
+      },
+      {
+        "a": "left_finger_right",
+        "b": "base_base_link_geom",
+        "source": "stage2"
+      },
+      {
+        "a": "left_finger_right",
+        "b": "base_right_link_geom",
+        "source": "stage2"
+      },
+      {
+        "a": "left_finger_right",
+        "b": "base_left_Link_geom",
+        "source": "stage2"
+      },
+      {
+        "a": "left_finger_right",
+        "b": "base_right_front_link_geom",
+        "source": "stage2"
+      },
+      {
+        "a": "left_finger_right",
+        "b": "base_right_rear_link_geom",
+        "source": "stage2"
+      },
+      {
+        "a": "left_finger_right",
+        "b": "base_left_front_link_geom",
+        "source": "stage2"
+      },
+      {
+        "a": "left_finger_right",
+        "b": "base_left_rear_link_geom",
+        "source": "stage2"
+      },
+      {
+        "a": "left_finger_left",
+        "b": "base_base_link_geom",
+        "source": "stage2"
+      },
+      {
+        "a": "left_finger_left",
+        "b": "base_right_link_geom",
+        "source": "stage2"
+      },
+      {
+        "a": "left_finger_left",
+        "b": "base_left_Link_geom",
+        "source": "stage2"
+      },
+      {
+        "a": "left_finger_left",
+        "b": "base_right_front_link_geom",
+        "source": "stage2"
+      },
+      {
+        "a": "left_finger_left",
+        "b": "base_right_rear_link_geom",
+        "source": "stage2"
+      },
+      {
+        "a": "left_finger_left",
+        "b": "base_left_front_link_geom",
+        "source": "stage2"
+      },
+      {
+        "a": "left_finger_left",
+        "b": "base_left_rear_link_geom",
+        "source": "stage2"
+      },
+      {
+        "a": "right_link3",
+        "b": "base_base_link_geom",
+        "source": "stage2"
+      },
+      {
+        "a": "right_link3",
+        "b": "base_right_link_geom",
+        "source": "stage2"
+      },
+      {
+        "a": "right_link3",
+        "b": "base_left_Link_geom",
+        "source": "stage2"
+      },
+      {
+        "a": "right_link3",
+        "b": "base_right_front_link_geom",
+        "source": "stage2"
+      },
+      {
+        "a": "right_link3",
+        "b": "base_right_rear_link_geom",
+        "source": "stage2"
+      },
+      {
+        "a": "right_link3",
+        "b": "base_left_front_link_geom",
+        "source": "stage2"
+      },
+      {
+        "a": "right_link3",
+        "b": "base_left_rear_link_geom",
+        "source": "stage2"
+      },
+      {
+        "a": "right_link3",
+        "b": "pedestal_base",
+        "source": "stage2"
+      },
+      {
+        "a": "right_link3",
+        "b": "battery",
+        "source": "stage2"
+      },
+      {
+        "a": "right_link4",
+        "b": "base_base_link_geom",
+        "source": "stage2"
+      },
+      {
+        "a": "right_link4",
+        "b": "base_right_link_geom",
+        "source": "stage2"
+      },
+      {
+        "a": "right_link4",
+        "b": "base_left_Link_geom",
+        "source": "stage2"
+      },
+      {
+        "a": "right_link4",
+        "b": "base_right_front_link_geom",
+        "source": "stage2"
+      },
+      {
+        "a": "right_link4",
+        "b": "base_right_rear_link_geom",
+        "source": "stage2"
+      },
+      {
+        "a": "right_link4",
+        "b": "base_left_front_link_geom",
+        "source": "stage2"
+      },
+      {
+        "a": "right_link4",
+        "b": "base_left_rear_link_geom",
+        "source": "stage2"
+      },
+      {
+        "a": "right_link4",
+        "b": "pedestal_base",
+        "source": "stage2"
+      },
+      {
+        "a": "right_link4",
+        "b": "pedestal_top",
+        "source": "stage2"
+      },
+      {
+        "a": "right_link4",
+        "b": "battery",
+        "source": "stage2"
+      },
+      {
+        "a": "right_link5_1",
+        "b": "base_base_link_geom",
+        "source": "stage2"
+      },
+      {
+        "a": "right_link5_1",
+        "b": "base_right_link_geom",
+        "source": "stage2"
+      },
+      {
+        "a": "right_link5_1",
+        "b": "base_left_Link_geom",
+        "source": "stage2"
+      },
+      {
+        "a": "right_link5_1",
+        "b": "base_right_front_link_geom",
+        "source": "stage2"
+      },
+      {
+        "a": "right_link5_1",
+        "b": "base_right_rear_link_geom",
+        "source": "stage2"
+      },
+      {
+        "a": "right_link5_1",
+        "b": "base_left_front_link_geom",
+        "source": "stage2"
+      },
+      {
+        "a": "right_link5_1",
+        "b": "base_left_rear_link_geom",
+        "source": "stage2"
+      },
+      {
+        "a": "right_link5_1",
+        "b": "pedestal_base",
+        "source": "stage2"
+      },
+      {
+        "a": "right_link5_1",
+        "b": "pedestal_top",
+        "source": "stage2"
+      },
+      {
+        "a": "right_link5_1",
+        "b": "battery",
+        "source": "stage2"
+      },
+      {
+        "a": "right_link5_2",
+        "b": "base_base_link_geom",
+        "source": "stage2"
+      },
+      {
+        "a": "right_link5_2",
+        "b": "base_right_link_geom",
+        "source": "stage2"
+      },
+      {
+        "a": "right_link5_2",
+        "b": "base_left_Link_geom",
+        "source": "stage2"
+      },
+      {
+        "a": "right_link5_2",
+        "b": "base_right_front_link_geom",
+        "source": "stage2"
+      },
+      {
+        "a": "right_link5_2",
+        "b": "base_right_rear_link_geom",
+        "source": "stage2"
+      },
+      {
+        "a": "right_link5_2",
+        "b": "base_left_front_link_geom",
+        "source": "stage2"
+      },
+      {
+        "a": "right_link5_2",
+        "b": "base_left_rear_link_geom",
+        "source": "stage2"
+      },
+      {
+        "a": "right_link5_2",
+        "b": "pedestal_base",
+        "source": "stage2"
+      },
+      {
+        "a": "right_link5_2",
+        "b": "pedestal_top",
+        "source": "stage2"
+      },
+      {
+        "a": "right_link5_2",
+        "b": "battery",
+        "source": "stage2"
+      },
+      {
+        "a": "right_link6",
+        "b": "base_base_link_geom",
+        "source": "stage2"
+      },
+      {
+        "a": "right_link6",
+        "b": "base_right_link_geom",
+        "source": "stage2"
+      },
+      {
+        "a": "right_link6",
+        "b": "base_left_Link_geom",
+        "source": "stage2"
+      },
+      {
+        "a": "right_link6",
+        "b": "base_right_front_link_geom",
+        "source": "stage2"
+      },
+      {
+        "a": "right_link6",
+        "b": "base_right_rear_link_geom",
+        "source": "stage2"
+      },
+      {
+        "a": "right_link6",
+        "b": "base_left_front_link_geom",
+        "source": "stage2"
+      },
+      {
+        "a": "right_link6",
+        "b": "base_left_rear_link_geom",
+        "source": "stage2"
+      },
+      {
+        "a": "right_link6",
+        "b": "pedestal_base",
+        "source": "stage2"
+      },
+      {
+        "a": "right_link6",
+        "b": "pedestal_top",
+        "source": "stage2"
+      },
+      {
+        "a": "right_link6",
+        "b": "battery",
+        "source": "stage2"
+      },
+      {
+        "a": "right_link7_1",
+        "b": "base_base_link_geom",
+        "source": "stage2"
+      },
+      {
+        "a": "right_link7_1",
+        "b": "base_right_link_geom",
+        "source": "stage2"
+      },
+      {
+        "a": "right_link7_1",
+        "b": "base_left_Link_geom",
+        "source": "stage2"
+      },
+      {
+        "a": "right_link7_1",
+        "b": "base_right_front_link_geom",
+        "source": "stage2"
+      },
+      {
+        "a": "right_link7_1",
+        "b": "base_right_rear_link_geom",
+        "source": "stage2"
+      },
+      {
+        "a": "right_link7_1",
+        "b": "base_left_front_link_geom",
+        "source": "stage2"
+      },
+      {
+        "a": "right_link7_1",
+        "b": "base_left_rear_link_geom",
+        "source": "stage2"
+      },
+      {
+        "a": "right_link7_1",
+        "b": "battery",
+        "source": "stage2"
+      },
+      {
+        "a": "right_link7_2",
+        "b": "base_base_link_geom",
+        "source": "stage2"
+      },
+      {
+        "a": "right_link7_2",
+        "b": "base_right_link_geom",
+        "source": "stage2"
+      },
+      {
+        "a": "right_link7_2",
+        "b": "base_left_Link_geom",
+        "source": "stage2"
+      },
+      {
+        "a": "right_link7_2",
+        "b": "base_right_front_link_geom",
+        "source": "stage2"
+      },
+      {
+        "a": "right_link7_2",
+        "b": "base_right_rear_link_geom",
+        "source": "stage2"
+      },
+      {
+        "a": "right_link7_2",
+        "b": "base_left_front_link_geom",
+        "source": "stage2"
+      },
+      {
+        "a": "right_link7_2",
+        "b": "base_left_rear_link_geom",
+        "source": "stage2"
+      },
+      {
+        "a": "right_link7_2",
+        "b": "pedestal_base",
+        "source": "stage2"
+      },
+      {
+        "a": "right_link7_2",
+        "b": "pedestal_top",
+        "source": "stage2"
+      },
+      {
+        "a": "right_link7_2",
+        "b": "battery",
+        "source": "stage2"
+      },
+      {
+        "a": "right_palm_1",
+        "b": "base_base_link_geom",
+        "source": "stage2"
+      },
+      {
+        "a": "right_palm_1",
+        "b": "base_right_link_geom",
+        "source": "stage2"
+      },
+      {
+        "a": "right_palm_1",
+        "b": "base_left_Link_geom",
+        "source": "stage2"
+      },
+      {
+        "a": "right_palm_1",
+        "b": "base_right_front_link_geom",
+        "source": "stage2"
+      },
+      {
+        "a": "right_palm_1",
+        "b": "base_right_rear_link_geom",
+        "source": "stage2"
+      },
+      {
+        "a": "right_palm_1",
+        "b": "base_left_front_link_geom",
+        "source": "stage2"
+      },
+      {
+        "a": "right_palm_1",
+        "b": "base_left_rear_link_geom",
+        "source": "stage2"
+      },
+      {
+        "a": "right_palm_2",
+        "b": "base_base_link_geom",
+        "source": "stage2"
+      },
+      {
+        "a": "right_palm_2",
+        "b": "base_right_link_geom",
+        "source": "stage2"
+      },
+      {
+        "a": "right_palm_2",
+        "b": "base_left_Link_geom",
+        "source": "stage2"
+      },
+      {
+        "a": "right_palm_2",
+        "b": "base_right_front_link_geom",
+        "source": "stage2"
+      },
+      {
+        "a": "right_palm_2",
+        "b": "base_right_rear_link_geom",
+        "source": "stage2"
+      },
+      {
+        "a": "right_palm_2",
+        "b": "base_left_front_link_geom",
+        "source": "stage2"
+      },
+      {
+        "a": "right_palm_2",
+        "b": "base_left_rear_link_geom",
+        "source": "stage2"
+      },
+      {
+        "a": "right_finger_right",
+        "b": "base_base_link_geom",
+        "source": "stage2"
+      },
+      {
+        "a": "right_finger_right",
+        "b": "base_right_link_geom",
+        "source": "stage2"
+      },
+      {
+        "a": "right_finger_right",
+        "b": "base_left_Link_geom",
+        "source": "stage2"
+      },
+      {
+        "a": "right_finger_right",
+        "b": "base_right_front_link_geom",
+        "source": "stage2"
+      },
+      {
+        "a": "right_finger_right",
+        "b": "base_right_rear_link_geom",
+        "source": "stage2"
+      },
+      {
+        "a": "right_finger_right",
+        "b": "base_left_front_link_geom",
+        "source": "stage2"
+      },
+      {
+        "a": "right_finger_right",
+        "b": "base_left_rear_link_geom",
+        "source": "stage2"
+      },
+      {
+        "a": "right_finger_left",
+        "b": "base_base_link_geom",
+        "source": "stage2"
+      },
+      {
+        "a": "right_finger_left",
+        "b": "base_right_link_geom",
+        "source": "stage2"
+      },
+      {
+        "a": "right_finger_left",
+        "b": "base_left_Link_geom",
+        "source": "stage2"
+      },
+      {
+        "a": "right_finger_left",
+        "b": "base_right_front_link_geom",
+        "source": "stage2"
+      },
+      {
+        "a": "right_finger_left",
+        "b": "base_right_rear_link_geom",
+        "source": "stage2"
+      },
+      {
+        "a": "right_finger_left",
+        "b": "base_left_front_link_geom",
+        "source": "stage2"
+      },
+      {
+        "a": "right_finger_left",
+        "b": "base_left_rear_link_geom",
+        "source": "stage2"
+      }
+    ]
   }
 }

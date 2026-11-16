@@ -34,6 +34,9 @@ MARGINS = {
     "robot_robot_m": 0.03,      # m, PROVISIONAL [M288]: every other robot vs robot pair (arm parts of one arm vs the other arm, held vs robot body)
     "arm_world_m": 0.01,        # m, PROVISIONAL [M288]: arm parts (not fingers) vs world objects; must stay below the palm-to-beaker gap at a normal grasp
 }
+# A never-touch world object (WorldObject.never_touch, SF-65, David 2026-11-13): checked against every arm part INCLUDING fingers and held objects, with this margin
+# instead of arm_world_m. Kept out of MARGINS so every existing loop over MARGINS stays as before.
+NEVER_TOUCH_MARGIN_M = 0.05     # m [SF-65]: 5 cm; David's value for the cat demo
 # Pushing starts this far beyond a pair's margin and stops this far beyond it (M288). Stage 2 uses them.
 PUSH_START_BEYOND_M = 0.01      # m, PROVISIONAL [M288]
 PUSH_STOP_BEYOND_M = 0.02       # m, PROVISIONAL [M288]
@@ -91,6 +94,10 @@ RESOLVER = {
     "tunnel_guard_max_samples": 50,  # count [SF-46]: kong_style jump-through guard: most poses sampled along that path (the number used is the largest keypoint move divided by its capsule radius, rounded up, but never more than this)
     "tunnel_guard_skip_already_below": True,  # on/off [SF-46]: kong_style jump-through guard: a pair already below the guard gap at the last command is not counted (the gap rule and the push handle it; the forearm already overlaps the torso shape by 27 mm at the zombie pose, which would stop the arm forever); my choice, David to confirm
     "kong_shortened_accuracy": "own_pose",  # text [SF-47]: kong_style: an arm whose step was shortened inside the sweeps is checked for hand accuracy against its own shortened pose ("own_pose", so the check passes) or against the raw commanded pose ("raw", fails when shortening slows the hand by more than the accuracy value); my choice, David to confirm
+    # ---- Stage 5 speed (SF-73): the conservative advancement of the jump-through guard only saves work; the sampled test and the halving search decide (kong_style._guard) ----
+    "tunnel_guard_advance_max_iter": 200,   # count [SF-73]: most advances of the conservative advancement before it stops on the safe side
+    "tunnel_guard_grid_walk_max": 8,        # count [SF-73]: most grid steps (1 / 2^shorten_halvings of the step each) the guard walks up after the advancement stops, while the next grid pose is clear, to land on the cell the halving search ended in
+    "tunnel_guard_advance_refine_m": 0.05,  # m [SF-73]: a pair whose boxes are closer than the guard gap plus this gets an exact lower bound of its gap in each advance step; further pairs use their boxes only
     # ---- Stage 2g (SF-52 to SF-58) ----
     "pair_order": "deepest_first",  # text [SF-58]: kong_style: the order in which one sweep pushes the pairs: "deepest_first" = largest shortfall first, ties by pair name (default, David's decision); "by_name" = alphabetical by pair name (for order-independence tests only)
 }
@@ -111,4 +118,50 @@ OBJECT_CATALOG = {
         "centre_above_bottom_m": 0.03, "graspable": False, "round": False,
         "source": "models/objects/hotplate.xml geom task_hotplate_base: box half sizes 0.09 0.09 0.03 at z 0.03",
     },
+}
+
+# Predictive pair sleep (Stage 5 speed, SF-72; src/safety_filter/tick.py SleepTimers). A pair far from every other part is not looked at
+# for as many ticks as its gap lets it close at the fastest speed the arms are allowed. Not a change of the rule: a pair is only skipped
+# while it cannot reach its release distance (margin + slowing band) within the sleep, by this speed bound.
+SLEEP = {
+    "enabled": True,                # on/off [SF-72]: predictive sleep
+    # the joint speed bound is NOT a setting here: the caller passes it to Resolver(joint_speed_rad_s=...), read from the command bridge limit (src/task_config.py COMMAND_BRIDGE_CFG max_joint_velocity_rad_s); without it the sleep is off [SF-72]. A command step faster than that x dt x (1 + safety_buffer) wakes the pairs of that arm for that tick.
+    "safety_buffer": 0.20,          # fraction [SF-72]: extra on the speed bound for the capsule fitting error and the looseness of the lever arms (David's value)
+    "state_change_m": 2.0e-4,       # m [SF-72]: if the base position and orientation (as numbers), the pedestal and the finger travel together change by more than this since the tick before, every pair wakes for that tick (they are not part of the speed bound)
+    "command_step_slack_rad": 1.0e-12,   # rad [SF-72]: added to the largest command step allowed by the speed bound, so rounding never turns an exactly-at-the-bound step into a "fast" one
+    "same_pose_atol_rad": 1.0e-9,   # rad [SF-72]: the last command counts as "the pose the filter returned the tick before" when every joint is within this
+    "min_cost_m": 1.0e-12,          # m [SF-72]: floor of a pair's approach per tick in the sleep length formula (a pair whose two parts cannot move gets the longest sleep, not a division by zero)
+    "stats_cap_ticks": 2000,        # ticks [SF-72]: the sleep length histogram (for the profile) stops counting at this many ticks
+}
+
+# Array form of a tick (Stage 5 speed, SF-69 to SF-71; src/safety_filter/tick.py, tick_arrays.py). Sizes and the tolerances of the bounds
+# that rule pairs out. The bounds only decide which pairs get the exact check; the exact number is always the scalar function's.
+ARRAY_FORM = {
+    "pose_cache": 64,               # count [SF-69]: poses kept per tick before the cache is emptied (keeps a long shortening search's memory flat; the value the object form used)
+    "table_cache": 12,              # count [SF-69]: pair tables kept per resolver (one per set of world objects and held shapes seen)
+    "cc_eps_m": 1.0e-7,             # m [SF-71]: half width of a batched capsule-capsule gap's interval around the scalar value (same formula; the test measures the difference, below 1e-12 m)
+    "cb_low_per_m": 4.5e-5,         # per m of capsule length [SF-71]: the exact (4001-sample) capsule-box gap is at least the batched value minus this x length (derivation in tick_arrays.py)
+    "cb_high_per_m": 1.5e-4,        # per m of capsule length [SF-71]: the exact capsule-box gap is at most the batched value plus this x length
+    "bound_slack_m": 1.0e-9,        # m [SF-71]: added to every bound comparison so that rounding can never turn "cannot decide" into "decided"
+}
+
+# Never-close pairs by divide and conquer (Part B, SF-75 to SF-79; tools/never_close_dc.py, offline only: the filter itself reads none of these).
+# The proof and its assumptions are in docs/safety_filter_never_close_soundness.md; change that file with any change here that touches the method.
+NEVER_CLOSE_DC = {
+    "min_split_rad": 0.05,          # rad [SF-75]: a hinge range of a box is not cut once it is this wide or narrower (David's default); a box with nothing left to cut and no proof leaves the pair checked
+    "min_split_m": 0.005,           # m [SF-75]: the same for a slide (pedestal, finger travel); 5 mm, so a slide adds at most 2.5 mm of travel at the smallest box (my choice)
+    "pair_time_cap_s": 120.0,       # s [SF-78]: longest the tool works on one pair; a pair not finished by then stays checked (David's default, SF-27 "about 2 minutes")
+    "batch_boxes": 8192,            # count [SF-75]: boxes evaluated in one numpy pass (memory: a capsule-box pass holds batch x (box_samples + 1) x 3 numbers, about 25 MB)
+    "box_samples": 128,             # count K [SF-79]: a capsule's distance to a box is sampled at K + 1 equally spaced points; the centre value is the smallest sample minus length / (2K) (1.2 mm for a 0.3 m capsule)
+    "eps_num_m": 1.0e-6,            # m [SF-79]: taken off every centre value and added to the threshold for rounding in the kinematics and the distance formula (their measured error is below 1e-9 m)
+    "pre_random": 20000,            # count [SF-75]: random poses tried first; a pose with the gap below the threshold ends the pair at once as "reachable" (cannot be never-close)
+    "pre_refine_rounds": 30,        # count [SF-75]: rounds of the local search that follows the random poses (keeps the closest poses and perturbs them, step halved every 5 rounds)
+    "pre_refine_keep": 64,          # count [SF-75]: poses kept per round of that search
+    "pre_refine_children": 8,       # count [SF-75]: perturbed copies per kept pose and round
+    "pre_refine_step": 0.2,         # fraction of each variable's range [SF-75]: first perturbation size of that search
+    "seed": 0,                      # the random generator seed (repeatable runs)
+    "fk_check_poses": 300,          # count [SF-76]: random joint states on which the tool's batched kinematics is compared with the filter's (RobotShapes.place) before any pair is tested
+    "fk_check_tol_m": 1.0e-9,       # m [SF-76]: the tool stops if any shape point differs by more than this in that comparison
+    "verify_leaves": 2000,          # count [SF-76]: certificate check: settled boxes per declared pair re-checked with the filter's own scalar functions (the lowest-bound boxes first, the rest at random)
+    "verify_poses_per_leaf": 8,     # count [SF-76]: random poses inside each such box whose filter gap must be at least the box's lower bound
 }

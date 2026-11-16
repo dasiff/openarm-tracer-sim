@@ -4,7 +4,7 @@ No resolver here (Stage 2). This module answers: which pairs are checked, with w
 they have, which world objects are near an arm, and which object a hand holds.
 
 Pair rules (first match wins):
-  world      an arm part vs a world object: checked with arm_world_m; fingers and held objects are exempt (M289).
+  world      an arm part vs a world object: checked with arm_world_m; fingers and held objects are exempt (M289), except against a never-touch object (SF-65: nothing exempt, margin NEVER_TOUCH_MARGIN_M).
   same arm   any two shapes of one arm (including the arm's held object against its own hand, SF-4): exempt.
   torso      only the parts in TORSO_EXEMPT_PARTS (real geometry within 1 mm of the torso at home, SF-19) are exempt;
              every other arm part and held object is checked against the torso.
@@ -61,6 +61,10 @@ def _pair_rule(a: PlacedShape, b: PlacedShape):
         return Exempt("world against world is not a robot pair")
     if a.arm == "world" or b.arm == "world":
         robot = b if a.arm == "world" else a
+        if (a if a.arm == "world" else b).never_touch:          # SF-65: no finger or held-object exemption, own margin
+            if robot.arm == "common":
+                return Exempt("robot body against the world is not in the touch rules")
+            return _rule("arm-world", cfg.NEVER_TOUCH_MARGIN_M)
         if robot.part == "finger":
             return Exempt("fingers are never checked against the world (M289)")
         if robot.part == "held":
@@ -86,7 +90,7 @@ def _pair_rule(a: PlacedShape, b: PlacedShape):
     return _rule("robot-robot", cfg.MARGINS["robot_robot_m"])
 
 
-def shape_of(obj_id, shape, size, centre, rot, arm, part, body="world"):
+def shape_of(obj_id, shape, size, centre, rot, arm, part, body="world", never_touch=False):
     """A placed shape from a world-style description: a box (half sizes) or a capsule (radius, half length along
     the rotation's z column). Both keep their centre."""
     centre, rot = np.asarray(centre, float), np.asarray(rot, float)
@@ -94,14 +98,14 @@ def shape_of(obj_id, shape, size, centre, rot, arm, part, body="world"):
         r, h = size
         ax = rot[:, 2]
         return PlacedShape(id=obj_id, arm=arm, part=part, kind="capsule", body=body,
-                           a=centre - h * ax, b=centre + h * ax, r=float(r), centre=centre, rot=rot)
+                           a=centre - h * ax, b=centre + h * ax, r=float(r), centre=centre, rot=rot, never_touch=never_touch)
     return PlacedShape(id=obj_id, arm=arm, part=part, kind="box", body=body, centre=centre, rot=rot,
-                       half=np.asarray(size, float))
+                       half=np.asarray(size, float), never_touch=never_touch)
 
 
 def as_placed(obj: WorldObject) -> PlacedShape:
     """A world object as a placed shape (capsule or box)."""
-    return shape_of(obj.id, obj.shape, obj.size, obj.centre, obj.rot_matrix(), "world", "world")
+    return shape_of(obj.id, obj.shape, obj.size, obj.centre, obj.rot_matrix(), "world", "world", never_touch=obj.never_touch)
 
 
 def gap_between(a: PlacedShape, b: PlacedShape):
@@ -165,7 +169,7 @@ def evaluate_pairs(robot_shapes, world_objects):
     if n < 2:
         return []
     lo, hi = _aabb_arrays(items)
-    max_act = max(cfg.MARGINS.values()) + cfg.PUSH_START_BEYOND_M
+    max_act = max(max(cfg.MARGINS.values()), cfg.NEVER_TOUCH_MARGIN_M if any(o.never_touch for o in world_objects) else 0.0) + cfg.PUSH_START_BEYOND_M
     I, J = np.triu_indices(n, k=1)
     sep = np.maximum(lo[I] - hi[J], lo[J] - hi[I]).max(axis=1)
     keep = sep <= max_act

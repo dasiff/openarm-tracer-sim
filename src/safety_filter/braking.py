@@ -391,9 +391,10 @@ class BrakingLayer:
                     brake_pairs.append(room)
                     if sd >= room:
                         need_brake = True
-                        if sd - room > float(self.tun["emergency_overshoot_ticks"]) * cush and vp > rest and not was_braking:
+                        hard_room = gap - margin     # Phase C fix: an emergency is a stop that would ENTER the margin, not one that overshoots the stop target
+                        if sd - hard_room > float(self.tun["emergency_overshoot_ticks"]) * cush and vp > rest and not was_braking:
                             emergency[i] = True          # even the S-curve cannot stop in time: braking must exceed its limits
-                            self.errors.append(f"look-ahead failed ({SIDES[i]}): stopping distance {sd:.4f} m exceeds the room {room:.4f} m "
+                            self.errors.append(f"look-ahead failed ({SIDES[i]}): stopping distance {sd:.4f} m exceeds the room to the margin {hard_room:.4f} m "
                                                f"(speed {vp:.3f} m/s, gap {gap:.4f} m, margin {margin:.4f} m, pair {ida}|{idb})")
                             print(f"[braking] ERROR {self.errors[-1]}: braking beyond the limits, overriding the bridge")
                 else:

@@ -1,6 +1,8 @@
 """Braking Phase C (David's fixes after the Phase B review): unit tests per step.
 Run: python experiments/safety_filter_braking_c_test.py   (exit 0 = pass)"""
+import contextlib
 import copy
+import io
 import sys
 import xml.etree.ElementTree as ET
 from pathlib import Path
@@ -271,6 +273,21 @@ acc_noisy = measured_acc(3e-5, 0.0)                          # a steady arm with
 check("step 7 follow-up: a steady arm with servo-level noise reads below the acceleration limit (no spike of the size of the limit)", np.abs(acc_noisy).max() < cfg.derived()["effective_accel_limit"], f"max |a| {np.abs(acc_noisy).max():.3f} m/s2 vs limit {cfg.derived()['effective_accel_limit']}")
 acc_true = measured_acc(3e-5, 0.4)
 check("step 7 follow-up: a real acceleration of 0.4 m/s2 is still measured (the window is short, the signal is kept)", abs(np.median(acc_true) - 0.4) < 0.1, f"median {np.median(acc_true):.3f} m/s2")
+
+# ---- Phase C fix: an emergency is a stop that would enter the margin, not one that overshoots the stop target ----
+Le2 = BrakingLayer(tool3)
+Le2.v[0] = 0.03
+ef = io.StringIO()
+with contextlib.redirect_stdout(ef):
+    _, _, infoE = Le2.check(np.zeros((2, 7)), np.array([[0.004] + [0.0] * 6, [0.0] * 7]), None,
+                            lambda q, s: [[(0.0301 - np.asarray(q)[0, 0] * 0.5, 0.01, None, "left_palm_2", "bench_top", np.array([0.0, 0.0, -1.0]))], None])
+check("emergency: a stop that overshoots the stop target but stays outside the margin is not an emergency", not Le2.errors and not Le2._emergency.any(), str(Le2.errors)[:120])
+Le3 = BrakingLayer(tool3)
+Le3.v[0] = 0.12
+with contextlib.redirect_stdout(io.StringIO()):
+    Le3.check(np.zeros((2, 7)), np.array([[0.004] + [0.0] * 6, [0.0] * 7]), None,
+              lambda q, s: [[(0.0105 - np.asarray(q)[0, 0] * 0.5, 0.01, None, "left_palm_2", "bench_top", np.array([0.0, 0.0, -1.0]))], None])
+check("emergency: a stop that would enter the margin is still an emergency", len(Le3.errors) == 1, str(Le3.errors)[:120])
 
 if __name__ == "__main__":
     print(f"\n{len(fails)} failed" if fails else "\nall passed")

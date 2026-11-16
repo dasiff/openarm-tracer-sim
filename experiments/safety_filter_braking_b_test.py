@@ -353,7 +353,8 @@ check("plug-in: the override request is available once, with a log entry", pl.ta
 # closing speed versus full speed; no emergency for a hand at rest
 def tangential(q, state):                            # 1 % of the motion of joint 1 closes on the obstacle (the rest is along it)
     # Phase C step 4: the stop target is now margin + 2 cm, so the scenario sits 5 cm off the bench (outside the stop zone)
-    return [[(0.05 - 0.01 * np.asarray(q)[0, 0] * 0.5, 0.01, None, "left_held", "bench_top")], None]
+    # Phase C step 6: the bench's normal points from the hand down to the bench; the hand moves along the bench (x), the gap shrinks only by 1 %
+    return [[(0.05 - 0.01 * np.asarray(q)[0, 0] * 0.5, 0.01, None, "left_held", "bench_top", np.array([0.0, 0.0, -1.0]))], None]
 
 
 def run_tangential(mode):
@@ -364,7 +365,8 @@ def run_tangential(mode):
     last = np.zeros((2, 7))
     raw = last.copy()
     raw[0, 0] = 0.12 * DT / 0.5
-    stop, limit, info = Lm.check(last, raw, None, tangential)
+    vel = np.array([[0.12, 0.0, 0.0], [0.0, 0.0, 0.0]])        # the hand's velocity: along the bench, none toward it
+    stop, limit, info = Lm.check(last, raw, None, tangential, vel=vel)
     return bool(stop[0]), info[0]
 
 

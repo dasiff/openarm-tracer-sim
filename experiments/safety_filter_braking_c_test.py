@@ -155,6 +155,39 @@ check("step 4: the hand stops at the stop target, on the safe side and within 5 
 check("step 4: the hand stays still once stopped (no creeping for 300 ticks)", np.max(np.abs(np.diff(outs4[-300:]))) < 1e-12, f"{np.max(np.abs(np.diff(outs4[-300:])))}")
 check("step 4: the hand never gets closer than the stop target", gaps4.min() >= SG4 - 0.005, f"min gap {gaps4.min() * 1000:.3f} mm")
 
+# ---- step 6: the look-ahead brakes for the closing component of the hand velocity ----
+DOWN6 = np.array([0.0, 0.0, -1.0])                          # the bench's normal, from the hand down to the bench
+
+
+def xy_tool(q, state):                                     # joint 1 moves the tool along x only; the tool sits 2 cm above the bench (z = 0.02)
+    q = np.asarray(q)
+    return np.stack([0.5 * q[:, 0], np.zeros(2), np.full(2, 0.02)], axis=1)
+
+
+def bench2cm(q, state):                                    # the hand's gap to the bench is 2 cm, whatever the motion along x
+    return [[(0.02, 0.01, None, "left_palm_2", "bench_top", DOWN6)], None]
+
+
+L6 = BrakingLayer(xy_tool)
+last6 = np.zeros((2, 7))
+stops6 = 0
+for k in range(300):                                       # the source moves the hand along the bench at 0.12 m/s for 2 s
+    raw6 = last6.copy()
+    raw6[0, 0] += 0.12 * DT3 / 0.5
+    out6, info6 = L6.process(last6, raw6, None, bench2cm)
+    stops6 += int(info6["stop"].any())
+    last6 = out6
+check("step 6: a hand moving parallel to the bench at 2 cm does not trigger braking (300 ticks)", stops6 == 0 and not L6.errors, f"{stops6} stop ticks")
+check("step 6: and the hand keeps moving along the bench at the commanded speed", abs(xy_tool(last6, None)[0, 0] - 0.5 * last6[0, 0]) < 1e-12 and last6[0, 0] * 0.5 > 0.03)
+L7 = BrakingLayer(xy_tool)
+L7.v[0] = 0.12
+vel7 = np.array([[0.12, 0.0, -0.03], [0.0, 0.0, 0.0]])    # moving along the bench and slowly down toward it
+_, _, info7 = L7.check(np.zeros((2, 7)), np.array([[0.02 * 0] + [0.0] * 6, [0.0] * 7]), None,
+                       lambda q, s: [[(0.05, 0.01, None, "left_held", "bench_top", DOWN6)], None], vel=vel7)
+from src.safety_filter.braking_math import stopping_distance  # noqa: E402
+want7 = stopping_distance(0.03, 0.0, cfg.derived()["effective_accel_limit"], cfg.BRAKING["jerk_limit_m_s3"], cfg.derived()["tick_cushion_m"])
+check("step 6: the stopping distance uses the closing component (0.03 m/s toward the bench), not the whole hand speed (0.12 m/s)", abs(info7[0]["stop_dist"] - want7) < 1e-12, f"{info7[0]['stop_dist']} vs {want7}")
+
 if __name__ == "__main__":
     print(f"\n{len(fails)} failed" if fails else "\nall passed")
     sys.exit(1 if fails else 0)

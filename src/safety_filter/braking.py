@@ -83,16 +83,22 @@ class ObstacleFeed:
                     sep = float(np.maximum(lo[ia] - hi[ib], lo[ib] - hi[ia]).max())
                     if sep > rule.activation:
                         continue
-                    gap = float(gap_between(a, b)[0])
+                    gap, pa, pb, push = gap_between(a, b)
+                    gap = float(gap)
+                    d_ = np.asarray(pb, float) - np.asarray(pa, float)               # Phase C step 6: the direction from the hand toward the obstacle
+                    if np.linalg.norm(d_) > 1e-9:
+                        nrm = d_ / np.linalg.norm(d_)
+                    else:
+                        nrm = -np.asarray(push, float) / max(np.linalg.norm(push), 1e-12)   # overlapping: the direction back out of the obstacle, reversed
                     ceiling = cfg.approach_ceiling(rule.surface) if rule.surface else None      # any allowed-contact surface pair (held beaker or palm)
-                    out[i].append((gap - stop_gap(rule.margin, ceiling), gap, rule.margin, ceiling, a.id, b.id))
+                    out[i].append((gap - stop_gap(rule.margin, ceiling), gap, rule.margin, ceiling, a.id, b.id, nrm))
         return out
 
     def __call__(self, q, state):
         """For each arm, every candidate pair at pose q as (gap, margin, ceiling or None, hand shape id, other shape id), nearest room first."""
         out = [[], []]
         for i, cands in enumerate(self.pairs(q, state)):
-            out[i] = [(c[1], c[2], c[3], c[4], c[5]) for c in sorted(cands, key=lambda c: c[0])]
+            out[i] = [(c[1], c[2], c[3], c[4], c[5], c[6]) for c in sorted(cands, key=lambda c: c[0])]
         return out
 
 
@@ -124,6 +130,7 @@ class BrakingLayer:
         self._emergency = np.zeros(2, bool)
         self.errors = []                    # error log: every override (the look-ahead failed to catch an obstacle early enough: a bug to investigate)
         self._ceiling = np.zeros(2, bool)   # look-ahead latch: this arm is held to an allowed-contact surface's approach ceiling
+        self._tool_prev = None              # tool points of the last sent pose (the hand velocity when the jerk source is "sent")
         self._shaping = np.zeros(2, bool)   # this arm's command is going through the S-curve (it stays so until the ramp has converged on the commanded speed)
         self._dir = np.zeros((2, 7))   # unit joint direction of each arm's last step (the way it was going; used when stopping)
 
@@ -152,8 +159,19 @@ class BrakingLayer:
         b = np.asarray(self.tool_fn(np.asarray(cmd, float), state), float)
         return np.linalg.norm(b - a, axis=1) / self.dt
 
+    def _hand_velocity(self, last, state):
+        """Velocity of the tool point, (2, 3) m/s, world frame: from the measured joints when the jerk source is "state" (the measure() of this
+        tick), else from the sent command (the tool point of the last sent pose against the one before). First call: zeros."""
+        if self.tun["speed_source"] == "state" and self.last_measure is not None:
+            return np.array(self.last_measure["vel"], float)
+        pos = np.asarray(self.tool_fn(np.asarray(last, float), state), float)
+        vel = np.zeros((2, 3)) if self._tool_prev is None else (pos - self._tool_prev) / self.dt
+        self._tool_prev = pos
+        return vel
+
     def reset(self):
         self._prev_pos = self._prev_speed = self.last_measure = None
+        self._tool_prev = None
         self.v[:] = 0.0
         self.a[:] = 0.0
         self._dir[:] = 0.0
@@ -284,17 +302,19 @@ class BrakingLayer:
     # ---- step 5: look-ahead ----
     @staticmethod
     def _pairs_of(entry):
-        """An obstacle_fn entry for one arm as a list of (gap, margin, ceiling, id_a, id_b): None -> [], one tuple -> [tuple], a list stays."""
+        """An obstacle_fn entry for one arm as a list of (gap, margin, ceiling, id_a, id_b, direction toward the obstacle or None): None -> [],
+        one tuple -> [tuple], a list stays. Entries of 5 values (no direction) are accepted: the whole hand speed is then used."""
         if entry is None:
             return []
         items = [entry] if (len(entry) and not isinstance(entry[0], (tuple, list))) else list(entry)
         out = []
         for e in items:
             e = tuple(e)
-            out.append((float(e[0]), float(e[1]), e[2] if len(e) > 2 else None, e[3] if len(e) > 3 else "", e[4] if len(e) > 4 else ""))
+            nrm = np.asarray(e[5], float) if len(e) > 5 and e[5] is not None else None
+            out.append((float(e[0]), float(e[1]), e[2] if len(e) > 2 else None, e[3] if len(e) > 3 else "", e[4] if len(e) > 4 else "", nrm))
         return out
 
-    def check(self, last, raw, state, obstacle_fn):
+    def check(self, last, raw, state, obstacle_fn, vel=None):
         """The look-ahead, part of the safety check: for each arm and each obstacle pair, can the hand still brake from its current speed and
         acceleration to the stop target (stop_gap: margin + PUSH_STOP_BEYOND_M from the modelled surface, or the margin for an allowed-contact surface) within the gap?
         obstacle_fn(q (2,7), state) -> per arm a list of (gap_m, margin_m, ceiling_m_s or None, hand shape id, other shape id) (ObstacleFeed; a
@@ -330,11 +350,14 @@ class BrakingLayer:
             a = min(max(a, 0.0), a_eff)             # the acceleration of the formula never exceeds the effective limit (the worst case the derived constants assume); a per-tick difference of pulsed commands can be far larger
             was_braking = bool(self._braking[i])
             need_brake, brake_pairs, ceil_pairs, need_ceiling, worst = False, [], [], False, None
-            for gap, margin, ceiling, ida, idb in pl:
+            for gap, margin, ceiling, ida, idb, nrm in pl:
                 pr = raw_by.get((ida, idb))
                 closing = pr is not None and pr[0] < gap - eps
                 room = gap - stop_gap(margin, ceiling)     # Phase C step 4 (David): the stop target is just outside the resolver's push-out zone, not the midpoint (0 for the decided zero margin)
-                vp = v if mode == "full" else min(v, max(0.0, (gap - pr[0]) / self.dt)) if pr is not None else 0.0
+                if mode == "full" or vel is None or nrm is None:
+                    vp = v                                 # the whole hand speed (the cautious reading, and the only one without a velocity or a direction)
+                else:
+                    vp = max(0.0, float(np.dot(vel[i], nrm)))   # Phase C step 6 (David): the closing component of the hand's velocity, toward this obstacle
                 sd = stopping_distance(vp, a, a_eff, jl, cush)
                 if worst is None or room < worst["room"]:
                     worst = {"gap": gap, "margin": margin, "ceiling": ceiling, "stop_dist": sd, "room": room, "closing": closing, "pair": f"{ida}|{idb}", "speed": v}
@@ -377,8 +400,9 @@ class BrakingLayer:
         stop = np.zeros(2, bool)
         limit = None
         info = [None, None]
+        vel = self._hand_velocity(last, state)
         if obstacle_fn is not None:
-            stop, limit, info = self.check(last, raw, state, obstacle_fn)
+            stop, limit, info = self.check(last, raw, state, obstacle_fn, vel=vel)
         stop = stop | np.asarray(hold, bool)
         out, prof = self.step(last, raw, state, stop=stop, speed_limit=limit)
         override = np.zeros(2, bool)

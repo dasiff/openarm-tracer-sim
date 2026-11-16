@@ -1,0 +1,140 @@
+"""Array form of one tick's shapes and pairs (Stage 5 speed; decision rows SF-69 to SF-75): how the resolver computes, not what it decides.
+
+The object form (touch.evaluate_pairs, touch.gap_between on PlacedShape objects) stays the definition. This module gives the resolver
+the same pairs, rules and gaps from arrays:
+
+  PairTable    the checked pairs of one set of items (robot shapes, held shapes, world objects), built once per set with touch.pair_rule
+               and kept between ticks: index arrays, margins, activation and release distances, rules and pair names.
+  PoseArrays   every item's capsule ends or box, and its axis-aligned box, at one pose (the numbers of RobotShapes.place and
+               touch.as_placed, without building one object per shape).
+  box_separation   the broad phase of touch.evaluate_pairs for all checked pairs at once: the separation of the two axis-aligned boxes.
+  exact_gap    one pair's gap by the scalar functions of geometry.py, with the arguments in the order touch.gap_between uses: the
+               same number, bit for bit.
+  approx_gaps  the gaps of many pairs in one batched call, as an interval [low, high] that is guaranteed to contain the exact gap.
+
+The intervals let the resolver decide most threshold questions (is this pair's shortfall above the trigger, is its gap below the
+release distance, did the path pass below the guard gap) without the exact gap. Whenever an interval does not decide a question, and
+wherever a gap's VALUE is used (the shortfall that is pushed, the order of the pairs, the status record), the exact gap is computed
+as before. So every decision and every number that leaves the resolver is the one the object form gives.
+
+Why the intervals are safe:
+  box separation <= gap      a capsule lies inside its axis-aligned box, a box inside its own; the separation of two axis-aligned boxes
+                             (largest per-axis distance, negative when they overlap) is never larger than the distance of what is inside
+                             them. Overlapping: a capsule pair's gap is segment distance minus the radii and the boxes are the segments'
+                             boxes grown by the radii; a point inside a box is never deeper in the box than in the box around it.
+  capsule against capsule    the batched function is the scalar function's formula; the interval is the value +- cfg.ARRAY_FORM['cc_eps_m'].
+  capsule against box        both the scalar function (4001 samples along the segment) and the batched one (33 samples, then 14
+                             golden-section steps) return the box distance at ONE point of the segment, so each is at least the true
+                             minimum. The distance along the segment is convex (signed distance to a convex box, along a line), so the
+                             4001-sample minimum is within segment length / 8000 of the true minimum, and the batched value within
+                             segment length x 3.7e-5 (half of the last bracket, (2 / 32) x 0.618^14). cfg.ARRAY_FORM['cb_low_per_m'] and cfg.ARRAY_FORM['cb_high_per_m'] are those
+                             two numbers with a fifth added.
+  travel                     a point of an arm shape moves, between the last command and any pose q, by at most the sum over the arm's
+                             joints of (distance of the point from the joint's anchor AT THE LAST COMMAND) x |joint change|: turn the
+                             joints one at a time from the shoulder outwards; while joint i turns, the joints after it still have their
+                             last-command values, so the point's distance from joint i's axis is the one at the last command. A capsule's
+                             gap to anything changes by at most the larger move of its two ends.
+"""
+
+import numpy as np
+
+from src.safety_filter import config as cfg
+from src.safety_filter.geometry import capsule_box, capsule_box_batch, capsule_capsule, capsule_capsule_batch
+from src.safety_filter.touch import Exempt, pair_rule
+
+SIDE_INDEX = {"left": 0, "right": 1}
+
+
+class PairTable:
+    """The checked pairs of an item list. items: PlacedShape-like objects in the order robot shapes, held shapes, world objects
+    (only id, arm, part, kind, never_touch and the sizes are read). n_robot: how many of them are robot or held shapes."""
+
+    def __init__(self, items, n_robot):
+        n = len(items)
+        self.n, self.n_robot = n, n_robot
+        self.st_n_spec = 0                                  # set by Statics.table: how many items are the robot's own shapes (the rest of the robot items are held shapes)
+        self.ids = [s.id for s in items]
+        self.item_index = {s.id: k for k, s in enumerate(items)}
+        self.item_side = np.array([SIDE_INDEX.get(s.arm, -1) for s in items], dtype=np.int64)
+        self.is_capsule = np.array([s.kind == "capsule" for s in items], dtype=bool)
+        self.radius = np.array([float(s.r) if s.kind == "capsule" else 0.0 for s in items])
+        self.half = np.array([np.asarray(s.half, float) if s.kind != "capsule" else np.zeros(3) for s in items]).reshape(n, 3)
+        I, J, ka, kb, rules, keys = [], [], [], [], [], []
+        for i in range(n_robot):
+            a = items[i]
+            for j in range(i + 1, n):
+                b = items[j]
+                if a.kind == "box" and b.kind == "box":
+                    continue
+                rule = pair_rule(a, b)
+                if isinstance(rule, Exempt):
+                    continue
+                key = tuple(sorted((a.id, b.id)))
+                I.append(i); J.append(j); rules.append(rule); keys.append(key)
+                first = i if key[0] == a.id else j                  # touch.gap_between gets the shapes in pair-name order
+                ka.append(first); kb.append(i + j - first)
+        self.I, self.J = np.array(I, dtype=np.int64), np.array(J, dtype=np.int64)
+        self.ka, self.kb = np.array(ka, dtype=np.int64), np.array(kb, dtype=np.int64)
+        self.rules, self.keys = rules, keys
+        self.key_index = {k: p for p, k in enumerate(keys)}
+        self.margin = np.array([r.margin for r in rules], dtype=float)
+        self.act = np.array([r.activation for r in rules], dtype=float)
+        self.release = np.array([r.release for r in rules], dtype=float)
+        cap_i, cap_j = self.is_capsule[self.I] if len(I) else np.zeros(0, bool), self.is_capsule[self.J] if len(I) else np.zeros(0, bool)
+        self.is_cc = cap_i & cap_j
+        self.cb_cap = np.where(cap_i, self.I, self.J)               # capsule and box item of a capsule-box pair (unused for capsule pairs)
+        self.cb_box = np.where(cap_i, self.J, self.I)
+        side_i, side_j = (self.item_side[self.I], self.item_side[self.J]) if len(I) else (np.zeros(0, int), np.zeros(0, int))
+        self.uses_side = np.stack([(side_i == s) | (side_j == s) for s in (0, 1)]) if len(I) else np.zeros((2, 0), bool)
+
+    def __len__(self):
+        return len(self.keys)
+
+
+class PoseArrays:
+    """All items at one pose: capsule ends A, B and box centre C, rotation R (rows of non-matching kind are unused), and the
+    axis-aligned boxes lo, hi. sep, glo and ghi are filled when first asked for."""
+    __slots__ = ("A", "B", "C", "R", "lo", "hi", "sep", "glo", "ghi", "held", "objs", "travel", "anchors")
+
+    def __init__(self, A, B, C, R, lo, hi, held):
+        self.A, self.B, self.C, self.R, self.lo, self.hi, self.held = A, B, C, R, lo, hi, held
+        self.sep = self.glo = self.ghi = self.travel = None
+        self.objs = {}
+
+
+def box_separation(tab, P):
+    """Separation of the two axis-aligned boxes of every checked pair at the pose (negative when they overlap): touch.evaluate_pairs' cut."""
+    if P.sep is None:
+        P.sep = np.maximum(P.lo[tab.I] - P.hi[tab.J], P.lo[tab.J] - P.hi[tab.I]).max(axis=1) if len(tab) else np.zeros(0)
+    return P.sep
+
+
+def exact_gap(tab, P, p):
+    """The gap of pair p at the pose: touch.gap_between's number (same function, same argument order)."""
+    if tab.is_cc[p]:
+        a, b = tab.ka[p], tab.kb[p]
+        return float(capsule_capsule(P.A[a], P.B[a], float(tab.radius[a]), P.A[b], P.B[b], float(tab.radius[b])).gap)
+    c, b = tab.cb_cap[p], tab.cb_box[p]
+    return float(capsule_box(P.A[c], P.B[c], float(tab.radius[c]), P.C[b], P.R[b], tab.half[b]).gap)
+
+
+def approx_gaps(tab, P, idx):
+    """(low, high) arrays for the pairs idx at the pose: the exact gap of each lies inside (see the module text). Kept per pose."""
+    if P.glo is None:
+        P.glo = np.full(len(tab), np.nan)
+        P.ghi = np.full(len(tab), np.nan)
+    need = idx[np.isnan(P.glo[idx])]
+    if len(need):
+        cc = need[tab.is_cc[need]]
+        if len(cc):
+            a, b = tab.ka[cc], tab.kb[cc]
+            g = capsule_capsule_batch(P.A[a], P.B[a], tab.radius[a], P.A[b], P.B[b], tab.radius[b], gap_only=True)
+            P.glo[cc], P.ghi[cc] = g - cfg.ARRAY_FORM['cc_eps_m'], g + cfg.ARRAY_FORM['cc_eps_m']
+        cb = need[~tab.is_cc[need]]
+        if len(cb):
+            c, b = tab.cb_cap[cb], tab.cb_box[cb]
+            v = capsule_box_batch(P.A[c], P.B[c], tab.radius[c], P.C[b], P.R[b], tab.half[b], gap_only=True)
+            length = np.linalg.norm(P.B[c] - P.A[c], axis=1)
+            P.glo[cb] = v - cfg.ARRAY_FORM['cb_low_per_m'] * length - cfg.ARRAY_FORM['bound_slack_m']
+            P.ghi[cb] = v + cfg.ARRAY_FORM['cb_high_per_m'] * length + cfg.ARRAY_FORM['bound_slack_m']
+    return P.glo[idx], P.ghi[idx]

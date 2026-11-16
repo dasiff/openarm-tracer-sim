@@ -649,8 +649,8 @@ Source: the SEW-Mimic paper (arXiv 2602.01632, Sec. V and App. E). Its text is n
 - **14. Oracle checker** [DECIDED, M298; implemented in the later codebase cleanup, not now]: `src/mpvi_modules.py` oracle becomes scoring only (logs, decides nothing); the VLM checker judges steps, as in MPVI.
 
 PENDING:
-- Divide-and-conquer never-close test (SF-27; approved design, deferred to a later task). Split joint ranges; for each range compute a guaranteed region containing each part (each joint's range becomes an arc, stacked along the arm); a pair is settled for that range when the two regions stay apart by margin + 1 cm; split only ranges where they approach; stop at tiny pieces and use a real pose's gap. Works for any number of joints and for arm vs arm (each arm's part depends only on its own joints). Absorbs the approved reach-limit test (base, battery) as its first round and cross-checks the 3-joint sweep (SF-23). Per-pair time cap about 2 minutes; unproven pairs stay checked. Runs offline once per robot model, stored with the shapes fingerprint.
-  Includes 'blocked by the torso': flood from the home pose's range through ranges not certainly inside the torso; entries proven this way are labelled as depending on the torso check; a test fails if any torso pair they rely on is ever exempted; at run time those entries are not trusted (pairs re-checked) while any arm shape is inside its torso margin.
+- Divide-and-conquer never-close test (SF-27; approved design) [TOOL BUILT 2026-11-15, SF-75 to SF-79; list NOT yet loaded, loader is SF-77, open; see "Part B never-close DC" at the end of this section]. Split joint ranges; for each range compute a guaranteed region containing each part (each joint's range becomes an arc, stacked along the arm); a pair is settled for that range when the two regions stay apart by margin + 1 cm; split only ranges where they approach; stop at tiny pieces and use a real pose's gap. Works for any number of joints and for arm vs arm (each arm's part depends only on its own joints). Absorbs the approved reach-limit test (base, battery) as its first round and cross-checks the 3-joint sweep (SF-23). Per-pair time cap about 2 minutes; unproven pairs stay checked. Runs offline once per robot model, stored with the shapes fingerprint.
+  Includes 'blocked by the torso' [ABANDONED 2026-11-16: the torso label and its run-time guard were removed; the label and check A tested different things, and the label came out 219 of 219, so it added nothing; the 219 pairs stay valid]: flood from the home pose's range through ranges not certainly inside the torso; entries proven this way are labelled as depending on the torso check; a test fails if any torso pair they rely on is ever exempted; at run time those entries are not trusted (pairs re-checked) while any arm shape is inside its torso margin.
 - CLOSED (SF-3, 2026-11-10): palm capsule count k = 2 for the palm, one capsule for link 7, one capsule per finger attached to that finger's body. The palm study that stopped at the spread check is `docs/reports/safety_filter_palm_redo_20261109.md`.
 - CLOSED (2026-11-10, commit bc339ab): the held weight always comes from the robot's own weighing, never from the model's beaker mass. `src/gravity_ff.py` lines 83-84 read robot link masses only, and the held term uses the measured weighing estimate (traced in `docs/reports/safety_filter_palm_redo_20261109.md` section 1).
 - Demo generation vs Stage 4 order (SF-7): whether demo generation waits for the plug-in into `src/control_loop.py` (Stage 4) or runs before it. Open; David to decide.
@@ -732,3 +732,25 @@ Status: BUILT on branch safety-filter-plugin, not pushed. Report: docs/reports/s
 - **SF-67**: Its picture is visual-only geoms in a separate scene file, moved in the viewer scene only.
 - **SF-68**: Ghost arm at the raw command (red) and the caption "SAFETY FILTER ACTIVE" while the filter is not PASS.
 
+### Stage 5 speed (decision rows SF-69 to SF-74, 2026-11-15; full text in docs/mpvi_decisions.md)
+
+Status: BUILT (partly) on branch safety-filter-speed, not pushed. Report: docs/reports/safety_filter_speed_20261115.md; step log docs/reports/safety_filter_speed_log.md. The filter decides what it decided before (gate A: 0 failing ticks and identical counters on six golden recordings; gate B: closed loop identical to golden on punch original, punch reactive and cat); time per call: punch original 1041 to 60 ms, punch reactive 28.2 to 8.8 ms, cat 37.0 to 5.3 ms, shadow pick and place 6.2 to 1.9 ms. Targets met: cat mean, reactive p95; not met: punch original, reactive mean, cat p95, pass-through 1 ms. Not built: compiled kernel, Part B (never-close extension).
+
+- **SF-69**: The equivalence gate and its thresholds (assistant's choice, David to confirm); the tag safety-filter-pre-speed and six golden recordings are the reference.
+- **SF-70**: Array form of a tick (pair table, pose arrays, one array broad phase); the scalar functions stay the definition of every value.
+- **SF-71**: The bounds that rule pairs out (box separation, travel, proven gap intervals) and their constants (config ARRAY_FORM).
+- **SF-72**: The pair scheduler (min-heap on wakeup tick, safety buffer 0.20, speed limit passed in from the command bridge config), its guards and the "no moving arm, not looked at" rule.
+- **SF-73**: Guard by conservative advancement as a verified fast path; pure advancement dropped because the cat closed loop diverged.
+- **SF-74**: Not built: swept broad phase, batched FK, compiled kernel, Part B.
+
+### Part B never-close DC (decision rows SF-75 to SF-79, 2026-11-15; full text in docs/mpvi_decisions.md)
+
+Status: tool BUILT and run on branch safety-filter-speed, not pushed; the list is NOT in use (loader and file format are open, SF-77). Report: docs/reports/safety_filter_partb_dc_20261115.md. Proof: docs/safety_filter_never_close_soundness.md (standing file; update it with any change of the method). 219 of the 518 pairs the Stage 1 list leaves checked are proven never-close (200 arm vs body, 19 arm vs arm); 265 can come close; 34 unproven stay checked.
+
+- **SF-75**: The divide-and-conquer method and its parameters (minimum split 0.05 rad, 5 mm for slides; split along the largest half range x lever arm; random search first); what of SF-27 is not built (real-pose rule for tiny pieces, torso flood, Stage 1 cross-check).
+- **SF-76**: The soundness gate: certificate check, falsification search, golden replay, equivalence gate A and B with the list in use.
+- **SF-77**: File format (layout of the sweep file, one shape pair per entry) and loader: PROPOSED, not built; David decides.
+- **SF-78**: Time cap 120 s per pair; run results and cost.
+- **SF-79**: The lever-arm bound formula and the centre value; assumptions (hinges and slides, rigid shapes, joint values inside the limits).
+
+Torso-dependent extension [ABANDONED 2026-11-16, branch safety-filter-dnc]: the torso labels, the run-time torso guard and their self-check were removed; the 219 pairs are merged without any torso field (tools/build_never_close.py, never_close_pairs).

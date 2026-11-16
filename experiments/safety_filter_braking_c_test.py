@@ -42,6 +42,38 @@ for label, dz in (("touching", 0.0), ("1 cm above", 0.01), ("3.5 cm above", 0.03
     check(f"step 1: beaker {label} the hotplate top: gap equals the bottom height above the plate ({gap * 1000:.2f} mm)", abs(gap - dz) < 1e-6, f"gap {gap}")
 check("step 1: held-vs-hotplate margin is 0 (decided)", cfg.HELD_SURFACE_MARGIN_M == 0.0)
 
+# ---- step 2: palm vs the hotplate (allowed-contact pair, held_world_margin_m, approach ceiling) ----
+from src import task_config as tc  # noqa: E402
+from src.safety_filter.braking import ObstacleFeed  # noqa: E402
+from src.safety_filter.robot_model import load_robot_only_model  # noqa: E402
+from src.safety_filter.shapes import RobotShapes, RobotState  # noqa: E402
+from src.safety_filter.touch import Exempt, Rule, pair_rule  # noqa: E402
+
+rs = RobotShapes(load_robot_only_model(), ROOT / cfg.SHAPES_FILE)
+q_home = np.array([tc.TASK_CFG["home_q_left"], tc.TASK_CFG["home_q_right"]], float)
+st_home = RobotState(q_left=tuple(q_home[0]), q_right=tuple(q_home[1]))
+placed = rs.place(st_home)
+palm_caps = [p for p in placed if p.arm == "left" and p.part == "palm"]
+palm_low = min(min(p.a[2], p.b[2]) - p.r for p in palm_caps)
+px, py = float(np.mean([p.a[0] for p in palm_caps])), float(np.mean([p.a[1] for p in palm_caps]))
+hp_top = palm_low - 0.015                                                # the plate's top 1.5 cm below the palm's lowest point
+hp_under = catalog_object("hotplate", np.array([px, py, hp_top]))
+hp_placed = as_placed(hp_under)
+r_palm = pair_rule(palm_caps[0], hp_placed)
+check("step 2: palm vs hotplate is an allowed-contact pair with margin held_world_margin_m, named surface", isinstance(r_palm, Rule) and r_palm.kind == "palm-surface"
+      and abs(r_palm.margin - cfg.MARGINS["held_world_margin_m"]) < 1e-12 and r_palm.surface == "hotplate", str(r_palm))
+l7 = [p for p in placed if p.arm == "left" and p.part == "link7"][0]
+r_l7 = pair_rule(l7, hp_placed)
+check("step 2: a link-7 shape against the hotplate is NOT a surface pair (arm-world, no ceiling)", isinstance(r_l7, Rule) and r_l7.kind == "arm-world" and not r_l7.surface, str(r_l7))
+check("step 2: fingers stay exempt from the world (surfaces too)", isinstance(pair_rule(next(p for p in placed if p.arm == "left" and p.part == "finger"), hp_placed), Exempt))
+feed = ObstacleFeed(rs)
+feed.bind([hp_under], None)
+cands = [c for c in feed.pairs(q_home, st_home)[0] if c[5] == "hotplate"]
+palm_c = [c for c in cands if c[4].startswith("left_palm")]
+check("step 2: the palm's candidate pair carries the hotplate's ceiling and the gap to the plate top (1.5 cm)",
+      len(palm_c) >= 1 and abs(min(c[1] for c in palm_c) - 0.015) < 2e-3 and palm_c[0][3] == cfg.approach_ceiling("hotplate") and palm_c[0][2] == cfg.MARGINS["held_world_margin_m"],
+      str(palm_c[:1]))
+
 if __name__ == "__main__":
     print(f"\n{len(fails)} failed" if fails else "\nall passed")
     sys.exit(1 if fails else 0)

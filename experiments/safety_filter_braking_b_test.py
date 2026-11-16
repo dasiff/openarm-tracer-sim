@@ -222,7 +222,7 @@ lowest = pad[2] - 0.05      # Phase C: the beaker's bottom is 0.05 m below the p
 hot_under = catalog_object("hotplate", np.array([pad[0], pad[1], lowest - 0.01]))     # its top face 1 cm under the beaker
 feed.bind([hot_under], tr)
 o_ = feed(q_home, st)
-hp_pair = [c for c in o_[0] if c[2] is not None]
+hp_pair = [c for c in o_[0] if c[2] is not None and c[3] == 'left_held']   # Phase C: the palm also has the ceiling now; this check is about the held beaker
 check("feed: held beaker 1 cm over the hotplate gives its pair with the gap, zero margin and the hotplate's ceiling (among all candidate pairs)",
       len(hp_pair) == 1 and abs(hp_pair[0][0] - 0.01) < 2e-3 and hp_pair[0][1] == 0.0 and hp_pair[0][2] == cfg.approach_ceiling("hotplate") and hp_pair[0][4] == "hotplate", str(o_[0][:3]))
 other = WorldObject(id="bench_top", shape="box", size=(0.3, 0.3, 0.02), centre=(pad[0], pad[1], lowest - 0.01 - 0.02), rot=tuple(np.eye(3).ravel()), fixture=True)

@@ -82,6 +82,8 @@ def _pair_rule(a: PlacedShape, b: PlacedShape):
             if world.allowed_contact:
                 return _rule("held-surface", cfg.HELD_SURFACE_MARGIN_M, surface=world.id)   # zero margin, approach ceiling speed
             return _rule("held-world", cfg.MARGINS["held_world_margin_m"])               # one margin, full stop at its midpoint
+        if robot.part == "palm" and world.allowed_contact:  # Phase C step 2 (David): the palm may approach an allowed-contact surface at its approach ceiling, one margin off it
+            return _rule("palm-surface", cfg.MARGINS["held_world_margin_m"], surface=world.id)
         if robot.arm == "common":
             return Exempt("robot body against the world is not in the touch rules")
         return _rule("arm-world", cfg.MARGINS["arm_world_m"])

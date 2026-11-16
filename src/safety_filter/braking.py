@@ -84,7 +84,7 @@ class ObstacleFeed:
                     if sep > rule.activation:
                         continue
                     gap = float(gap_between(a, b)[0])
-                    ceiling = cfg.approach_ceiling(rule.surface) if rule.kind == "held-surface" else None
+                    ceiling = cfg.approach_ceiling(rule.surface) if rule.surface else None      # any allowed-contact surface pair (held beaker or palm)
                     out[i].append((gap - 0.5 * rule.margin, gap, rule.margin, ceiling, a.id, b.id))
         return out
 

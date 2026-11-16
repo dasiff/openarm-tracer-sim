@@ -330,6 +330,38 @@ sv2 = np.diff(sx2) / DT
 check("filter error: treated as HOLD, smooth stop", sv2[-1] == 0.0 and (-np.diff(sv2)).max() <= A_LIM * DT + 1e-6)
 check("config: the plug-in default hold policy is braking", _tc.SAFETY_FILTER_PLUGIN_CFG["hold_policy"] == "braking")
 
+# ---- Phase B fixes: the profile follows what was really sent; the "state" jerk source reads the measured joints ----
+Lq = BrakingLayer(fake_tool)
+last = np.zeros((2, 7))
+vseq = []
+for k in range(120):
+    raw = last.copy()
+    raw[0, 0] += (2e-5 if k < 60 else 0.5)          # 60 ticks of a tiny commanded step (below the ramp's step), then a far command
+    out, info = Lq.process(last, raw, None, None)
+    vseq.append(float(Lq.commanded_speed(last, out, None)[0]))
+    last = out
+vseq = np.array(vseq)
+check("clipped steps: the profile follows what was sent (no jump to a stale speed when the command speeds up)", np.max(np.diff(vseq)) <= A_LIM * DT + 1e-9, f"{np.max(np.diff(vseq)):.6f} vs {A_LIM * DT:.6f}")
+check("clipped steps: after the far command the speed still reaches the cap", abs(vseq[-1] - CAPV) < 1e-6 or vseq[-1] > 0.5 * CAPV, f"{vseq[-1]}")
+
+
+class Meas:
+    def __init__(self, q):
+        self.q_left, self.q_right = tuple(q[0]), tuple(q[1])
+
+
+tun_state = copy.deepcopy(cfg.BRAKING)
+tun_state["speed_source"] = "state"
+Ls = BrakingLayer(fake_tool, tun_state)
+Ls.measure(np.zeros((2, 7)), None)
+qm = np.zeros((2, 7))
+qm[0, 0] = 0.04                                     # the measured left joint moved: 0.5 * 0.04 = 2 cm in one tick = 3 m/s
+Ls.process(np.zeros((2, 7)), np.zeros((2, 7)), Meas(qm))
+check('speed_source "state": the ramp starts from the measured speed (3 m/s), not from the profile', abs(Ls.last_measure["speed"][0] - 3.0) < 1e-6 and abs(Ls._va(0)[0] - 3.0) < 1e-6)
+Lsent = BrakingLayer(fake_tool)
+Lsent.process(np.zeros((2, 7)), np.zeros((2, 7)), Meas(qm))
+check('speed_source "sent" (default): measured joints are not read', Lsent.last_measure is None and Lsent._va(0)[0] == 0.0)
+
 if __name__ == "__main__":
     print(f"\n{len(fails)} failed" if fails else "\nall passed")
     sys.exit(1 if fails else 0)

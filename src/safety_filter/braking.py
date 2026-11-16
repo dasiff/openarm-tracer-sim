@@ -231,10 +231,18 @@ class BrakingLayer:
             step = self.scale_step(i, last, direction, v1, state) if v1 > 0.0 else np.zeros(7)
             if not stop[i] and np.any(step) and np.linalg.norm(step) > np.linalg.norm(delta):   # never past the commanded pose
                 step = delta
+            clipped = (not stop[i]) and np.any(delta) and v1 > 0.0 and np.array_equal(step, delta)
             out[i] = last[i] + step
             n = np.linalg.norm(step)
             if n > 0:
                 self._dir[i] = step / n
+            if clipped:
+                # the step was cut to the commanded pose: the profile must follow what was really sent, or the next tick could jump to the old
+                # profile speed in one step (breaking the acceleration limit)
+                q_new = last.copy()
+                q_new[i] = out[i]
+                v_act = float(self.commanded_speed(last, q_new, state)[i])
+                v1, a1 = v_act, (v_act - v0) / self.dt
             self.v[i], self.a[i] = v1, a1
         return out, {"speed": self.v.copy(), "accel": self.a.copy()}
 
@@ -300,6 +308,8 @@ class BrakingLayer:
     def process(self, last, raw, state, obstacle_fn=None, hold=False):
         """The whole layer for one tick: look-ahead, hand speed cap and S-curve. hold: True (or (2,) bool) = a HOLD trigger (collision,
         timeout, error): both arms follow the S-curve to rest instead of following the command. Returns (command (2,7), info dict)."""
+        if self.tun["speed_source"] == "state" and hasattr(state, "q_left"):
+            self.measure(np.array([state.q_left, state.q_right], float), state)      # the measured joints feed the jerk limiting
         stop = np.zeros(2, bool)
         limit = None
         info = [None, None]

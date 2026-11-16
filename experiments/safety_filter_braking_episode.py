@@ -3,9 +3,9 @@
 The episode is demo_video.py's --record-only path (moved layout, scripted staging, cached plan; the Gemini cache is read, no key is used), with:
   * safety_filter_mode "on" and the braking layer (hold policy "braking", obstacle feed for the look-ahead);
   * BRAKING["speed_source"] set from --speed-source ("sent" or "state": which series the jerk limiting reads);
-  * a test hook (SF-59 "safety_filter_extra_objects"): a PHANTOM SHELF, a thin box in the world list only (not in the simulator), placed a few
-    centimetres above the hotplate as soon as the held beaker is descending over it; it is removed 1 s after the hand has stopped. The held beaker must
-    stop at the midpoint of the held-world margin, then speed up again on an S-curve once the shelf is gone, and then reach the hotplate (an
+  * a test hook (SF-59 "safety_filter_extra_objects"): a PHANTOM WALL, a thin tall box in the world list only (not in the simulator), placed 0.13 m
+    ahead of the held beaker as soon as it moves horizontally (the carry); it is removed 1 s after the hand has stopped. The held beaker must
+    stop at the midpoint of the held-world margin, then speed up again on an S-curve once the shelf is gone, and then go on and reach the hotplate (an
     allowed-contact surface) at the approach ceiling.
 Output: data/braking_episode/<run>/ (hook_log.npz, hook_info.json, the demo recording) and the plug-in recording data/safety_filter/plugin_runs/<run>.npz.
 Analyse with experiments/safety_filter_braking_analyze.py.
@@ -38,26 +38,28 @@ from src.task_config import LLM_CFG  # noqa: E402
 SAMPLER_SEED = 3244244957              # the stance search's sampler seed of the quick run brk_quick (found a stance in about a minute); pinned so every run starts from the same stance
 FULLCHECK_SEED = 1794842858736540400   # the full check's seed of that run (config FULLCHECK_CFG seed_pin)
 
-SHELF_ABOVE_PLATE = 0.04      # m: the shelf's top face is this far above the hotplate's top face
-SHELF_HALF = (0.20, 0.20, 0.01)
-MIN_ROOM = 0.06               # m: the shelf is only placed while the beaker's bottom is at least this far above it
-DESCENT_SPEED = 0.01          # m/s: "descending" means a vertical speed below minus this, over WINDOW ticks
+WALL_GAP = 0.13               # m: the phantom wall appears this far (surface to surface) ahead of the held beaker, along its horizontal motion; the carry is only
+                              # 0.2 m long, and 0.13 m is well inside what the hand can stop for at the carry speed (stopping distance from 0.1 m/s is about 0.09 m)
+WALL_HALF = (0.02, 0.30, 0.30)   # m: half sizes (along the motion, across, up): a thin tall wall
+MOVE_SPEED = 0.02             # m/s: "moving" means a horizontal speed above this, over WINDOW ticks
 WINDOW = 15
 STILL_SPEED = 0.002           # m/s, for STILL_TICKS ticks: the hand has stopped
 STILL_TICKS = 75
-REMOVE_AFTER_STOP_S = 1.0     # s after the hand has stopped the shelf disappears
+REMOVE_AFTER_STOP_S = 1.0     # s after the hand has stopped the wall disappears
 
 
-class Shelf:
-    """The phantom shelf hook: cfg["safety_filter_extra_objects"](state, ctx) -> list of WorldObject."""
+class Wall:
+    """The phantom wall hook: cfg["safety_filter_extra_objects"](state, ctx) -> list of WorldObject. Appears once, when the held beaker is moving
+    horizontally; disappears REMOVE_AFTER_STOP_S after the beaker has stopped."""
 
     def __init__(self, plate_top, enabled=True):
         self.plate_top, self.enabled = plate_top, enabled
         self.obj = None
         self.t_placed = self.t_stopped = self.t_removed = None
         self.hist = []                     # (t, centre) per distinct sim time
-        self.log = []                      # (t, held a, held b, radius, shelf present)
+        self.log = []                      # (t, held a, held b, radius, wall present)
         self._last_t, self._still = None, 0
+        self.rot = None
 
     def __call__(self, state, ctx):
         t = float(ctx.get("t", 0.0))
@@ -71,22 +73,24 @@ class Shelf:
                 self.hist.append((t, c))
                 self.hist = self.hist[-WINDOW - 1:]
                 self.log.append((t, *a, *b, r, 1.0 if (self.obj is not None and self.t_removed is None) else 0.0))
-                self._update(t, c, min(a[2], b[2]) - r)
+                self._update(t, c, float(r))
         return [self.obj] if (self.obj is not None and self.t_removed is None) else []
 
-    def _update(self, t, c, bottom):
+    def _update(self, t, c, r):
         if not self.enabled:
             return
         if self.obj is None:
             if len(self.hist) > WINDOW:
                 (t0, c0), (t1, c1) = self.hist[0], self.hist[-1]
-                vz = (c1[2] - c0[2]) / max(1e-9, t1 - t0)
-                shelf_top = self.plate_top + SHELF_ABOVE_PLATE
-                if vz < -DESCENT_SPEED and bottom - shelf_top > MIN_ROOM:
-                    self.obj = WorldObject(id="phantom_shelf", shape="box", size=SHELF_HALF, centre=(float(c1[0]), float(c1[1]), shelf_top - SHELF_HALF[2]),
-                                           rot=tuple(np.eye(3).ravel()), fixture=True)
-                    self.t_placed = t
-                    print(f"[hook] t={t:.2f} s: phantom shelf placed, top at z={shelf_top:.3f} m, beaker bottom z={bottom:.3f} m, descending {vz:.3f} m/s", flush=True)
+                vxy = (c1[:2] - c0[:2]) / max(1e-9, t1 - t0)
+                sp = float(np.linalg.norm(vxy))
+                if sp > MOVE_SPEED:
+                    d = np.array([vxy[0], vxy[1], 0.0]) / sp
+                    rot = np.stack([d, np.array([-d[1], d[0], 0.0]), np.array([0.0, 0.0, 1.0])], axis=1)      # columns: along the motion, across, up
+                    centre = c1 + d * (r + WALL_GAP + WALL_HALF[0])
+                    self.obj = WorldObject(id="phantom_wall", shape="box", size=WALL_HALF, centre=tuple(float(x) for x in centre), rot=tuple(rot.ravel()), fixture=True)
+                    self.t_placed, self.rot = t, rot
+                    print(f"[hook] t={t:.2f} s: phantom wall placed {WALL_GAP} m ahead of the beaker, direction {np.round(d, 3)}, beaker speed {sp:.3f} m/s", flush=True)
         elif self.t_removed is None:
             if len(self.hist) > 1:
                 (t0, c0), (t1, c1) = self.hist[-2], self.hist[-1]
@@ -94,16 +98,16 @@ class Shelf:
                 self._still = self._still + 1 if sp < STILL_SPEED else 0
             if self.t_stopped is None and self._still >= STILL_TICKS:
                 self.t_stopped = t
-                print(f"[hook] t={t:.2f} s: the beaker has stopped above the shelf", flush=True)
+                print(f"[hook] t={t:.2f} s: the beaker has stopped before the wall", flush=True)
             if self.t_stopped is not None and t - self.t_stopped >= REMOVE_AFTER_STOP_S:
                 self.t_removed = t
-                print(f"[hook] t={t:.2f} s: phantom shelf removed", flush=True)
+                print(f"[hook] t={t:.2f} s: phantom wall removed", flush=True)
 
 
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--speed-source", choices=["sent", "state"], default="sent")
-    ap.add_argument("--no-shelf", action="store_true", help="no phantom shelf (the plain episode)")
+    ap.add_argument("--no-shelf", action="store_true", help="no phantom wall (the plain episode)")
     ap.add_argument("--max-ticks", type=int, default=None, help="stop cleanly after this many filter calls (a quick check)")
     ap.add_argument("--hold-policy", default=None, choices=["braking", "repeat_last_safe"], help="override SAFETY_FILTER_PLUGIN_CFG hold_policy (repeat_last_safe = the old behaviour, no braking layer: a control run)")
     ap.add_argument("--no-pin", action="store_true", help="do not pin the stance search's seeds (the clock seeds it; the search can take a long time)")
@@ -135,7 +139,7 @@ def main():
                               mock_stats_path=out / "mock_queries.csv", run_dir=out)
     import mujoco
     mujoco.mj_forward(sim.model, sim.data)
-    shelf = Shelf(plate_top_z(sim.model, sim.data), enabled=not args.no_shelf)
+    shelf = Wall(plate_top_z(sim.model, sim.data), enabled=not args.no_shelf)
     loop = {**(task.get("loop_cfg") or {}), "command_bridge": {"enabled": True}, "safety_filter_mode": "on", "safety_filter_run_name": run,
             "safety_filter_extra_objects": shelf}
     if args.hold_policy:
@@ -147,7 +151,7 @@ def main():
     wall = time.time() - t0
     np.savez(out / "hook_log.npz", log=np.array(shelf.log) if shelf.log else np.zeros((0, 9)))
     info = {"run": run, "speed_source": args.speed_source, "outcome": s["outcome"], "wall_s": wall, "plate_top_z": shelf.plate_top,
-            "shelf": None if shelf.obj is None else {"centre": list(shelf.obj.centre), "half": list(shelf.obj.size), "placed": shelf.t_placed,
+            "shelf": None if shelf.obj is None else {"centre": list(shelf.obj.centre), "half": list(shelf.obj.size), "rot": [float(x) for x in np.asarray(shelf.obj.rot)], "placed": shelf.t_placed,
                                                      "stopped": shelf.t_stopped, "removed": shelf.t_removed},
             "braking": {k: v for k, v in sfcfg.BRAKING.items()}, "derived": sfcfg.derive()}
     (out / "hook_info.json").write_text(json.dumps(info, indent=1, default=str))

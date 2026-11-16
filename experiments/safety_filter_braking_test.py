@@ -412,6 +412,28 @@ seq = np.array(seq)
 check("shaping: a source that itself commands a slower speed is followed (never past the commanded pose); no overshoot", abs(seq[-1] - 0.05) < 1e-6 and seq[300:].max() <= 0.2 + 1e-9, f"{seq[-1]}")
 check("shaping: ends when the ramp has converged on the command, which is then passed exactly (free motion)", (not shaped[-1]) and not shaped[0] is None and any(shaped[:300]))
 
+# ---- Phase B integration findings: the look-ahead acceleration is clamped; an early stop with room left is released ----
+Lc2 = BrakingLayer(fake_tool)
+Lc2.v[0], Lc2.a[0] = 0.11, 16.0                              # a pulsed command history: 16 m/s2 as a per-tick difference
+last = np.zeros((2, 7))
+raw = last.copy()
+raw[0, 0] = 0.4
+import contextlib  # noqa: E402
+import io  # noqa: E402
+buf2 = io.StringIO()
+with contextlib.redirect_stdout(buf2):
+    _, _, info2 = Lc2.check(last, raw, None, lambda q, s_: [(0.168 - np.asarray(q)[0, 0] * 0.5, 0.01), None])
+check("look-ahead: the acceleration in the stopping distance is clamped to the effective limit (no absurd distance, no false emergency)",
+      info2[0]["stop_dist"] < 0.15 and not Lc2.errors, f"{info2[0]['stop_dist']}")
+Ld = BrakingLayer(fake_tool)
+Ld._braking[0] = True                                        # braking latched, the hand is stopped far from the obstacle (an early stop)
+stop2, _, info3 = Ld.check(np.zeros((2, 7)), raw, None, lambda q, s_: [(0.30 - np.asarray(q)[0, 0] * 0.5, 0.01), None])
+check("look-ahead: stopped with room left releases the latch (no deadlock after an early stop)", not stop2[0] and not Ld._braking[0])
+Ld2 = BrakingLayer(fake_tool)
+Ld2._braking[0] = True
+stop3, _, _ = Ld2.check(np.zeros((2, 7)), raw, None, lambda q, s_: [(0.005 - np.asarray(q)[0, 0] * 0.5, 0.01), None])
+check("look-ahead: stopped at the midpoint (no room) stays stopped while the command closes", stop3[0] and Ld2._braking[0])
+
 if __name__ == "__main__":
     print(f"\n{len(fails)} failed" if fails else "\nall passed")
     sys.exit(1 if fails else 0)

@@ -133,7 +133,7 @@ def analyse(run, log=None):
         out["held_ticks"] = int(hh.sum())
         sh = info.get("shelf")
         if sh:
-            obj = WorldObject(id="phantom_shelf", shape="box", size=tuple(sh["half"]), centre=tuple(sh["centre"]), rot=tuple(np.eye(3).ravel()), fixture=True)
+            obj = WorldObject(id="phantom_wall", shape="box", size=tuple(sh["half"]), centre=tuple(sh["centre"]), rot=tuple(sh.get("rot", np.eye(3).ravel())), fixture=True)
             sp = as_placed(obj)
             win = hh & (t >= sh["placed"]) & (t <= (sh["removed"] or t[-1]) + 3.0)
             gaps = np.full(n, np.nan)

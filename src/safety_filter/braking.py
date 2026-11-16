@@ -306,6 +306,7 @@ class BrakingLayer:
             ceiling = ol[2] if len(ol) > 2 else None
             closing = orr is not None and float(orr[0]) < gap - eps
             v, a = self._va(i)
+            a = min(max(a, 0.0), a_eff)             # the acceleration of the formula never exceeds the effective limit (the worst case the derived constants assume); a per-tick difference of pulsed commands can be far larger
             sd = stopping_distance(v, a, a_eff, jl, cush)
             room = gap - 0.5 * margin
             was_braking = bool(self._braking[i])
@@ -313,6 +314,8 @@ class BrakingLayer:
                 self._ceiling[i] = False
                 if self._braking[i] and not closing:
                     self._braking[i] = False                 # the obstacle cleared
+                elif self._braking[i] and v <= float(self.tun["stop_speed_m_s"]) and stopping_distance(0.0, 0.0, a_eff, jl, cush) < room:
+                    self._braking[i] = False                 # stopped with room left (an early stop): the look-ahead says it can brake again, so it speeds up on the S-curve
                 elif closing and sd >= room:
                     self._braking[i] = True
                     if sd - room > float(self.tun["emergency_overshoot_ticks"]) * cush and not was_braking:

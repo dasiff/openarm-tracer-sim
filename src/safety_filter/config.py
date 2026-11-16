@@ -165,3 +165,44 @@ NEVER_CLOSE_DC = {
     "verify_leaves": 2000,          # count [SF-76]: certificate check: settled boxes per declared pair re-checked with the filter's own scalar functions (the lowest-bound boxes first, the rest at random)
     "verify_poses_per_leaf": 8,     # count [SF-76]: random poses inside each such box whose filter gap must be at least the box's lower bound
 }
+
+
+# ---- Braking layer (Part 2, David's braking brief; src/safety_filter/braking.py). ----
+# The four tunables. All values are placeholders until tuned by test.
+BRAKING = {
+    "hand_speed_cap_m_s": 0.20,     # m/s, PLACEHOLDER — tuned by test: hand-level speed limit at the tool point; separate from the bridge's per-joint 0.5 rad/s cap; enforced every tick by scaling back the joint commands
+    "accel_limit_m_s2": 0.50,       # m/s^2, PLACEHOLDER — tuned by test: the one limit for braking and for speeding up, measured at the tool point
+    "jerk_limit_m_s3": 2.00,        # m/s^3, PLACEHOLDER — tuned by test: how fast the acceleration may change (per tick: jerk x dt); makes the speed curve S-shaped both ways
+    "approach_ceiling_m_s": {},     # m/s per allowed-contact surface name; a surface not listed gets hand_speed_cap_m_s (PLACEHOLDER — tuned by test: 0.05 for the hotplate once Phase B names surfaces)
+    # ---- settings the brief leaves implicit: simplest reading, named so they can change (listed as decisions) ----
+    "tick_hz": 150.0,               # Hz: the filter tick = the control loop's source_hz (src/control_loop.py cfg); the jerk limit is counted per tick of this rate
+    "bridge_reach_m": 0.56,         # m, PLACEHOLDER — tuned by test: lever arm that turns the bridge's joint speed cap into a tool speed (shoulder-to-wrist length of the model, Part 1b)
+    "tool_offset_local_m": (0.0, 0.0, 0.0),  # m in the link 7 frame: tool point = link 7 origin + this (PLACEHOLDER: the tool point is the link 7 origin until David names another)
+    "speed_source": "sent",         # text: which joint series the measured speed is taken from: "sent" (the commands the filter sent) or "state" (the measured joints, which lag the command)
+    "stop_speed_m_s": 0.002,        # m/s: below this the hand counts as stopped (leaves braking, ends a hold)
+    "closing_eps_m": 1e-6,          # m: the gap must shrink by more than this between last and new command to count as closing
+}
+
+
+def derive(tun=None, bridge=None):
+    """The derived constants of the braking layer, computed from the tunables, the tick rate and the bridge limits (not hard-coded):
+      tick_dt_s, tick_cushion_m (= hand speed cap x tick), effective_accel_limit (= min(accel limit, what the bridge can deliver per tick)),
+      worst_stop_dist_m (stopping distance from the hand speed cap with the acceleration at its limit; the fixed wake radius for pruning and
+      the smallest activation cutoff of the look-ahead).
+    bridge: COMMAND_BRIDGE_CFG-like dict (max_joint_velocity_rad_s); None reads src/task_config.py."""
+    from src.safety_filter.braking_math import stopping_distance
+    t = BRAKING if tun is None else tun
+    if bridge is None:
+        from src import task_config as tc
+        bridge = tc.COMMAND_BRIDGE_CFG
+    dt = 1.0 / float(t["tick_hz"])
+    cap, a, j = float(t["hand_speed_cap_m_s"]), float(t["accel_limit_m_s2"]), float(t["jerk_limit_m_s3"])
+    bridge_tool_speed = float(bridge["max_joint_velocity_rad_s"]) * float(t["bridge_reach_m"])   # m/s the bridge's joint cap allows at the tool, at most
+    a_eff = min(a, bridge_tool_speed / dt)            # the bridge can change the tool speed by at most its own tool speed cap in one tick
+    cushion = cap * dt
+    return {"tick_dt_s": dt, "tick_cushion_m": cushion, "effective_accel_limit": a_eff,
+            "bridge_tool_speed_m_s": bridge_tool_speed,
+            "worst_stop_dist_m": stopping_distance(cap, a_eff, a_eff, j, cushion)}
+
+
+BRAKING_DERIVED = derive()   # computed once at import; rebuild with derive() after a tunable changes

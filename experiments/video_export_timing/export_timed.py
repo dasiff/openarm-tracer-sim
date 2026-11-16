@@ -110,9 +110,18 @@ def install():
     sv.concat = T.wrap("ffmpeg concat", sv.concat)
 
 
-def picture_switches(no_shadows, no_reflection):
-    """Turns the follow view's and the camera tiles' shadows, or the follow view's reflections, off after the renderer is built (a measurement: it changes the picture)."""
+def picture_switches(no_shadows, no_reflection, offsamples=None):
+    """Turns the follow view's and the camera tiles' shadows, or the follow view's reflections, off after the renderer is built, or sets the offscreen
+    anti-aliasing sample count (model.vis.quality.offsamples, before the GL context exists): measurements only, they change the picture."""
     orig = vc.CompositeRenderer.__init__
+    if offsamples is not None:
+        orig_build = replay_mod.build_model
+
+        def build_patched(meta):
+            model, data, reset = orig_build(meta)
+            model.vis.quality.offsamples = offsamples
+            return model, data, reset
+        replay_mod.build_model = build_patched
 
     def patched(self, *a, **k):
         orig(self, *a, **k)
@@ -128,8 +137,8 @@ def picture_switches(no_shadows, no_reflection):
 
 def main(a):
     install()
-    if a.no_shadows or a.no_reflection:
-        picture_switches(a.no_shadows, a.no_reflection)
+    if a.no_shadows or a.no_reflection or a.offsamples is not None:
+        picture_switches(a.no_shadows, a.no_reflection, a.offsamples)
     run_dir, out = Path(a.run_dir), Path(a.out)
     out.mkdir(parents=True, exist_ok=True)
     name = a.name or run_dir.name
@@ -169,7 +178,7 @@ def main(a):
     wall = time.perf_counter() - wall0
     summary = {"run": str(run_dir), "full_video": str(full_final), "search_frames": n, "search_wall_s": t_search, "real_frames": r.get("frames_rendered"), "real_ticks": r["ticks"],
                "real_wall_s": t_real, "concat_wall_s": t_concat, "wall_s": wall, "timed_sum_s": sum(T.total.values()), "stages": {k: {"total_s": v, "calls": T.calls[k]} for k, v in T.total.items()},
-               "cut": {"search_frames": a.search_frames, "real_max_ticks": a.real_max_ticks}, "no_shadows": a.no_shadows, "no_reflection": a.no_reflection}
+               "cut": {"search_frames": a.search_frames, "real_max_ticks": a.real_max_ticks}, "no_shadows": a.no_shadows, "no_reflection": a.no_reflection, "offsamples": a.offsamples}
     (out / f"{name}_timing_{stamp}.json").write_text(json.dumps(summary, indent=1))
     print(T.table())
     print(f"\nwall {wall:.1f} s = search {t_search:.1f} + real {t_real:.1f} + concat {t_concat:.1f} (+ setup); timed stages sum {summary['timed_sum_s']:.1f} s; video {full_final}", flush=True)
@@ -185,4 +194,5 @@ if __name__ == "__main__":
     ap.add_argument("--real-max-ticks", type=int, default=None, help="replay only this many control ticks of the real part (a cut run, timing only)")
     ap.add_argument("--no-shadows", action="store_true", help="measurement: shadows off in the follow view and the camera tiles (changes the picture)")
     ap.add_argument("--no-reflection", action="store_true", help="measurement: reflections off in the follow view (changes the picture)")
+    ap.add_argument("--offsamples", type=int, default=None, help="measurement: offscreen anti-aliasing samples (the model's default is 4; 0 = none; changes the picture)")
     sys.exit(main(ap.parse_args()))

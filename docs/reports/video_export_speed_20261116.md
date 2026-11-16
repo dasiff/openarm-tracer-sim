@@ -7,7 +7,8 @@ significantly we can do without shadows at all".
 
 Short answer: the export took 1 h 30 min for 3547 frames because every one of the four views of a frame (the three camera tiles and the follow view) redrew the scene's
 two 2048-pixel shadow maps on the VM's software OpenGL, about 1.4 of the 1.7 s per frame. With shadows off (David's decision, decisions-log row M322) and the frames handed
-to ffmpeg from a writer thread, the same export takes 14 min 54 s (6.0 times faster) and the output is deterministic from run to run (byte-identical files).
+to ffmpeg from a writer thread, the same export takes 14 min 54 s and 15 min 00 s in two runs (6.0 times faster) and the output is deterministic from run to run
+(byte-identical files). Kept commits: e8e65f5 (shadows off, src/ and config) and e8e6a5a (writer thread, experiments/demo_video.py). Nothing pushed.
 
 ## 1. Where the export code lives
 
@@ -112,30 +113,34 @@ that follow the decided picture change, against the shadows-off export.
 | 0 | baseline | 05f2dc1 | 1:29:59 (5399 s) | 2298 / 2720 MB | 10,741,243 | (reference) | | |
 | 1 | shadows off (SEARCH_DISPLAY_CFG["shadows"] = False, CompositeRenderer shadows=, replay_run viewer mode honours shadows="off") | e8e65f5 | 17:01 (1021 s) (run 1b) | 2279 / 2706 MB | 13,439,712 | 0.79807 at frame 3409 vs baseline | 0.85806 vs baseline | KEPT by David's decision (M322): the picture changes (no shadows), so the gate against the shadowed baseline cannot pass; it is the new reference |
 | 2 | X264Writer: writer thread with a 4-frame queue, 1 MB pipe, no bytes copy | e8e6a5a | 14:54 (894 s) (run 1) | 2350 / 2675 MB | 13,439,712 | 1.0 (all 3547 frames identical to run 1b; the mp4 files are byte-identical) | 1.0 | KEPT: 127 s less than run 1b (12 %) |
-| 3 | x264 preset veryfast instead of medium (crf 18 kept) | c08f4f5 | (pending) | | | vs run 1 (pending) | | |
+| 3 | x264 preset veryfast instead of medium (crf 18 kept) | c08f4f5 (reverted by 53b1d89) | 15:11 (912 s) (run 3) | 2340 / 2494 MB | 12,616,435 | 0.99769 at frame 1934 vs run 1 | 0.99870 vs run 1 | REVERTED: passes the gate but no speed gain (18 s slower than run 1, within the run-to-run spread); the encoder was never the bottleneck, so a quality loss buys nothing |
+| 4 | final code repeated (shadows off + writer thread) | a7277d9 | 15:00 (900 s) (run 4) | 2302 / 2730 MB | 13,439,712 | 1.0 (byte-identical mp4 to run 1) | 1.0 | repeatability check (section 5) |
 
 Notes on runs 1 and 1b: the writer-thread commit was already on disk when the first shadows-off export started, so run 1 (05:08 to 05:23) has both changes; run 1b (05:29 to 05:46)
 repeated the export with the old writer checked out from e8e65f5 (shadows off only) to separate them. Both runs produced the same mp4 byte for byte.
 
 ## 5. Before and after
 
-| | baseline | final (pending: run 1 numbers, to be confirmed by the repeat) |
-|---|---|---|
-| wall time | 1:29:59 (5399 s) | 14:54 (894 s) |
-| speed-up | | 6.0 x |
-| CPU | 62 % of one CPU (user 1832 s, sys 1562 s); 14.3 % system-wide | 62 % of one CPU (user 486 s, sys 75 s); 13.4 % system-wide |
-| peak RSS Python / tree | 2298 / 2720 MB | 2350 / 2675 MB |
-| swap before / after | 57 / 57 MB | 57 / 57 MB |
-| file size | 10,741,243 B (726 kb/s) | 13,439,712 B (909 kb/s) |
-| frames, size, rate, length, codec | 3547, 1920x1080, 30 fps, 118.23 s, h264 mp4 | 3547, 1920x1080, 30 fps, 118.23 s, h264 mp4 |
+| | baseline | final, run 1 | final, run 4 (repeat) |
+|---|---|---|---|
+| wall time | 1:29:59 (5399 s) | 14:54 (894 s) | 15:00 (900 s) |
+| speed-up | | 6.04 x | 6.00 x |
+| of which search part (685 frames) | 1106 s | 178 s | 179 s |
+| CPU | 62 % of one CPU (user 1832 s, sys 1562 s); 14.3 % system-wide | 62 % of one CPU (user 486 s, sys 75 s); 13.4 % system-wide | 61 % of one CPU (user 485 s, sys 66 s); 13.0 % system-wide |
+| peak RSS Python / tree | 2298 / 2720 MB | 2350 / 2675 MB | 2302 / 2730 MB |
+| swap before / after | 57 / 57 MB | 57 / 57 MB | 57 / 57 MB |
+| file size | 10,741,243 B (726 kb/s) | 13,439,712 B (909 kb/s) | 13,439,712 B (byte-identical to run 1) |
+| frames, size, rate, length, codec | 3547, 1920x1080, 30 fps, 118.23 s, h264 mp4 | 3547, 1920x1080, 30 fps, 118.23 s, h264 mp4 | same |
 
-Repeatability (step 5): (pending second final run).
+Repeatability (step 5): the final export was run twice (run 1 at 05:08, run 4 at 06:07, commits e8e6a5a and a7277d9, the same code for the export): 894 s and 900 s
+(0.7 % apart), and the two mp4 files are identical byte for byte, as is run 1b's (old writer). The per-frame cost is now about 0.25 s (search part 0.26 s, real part 0.25 s).
 
 ## 6. SSIM of the final output
 
 Against the baseline (shadows on): mean 0.85806, lowest 0.79807 at frame 3409 (the real run, the robot at the bench: every frame is below 0.985 because the shadows are gone,
-which is the decided change, not compression). Against the shadows-off export with the old writer (run 1b): every one of the 3547 frames identical, mean 1.0, lowest 1.0.
-(pending: the final repeat.)
+which is the decided change, not compression). Against the shadows-off export with the old writer (run 1b) and against the repeat (run 4): every one of the 3547 frames identical, mean 1.0, lowest 1.0, no frame near
+the gate. The gate values therefore never came into play for a kept change; the one compression change tried (preset veryfast) scored lowest 0.99769 (frame 1934) and
+mean 0.99870 against run 1, well inside the gate, and was reverted for lack of speed, not for quality.
 
 ## 7. Decisions for David
 
@@ -150,20 +155,24 @@ which is the decided change, not compression). Against the shadows-off export wi
    173 MB after imports, 1972 MB after rebuild_task, 1994 MB after the first frame); two workers plus ffmpeg (0.5 GB) would be about 4.5 GB under the 6 GB cap on a 9 GB
    VM. Options: (a) leave it; (b) allow it for this export only, under the cap, with the worker count in SEARCH_DISPLAY_CFG; (c) first find what in the model build takes
    1.8 GB (not investigated).
-4. Possible further speed-up that changes the picture slightly, NOT built: fewer offscreen anti-aliasing samples (model.vis.quality.offsamples, the scene's default 4).
-   Measured on the cut (pending). The video would be a little less smooth on edges.
-5. The gate values (0.98 per frame, 0.99 mean) were not needed in the end: the only change that touched compression (preset veryfast, pending) is judged against the
-   shadows-off export; every kept change so far produced identical frames.
+4. Fewer offscreen anti-aliasing samples (model.vis.quality.offsamples 0 instead of the scene's 4) was measured on the cut as a possible picture-changing speed-up:
+   317 / 292 ms per frame (search / real) against 332 / 268 ms with 4 samples, i.e. no gain. Nothing to decide; not built.
+5. The gate values (0.98 per frame, 0.99 mean) were not needed in the end: every kept change produced identical frames, and the one compression change (preset veryfast,
+   reverted) scored 0.9977 / 0.9987 against the shadows-off export. Whether David wants to keep these values for future encoder changes is open.
 6. The other viewer-mode videos (replay_run.py --video viewer, demo_video.py's own export, the cat demo) still draw shadows: replay_run's "policy" default still means
    "on" in viewer mode. Say if they should follow the same setting.
 
 ## 8. Tried and reverted
 
-(pending: run 3.)
+- x264 preset veryfast (commit c08f4f5, reverted by 53b1d89): the gate passed (lowest frame 0.99769 at frame 1934, mean 0.99870, file 12.6 MB instead of 13.4 MB) but the
+  export took 15:11 against 14:54 with preset medium. The encoder runs in its own process on an otherwise idle CPU and never held the renderer up (the writer thread's
+  queue absorbs it), so a faster preset only lowers the quality. Reverted.
+- Reflections off (measurement only, never committed): 331 against 332 ms per frame; the lab scene has no reflective surface, so the pass does nothing. Left on.
+- Offscreen anti-aliasing samples 0 (measurement only, never committed): no gain (decision 4). Left at the scene's 4.
 
 ## 9. Not built, unknown
 
-- Multi-process rendering (decision 3) and offsamples (decision 4): measured or estimated only.
+- Multi-process rendering (decision 3): estimated only.
 - Why the model build takes 1.8 GB of RSS: not investigated.
 - The 1920x1080 follow view and the 640x480 tiles are rendered at full size and the tiles then scaled down by cv2.resize (3 ms each); rendering the tiles at tile size
   would change the pixels (not tried).

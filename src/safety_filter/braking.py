@@ -93,14 +93,14 @@ class ObstacleFeed:
                     else:
                         nrm = -np.asarray(push, float) / max(np.linalg.norm(push), 1e-12)   # overlapping: the direction back out of the obstacle, reversed
                     ceiling = cfg.approach_ceiling(rule.surface) if rule.surface else None      # any allowed-contact surface pair (held beaker or palm)
-                    out[i].append((gap - stop_gap(rule.margin, ceiling), gap, rule.margin, ceiling, a.id, b.id, nrm))
+                    out[i].append((gap - stop_gap(rule.margin, ceiling), gap, rule.margin, ceiling, a.id, b.id, nrm, np.asarray(pa, float)))
         return out
 
     def __call__(self, q, state):
         """For each arm, every candidate pair at pose q as (gap, margin, ceiling or None, hand shape id, other shape id), nearest room first."""
         out = [[], []]
         for i, cands in enumerate(self.pairs(q, state)):
-            out[i] = [(c[1], c[2], c[3], c[4], c[5], c[6]) for c in sorted(cands, key=lambda c: c[0])]
+            out[i] = [(c[1], c[2], c[3], c[4], c[5], c[6], c[7]) for c in sorted(cands, key=lambda c: c[0])]
         return out
 
 
@@ -132,6 +132,7 @@ class BrakingLayer:
         self._emergency = np.zeros(2, bool)
         self.errors = []                    # error log: every override (the look-ahead failed to catch an obstacle early enough: a bug to investigate)
         self._ceiling = np.zeros(2, bool)   # look-ahead latch: this arm is held to an allowed-contact surface's approach ceiling
+        self._prev_pa = {}                  # (arm, hand shape, other shape) -> the closest hand point of the previous tick (Phase C closing component)
         self._speed_hist = deque(maxlen=ACCEL_WINDOW_TICKS + 1)   # measured speeds of the last ticks (the acceleration window)
         self._tool_prev = None              # tool points of the last sent pose (the hand velocity when the jerk source is "sent")
         self._shaping = np.zeros(2, bool)   # this arm's command is going through the S-curve (it stays so until the ramp has converged on the commanded speed)
@@ -193,6 +194,7 @@ class BrakingLayer:
         self._dir[:] = 0.0
         self._braking[:] = False
         self._ceiling[:] = False
+        self._prev_pa = {}
         self._shaping[:] = False
         self._emergency = np.zeros(2, bool)
 
@@ -335,7 +337,8 @@ class BrakingLayer:
         for e in items:
             e = tuple(e)
             nrm = np.asarray(e[5], float) if len(e) > 5 and e[5] is not None else None
-            out.append((float(e[0]), float(e[1]), e[2] if len(e) > 2 else None, e[3] if len(e) > 3 else "", e[4] if len(e) > 4 else "", nrm))
+            pa = np.asarray(e[6], float) if len(e) > 6 and e[6] is not None else None
+            out.append((float(e[0]), float(e[1]), e[2] if len(e) > 2 else None, e[3] if len(e) > 3 else "", e[4] if len(e) > 4 else "", nrm, pa))
         return out
 
     def check(self, last, raw, state, obstacle_fn, vel=None):
@@ -374,14 +377,22 @@ class BrakingLayer:
             a = min(max(a, 0.0), a_eff)             # the acceleration of the formula never exceeds the effective limit (the worst case the derived constants assume); a per-tick difference of pulsed commands can be far larger
             was_braking = bool(self._braking[i])
             need_brake, brake_pairs, ceil_pairs, need_ceiling, worst = False, [], [], False, None
-            for gap, margin, ceiling, ida, idb, nrm in pl:
+            for gap, margin, ceiling, ida, idb, nrm, pa in pl:
                 pr = raw_by.get((ida, idb))
                 closing = pr is not None and pr[0] < gap - eps
                 room = gap - stop_gap(margin, ceiling)     # Phase C step 4 (David): the stop target is just outside the resolver's push-out zone, not the midpoint (0 for the decided zero margin)
-                if mode == "full" or vel is None or nrm is None:
-                    vp = v                                 # the whole hand speed (the cautious reading, and the only one without a velocity or a direction)
+                prev_pa = self._prev_pa.get((i, ida, idb))
+                if mode == "full" or nrm is None:
+                    vp = v                                 # the whole hand speed (the cautious reading, and the only one without a direction)
+                elif pa is not None and prev_pa is not None:
+                    # Phase C fix (David's closing component, at the point of the hand nearest this obstacle): the velocity of that point is
+                    # the finite difference of its position over the last tick. The tool point's velocity underestimates the approach of
+                    # other hand points (the palm met the bench faster than the tool point moved: false emergencies in run brkT)
+                    vp = max(0.0, float(np.dot((pa - prev_pa) / self.dt, nrm)))
+                elif vel is not None:
+                    vp = max(0.0, float(np.dot(vel[i], nrm)))   # the tool point's velocity (the first tick of a pair)
                 else:
-                    vp = max(0.0, float(np.dot(vel[i], nrm)))   # Phase C step 6 (David): the closing component of the hand's velocity, toward this obstacle
+                    vp = v
                 sd = stopping_distance(vp, a, a_eff, jl, cush)
                 if worst is None or room < worst["room"]:
                     worst = {"gap": gap, "margin": margin, "ceiling": ceiling, "stop_dist": sd, "room": room, "closing": closing, "pair": f"{ida}|{idb}", "speed": v}
@@ -415,6 +426,7 @@ class BrakingLayer:
             stop[i] = self._braking[i]
             info[i] = {**worst, "braking": bool(self._braking[i]), "ceiling_active": bool(self._ceiling[i]),
                        "surface_gap": min([p[0] for p in pl if p[2] is not None], default=float("nan"))}
+        self._prev_pa = {(i, ida, idb): pa for i in range(2) for (_g, _m, _c, ida, idb, _n, pa) in self._pairs_of(at_last[i]) if pa is not None}
         return stop, limit, info
 
     def process(self, last, raw, state, obstacle_fn=None, hold=False):

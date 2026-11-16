@@ -289,6 +289,18 @@ with contextlib.redirect_stdout(io.StringIO()):
               lambda q, s: [[(0.0105 - np.asarray(q)[0, 0] * 0.5, 0.01, None, "left_palm_2", "bench_top", np.array([0.0, 0.0, -1.0]))], None])
 check("emergency: a stop that would enter the margin is still an emergency", len(Le3.errors) == 1, str(Le3.errors)[:120])
 
+# ---- Phase C fix: the closing component uses the velocity of the closest HAND POINT (the tool point can stand still while a palm closes) ----
+LB = BrakingLayer(tool3)
+LB.v[0] = 0.0
+pz = [0.05]
+def closest_point_feed(q, s):
+    # the palm's closest point is 5 cm above the bench and descends at 5 cm/s; the tool point (given a zero velocity) does not move
+    return [[(pz[0] - 0.01, 0.01, None, "left_palm_2", "bench_top", np.array([0.0, 0.0, -1.0]), np.array([0.0, 0.0, pz[0]]))], None]
+LB.check(np.zeros((2, 7)), np.zeros((2, 7)), None, closest_point_feed, vel=np.zeros((2, 3)) if False else np.zeros((2, 3)))
+pz[0] = 0.05 - 0.05 * DT3
+_, _, infoB = LB.check(np.zeros((2, 7)), np.zeros((2, 7)), None, closest_point_feed, vel=np.zeros((2, 3)))
+check("closing component: the closest hand point's own velocity (5 cm/s toward the bench) sets the stopping distance, though the tool point is still", abs(infoB[0]["stop_dist"] - stopping_distance(0.05, 0.0, cfg.derived()["effective_accel_limit"], cfg.BRAKING["jerk_limit_m_s3"], cfg.derived()["tick_cushion_m"])) < 1e-9, f"{infoB[0]['stop_dist']}")
+
 if __name__ == "__main__":
     print(f"\n{len(fails)} failed" if fails else "\nall passed")
     sys.exit(1 if fails else 0)

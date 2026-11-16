@@ -59,7 +59,8 @@ class SafetyFilterPlugin:
         self.history = deque(maxlen=int(history_len))
         self.rec = {k: [] for k in ("t", "raw", "filtered", "sent", "status", "reason", "filter_time", "rounds", "worst_gap",
                                     "worst_shortfall", "fraction", "worst_pair", "methods", "pairs_pushed", "pairs_skipped",
-                                    "pairs_shortened", "solver_calls", "q_meas", "base", "pedestal", "fingers", "held_ends")}
+                                    "pairs_shortened", "solver_calls", "q_meas", "base", "pedestal", "fingers", "held_ends",
+                                    "brake_stop", "brake_limit", "brake_gap", "brake_room", "brake_sd", "brake_speed", "brake_pair", "brake_override")}
         self.n_calls, self._t0 = 0, clock()
         self.ctx = {"t": 0.0, "manip_started": False}   # read by the extra-objects test hook
 
@@ -99,6 +100,14 @@ class SafetyFilterPlugin:
                 self.obstacle_fn.bind(world_objects, held)               # this tick's world and held object for the look-ahead
             filtered, binfo = self.braking.process(self.last_sent, filtered, state, self.obstacle_fn, hold=(status.status == "HOLD"))
             self.ctx["braking"] = binfo
+            la = binfo["lookahead"]
+            nan2 = lambda key: [float(x[key]) if x is not None else float("nan") for x in la]   # noqa: E731
+            r = self.rec
+            r["brake_stop"].append(np.asarray(binfo["stop"], float)); r["brake_override"].append(np.asarray(binfo["override"], float))
+            r["brake_limit"].append(np.array([float(v) for v in (binfo["limit"] if binfo["limit"] is not None else [np.inf, np.inf])]))
+            r["brake_gap"].append(np.array(nan2("gap"))); r["brake_room"].append(np.array(nan2("room"))); r["brake_sd"].append(np.array(nan2("stop_dist")))
+            r["brake_speed"].append(np.asarray(binfo["speed"], float))
+            r["brake_pair"].append(",".join((x["pair"] if x is not None else "-") for x in la))
             if binfo.get("override") is not None and np.any(binfo["override"]):
                 self._override = True
                 self.override_log.append((float(t), "; ".join(self.braking.errors[-2:])))

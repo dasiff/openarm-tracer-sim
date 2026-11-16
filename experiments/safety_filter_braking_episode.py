@@ -35,6 +35,9 @@ from src.safety_filter.world import WorldObject  # noqa: E402
 from src.task_beaker_hotplate import load_task, plate_top_z  # noqa: E402
 from src.task_config import LLM_CFG  # noqa: E402
 
+SAMPLER_SEED = 3244244957              # the stance search's sampler seed of the quick run brk_quick (found a stance in about a minute); pinned so every run starts from the same stance
+FULLCHECK_SEED = 1794842858736540400   # the full check's seed of that run (config FULLCHECK_CFG seed_pin)
+
 SHELF_ABOVE_PLATE = 0.04      # m: the shelf's top face is this far above the hotplate's top face
 SHELF_HALF = (0.20, 0.20, 0.01)
 MIN_ROOM = 0.06               # m: the shelf is only placed while the beaker's bottom is at least this far above it
@@ -103,11 +106,25 @@ def main():
     ap.add_argument("--no-shelf", action="store_true", help="no phantom shelf (the plain episode)")
     ap.add_argument("--max-ticks", type=int, default=None, help="stop cleanly after this many filter calls (a quick check)")
     ap.add_argument("--hold-policy", default=None, choices=["braking", "repeat_last_safe"], help="override SAFETY_FILTER_PLUGIN_CFG hold_policy (repeat_last_safe = the old behaviour, no braking layer: a control run)")
+    ap.add_argument("--no-pin", action="store_true", help="do not pin the stance search's seeds (the clock seeds it; the search can take a long time)")
     ap.add_argument("--name", default=None)
     ap.add_argument("--instruction", default=None)
     args = ap.parse_args()
     run = args.name or f"braking_{args.speed_source}{'_noshelf' if args.no_shelf else ''}_{time.strftime('%Y%m%d_%H%M%S')}"
     sfcfg.BRAKING["speed_source"] = args.speed_source
+    if not args.no_pin:
+        import src.edge_sampling as es
+        import src.stance_sampling as ss
+        from src import task_config as tc
+
+        class _Clock:                                     # the modules' clock seed (time.time_ns()) returns the pinned seed; everything else is the real time module
+            def __getattr__(self, name):
+                return getattr(time, name)
+
+            def time_ns(self):
+                return SAMPLER_SEED
+        ss.time, es.time = _Clock(), _Clock()
+        tc.FULLCHECK_CFG["seed_pin"] = FULLCHECK_SEED
     out = ROOT / "data" / "braking_episode" / run
     out.mkdir(parents=True, exist_ok=True)
     instruction = args.instruction or "put the beaker on the hotplate"

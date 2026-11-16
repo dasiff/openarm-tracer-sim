@@ -93,7 +93,7 @@ class ObstacleFeed:
         for i, cands in enumerate(self.pairs(q, state)):
             if cands:
                 best = min(cands, key=lambda c: c[0])
-                out[i] = (best[1], best[2], best[3])
+                out[i] = (best[1], best[2], best[3], best[4], best[5])      # gap, margin, ceiling, hand shape id, other shape id
         return out
 
 
@@ -302,6 +302,7 @@ class BrakingLayer:
                 if self._ceiling[i]:
                     limit[i] = c
             info[i] = {"gap": gap, "margin": margin, "ceiling": ceiling, "stop_dist": sd, "room": room, "closing": closing,
+                       "pair": "|".join(ol[3:5]) if len(ol) > 4 else "", "speed": v,
                        "braking": bool(self._braking[i]), "ceiling_active": bool(self._ceiling[i])}
         return stop, limit, info
 

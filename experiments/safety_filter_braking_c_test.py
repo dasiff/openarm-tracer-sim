@@ -74,6 +74,59 @@ check("step 2: the palm's candidate pair carries the hotplate's ceiling and the 
       len(palm_c) >= 1 and abs(min(c[1] for c in palm_c) - 0.015) < 2e-3 and palm_c[0][3] == cfg.approach_ceiling("hotplate") and palm_c[0][2] == cfg.MARGINS["held_world_margin_m"],
       str(palm_c[:1]))
 
+# ---- step 3: free motion is shaped: the step toward the source's target is limited, the target is not changed ----
+from src.safety_filter.braking import BrakingLayer  # noqa: E402
+
+DT3 = 1 / 150.0
+LIN3 = np.array([[0.5, 0.3, 0.2], [0.1, 0.4, 0.6]])
+
+
+def tool3(q, state):
+    return np.asarray(q)[:, :3] * LIN3
+
+
+def tool_series(outs):
+    pos = np.array([tool3(q, None) for q in outs])
+    v = np.linalg.norm(np.diff(pos, axis=0), axis=2) / DT3
+    a = np.diff(v, axis=0) / DT3
+    j = np.diff(a, axis=0) / DT3
+    return v, a, j
+
+
+A3, J3 = cfg.derived()["effective_accel_limit"], cfg.BRAKING["jerk_limit_m_s3"]
+L3 = BrakingLayer(tool3)
+last = np.zeros((2, 7))
+outs = [last.copy()]
+for k in range(600):                                    # a pulsed source: a big joint jump on every third tick, rest in between
+    raw = last.copy()
+    if k % 3 == 0:
+        raw[0, 0] += 0.2 if k < 300 else -0.2
+    out, _ = L3.process(last, raw, None, None)
+    outs.append(out)
+    last = out
+v3, a3, j3 = tool_series(outs)
+check("step 3: a pulsed source: the commanded tool speed never above the cap", v3.max() <= cfg.BRAKING["hand_speed_cap_m_s"] * (1 + 1e-6), f"{v3.max()}")
+check("step 3: a pulsed source: commanded acceleration within the limit (free motion)", np.abs(a3).max() <= A3 * (1 + 1e-4) + 1e-9, f"{np.abs(a3).max()} vs {A3}")
+check("step 3: a pulsed source: commanded jerk within the limit (free motion)", np.abs(j3).max() <= J3 * (1 + 1e-4) + 1e-6, f"{np.abs(j3).max()} vs {J3}")
+L4 = BrakingLayer(tool3)
+last4 = np.zeros((2, 7))
+target4 = last4.copy()
+target4[0, 0] = 0.05
+for k in range(900):                                    # the source holds its target: the output must reach it exactly, never past it
+    out4, _ = L4.process(last4, target4, None, None)
+    if np.max(np.abs(out4 - target4)) > np.max(np.abs(last4 - target4)) + 1e-12 and k > 0:
+        break
+    last4 = out4
+check("step 3: a held target is reached exactly (the target is preserved, the joints ramp to it)", np.array_equal(last4, target4) or np.abs(last4 - target4).max() < 1e-12, f"{np.abs(last4 - target4).max()}")
+L5 = BrakingLayer(tool3)
+last5 = np.zeros((2, 7))
+raw5 = last5.copy()
+raw5[0, 0] = 0.001                                      # a tiny command (rest, far below the stop speed): the output must follow it (no stall on small targets)
+for k in range(600):
+    out5, _ = L5.process(last5, raw5, None, None)
+    last5 = out5
+check("step 3: a small target below the stop speed is still reached", np.abs(last5 - raw5).max() < 1e-9, f"{np.abs(last5 - raw5).max()}")
+
 if __name__ == "__main__":
     print(f"\n{len(fails)} failed" if fails else "\nall passed")
     sys.exit(1 if fails else 0)

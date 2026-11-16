@@ -234,7 +234,7 @@ class BrakingLayer:
         for i in range(2):
             v0, a0 = self._va(i)
             delta = raw[i] - last[i]
-            if not self._needs_shaping(i, float(vs[i]), stop, speed_limit):
+            if not self.tun.get("shape_free_motion", True) and not self._needs_shaping(i, float(vs[i]), stop, speed_limit):
                 out[i] = raw[i]                           # free motion under the cap: sent as it is, to the last digit
                 self.a[i] = self._accel_of(i, float(vs[i]))
                 self.v[i] = float(vs[i])

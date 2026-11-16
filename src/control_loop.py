@@ -562,8 +562,14 @@ def run_loop(model, data, sources, cfg, viewer=None, logger=None):
                 "gripper": {side: finger travel target in metres}.
                 "mode": the active subsystem under exclusivity (a name or None).
         """
+        arm_now = {s: [float(hold_qpos_targets[a]) for a in arm_act[s]] for s in sides}
+        if sf_plugin is not None and sf_plugin.mode == "on" and getattr(sf_plugin, "braking", None) is not None and src_arm_targets:
+            # Phase C step 3: with the braking layer on, the sources see the targets they commanded (the layer shapes the way there, it does not
+            # change the target). Otherwise a source that checks "my last command was applied" (the staging source) never advances while the
+            # shaped output lags the target. Off, shadow and the layer-free runs keep the applied (post-filter) targets: byte-identical.
+            arm_now = {s: list(src_arm_targets.get(s, arm_now[s])) for s in sides}
         return {"twist": st["twist"], "gripper_force": dict(grip_force), "pedestal": float(hold_qpos_targets[ped_aid]),
-                "arm_targets": {s: [float(hold_qpos_targets[a]) for a in arm_act[s]] for s in sides},
+                "arm_targets": arm_now,
                 "gripper": {s: float(hold_qpos_targets[fing_act[s][0]]) for s in sides}, "mode": ex["active"]}
 
     def apply_cmd(cmd):
@@ -605,6 +611,7 @@ def run_loop(model, data, sources, cfg, viewer=None, logger=None):
     fv_adr = {s: int(model.jnt_dofadr[model.joint(f"openarm_{s}_finger_joint1").id]) for s in sides}
     hold_det = {s: HoldDetector() for s in sides}
     sf_plugin = None
+    src_arm_targets = {}                 # Phase C step 3: the arm targets the sources commanded, before the safety filter's shaping (see applied())
     if cfg["safety_filter_mode"] != "off" and cfg["replay"] is None:     # row SF-59: off imports nothing; a replay feeds recorded inputs and is never filtered
         from src.safety_filter_plugin import make_sim_plugin
         sf_plugin = make_sim_plugin(model, data, cfg, {"fing_qadr": fq_adr, "ped_qadr": ped_qadr})
@@ -1151,6 +1158,7 @@ def run_loop(model, data, sources, cfg, viewer=None, logger=None):
             stop_base()
         for cmd in to_apply:
             if sf_plugin is not None and cmd.get("mode") == "arms" and cmd.get("arm_targets"):   # row SF-59: the safety filter sits after the helpers (open catch, weighing) and before the sag trim
+                src_arm_targets.update({s_: [float(v) for v in q_] for s_, q_ in cmd["arm_targets"].items()})   # Phase C step 3
                 cmd = {**cmd, "arm_targets": sf_plugin.process(cmd["arm_targets"], {s_: hold_det[s_].holding for s_ in sides}, applied()["arm_targets"], t, bool(cmd.get("manip")), cmd.get("held_object"))}
                 if sf_plugin.limit_reached() and stop_req[0] is None:
                     stop_req[0] = "safety_filter_limit"

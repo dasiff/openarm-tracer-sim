@@ -33,7 +33,15 @@ def never_close_pairs():
 
 def torso_settings():
     """The torso guard settings the labels of a merged never-close list depend on (config NEVER_CLOSE_DC; DNC-1, DNC-2)."""
-    return {"margin_m": cfg.NEVER_CLOSE_DC["torso_proximity_margin_m"], "guard_shapes": cfg.NEVER_CLOSE_DC["torso_guard_shapes"]}
+    return {"margin_m": cfg.NEVER_CLOSE_DC["torso_proximity_margin_m"],
+            "exclude_links": [int(k) for k in cfg.NEVER_CLOSE_DC["torso_guard_exclude_links"]]}
+
+
+def torso_guard_counts(shape_entry):
+    """Does this shape (an entry of robot_shapes.json) count for torso proximity (DNC-2)? Arm shapes only, without the parts that touch
+    the torso by construction (TORSO_EXEMPT_PARTS) and without the links in NEVER_CLOSE_DC["torso_guard_exclude_links"]."""
+    excluded = {f"link{int(k)}" for k in cfg.NEVER_CLOSE_DC["torso_guard_exclude_links"]}
+    return shape_entry["arm"] in SIDES and shape_entry["part"] not in cfg.TORSO_EXEMPT_PARTS and shape_entry["part"] not in excluded
 
 
 def never_close_fingerprint(model_fp, pairs, torso):
@@ -163,33 +171,24 @@ class RobotShapes:
         self._adr_fing = {s: np.array([model.jnt_qposadr[j] for j in self._finger[s]]) for s in SIDES}
         self._qbuf, self._kin_q, self._kin_done = np.array(model.qpos0, float), np.array(model.qpos0, float), False
         self.largest_radius = max((s["radius"] for s in self.specs if s["kind"] == "capsule"), default=0.0)
-        self._prepare_torso_guard(merged, nc)
+        self._prepare_torso_guard()
 
-    def _prepare_torso_guard(self, merged, nc):
-        """Index arrays of the torso guard (DNC-1, DNC-2): every (arm shape of the guard set, torso shape) pair, as positions among the capsules."""
+    def _prepare_torso_guard(self):
+        """Index arrays of the torso guard (DNC-1, DNC-2): every (arm shape that counts, torso shape) pair, as positions among the capsules."""
         caps = [self.specs[k] for k in self._cap_idx]
         torso = [n for n, sp in enumerate(caps) if sp["part"] == "torso"]
         if any(sp["part"] == "torso" and sp["kind"] != "capsule" for sp in self.specs):
             raise NotImplementedError("the torso guard measures capsule against capsule; a torso box is not supported")
-        # the Stage 1 pairs (for the "checked" guard set), whether or not this instance uses the never-close list
-        if merged is not None:
-            stage1 = {frozenset((p["a"], p["b"])) for p in merged["pairs"] if p["source"] == "stage1"}
-        else:
-            stage1 = {frozenset((p["a"], p["b"])) for p in nc.get("pairs", [])}
-        mode = cfg.NEVER_CLOSE_DC["torso_guard_shapes"]
-        if mode not in ("all_arm", "checked"):
-            raise ValueError(f"NEVER_CLOSE_DC['torso_guard_shapes'] must be 'all_arm' or 'checked', not {mode!r}")
         I, J, side = [], [], []
         for n, sp in enumerate(caps):
-            if sp["arm"] not in SIDES or sp["part"] in cfg.TORSO_EXEMPT_PARTS:
-                continue
-            if mode == "checked" and torso and all(frozenset((sp["id"], caps[t]["id"])) in stage1 for t in torso):
+            if not torso_guard_counts(sp):
                 continue
             for t in torso:
                 I.append(n)
                 J.append(t)
                 side.append(sp["arm"])
         self._tg_i, self._tg_j, self._tg_side = np.array(I, int), np.array(J, int), np.array(side, dtype=object)
+        self.torso_guard_ids = [caps[n]["id"] for n in sorted(set(I))]
 
     def torso_gap(self, sides=None):
         """The smallest gap (m) between an arm shape of the guard set and a torso shape, at the state last set (set_state or place).

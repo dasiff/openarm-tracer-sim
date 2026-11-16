@@ -50,3 +50,31 @@ Built as written (DNC-2: guard set "all_arm"), with the shape set a config value
 ## For David
 The extension as specified cancels Part B: every tick is torso-proximate. Options, none built: (a) guard set "checked" (drops links 1 and 2, whose capsules over-cover the torso): the guard would then fire only when links 3 to 7, palm or fingers come within 5 mm, but 219 of 219 pairs are still labelled torso-dependent, because one bound over a large box, or over an arm the pair does not involve, is too loose to prove any box torso-free; (b) count only shapes the box fully fixes: 196 of 219; (c) decide a box's torso proximity by subdividing it instead of one bound per box.
 Not done: design plan and decision-row updates (temporary DNC labels only, as asked); the full test suite; timing with the merged list.
+
+# Second task (2026-11-16): links 1 and 2 excluded from torso proximity
+
+## Step 1: shapes excluded
+Capsules of link 1 and link 2 in robot_shapes.json (part `link1` / `link2`, bodies openarm_<side>_link1 / link2), unambiguous: left_link1_1, left_link1_2, left_link1_3, left_link2, right_link1_1, right_link1_2, right_link1_3, right_link2. (The capsules of link 0, left_shoulder_mount and right_shoulder_mount, were already excluded through TORSO_EXEMPT_PARTS.) What counts now: links 3 to 7, palm and fingers of each arm.
+Setting: config NEVER_CLOSE_DC["torso_guard_exclude_links"] = (1, 2), replacing "torso_guard_shapes"; one function (shapes.torso_guard_counts) decides for the label tool and for the run-time guard.
+
+## Step 2: re-label DONE (log data/logs/dnc2_label_20261116_005337.log, 19 min)
+Torso-dependent 219 of 219, not torso-dependent 0 (margin 5 mm, links 1 and 2 excluded; the identification logic is otherwise unchanged). For information: counting only shapes that a pair's box fully fixes would give 196.
+Why still 219: the label asks for ONE certifying box whose bound proves every counted shape of BOTH arms more than 5 mm from the torso. A pair's box holds only that pair's joints; every other joint (the rest of that arm, the whole other arm) ranges over its full limits, and over full limits a hand can always reach the torso, so no box is ever proven torso-free.
+
+## Step 3: guard and merge DONE
+- Guard: RobotShapes._prepare_torso_guard and the label tool both use shapes.torso_guard_counts (config NEVER_CLOSE_DC["torso_guard_exclude_links"] = (1, 2)). 23 capsules count (12 left, 11 right).
+- Merge output: "merged never-close list written to data/safety_filter/robot_shapes.json (never_close_pairs): Stage 1 147, Stage 2 219 (of which torso-dependent 219), total 366"; "stamp 6b512f7a9c517908... over the model fingerprint 781198f99c7e..., the merged entries and the torso settings {'margin_m': 0.005, 'exclude_links': [1, 2]}".
+- Filter tests: 12 of 13 (spec_test the known failure). The structure test first failed on a parameter name of the new function ("spec" is a forbidden parameter name); renamed to shape_entry, structure, sequential push and touch tests pass.
+
+## Step 4: checks: CHECK A FAILS (stopped, not resolved)
+- Check A: FAIL at the first pair (log data/logs/dnc2_check_20261116_011524.log): left_link1_1 vs right_link3 is labelled torso-dependent, but a pose sampled from its certifying boxes has every counted arm shape 48.8 mm or more from the torso (limit 15 mm). The script stopped there; the other 218 pairs were not sampled.
+  Cause (not fixed): the label comes from a conservative bound (see step 2), so "torso-dependent" here means "no box could be proven torso-free", not "the arm is near the torso in every box". Check A tests the second meaning. With the first task's shape set the check passed only because left_link1_3 is within 5 mm in every pose.
+- Check B: PASS, run alone after the failure (log data/logs/dnc2_checkB_20261116_011534.log): 25295 ticks on 6 recordings, 3028 torso-proximate, 0 disagreements. Torso-proximate / ticks: punch original 1514 / 1576 (kong and layered), punch reactive 0 / 1576, shadow 0 / 7783, cat 0 / 6436 and 0 / 6348. Smallest counted arm-to-torso gap: punch original -69.8 mm, the other streams 22.5 to 24.6 mm.
+- Effect now: the guard no longer fires on every tick; on the 22267 ticks where it is off the filter uses all 366 pairs and its output is identical to golden.
+
+## Decisions updated
+- DNC-2: old: guard shape set "all_arm" (every arm shape except the shoulder mounts; setting torso_guard_shapes). New: links 1 and 2 excluded as well (setting torso_guard_exclude_links = (1, 2)); what counts is links 3 to 7, palm, fingers. The "checked" alternative is removed.
+- DNC-5: the stamp's torso settings are now {margin_m, exclude_links}.
+
+## For David (check A)
+The label and check A cannot both hold as specified. Options, none built: (a) change check A1 to what the label means (for a torso-dependent pair, no certifying box is proven torso-free); (b) count only the shapes a pair's box fully fixes (196 of 219, and check A1 would still need a tight test); (c) decide each box by subdividing it until it is proven torso-free or a torso-near pose is found, so the label means what check A tests.

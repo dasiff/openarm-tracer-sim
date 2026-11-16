@@ -36,7 +36,7 @@ sys.path.insert(0, str(ROOT))
 from src.safety_filter import config as cfg  # noqa: E402
 from src.safety_filter.geometry import capsule_capsule_batch  # noqa: E402
 from src.safety_filter.robot_model import load_robot_only_model, robot_fingerprint  # noqa: E402
-from src.safety_filter.shapes import RobotShapes, RobotState  # noqa: E402
+from src.safety_filter.shapes import RobotShapes, RobotState, torso_guard_counts, torso_settings  # noqa: E402
 from src.safety_filter.touch import gap_between  # noqa: E402
 from tools.never_close_sweep import SIDES, Variables, checked_shape_pairs  # noqa: E402
 
@@ -532,17 +532,14 @@ class TorsoBound:
     of the smallest gap between the guard set's arm shapes (both arms, as the run-time guard) and the torso shapes. Same bound as the proof
     (centre value minus travel, soundness file); an arm variable the box does not hold ranges over its full limits."""
 
-    def __init__(self, vm, kins, doc, stage1, mode, determined_only=False):
+    def __init__(self, vm, kins, doc, determined_only=False):
         self.vm, self.kins, self.determined_only = vm, kins, determined_only
         self.margin = DC["torso_proximity_margin_m"]
         self.torso = [s["id"] for s in doc["shapes"] if s["part"] == "torso"]
         self.shapes = {side: [] for side in SIDES}
         for s in doc["shapes"]:
-            if s["arm"] not in SIDES or s["part"] in cfg.TORSO_EXEMPT_PARTS:
-                continue
-            if mode == "checked" and all(frozenset((s["id"], t)) in stage1 for t in self.torso):
-                continue
-            self.shapes[s["arm"]].append(s["id"])
+            if torso_guard_counts(s):                         # the same shape set as the run-time guard (DNC-2)
+                self.shapes[s["arm"]].append(s["id"])
         self._pairs = {}
 
     def _pair(self, sid, tid):
@@ -613,11 +610,9 @@ def label_torso(dc_path, budget_s=None):
     dc = json.loads(Path(dc_path).read_text(encoding="utf-8"))
     if dc["fingerprint"] != fp:
         raise SystemExit("the DC file is for another robot model")
-    mode = DC["torso_guard_shapes"]
-    bounds = {"label": TorsoBound(vm, kins, doc, listed, mode),
-              "checked_shapes": TorsoBound(vm, kins, doc, listed, "checked"),
-              "checked_shapes_fixed_by_the_box": TorsoBound(vm, kins, doc, listed, "checked", determined_only=True)}
-    settings = {"margin_m": DC["torso_proximity_margin_m"], "guard_shapes": mode}
+    bounds = {"label": TorsoBound(vm, kins, doc),
+              "shapes_fixed_by_the_box": TorsoBound(vm, kins, doc, determined_only=True)}
+    settings = torso_settings()
     work_path = Path(str(dc_path) + ".torso.work.json")
     rows = {}
     if work_path.exists():
@@ -656,8 +651,9 @@ def label_torso(dc_path, budget_s=None):
     dc["torso"] = dict(settings, torso_shapes=bounds["label"].torso, guard_shapes_ids=bounds["label"].shapes, declared=len(todo), torso_dependent=n_dep,
                        with_other_shape_sets={name: sum(1 for e in todo if e["torso_label"]["with_other_shape_sets"][name]) for name in bounds if name != "label"})
     write_json(dc_path, dc)
-    print(f"wrote {dc_path}: torso-dependent {n_dep} of {len(todo)} declared pairs (margin {settings['margin_m'] * 1e3:.1f} mm, guard shapes '{mode}'); "
-          f"with other shape sets: {dc['torso']['with_other_shape_sets']}", flush=True)
+    print(f"wrote {dc_path}: torso-dependent {n_dep} of {len(todo)} declared pairs, not torso-dependent {len(todo) - n_dep} "
+          f"(margin {settings['margin_m'] * 1e3:.1f} mm, links {settings['exclude_links']} excluded); for information, counting only shapes "
+          f"the box fully fixes: {dc['torso']['with_other_shape_sets']}", flush=True)
     return dc
 
 

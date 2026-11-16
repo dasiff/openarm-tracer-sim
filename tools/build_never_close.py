@@ -6,7 +6,7 @@ Reads   the Stage 1 pairs from data/safety_filter/never_close_sweep.json (throug
 Writes  the union into robot_shapes.json under the key `never_close_pairs`:
           pairs              [{"a", "b", "source": "stage1" | "stage2", "torso_dependent": bool}]  (Stage 1 entries: always false)
           model_fingerprint  the robot model's fingerprint
-          torso              the torso settings the labels were made with (margin, guard shape set)
+          torso              the torso settings the labels were made with (margin, excluded links)
           fingerprint        the stamp over the model fingerprint, the merged entries and the torso settings
                              (src/safety_filter/shapes.never_close_fingerprint); the filter's loader recomputes it and refuses a mismatch
           sources            file name and SHA-256 of the two source files (for the record)

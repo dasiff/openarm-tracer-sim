@@ -4716,9 +4716,12 @@
     "model_fingerprint": "781198f99c7e46e8e1f9c90414e4407575cb53a1b92e89d0530e162c02ecb75c",
     "torso": {
       "margin_m": 0.005,
-      "guard_shapes": "all_arm"
+      "exclude_links": [
+        1,
+        2
+      ]
     },
-    "fingerprint": "c31537848b772b461863d4bb625e0f0ba6397bff64fdb0320c1613ce79f68ea1",
+    "fingerprint": "6b512f7a9c517908f6382cc713aafcaacd56c22a165b0907a3969d8d7e9c1711",
     "sources": {
       "stage1": {
         "file": "never_close_sweep.json",
@@ -4726,7 +4729,7 @@
       },
       "stage2": {
         "file": "never_close_dc.json",
-        "sha256": "1960e2544fe9c52c8144f9749d279bfc17e9eac6eebd376d5634066e5857e023"
+        "sha256": "2b89cf041df3076c49d6ad5821037eb1777b75106dceb66bf517756326cac1e5"
       }
     },
     "counts": {

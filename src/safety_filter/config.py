@@ -167,7 +167,7 @@ NEVER_CLOSE_DC = {
     # "Blocked by the torso" extension (temporary labels DNC-1 to DNC-7, docs/reports/safety_filter_dnc_torso_log.md). The margin and the shape set are
     # ALSO read by the filter at run time (src/safety_filter/shapes.py, resolver.py): the torso guard.
     "torso_proximity_margin_m": 0.005,   # m [David's TORSO_PROXIMITY_MARGIN]: a pose (or a joint box) is torso-proximate when an arm shape of the guard set can be this close to a torso shape or closer
-    "torso_guard_shapes": "all_arm",     # text [DNC-2]: which arm shapes count: "all_arm" = every arm shape except the parts in TORSO_EXEMPT_PARTS (they touch the torso by construction); "checked" = also without the shapes whose pair with the torso is on the Stage 1 never-close list (link 1 and link 2, whose capsules over-cover the torso, SF-25)
+    "torso_guard_exclude_links": (1, 2),  # arm link numbers [DNC-2, David 2026-11-16]: the shapes of these links never count for torso proximity (links 1 and 2: their capsules sit within 5 mm of the torso capsule at every joint 1 angle, so they would keep the guard on at every tick); the parts in TORSO_EXEMPT_PARTS (shoulder mounts) never count either. What counts: links 3 to 7, palm, fingers
     "torso_check_loose_extra_m": 0.01,   # m [DNC-6]: check A: in a torso-dependent pair's boxes an arm shape must be within margin + this of the torso at every sampled pose (David: "5 mm + 1 cm")
     "torso_check_dependent_poses": 500,  # count [David]: check A: poses sampled from the certifying boxes of each torso-dependent pair
     "torso_check_free_poses": 200,       # count [David]: check A: poses sampled from a torso-free box of each pair that is not torso-dependent

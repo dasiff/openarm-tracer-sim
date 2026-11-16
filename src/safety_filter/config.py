@@ -183,7 +183,7 @@ BRAKING = {
     "tool_offset_local_m": (0.0, 0.0, 0.0),  # m in the link 7 frame: tool point = link 7 origin + this (PLACEHOLDER: the tool point is the link 7 origin until David names another)
     "speed_source": "sent",         # text: which joint series the measured speed is taken from: "sent" (the commands the filter sent) or "state" (the measured joints, which lag the command)
     "emergency_overshoot_ticks": 2,  # ticks of travel: the look-ahead has failed (override the bridge, log an error) when the stopping distance exceeds the room by more than this many ticks at the hand speed cap
-    "stop_speed_m_s": 0.002,        # m/s: below this the hand counts as stopped (leaves braking, ends a hold)
+    "stop_speed_m_s": 0.002,          # m/s: below this (after a tick below it) the hand counts as at rest and its command is passed as it is: micro-motion is not shaped
     "closing_eps_m": 1e-6,          # m: the gap must shrink by more than this between last and new command to count as closing
 }
 

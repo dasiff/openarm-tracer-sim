@@ -362,6 +362,49 @@ Lsent = BrakingLayer(fake_tool)
 Lsent.process(np.zeros((2, 7)), np.zeros((2, 7)), Meas(qm))
 check('speed_source "sent" (default): measured joints are not read', Lsent.last_measure is None and Lsent._va(0)[0] == 0.0)
 
+# ---- transparency: a command that respects every limit is passed exactly as it is ----
+def minjerk_plan(distance_joint, seconds, ticks):
+    u = np.clip(np.arange(1, ticks + 1) / (seconds * 150.0), 0, 1)
+    return distance_joint * (10 * u ** 3 - 15 * u ** 4 + 6 * u ** 5)
+
+
+Lt = BrakingLayer(fake_tool)
+plan = minjerk_plan(0.6, 10.0, 1500)                        # joint 1 moves 0.6 rad = 0.3 m of tool travel in 10 s: peak 0.056 m/s, within every limit
+last = np.zeros((2, 7))
+exact, maxdiff = 0, 0.0
+for k in range(1500):
+    raw = last.copy()
+    raw[0, 0] = plan[k]
+    out, info = Lt.process(last, raw, None, None)
+    exact += int(np.array_equal(out, raw))
+    maxdiff = max(maxdiff, float(np.abs(out - raw).max()))
+    last = out
+check("transparent: a minimum-jerk plan within the limits comes out exactly as it went in, every tick", exact == 1500 and maxdiff == 0.0, f"{exact}/1500 exact, max diff {maxdiff}")
+Lj = BrakingLayer(fake_tool)
+last = np.zeros((2, 7))
+rng_ = np.random.default_rng(0)
+same = 0
+for k in range(300):
+    raw = last.copy()
+    raw[0, 0] += rng_.normal(0, 4e-6)                        # micro-motion of a still arm: far below the stop speed
+    out, info = Lj.process(last, raw, None, None)
+    same += int(np.array_equal(out, raw))
+    last = out
+check("transparent: micro-motion below the stop speed is not shaped", same == 300, f"{same}/300")
+Lv = BrakingLayer(fake_tool)
+last = np.zeros((2, 7))
+raw = last.copy()
+raw[0, 0] = 0.04                                             # a jump of 2 cm in one tick = 3 m/s: far above the cap
+out, info = Lv.process(last, raw, None, None)
+check("transparent: a command that breaks the cap is still shaped", not np.array_equal(out, raw) and Lv.commanded_speed(last, out, None)[0] < CAPV * 0.01)
+Lw = BrakingLayer(fake_tool)
+Lw.v[0], Lw.a[0] = 0.05, 0.0
+raw = np.zeros((2, 7))
+raw[0, 0] = 0.0                                              # from 0.05 m/s to 0 in one tick: a = -7.5 m/s2, beyond the acceleration limit
+Lw._dir[0, 0] = 1.0
+out, info = Lw.process(np.zeros((2, 7)), raw, None, None)
+check("transparent: a command whose acceleration breaks the limit is shaped (not passed)", Lw.v[0] > 0.0 and abs(Lw.v[0] - 0.05) <= A_LIM * DT + 1e-9, f"{Lw.v[0]}")
+
 if __name__ == "__main__":
     print(f"\n{len(fails)} failed" if fails else "\nall passed")
     sys.exit(1 if fails else 0)

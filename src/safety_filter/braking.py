@@ -44,6 +44,7 @@ class BrakingLayer:
         self.ramp = JerkRamp(self.d["effective_accel_limit"], float(self.tun["jerk_limit_m_s3"]), self.dt)
         self.v = np.zeros(2)           # profile speed of each arm (m/s), the speed of the last command this layer produced
         self.a = np.zeros(2)           # profile acceleration of each arm (m/s^2)
+        self._braking = np.zeros(2, bool)   # look-ahead latch: this arm is braking for an obstacle
         self._dir = np.zeros((2, 7))   # unit joint direction of each arm's last step (the way it was going; used when stopping)
 
     # ---- step 2: hand speed ----
@@ -76,6 +77,7 @@ class BrakingLayer:
         self.v[:] = 0.0
         self.a[:] = 0.0
         self._dir[:] = 0.0
+        self._braking[:] = False
 
     # ---- step 3: hand speed cap ----
     def scale_step(self, i, q_from, step, speed, state):
@@ -160,3 +162,48 @@ class BrakingLayer:
                 self._dir[i] = step / n
             self.v[i], self.a[i] = v1, a1
         return out, {"speed": self.v.copy(), "accel": self.a.copy()}
+
+    # ---- step 5: look-ahead ----
+    def check(self, last, raw, state, obstacle_fn):
+        """The look-ahead, part of the safety check: for each arm, can the hand still brake from its current speed and acceleration to the
+        stop target (the midpoint of the margin: margin/2 from the modelled surface) within the gap to the nearest obstacle?
+        obstacle_fn(q (2,7), state) -> [None or (gap_m, margin_m)] for the two arms: the nearest obstacle of that arm's hand at pose q
+        (gap between the modelled surfaces; the caller makes sure every obstacle within worst_stop_dist_m is in it).
+        An arm brakes when the stopping distance (config two-step formula + tick cushion) reaches the distance to the target, and the wanted
+        command is closing on that obstacle. A braking arm stays braking while the wanted command keeps closing; it is released when the
+        obstacle clears (none, or the command no longer closes), and then speeds up again along the same S-curve.
+        Returns (stop (2,) bool, info list of dicts)."""
+        last, raw = np.asarray(last, float), np.asarray(raw, float)
+        at_last = obstacle_fn(last, state)
+        at_raw = obstacle_fn(raw, state)
+        eps = float(self.tun["closing_eps_m"])
+        stop = np.zeros(2, bool)
+        info = [None, None]
+        for i in range(2):
+            ol, orr = at_last[i], at_raw[i]
+            if ol is None:
+                self._braking[i] = False
+                continue
+            gap, margin = float(ol[0]), float(ol[1])
+            closing = orr is not None and float(orr[0]) < gap - eps
+            v, a = self._va(i)
+            sd = stopping_distance(v, a, self.d["effective_accel_limit"], float(self.tun["jerk_limit_m_s3"]), self.d["tick_cushion_m"])
+            room = gap - 0.5 * margin
+            if self._braking[i] and not closing:
+                self._braking[i] = False                 # the obstacle cleared
+            elif closing and sd >= room:
+                self._braking[i] = True
+            stop[i] = self._braking[i]
+            info[i] = {"gap": gap, "margin": margin, "stop_dist": sd, "room": room, "closing": closing, "braking": bool(self._braking[i])}
+        return stop, info
+
+    def process(self, last, raw, state, obstacle_fn=None, hold=False):
+        """The whole layer for one tick: look-ahead, hand speed cap and S-curve. hold: True (or (2,) bool) = a HOLD trigger (collision,
+        timeout, error): both arms follow the S-curve to rest instead of following the command. Returns (command (2,7), info dict)."""
+        stop = np.zeros(2, bool)
+        info = [None, None]
+        if obstacle_fn is not None:
+            stop, info = self.check(last, raw, state, obstacle_fn)
+        stop = stop | np.asarray(hold, bool)
+        out, prof = self.step(last, raw, state, stop=stop)
+        return out, {"stop": stop, "lookahead": info, **prof}

@@ -188,6 +188,74 @@ dist = pos2[-1] - pos2[299]
 want = stopping_distance(CAPV, 0.0, A_LIM, J_LIM, CAPV * DT)
 check("S-curve down: stopping distance within the formula's distance", dist <= want + 1e-9, f"{dist:.5f} vs {want:.5f}")
 
+# ---- step 5: look-ahead ----
+MARGIN = 0.02
+X_OBS = 0.60                                     # obstacle surface along the left hand's x axis (fake arm: x = 0.5 * joint 1)
+
+
+def obstacle(q, state):
+    x = np.asarray(q)[0, 0] * 0.5
+    return [(X_OBS - x, MARGIN), None]
+
+
+def run_toward(layer, ticks, direction=1.0, start=0.0):
+    last = np.zeros((2, 7))
+    last[0, 0] = start / 0.5
+    rec = []
+    for k in range(ticks):
+        raw = last.copy()
+        raw[0, 0] += direction * 0.5
+        out, info = layer.process(last, raw, None, obstacle)
+        rec.append({"x": float(last[0, 0] * 0.5), "v": float(layer.v[0]), "a": float(layer.a[0]), "braking": bool(info["stop"][0]), "gap": X_OBS - last[0, 0] * 0.5})
+        last = out
+    return rec
+
+
+Lk = BrakingLayer(fake_tool)
+rec = run_toward(Lk, 700)
+first = next(k for k, r in enumerate(rec) if r["braking"])
+# independent expectation: the first tick whose state (v, a, gap) has stopping distance >= gap - margin/2 while closing
+exp = next(k for k, r in enumerate(rec) if stopping_distance(r["v"], r["a"], A_LIM, J_LIM, CAPV * DT) >= r["gap"] - MARGIN / 2)
+check("look-ahead: braking starts at the tick where the stopping distance reaches the distance to the target", first == exp, f"{first} vs {exp}")
+check("look-ahead: not braking before that tick", not any(r["braking"] for r in rec[:first]))
+x_stop = X_OBS - MARGIN / 2
+x_end, v_end = rec[-1]["x"], rec[-1]["v"]
+check("look-ahead: the hand stops (speed 0)", v_end == 0.0 and all(r["v"] >= 0 for r in rec))
+check("look-ahead: the hand stops at the midpoint of the margin or just short of it", x_stop - 0.005 <= x_end <= x_stop + 1e-9, f"{x_end:.5f} vs {x_stop:.5f}")
+dec = np.array([r["a"] for r in rec[first:]])
+check("look-ahead: the stop is an S-curve within the acceleration limit", dec.min() >= -A_LIM - EPS)
+check("look-ahead: speed reached the cap before braking (obstacle far enough)", max(r["v"] for r in rec) >= CAPV - 1e-9)
+# moving away: no braking, no obstacle effect
+Lk2 = BrakingLayer(fake_tool)
+rec_away = run_toward(Lk2, 100, direction=-1.0, start=0.5)
+check("look-ahead: moving away from the obstacle never brakes", not any(r["braking"] for r in rec_away) and rec_away[-1]["v"] >= CAPV - 1e-9)
+# obstacle clears: a braking arm is released and speeds up again
+Lk3 = BrakingLayer(fake_tool)
+last = np.zeros((2, 7))
+last[0, 0] = 0.45 / 0.5
+Lk3.v[0] = CAPV
+latched = False
+for k in range(200):
+    raw = last.copy()
+    raw[0, 0] += 0.5
+    out, info = Lk3.process(last, raw, None, obstacle)
+    latched = latched or bool(info["stop"][0])
+    last = out
+    if Lk3.v[0] == 0.0 and latched:
+        break
+check("look-ahead: arm stopped before the obstacle", Lk3.v[0] == 0.0 and last[0, 0] * 0.5 <= x_stop + 1e-9)
+held_pos = last.copy()
+out, info = Lk3.process(last, last + np.array([[0.5] + [0] * 6, [0] * 7]), None, obstacle)
+check("look-ahead: stays stopped while the command keeps closing", np.array_equal(out, held_pos) and info["stop"][0])
+back = last.copy()
+back[0, 0] -= 0.5
+out, info = Lk3.process(last, back, None, obstacle)
+check("look-ahead: released when the command moves away, then speeds up on the S-curve", (not info["stop"][0]) and 0 < Lk3.v[0] < 1e-3 and Lk3.a[0] > 0, f"v {Lk3.v[0]} a {Lk3.a[0]}")
+# a hand already accelerating (a0 > 0) must start braking earlier than one at cruise
+sd_cruise = stopping_distance(CAPV, 0.0, A_LIM, J_LIM, CAPV * DT)
+sd_acc = stopping_distance(CAPV, A_LIM, A_LIM, J_LIM, CAPV * DT)
+check("look-ahead: the formula counts current acceleration (a0 > 0 stops later)", sd_acc > sd_cruise)
+
 if __name__ == "__main__":
     print(f"\n{len(fails)} failed" if fails else "\nall passed")
     sys.exit(1 if fails else 0)

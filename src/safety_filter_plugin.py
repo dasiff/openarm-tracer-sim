@@ -62,13 +62,14 @@ class SafetyFilterPlugin:
         self.ctx = {"t": 0.0, "manip_started": False}   # read by the extra-objects test hook
 
     # ------------------------------------------------------------------
-    def process(self, arm_targets, holding, current_targets, t=0.0, manip=False):
+    def process(self, arm_targets, holding, current_targets, t=0.0, manip=False, held_names=None):
         """One command. arm_targets: {side: 7 joint targets} (the raw command). holding: {side: bool}. current_targets:
         {side: 7 targets} the robot holds now (used only at the first call). t: sim time (s).
         Returns the arm targets to give the robot, same form as arm_targets ({side: list of 7}); in off mode the same object."""
         if self.mode == "off":
             return arm_targets
         self.ctx["t"] = float(t)
+        self.ctx["held_names"] = held_names or {}       # {side: object name}: what the policy command says each hand holds (Part 2)
         if manip:
             self.ctx["manip_started"] = True        # sticky: the manipulation source has commanded the arms (test hook: made-up objects can join the world then)
         if self.last_sent is None:
@@ -218,7 +219,7 @@ def make_sim_plugin(model, data, cfg, loop_handles):
         placed = shapes.place(state)
         for s in SIDES:
             pos, rot = shapes.hand_frame(s)
-            tracker.update(s, bool(holding.get(s, False)), placed, pos, rot)
+            tracker.update(s, bool(holding.get(s, False)), placed, pos, rot, name=(plugin_ctx().get("held_names") or {}).get(s))
         he = np.full((2, 3, 3), np.nan)
         for i, s in enumerate(SIDES):
             hp = tracker.placed(s, *shapes.hand_frame(s))

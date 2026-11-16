@@ -50,7 +50,7 @@ def table():
     cases = [
         ("arm-world: left link 7 vs bench", cap("l7", "left", "link7"), box("bench", "world", "world"), "arm-world", cfg.MARGINS["arm_world_m"]),
         ("finger vs world: exempt", cap("lf", "left", "finger"), box("bench", "world", "world"), None, None),
-        ("held object vs world: exempt", cap("lh", "left", "held"), box("bench", "world", "world"), None, None),
+        ("held object vs world (Part 2): checked with held_world_margin_m", cap("lh", "left", "held"), box("bench", "world", "world"), "held-world", cfg.MARGINS["held_world_margin_m"]),
         ("same arm: link 7 vs own palm: exempt", cap("l7", "left", "link7"), cap("lp", "left", "palm"), None, None),
         ("held vs own hand: exempt (SF-4)", cap("lh", "left", "held"), cap("lp", "left", "palm"), None, None),
         ("torso vs the left upper arm (link 1): checked (real gap 64 mm, not by construction)", cap("t", "common", "torso"), cap("left_link1", "left", "link1"), "robot-robot", cfg.MARGINS["robot_robot_m"]),
@@ -117,21 +117,12 @@ def held_and_broad():
     check("release: the beaker returns to the world", ev == "release" and back is not None, f"-> {ev}")
     check("release: at the pose the hand left it", back is not None and np.allclose(back.centre, centre_before, atol=1e-9))
 
-    # fallback: nothing graspable at the pads: a capsule from the finger gap, with a warning
+    # no fallback (Part 2): nothing graspable at the pads and no name = empty gripper, no held shape
     world2 = WorldView(_Src([catalog_object("beaker", pad + np.array([0.5, 0, 0]) - np.array([0, 0, 0.05]))]))
     ht2 = HeldTracker(world2)
-    with warnings.catch_warnings(record=True) as w:
-        warnings.simplefilter("always")
-        ev = ht2.update("left", True, placed, pos, rot)
-    check("fallback: no object at the pads gives the fallback event", ev == "fallback", f"-> {ev}")
-    check("fallback: a warning is logged", any("fallback" in str(x.message) for x in w))
-    fb = ht2.placed("left", pos, rot)
-    check("fallback: the held shape is a capsule of the default height",
-          fb is not None and fb.kind == "capsule" and abs(np.linalg.norm(fb.b - fb.a) - cfg.HELD_FALLBACK_HEIGHT_M) < 1e-9)
-    check("fallback: radius from the finger gap (half the gap)", fb is not None and fb.r > 0.005)
-    ev = ht2.update("left", False, placed, pos, rot)
-    check("fallback release: nothing returns to the world", ev == "release" and world2.find("beaker") is not None
-          and sum(1 for o in world2.objects() if o.id == "beaker") == 1)
+    ev = ht2.update("left", True, placed, pos, rot)
+    check("no match, no name: nothing attached (empty gripper, no fallback capsule)", ev is None and ht2.placed("left", pos, rot) is None, f"-> {ev}")
+    check("no fallback in config", not hasattr(cfg, "HELD_FALLBACK_HEIGHT_M"))
 
     # broad phase: near objects are candidates; far ones are not; pairs being pushed stay until released
     far = catalog_object("beaker", np.array([3.0, 0.0, 0.0]))

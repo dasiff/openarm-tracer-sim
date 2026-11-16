@@ -1140,7 +1140,7 @@ def run_loop(model, data, sources, cfg, viewer=None, logger=None):
             stop_base()
         for cmd in to_apply:
             if sf_plugin is not None and cmd.get("mode") == "arms" and cmd.get("arm_targets"):   # row SF-59: the safety filter sits after the helpers (open catch, weighing) and before the sag trim
-                cmd = {**cmd, "arm_targets": sf_plugin.process(cmd["arm_targets"], {s_: hold_det[s_].holding for s_ in sides}, applied()["arm_targets"], t, bool(cmd.get("manip")))}
+                cmd = {**cmd, "arm_targets": sf_plugin.process(cmd["arm_targets"], {s_: hold_det[s_].holding for s_ in sides}, applied()["arm_targets"], t, bool(cmd.get("manip")), cmd.get("held_object"))}
                 if sf_plugin.limit_reached() and stop_req[0] is None:
                     stop_req[0] = "safety_filter_limit"
             cmd = sag_correct(cmd)                          # M262: the sag trim sits between the source and the bridge (every source; the same code)

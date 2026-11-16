@@ -31,6 +31,7 @@ class WorldObject:
     graspable: bool = False
     round: bool = False
     fixture: bool = False
+    allowed_contact: bool = False  # Part 2: an allowed-contact surface (OBJECT_CATALOG): a held object may touch it, at the approach ceiling
     never_touch: bool = False  # SF-65: a never-touch object (e.g. a pet): no exemptions for fingers or held objects, own margin config.NEVER_TOUCH_MARGIN_M
 
     def rot_matrix(self):
@@ -86,7 +87,8 @@ def catalog_object(entry_id, position, axis=None):
     else:
         size = tuple(spec["half_m"])
     return WorldObject(id=entry_id, shape=spec["shape"], size=tuple(size), centre=tuple(centre),
-                       rot=tuple(np.eye(3).ravel()), graspable=spec["graspable"], round=spec["round"])
+                       rot=tuple(np.eye(3).ravel()), graspable=spec["graspable"], round=spec["round"],
+                       allowed_contact=bool(spec.get("allowed_contact", False)))
 
 
 class WorldModelAdapter:

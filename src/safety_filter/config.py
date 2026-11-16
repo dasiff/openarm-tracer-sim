@@ -33,7 +33,10 @@ MARGINS = {
     "hand_hand_m": 0.01,        # m, PROVISIONAL [M288]: palm, fingers or held object of one arm vs the same of the other arm
     "robot_robot_m": 0.03,      # m, PROVISIONAL [M288]: every other robot vs robot pair (arm parts of one arm vs the other arm, held vs robot body)
     "arm_world_m": 0.01,        # m, PROVISIONAL [M288]: arm parts (not fingers) vs world objects; must stay below the palm-to-beaker gap at a normal grasp
+    "held_world_margin_m": 0.01,  # m, PLACEHOLDER — tuned by test [Part 2 braking brief]: a held object vs every world object that is not an allowed-contact surface; the hand stops at the midpoint of this margin
 }
+# A held object against an allowed-contact surface (OBJECT_CATALOG "allowed_contact", e.g. the hotplate) has zero margin and the surface's approach ceiling (BRAKING["approach_ceiling_m_s"]).
+HELD_SURFACE_MARGIN_M = 0.0     # m [Part 2 braking brief]: it may touch such a surface, slowly
 # A never-touch world object (WorldObject.never_touch, SF-65, David 2026-11-13): checked against every arm part INCLUDING fingers and held objects, with this margin
 # instead of arm_world_m. Kept out of MARGINS so every existing loop over MARGINS stays as before.
 NEVER_TOUCH_MARGIN_M = 0.05     # m [SF-65]: 5 cm; David's value for the cat demo
@@ -45,9 +48,8 @@ PUSH_STOP_BEYOND_M = 0.02       # m, PROVISIONAL [M288]
 # within 1 mm of the real torso mesh at home (it touches the torso by construction). Parts listed here (provisional; see the report).
 TORSO_EXEMPT_PARTS = ("shoulder_mount",)
 
-# Held objects (M289, SF-4): match radius beyond an object's own radius, and the fallback capsule.
+# Held objects (M289, SF-4): match radius beyond an object's own radius (the pad match is a sanity check since Part 2; the object named by the policy command is the primary source; no fallback capsule: no match = empty gripper).
 HELD_MATCH_EXTRA_M = 0.01       # m, PROVISIONAL [M289]: the nearest graspable object within its radius + 1 cm of the finger pad midpoint
-HELD_FALLBACK_HEIGHT_M = 0.08   # m, PROVISIONAL [M289]: height of the fallback capsule when no object matches (default height; open)
 
 # Broad phase (M291): padding added to the arm's key-point box: the largest capsule radius plus the
 # activation distance plus the world margin, and at least the release distance.
@@ -110,12 +112,12 @@ OBJECT_CATALOG = {
         # A round object is a CAPSULE (M287, SF-8): radius 0.035 m, segment half length 0.05 m along the beaker axis.
         # The capsule contains the cylinder exactly (its end caps reach 3.5 cm past the rim, which is conservative).
         "shape": "capsule", "radius_m": 0.035, "half_height_m": 0.05,
-        "centre_above_bottom_m": 0.05, "graspable": True, "round": True,
+        "centre_above_bottom_m": 0.05, "graspable": True, "round": True, "allowed_contact": False,
         "source": "models/objects/beaker.xml geom task_beaker_glass: cylinder radius 0.035, half height 0.05 at z 0.05; catalog shape capsule (M287)",
     },
     "hotplate": {
         "shape": "box", "half_m": (0.09, 0.09, 0.03),
-        "centre_above_bottom_m": 0.03, "graspable": False, "round": False,
+        "centre_above_bottom_m": 0.03, "graspable": False, "round": False, "allowed_contact": True,   # a held object may touch it (zero margin, approach ceiling)
         "source": "models/objects/hotplate.xml geom task_hotplate_base: box half sizes 0.09 0.09 0.03 at z 0.03",
     },
 }
@@ -173,7 +175,7 @@ BRAKING = {
     "hand_speed_cap_m_s": 0.20,     # m/s, PLACEHOLDER — tuned by test: hand-level speed limit at the tool point; separate from the bridge's per-joint 0.5 rad/s cap; enforced every tick by scaling back the joint commands
     "accel_limit_m_s2": 0.50,       # m/s^2, PLACEHOLDER — tuned by test: the one limit for braking and for speeding up, measured at the tool point
     "jerk_limit_m_s3": 2.00,        # m/s^3, PLACEHOLDER — tuned by test: how fast the acceleration may change (per tick: jerk x dt); makes the speed curve S-shaped both ways
-    "approach_ceiling_m_s": {},     # m/s per allowed-contact surface name; a surface not listed gets hand_speed_cap_m_s (PLACEHOLDER — tuned by test: 0.05 for the hotplate once Phase B names surfaces)
+    "approach_ceiling_m_s": {"hotplate": 0.05},  # m/s per allowed-contact surface name (the object id); PLACEHOLDER — tuned by test; a surface not listed gets hand_speed_cap_m_s
     # ---- settings the brief leaves implicit: simplest reading, named so they can change (listed as decisions) ----
     "tick_hz": 150.0,               # Hz: the filter tick = the control loop's source_hz (src/control_loop.py cfg); the jerk limit is counted per tick of this rate
     "bridge_reach_m": 0.56,         # m, PLACEHOLDER — tuned by test: lever arm that turns the bridge's joint speed cap into a tool speed (shoulder-to-wrist length of the model, Part 1b)
@@ -182,6 +184,12 @@ BRAKING = {
     "stop_speed_m_s": 0.002,        # m/s: below this the hand counts as stopped (leaves braking, ends a hold)
     "closing_eps_m": 1e-6,          # m: the gap must shrink by more than this between last and new command to count as closing
 }
+
+
+def approach_ceiling(surface, tun=None):
+    """The approach speed ceiling of an allowed-contact surface (m/s): its entry in BRAKING["approach_ceiling_m_s"], else the hand speed cap."""
+    t = BRAKING if tun is None else tun
+    return float(t["approach_ceiling_m_s"].get(surface, t["hand_speed_cap_m_s"]))
 
 
 def derive(tun=None, bridge=None):

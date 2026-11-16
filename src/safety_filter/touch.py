@@ -257,6 +257,7 @@ class HeldTracker:
     def __init__(self, world_view):
         self.world = world_view
         self.held = {}          # side -> dict (the attached object)
+        self.identity_source = None   # "command" or "pads": where the identity of the last attached object came from
         self.warnings = []
 
     def _pad(self, placed, side):
@@ -276,7 +277,7 @@ class HeldTracker:
         """holding: this tick's holding verdict for the side. name: the object the policy command says is held (or None).
         placed: the robot's placed shapes this tick. hand_pos, hand_rot: link 7 pose (world).
         Returns the event for this tick: None, 'attach' or 'release'."""
-        want = bool(holding) or bool(name)
+        want = bool(holding)                    # Phase C step 7 (David): the grasp signal is the holding verdict; the name (the policy command) is the identity
         if want and side not in self.held:
             pad, _ = self._pad(placed, side)
             by_pad, best_d = None, None                 # the sanity check: the nearest graspable object within its radius + 1 cm of the pad midpoint
@@ -300,7 +301,8 @@ class HeldTracker:
                     elif by_pad is None:
                         self._warn(f"{side}: the command says '{name}' is held but no graspable object is at the pads (pad check failed)")
             if obj is None:
-                return None                             # neither source says anything is held: empty gripper
+                return None                             # no object named and none at the pads: empty gripper (gripper-only shapes)
+            self.identity_source = "command" if (name and obj.id == name) else "pads"
             off_pos = hand_rot.T @ (np.asarray(obj.centre) - hand_pos)
             off_rot = hand_rot.T @ obj.rot_matrix()
             self.held[side] = {"kind": "object", "obj": obj, "off_pos": off_pos, "off_rot": off_rot}

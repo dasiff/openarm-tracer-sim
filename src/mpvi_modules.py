@@ -356,7 +356,10 @@ def make_scripted_manipulation(model, data, world, side, home_q, task_cfg=TASK_C
     def command(grip=None):
         """The arms command: the joint command, and the gripper's (kept every tick: a plain travel would reset the force limit)."""
         g = S["grip"] if grip is None else grip
-        return {"mode": "arms", "arm_targets": {side: [float(v) for v in arm.q_cmd]}, "gripper": {side: g}}
+        cmd = {"mode": "arms", "arm_targets": {side: [float(v) for v in arm.q_cmd]}, "gripper": {side: g}}
+        if isinstance(g, dict) and S["ctx"].get("obj") is not None:      # Phase C step 7: a grasp names the object it grips (the filter's identity; the holding verdict is the grasp signal)
+            cmd["held_object"] = {side: str(S["ctx"]["obj"])}
+        return cmd
 
     def settled(t, dwell):
         """True once the arm's joints have been slower than the settle speed for `dwell` seconds (the shared test, M258)."""

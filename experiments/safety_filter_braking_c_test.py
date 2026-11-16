@@ -188,6 +188,44 @@ from src.safety_filter.braking_math import stopping_distance  # noqa: E402
 want7 = stopping_distance(0.03, 0.0, cfg.derived()["effective_accel_limit"], cfg.BRAKING["jerk_limit_m_s3"], cfg.derived()["tick_cushion_m"])
 check("step 6: the stopping distance uses the closing component (0.03 m/s toward the bench), not the whole hand speed (0.12 m/s)", abs(info7[0]["stop_dist"] - want7) < 1e-12, f"{info7[0]['stop_dist']} vs {want7}")
 
+# ---- step 7: held identity from the scripted grasp (validated, passed to the filter, the verdict is the grasp signal) ----
+from src.commands import validate_command  # noqa: E402
+from src.safety_filter.touch import HeldTracker  # noqa: E402
+from src.safety_filter.world import WorldView  # noqa: E402
+
+cmd7 = {"mode": "arms", "arm_targets": {"left": [0.0] * 7}, "gripper": {"left": {"position": 0.0, "max_force": 20.0}}, "held_object": {"left": "beaker"}}
+clean7, msgs7 = validate_command(cmd7)
+check("step 7: validate_command keeps the grasp's object name", clean7 is not None and clean7.get("held_object") == {"left": "beaker"}, str(clean7))
+rel7, _ = validate_command({"mode": "arms", "arm_targets": {"left": [0.0] * 7}, "gripper": {"left": 0.044}})
+check("step 7: a release (no held_object) carries no name", rel7 is not None and "held_object" not in rel7)
+bad7, msgs_bad = validate_command({"mode": "arms", "arm_targets": {"left": [0.0] * 7}, "gripper": {"left": 0.0}, "held_object": {"middle": "beaker"}})
+check("step 7: a name for an unknown arm side is refused", bad7 is None and msgs_bad, str(msgs_bad))
+bad7b, _ = validate_command({"mode": "arms", "arm_targets": {"left": [0.0] * 7}, "gripper": {"left": 0.0}, "held_object": "beaker"})
+check("step 7: a name that is not a mapping is refused", bad7b is None)
+
+
+class _Src7:
+    def __init__(self, objs):
+        self._o = objs
+
+    def objects(self):
+        return list(self._o)
+
+
+rs7 = RobotShapes(load_robot_only_model(), ROOT / cfg.SHAPES_FILE)
+pl7 = rs7.place(st_home)
+pos7, rot7 = rs7.hand_frame("left")
+pad7 = np.mean([(s.a + s.b) / 2 for s in pl7 if s.part == "finger" and s.arm == "left"], axis=0)
+ob7 = catalog_object("beaker", pad7 - np.array([0.0, 0.0, 0.05]))
+t7 = HeldTracker(WorldView(_Src7([ob7])))
+ev7 = t7.update("left", False, pl7, pos7, rot7, name="beaker")
+check("step 7: a name without the grasp verdict attaches nothing (the grasp signal is the verdict)", ev7 is None and t7.placed("left", pos7, rot7) is None)
+ev7b = t7.update("left", True, pl7, pos7, rot7, name="beaker")
+check("step 7: with the verdict, the named object is attached and the identity comes from the command", ev7b == "attach" and t7.identity_source == "command", f"{ev7b} {t7.identity_source}")
+t8 = HeldTracker(WorldView(_Src7([ob7])))
+ev8 = t8.update("left", True, pl7, pos7, rot7)
+check("step 7: no name, the verdict on and the pads match: the pad match is the fallback identity", ev8 == "attach" and t8.identity_source == "pads", f"{ev8} {t8.identity_source}")
+
 if __name__ == "__main__":
     print(f"\n{len(fails)} failed" if fails else "\nall passed")
     sys.exit(1 if fails else 0)

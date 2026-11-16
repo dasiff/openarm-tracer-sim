@@ -61,7 +61,7 @@ class SafetyFilterPlugin:
                                     "worst_shortfall", "fraction", "worst_pair", "methods", "pairs_pushed", "pairs_skipped",
                                     "pairs_shortened", "solver_calls", "q_meas", "base", "pedestal", "fingers", "held_ends",
                                     "brake_stop", "brake_limit", "brake_gap", "brake_room", "brake_sd", "brake_speed", "brake_pair", "brake_override",
-                                    "brake_sgap")}
+                                    "brake_sgap", "held_name")}
         self.n_calls, self._t0 = 0, clock()
         self.ctx = {"t": 0.0, "manip_started": False}   # read by the extra-objects test hook
 
@@ -108,6 +108,8 @@ class SafetyFilterPlugin:
             r["brake_limit"].append(np.array([float(v) for v in (binfo["limit"] if binfo["limit"] is not None else [np.inf, np.inf])]))
             r["brake_gap"].append(np.array(nan2("gap"))); r["brake_room"].append(np.array(nan2("room"))); r["brake_sd"].append(np.array(nan2("stop_dist")))
             r["brake_speed"].append(np.asarray(binfo["speed"], float))
+            hn = self.ctx.get("held_names") or {}
+            r["held_name"].append(",".join(str(hn.get(s_, "")) for s_ in SIDES))     # Phase C step 7: the object name the command gave, per side ("" = none)
             r["brake_sgap"].append(np.array([float(x["surface_gap"]) if x is not None else float("nan") for x in la]))   # gap of the nearest held-vs-allowed-contact pair
             r["brake_pair"].append(",".join((x["pair"] if x is not None else "-") for x in la))
             if binfo.get("override") is not None and np.any(binfo["override"]):

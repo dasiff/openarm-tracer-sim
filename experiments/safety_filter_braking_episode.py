@@ -102,6 +102,7 @@ def main():
     ap.add_argument("--speed-source", choices=["sent", "state"], default="sent")
     ap.add_argument("--no-shelf", action="store_true", help="no phantom shelf (the plain episode)")
     ap.add_argument("--max-ticks", type=int, default=None, help="stop cleanly after this many filter calls (a quick check)")
+    ap.add_argument("--hold-policy", default=None, choices=["braking", "repeat_last_safe"], help="override SAFETY_FILTER_PLUGIN_CFG hold_policy (repeat_last_safe = the old behaviour, no braking layer: a control run)")
     ap.add_argument("--name", default=None)
     ap.add_argument("--instruction", default=None)
     args = ap.parse_args()
@@ -120,6 +121,8 @@ def main():
     shelf = Shelf(plate_top_z(sim.model, sim.data), enabled=not args.no_shelf)
     loop = {**(task.get("loop_cfg") or {}), "command_bridge": {"enabled": True}, "safety_filter_mode": "on", "safety_filter_run_name": run,
             "safety_filter_extra_objects": shelf}
+    if args.hold_policy:
+        loop["safety_filter_cfg"] = {"hold_policy": args.hold_policy}
     if args.max_ticks:
         loop["safety_filter_max_ticks"] = args.max_ticks
     t0 = time.time()

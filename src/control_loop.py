@@ -236,6 +236,7 @@ def _filter_by_route(cmd, name, routes):
         return cmd if owns(mode) else None
     at = {sd: q for sd, q in cmd.get("arm_targets", {}).items() if owns(f"arms.{sd}")}
     gr = {sd: g for sd, g in cmd.get("gripper", {}).items() if owns(f"gripper.{sd}")}
+    ho = {sd: n for sd, n in cmd.get("held_object", {}).items() if owns(f"gripper.{sd}")}     # Phase C step 7: the grasp's object name goes with the gripper
     if not at and not gr:
         return None
     out = {"mode": "arms"}
@@ -243,6 +244,8 @@ def _filter_by_route(cmd, name, routes):
         out["arm_targets"] = at
     if gr:
         out["gripper"] = gr
+    if ho:
+        out["held_object"] = ho
     return out
 
 

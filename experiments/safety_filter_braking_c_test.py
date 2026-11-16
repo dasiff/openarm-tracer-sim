@@ -244,6 +244,15 @@ v5s = np.linalg.norm(tool3(out5s, None)[0] - tool3(np.zeros((2, 7)), None)[0])
 check("step 5 fix: with the measured arm still, the output still accelerates (no stall from a zero measured speed)", float(np.abs(out5s[0]).max()) > 0.02, f"output travel {np.abs(out5s[0]).max():.4f} rad after 300 ticks")
 check("step 5 fix: the accelerating output respects the limits (speed cap)", float(np.linalg.norm(tool3(out5s, None)[0] - tool3(np.zeros((2, 7)), None)[0])) >= 0.0 and L5s.v[0] <= cfg.BRAKING["hand_speed_cap_m_s"] + 1e-9)
 
+# the route filter keeps the grasp's name with the gripper the source owns (it was dropped in the first integration run)
+from src.control_loop import _filter_by_route  # noqa: E402
+
+routes7 = {"arms.left": "mpvi", "arms.right": "mpvi", "gripper.left": "mpvi", "gripper.right": "other"}
+kept7 = _filter_by_route({"mode": "arms", "arm_targets": {"left": [0.0] * 7}, "gripper": {"left": {"position": 0.0}}, "held_object": {"left": "beaker"}}, "mpvi", routes7)
+check("step 7: the route filter keeps held_object for the gripper the source owns", kept7 is not None and kept7.get("held_object") == {"left": "beaker"}, str(kept7))
+kept7b = _filter_by_route({"mode": "arms", "arm_targets": {"right": [0.0] * 7}, "gripper": {"right": 0.0}, "held_object": {"right": "beaker"}}, "mpvi", routes7)
+check("step 7: and drops it for a gripper the source does not own", kept7b is None or "held_object" not in kept7b, str(kept7b))
+
 if __name__ == "__main__":
     print(f"\n{len(fails)} failed" if fails else "\nall passed")
     sys.exit(1 if fails else 0)

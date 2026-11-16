@@ -7,6 +7,7 @@ gives the body frames, and each shape's body-local ends or box are mapped to the
 Refuses to load when the model's fingerprint differs from the one stamped in the file (SF-5).
 """
 
+import hashlib
 import json
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -14,6 +15,7 @@ from pathlib import Path
 import mujoco
 import numpy as np
 
+from src.safety_filter import config as cfg
 from src.safety_filter.robot_model import robot_fingerprint
 
 SIDES = ("left", "right")
@@ -26,6 +28,22 @@ _NEVER_CLOSE = frozenset()   # pairs of shape ids that can never come close (SF-
 def never_close_pairs():
     """The never-close pairs of the robot shapes last loaded: a frozenset of frozenset({id_a, id_b}) (SF-23)."""
     return _NEVER_CLOSE
+
+
+def torso_settings():
+    """The torso guard settings the labels of a merged never-close list depend on (config NEVER_CLOSE_DC; DNC-1, DNC-2)."""
+    return {"margin_m": cfg.NEVER_CLOSE_DC["torso_proximity_margin_m"], "guard_shapes": cfg.NEVER_CLOSE_DC["torso_guard_shapes"]}
+
+
+def never_close_fingerprint(model_fp, pairs, torso):
+    """The stamp of a merged never-close list (block never_close_pairs of robot_shapes.json, DNC-5): SHA-256 over the robot model's
+    fingerprint, the merged entries (pair, source, torso_dependent: so it covers what was taken from never_close_dc.json as well as
+    Stage 1) and the torso settings the labels were made with. The build tool writes it; the loader recomputes it and refuses a block
+    that does not match (edited by hand, or built for another model)."""
+    rows = sorted((min(p["a"], p["b"]), max(p["a"], p["b"]), p["source"], bool(p["torso_dependent"])) for p in pairs)
+    h = hashlib.sha256()
+    h.update(json.dumps([model_fp, rows, torso], sort_keys=True).encode())
+    return h.hexdigest()
 
 
 class FingerprintMismatch(RuntimeError):
@@ -105,9 +123,25 @@ class RobotShapes:
         self.doc = doc
         global _NEVER_CLOSE
         nc = doc.get("never_close", {})
+        merged = doc.get("never_close_pairs")
         if use_never_close and nc and nc.get("fingerprint") != fp:
             raise FingerprintMismatch("the never-close list was built for another robot model")
-        self.never_close = frozenset(frozenset((p["a"], p["b"])) for p in nc.get("pairs", [])) if use_never_close else frozenset()
+        self.torso_dependent = frozenset()                  # never-close pairs that are not trusted while an arm shape is near the torso (DNC-1)
+        if use_never_close and merged is not None:
+            # the merged list (Stage 1 sweep + Stage 2 divide and conquer, tools/build_never_close.py, DNC-4): the one the filter uses
+            if merged.get("model_fingerprint") != fp:
+                raise FingerprintMismatch("the merged never-close list was built for another robot model")
+            if merged.get("fingerprint") != never_close_fingerprint(fp, merged["pairs"], merged.get("torso")):
+                raise FingerprintMismatch("the merged never-close list does not match its stamp; rebuild with tools/build_never_close.py")
+            if merged.get("torso") != torso_settings():
+                raise FingerprintMismatch("the merged never-close list was labelled with other torso settings; label and rebuild")
+            self.never_close = frozenset(frozenset((p["a"], p["b"])) for p in merged["pairs"])
+            self.torso_dependent = frozenset(frozenset((p["a"], p["b"])) for p in merged["pairs"] if p["torso_dependent"])
+        elif use_never_close:
+            self.never_close = frozenset(frozenset((p["a"], p["b"])) for p in nc.get("pairs", []))
+        else:
+            self.never_close = frozenset()
+        self.never_close_torso_free = self.never_close - self.torso_dependent   # the list while the torso guard is on
         _NEVER_CLOSE = self.never_close
         self.specs = doc["shapes"]
         self._body = {s["id"]: mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, s["frame"]) for s in self.specs}

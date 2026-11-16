@@ -1,3 +1,5 @@
+DONE 2026-11-16 (braking policy Part 1, read-only, David's brief; NOT pushed; no code change): answers a to e and the decisions E1 to E11 in docs/reports/braking_policy_part1_20261116.md. Waiting for David's decisions before Part 2. Nothing running.
+
 DONE 2026-11-16 (torso extension ABANDONED: label, run-time guard and self-check removed; 219 Stage 2 pairs kept and merged without torso fields, never_close_pairs 147 + 219 = 366; branch safety-filter-dnc, cleanup commit and merge into safety-filter per David; NOT pushed). Log: docs/reports/safety_filter_dnc_torso_log.md.
 
 STOPPED 2026-11-16 01:30 (second torso task: links 1 and 2 excluded from torso proximity; branch safety-filter-dnc, NOT pushed): re-label 219 of 219 torso-dependent; guard and merge updated (robot_shapes.json restamped); check B PASS (3028 of 25295 ticks torso-proximate, all on punch original); CHECK A FAILS at the first pair (left_link1_1 vs right_link3: sampled pose 48.8 mm from the torso, limit 15 mm), not resolved: David to decide (docs/reports/safety_filter_dnc_torso_log.md, "For David (check A)"). Nothing running.

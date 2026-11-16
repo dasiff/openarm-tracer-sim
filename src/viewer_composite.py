@@ -55,7 +55,7 @@ class CompositeRenderer:
             tracks (1 if the model has no such body).
     """
 
-    def __init__(self, model, context, camera_specs, size=(1920, 1080), legend_extra=(), panel_static=None, shadows=True, tile_reuse_tol=None):
+    def __init__(self, model, context, camera_specs, size=(1920, 1080), legend_extra=(), panel_static=None, shadows=True, tile_reuse_tol=None, tile_every=1):
         """Set up the follow camera, the scene and the camera rig.
 
         Sets model.vis.global_.fovy to FOVY_DEG (90 degrees), as the live
@@ -80,8 +80,12 @@ class CompositeRenderer:
             tile_reuse_tol (float or None): If not None, the three camera tiles are not drawn again when no entry of the position vector (qpos) differs by more than this
                 (metres or radians) from the state the tiles were last drawn for, and the previous tile pictures are used (the policy cameras see nothing else that
                 changes; SEARCH_DISPLAY_CFG["tile_reuse_tol"], row M324). 0 reuses only for exactly the same state. Defaults to None (always draw).
+            tile_every (int): Draw the camera tiles only in every `tile_every`-th picture (those whose info["frame_no"] is a multiple of it) and show the previous tile
+                pictures in between; 1 draws them in every picture. Without info["frame_no"] the tiles are drawn every time. (SEARCH_DISPLAY_CFG["tile_every"], row M325.)
+                Defaults to 1.
         """
         self.model, self.context = model, context
+        self.tile_every = tile_every
         self.tile_reuse_tol, self._tile_q = tile_reuse_tol, None
         self.panel_static = panel_static
         self.W, self.H = size
@@ -140,7 +144,8 @@ class CompositeRenderer:
         """
         model, W, H = self.model, self.W, self.H
         # --- the three cameras, then the follow view ---
-        if self.tile_reuse_tol is None or self._tile_q is None or float(np.max(np.abs(data.qpos - self._tile_q))) > self.tile_reuse_tol:
+        stale_ok = self.tile_every > 1 and self._tile_q is not None and info.get("frame_no") is not None and info["frame_no"] % self.tile_every != 0
+        if not stale_ok and (self.tile_reuse_tol is None or self._tile_q is None or float(np.max(np.abs(data.qpos - self._tile_q))) > self.tile_reuse_tol):
             self.rig.render(data)
             self._tile_q = data.qpos.copy()
         yaw_deg = update_follow_camera(self.cam, data, self.base_body)

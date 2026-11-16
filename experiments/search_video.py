@@ -72,7 +72,7 @@ def render_search(run, rec, out_path, only_times=None, log=print, frames=None, o
     gl, ctx = _headless_context(model)
     mujoco.mj_setState(model, data, rec["initial_state"], STATE_SPEC)
     mujoco.mj_forward(model, data)
-    comp = CompositeRenderer(model, ctx, meta["robot_specs"]["CAMERA_SPECS"], size=(W, H), panel_static=(meta.get("task") or {}).get("panel"), shadows=CFG["shadows"], tile_reuse_tol=CFG["tile_reuse_tol"])
+    comp = CompositeRenderer(model, ctx, meta["robot_specs"]["CAMERA_SPECS"], size=(W, H), panel_static=(meta.get("task") or {}).get("panel"), shadows=CFG["shadows"], tile_reuse_tol=CFG["tile_reuse_tol"], tile_every=CFG["tile_every"])
     writer = None if only_times else X264Writer(out_path, CFG["fps"], (W, H), str(out_path) + ".ffmpeg.log")
 
     def frame_at(t):
@@ -80,7 +80,7 @@ def render_search(run, rec, out_path, only_times=None, log=print, frames=None, o
         g = st["ghost"]
         rgba = run.rgba(st)
         info = {"time": data.time, "base_vel": (0.0, 0.0, 0.0), "twist": (0.0, 0.0), "status": None, "mode": None, "fps": CFG["fps"], "clock_s": st["clock_s"], "clock_scale": CFG["clock_text_scale"],
-                "search_rows": st["panel"], "camera": CFG["overview_camera"],
+                "search_rows": st["panel"], "camera": CFG["overview_camera"], "frame_no": int(round(t * CFG["fps"])),
                 "ghost": ({"x": g["x"], "y": g["y"], "yaw": g["yaw"], "pedestal": g["pedestal"], "left_q": g["left_q"], "right_q": g["right_q"]}, rgba) if rgba and rgba[3] > 0 else None}
         return cv2.cvtColor(comp.render(data, info), cv2.COLOR_RGB2BGR)
 
@@ -122,7 +122,7 @@ def render_real(rec_dir, out_path, clock_offset_s, verify=False, log=print, info
     work = Path(out_path).parent / (Path(out_path).stem + "_work")
     replay_mod.open_video = lambda path, fps, size, codec="mp4v", quality=None: X264Writer(path, fps, size, str(path) + ".ffmpeg.log")
     r = replay_mod.replay_run(rec_dir, out_dir=work, video="viewer", hz=float(CFG["fps"]), size=tuple(CFG["size"]), name="real", quiet=True, intro=None, clock_offset_s=clock_offset_s, verify=verify, info_hook=info_hook,
-                              shadows="on" if CFG["shadows"] else "off", on_model_built=on_built, tile_reuse_tol=CFG["tile_reuse_tol"], **extra)
+                              shadows="on" if CFG["shadows"] else "off", on_model_built=on_built, tile_reuse_tol=CFG["tile_reuse_tol"], tile_every=CFG["tile_every"], **extra)
     log(f"  replay ok {r['ok']} ({r.get('n_ticks_recorded')} ticks, mismatch {r.get('mismatch')}); frames {r.get('frames_rendered')}")
     if verify and not r["ok"]:
         raise RuntimeError(f"the replay did not reproduce the run: {r.get('mismatch')}")

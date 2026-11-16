@@ -190,7 +190,7 @@ class PngFrames:
 
 
 def replay_run(run_dir, out_dir=None, cameras=None, video="preview", hz=30.0, size=None, shadows="policy", codec="mp4v", quality=None,
-               verify=True, max_ticks=None, render_ticks=None, quiet=False, name="viewer", after_handoff_s=None, legend_extra=None, face=None, intro=None, still_ticks=None, step_hook=None, render_at_ticks=None, clock_offset_s=None, info_hook=None, on_model_built=None, tile_reuse_tol=None):
+               verify=True, max_ticks=None, render_ticks=None, quiet=False, name="viewer", after_handoff_s=None, legend_extra=None, face=None, intro=None, still_ticks=None, step_hook=None, render_at_ticks=None, clock_offset_s=None, info_hook=None, on_model_built=None, tile_reuse_tol=None, tile_every=1):
     """Replays a recorded run: verifies its states and optionally renders its cameras.
 
     The recording is rebuilt and re-simulated through src/control_loop.run_loop (see the module docstring for what is checked and
@@ -238,6 +238,7 @@ def replay_run(run_dir, out_dir=None, cameras=None, video="preview", hz=30.0, si
         info_hook (callable or None): "viewer" mode only: called as info_hook(info, data, tick) for every picture; it may add display keys. Defaults to None.
         clock_offset_s (float or None): "viewer" mode only: draws the stance-search video's big clock, reading this many real seconds plus the simulated time (M321). None draws none. Defaults to None.
         tile_reuse_tol (float or None): "viewer" mode only: see CompositeRenderer; None draws the tiles every picture. Defaults to None.
+        tile_every (int): "viewer" mode only: see CompositeRenderer; the picture number given to it is the real-run frame number. Defaults to 1.
         on_model_built (callable or None): Called with no arguments once the model is rebuilt and its build memory released (the parallel video export staggers its workers' starts with it). Defaults to None.
         step_hook (callable or None): Called as step_hook(step_count, data) after every physics step (for measurements; it must only read `data`). Defaults to None.
 
@@ -346,7 +347,7 @@ def replay_run(run_dir, out_dir=None, cameras=None, video="preview", hz=30.0, si
             from src.viewer_composite import CompositeRenderer
             if legend_extra is None:
                 legend_extra = ([("F9", "take over"), ("Enter", "hand back")] if meta.get("mode") == "auto" else []) + [("Del", "abort")]
-            composite = CompositeRenderer(model, context, specs, size=size, legend_extra=legend_extra, panel_static=(meta.get("task") or {}).get("panel"), shadows=shadows == "on", tile_reuse_tol=tile_reuse_tol)
+            composite = CompositeRenderer(model, context, specs, size=size, legend_extra=legend_extra, panel_static=(meta.get("task") or {}).get("panel"), shadows=shadows == "on", tile_reuse_tol=tile_reuse_tol, tile_every=tile_every)
             path = out / f"{name}.mp4"
             writers["viewer"] = open_video(path, hz, size, codec, quality)
             report["videos"]["viewer"] = str(path)
@@ -456,7 +457,9 @@ def replay_run(run_dir, out_dir=None, cameras=None, video="preview", hz=30.0, si
             step_hook(step_count, data_)
         if composite is not None and step_count % every == 0 and (render_ticks is None or render_ticks[0] <= (step_count - 1) // spt <= render_ticks[1]) and (render_at_ticks is None or (step_count - 1) // spt in render_at_ticks):
             tick = (step_count - 1) // spt
-            bgr = cv2.cvtColor(composite.render(data_, composite_info(tick, data_)), cv2.COLOR_RGB2BGR)
+            info_ = composite_info(tick, data_)
+            info_["frame_no"] = step_count // every - 1                      # the picture's number in the whole real run (not in this render range)
+            bgr = cv2.cvtColor(composite.render(data_, info_), cv2.COLOR_RGB2BGR)
             writers["viewer"].write(bgr)
             for label in [l for l, t in (still_ticks or {}).items() if tick >= t and l not in still["done"]]:
                 save_still(label, bgr)

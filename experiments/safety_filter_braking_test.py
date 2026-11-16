@@ -103,6 +103,41 @@ check("hand speed: the base's motion is in the measured speed (world frame)", ab
 cs = real.commanded_speed(qa, qb, base_moved)
 check("hand speed: the commanded speed has no base term", abs(cs[0] - r * ang / DT) < 0.02 * r * ang / DT and cs[1] < 1e-9, str(cs))
 
+# ---- step 3: hand speed cap ----
+CAPV = cfg.BRAKING["hand_speed_cap_m_s"]
+
+
+def curved_tool(q, state):                    # nonlinear fake arm: the scale factor needs the correction loop
+    q = np.asarray(q)
+    return np.stack([np.sin(q[:, 0]) * 0.5, np.cos(q[:, 1]) * 0.3, q[:, 2] * 0.2], axis=1)
+
+
+for name, tf in (("linear fake arm", fake_tool), ("nonlinear fake arm", curved_tool)):
+    Lc = BrakingLayer(tf)
+    last = np.zeros((2, 7))
+    raw = last.copy()
+    raw[0, :3] = [0.05, 0.05, 0.05]          # a fast jump: far above the cap
+    raw[1, :3] = [0.0002, 0.0, 0.0]          # a slow one: below the cap
+    out, capped = Lc.cap(last, raw, None)
+    v_out = Lc.commanded_speed(last, out, None)
+    check(f"speed cap ({name}): the fast arm ends at the cap", abs(v_out[0] - CAPV) <= 1e-4 * CAPV and v_out[0] <= CAPV * (1 + 1e-6), str(v_out))
+    check(f"speed cap ({name}): the slow arm is untouched", np.array_equal(out[1], raw[1]) and not capped[1] and capped[0])
+    ratio = out[0, :3] / raw[0, :3]
+    check(f"speed cap ({name}): all joints of the capped arm scaled by one factor", np.allclose(ratio, ratio[0]) and 0 < ratio[0] < 1)
+
+# real model: a fast joint 1 command is held at the cap
+real2 = BrakingLayer(make_tool_fn(shapes))
+fast = home.copy()
+fast[0, 0] += 0.05
+fast[0, 3] += 0.05
+out, capped = real2.cap(home, fast, st)
+v_real = real2.commanded_speed(home, out, st)
+check("speed cap (real model): output tool speed at or below the cap", v_real[0] <= CAPV * (1 + 1e-6) and v_real[0] > 0.99 * CAPV and capped[0], str(v_real))
+slow = home.copy()
+slow[0, 0] += 0.0005
+out, capped = real2.cap(home, slow, st)
+check("speed cap (real model): a slow command passes unchanged", np.array_equal(out, slow) and not capped.any())
+
 if __name__ == "__main__":
     print(f"\n{len(fails)} failed" if fails else "\nall passed")
     sys.exit(1 if fails else 0)

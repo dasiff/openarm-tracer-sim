@@ -69,3 +69,45 @@ class BrakingLayer:
 
     def reset(self):
         self._prev_pos = self._prev_speed = self.last_measure = None
+
+    # ---- step 3: hand speed cap ----
+    def scale_step(self, i, q_from, step, speed, state):
+        """Scales the joint step of arm i (7,) by one factor so that the tool point moves at `speed` m/s over this tick (speed 0 -> no
+        motion). Forward kinematics is nonlinear, so the factor is corrected a few times; it never ends above the wanted speed.
+        Returns the scaled step (7,)."""
+        step = np.asarray(step, float)
+        if speed <= 0.0 or not np.any(step):
+            return np.zeros(7)
+        base = np.array(q_from, float)
+
+        def moved(s):
+            q = base.copy()
+            q[i] = base[i] + s * step
+            a = self.tool_fn(base, state)[i]
+            return float(np.linalg.norm(self.tool_fn(q, state)[i] - a)) / self.dt
+
+        s = 1.0
+        for _ in range(8):
+            v = moved(s)
+            if v < 1e-12:
+                break
+            if abs(v - speed) <= 1e-6 * speed:
+                break
+            s *= speed / v
+        while moved(s) > speed * (1.0 + 1e-6) and s > 1e-12:    # never above the wanted speed
+            s *= 0.999
+        return s * step
+
+    def cap(self, last, raw, state):
+        """The hand speed cap: for each arm whose commanded tool speed exceeds hand_speed_cap_m_s, all its joint changes are scaled back
+        proportionally so the tool point moves at the cap. Returns (command (2, 7), capped (2,) bool)."""
+        last, raw = np.asarray(last, float), np.asarray(raw, float)
+        out = raw.copy()
+        capped = np.zeros(2, bool)
+        vs = self.commanded_speed(last, raw, state)
+        capv = float(self.tun["hand_speed_cap_m_s"])
+        for i in range(2):
+            if vs[i] > capv:
+                out[i] = last[i] + self.scale_step(i, last, raw[i] - last[i], capv, state)
+                capped[i] = True
+        return out, capped

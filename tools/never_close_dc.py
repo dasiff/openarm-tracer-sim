@@ -36,7 +36,7 @@ sys.path.insert(0, str(ROOT))
 from src.safety_filter import config as cfg  # noqa: E402
 from src.safety_filter.geometry import capsule_capsule_batch  # noqa: E402
 from src.safety_filter.robot_model import load_robot_only_model, robot_fingerprint  # noqa: E402
-from src.safety_filter.shapes import RobotShapes, RobotState, torso_guard_counts, torso_settings  # noqa: E402
+from src.safety_filter.shapes import RobotShapes, RobotState  # noqa: E402
 from src.safety_filter.touch import gap_between  # noqa: E402
 from tools.never_close_sweep import SIDES, Variables, checked_shape_pairs  # noqa: E402
 
@@ -527,136 +527,6 @@ def verify(dc_path, budget_s=None):
     return out
 
 
-class TorsoBound:
-    """Torso proximity of joint boxes ("blocked by the torso" extension, DNC-1 to DNC-3): a lower bound, over a box of a pair's variables,
-    of the smallest gap between the guard set's arm shapes (both arms, as the run-time guard) and the torso shapes. Same bound as the proof
-    (centre value minus travel, soundness file); an arm variable the box does not hold ranges over its full limits."""
-
-    def __init__(self, vm, kins, doc, determined_only=False):
-        self.vm, self.kins, self.determined_only = vm, kins, determined_only
-        self.margin = DC["torso_proximity_margin_m"]
-        self.torso = [s["id"] for s in doc["shapes"] if s["part"] == "torso"]
-        self.shapes = {side: [] for side in SIDES}
-        for s in doc["shapes"]:
-            if torso_guard_counts(s):                         # the same shape set as the run-time guard (DNC-2)
-                self.shapes[s["arm"]].append(s["id"])
-        self._pairs = {}
-
-    def _pair(self, sid, tid):
-        key = (sid, tid)
-        if key not in self._pairs:
-            self._pairs[key] = Pair(self.vm, self.kins[sid], self.kins[tid], 0.0)
-        return self._pairs[key]
-
-    def lower(self, pair, lo, hi):
-        """(N,) lower bound of the arm-to-torso gap over each box [lo, hi] (N, nv) of `pair`; +inf where no shape counts."""
-        out = np.full(len(lo), np.inf)
-        col = {v: k for k, v in enumerate(pair.names)}
-        for side in SIDES:                                    # both arms, as the run-time guard: an arm the pair does not involve is free over its full limits
-            todo_shapes = []
-            for sid in self.shapes[side]:
-                for tid in self.torso:
-                    tp = self._pair(sid, tid)
-                    free = sum(1 for v in tp.names if v not in col)
-                    if self.determined_only and free:
-                        continue
-                    todo_shapes.append((free, len(todo_shapes), tp))
-            for _, _, tp in sorted(todo_shapes, key=lambda x: (-x[0], x[1])):
-                todo = np.flatnonzero(out > self.margin)       # a box already known torso-proximate needs no further shape
-                if not len(todo):
-                    return out
-                lo_s = np.empty((len(todo), len(tp.names)))
-                hi_s = np.empty((len(todo), len(tp.names)))
-                for k, v in enumerate(tp.names):
-                    if v in col:
-                        lo_s[:, k], hi_s[:, k] = lo[todo, col[v]], hi[todo, col[v]]
-                    else:
-                        lo_s[:, k], hi_s[:, k] = tp.lo[k], tp.hi[k]
-                out[todo] = np.minimum(out[todo], tp.lower_bound(lo_s, hi_s)[0])
-        return out
-
-    def scan(self, pair, lo, hi, depth):
-        """Is every certifying box torso-proximate? Returns (torso_dependent, boxes looked at, a torso-free box or None).
-        The smallest boxes are looked at first (their bounds are the tightest); the scan stops at the first torso-free box."""
-        order = np.argsort(-depth, kind="stable")
-        B, seen = DC["batch_boxes"], 0
-        for a in range(0, len(order), B):
-            idx = order[a:a + B]
-            lb = self.lower(pair, lo[idx], hi[idx])
-            seen += len(idx)
-            if (lb > self.margin).any():
-                k = int(np.argmax(np.where(np.isfinite(lb), lb, np.finfo(float).max)))
-                box = {"lo": {n: float(v) for n, v in zip(pair.names, lo[idx[k]])}, "hi": {n: float(v) for n, v in zip(pair.names, hi[idx[k]])},
-                       "torso_lower_bound_m": None if not np.isfinite(lb[k]) else float(lb[k])}
-                return False, seen, box
-        return True, seen, None
-
-
-def leaves_of(pair):
-    """The certifying boxes of a declared pair, produced again by the proof (no time cap): lo, hi (N, nv), bound (N,), depth (N,)."""
-    r = divide(pair, time.time() + 1e9, collect=True)
-    leaves = r.pop("_leaves")
-    if r["status"] != "certified" or not leaves:
-        raise SystemExit(f"{pair.a.id} vs {pair.b.id}: the proof did not complete again ({r['status']})")
-    return (np.concatenate([x[0] for x in leaves]), np.concatenate([x[1] for x in leaves]), np.concatenate([x[2] for x in leaves]),
-            np.concatenate([x[3] for x in leaves]), r)
-
-
-def label_torso(dc_path, budget_s=None):
-    """Adds `torso_dependent` to every declared pair of the DC file (DNC-1): True when every certifying box of the pair is
-    torso-proximate under the configured guard set. Also stores, for information only, the label two other shape sets would give."""
-    t_run = time.time()
-    m, fp, doc, vm, kins, rs, listed, checks = setup()
-    dc = json.loads(Path(dc_path).read_text(encoding="utf-8"))
-    if dc["fingerprint"] != fp:
-        raise SystemExit("the DC file is for another robot model")
-    bounds = {"label": TorsoBound(vm, kins, doc),
-              "shapes_fixed_by_the_box": TorsoBound(vm, kins, doc, determined_only=True)}
-    settings = torso_settings()
-    work_path = Path(str(dc_path) + ".torso.work.json")
-    rows = {}
-    if work_path.exists():
-        w = json.loads(work_path.read_text(encoding="utf-8"))
-        if w.get("fingerprint") == fp and w.get("settings") == settings:
-            rows = {tuple(r["pair"]): r for r in w["rows"]}
-            print(f"continuing: {len(rows)} pairs already labelled", flush=True)
-    todo = [e for e in dc["entries"] if e["listed"]]
-    for n, e in enumerate(todo):
-        key = tuple(e["shape_pairs"][0])
-        if key in rows:
-            continue
-        if budget_s is not None and time.time() - t_run > budget_s:
-            print(f"time budget reached with {len(rows)} of {len(todo)} pairs labelled: run again to continue", flush=True)
-            return None
-        t0 = time.time()
-        pair = Pair(vm, kins[key[0]], kins[key[1]], e["margin_m"])
-        lo, hi, lb, depth, r = leaves_of(pair)
-        if r["boxes_settled"] != e["boxes_settled"]:
-            raise SystemExit(f"{key}: the proof gave {r['boxes_settled']} boxes, the file says {e['boxes_settled']}")
-        dep, seen, box = bounds["label"].scan(pair, lo, hi, depth)
-        other = {name: bool(b.scan(pair, lo, hi, depth)[0]) for name, b in bounds.items() if name != "label"}
-        rows[key] = {"pair": list(key), "torso_dependent": bool(dep), "boxes": int(len(lo)), "boxes_looked_at": int(seen), "torso_free_box": box,
-                     "with_other_shape_sets": other, "seconds": round(time.time() - t0, 2)}
-        write_json(work_path, {"fingerprint": fp, "settings": settings, "rows": list(rows.values())})
-        print(f"[{n + 1}/{len(todo)}] {key[0]} vs {key[1]}: torso_dependent {dep} ({seen} of {len(lo)} boxes looked at); other shape sets {other}; "
-              f"{rows[key]['seconds']:.1f} s", flush=True)
-    for e in dc["entries"]:
-        e.pop("torso_dependent", None)
-        e.pop("torso_label", None)
-        if e["listed"]:
-            row = rows[tuple(e["shape_pairs"][0])]
-            e["torso_dependent"] = row["torso_dependent"]
-            e["torso_label"] = {k: row[k] for k in ("boxes", "boxes_looked_at", "torso_free_box", "with_other_shape_sets")}
-    n_dep = sum(1 for e in todo if e["torso_dependent"])
-    dc["torso"] = dict(settings, torso_shapes=bounds["label"].torso, guard_shapes_ids=bounds["label"].shapes, declared=len(todo), torso_dependent=n_dep,
-                       with_other_shape_sets={name: sum(1 for e in todo if e["torso_label"]["with_other_shape_sets"][name]) for name in bounds if name != "label"})
-    write_json(dc_path, dc)
-    print(f"wrote {dc_path}: torso-dependent {n_dep} of {len(todo)} declared pairs, not torso-dependent {len(todo) - n_dep} "
-          f"(margin {settings['margin_m'] * 1e3:.1f} mm, links {settings['exclude_links']} excluded); for information, counting only shapes "
-          f"the box fully fixes: {dc['torso']['with_other_shape_sets']}", flush=True)
-    return dc
-
-
 if __name__ == "__main__":
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--out", default=str(DC_FILE))
@@ -664,12 +534,9 @@ if __name__ == "__main__":
     ap.add_argument("--only", nargs="*", help="test only pairs with a shape id containing one of these (trial runs; write to another --out)")
     ap.add_argument("--budget-min", type=float, default=None, help="stop cleanly after this many minutes (the checkpoint keeps the finished pairs)")
     ap.add_argument("--verify", action="store_true", help="certificate check of the listed pairs of --out")
-    ap.add_argument("--label-torso", action="store_true", help="add torso_dependent to the listed pairs of --out (blocked-by-torso extension)")
     a = ap.parse_args()
     budget = None if a.budget_min is None else a.budget_min * 60.0
-    if a.label_torso:
-        r = label_torso(a.out, budget)
-    elif a.verify:
+    if a.verify:
         r = verify(a.out, budget)
     else:
         r = run(a.out, a.include_listed, a.only, budget)

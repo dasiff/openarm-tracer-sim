@@ -145,7 +145,7 @@ ARRAY_FORM = {
     "bound_slack_m": 1.0e-9,        # m [SF-71]: added to every bound comparison so that rounding can never turn "cannot decide" into "decided"
 }
 
-# Never-close pairs by divide and conquer (Part B, SF-75 to SF-79; tools/never_close_dc.py, offline, except the two torso guard settings near the end, which the filter reads at run time).
+# Never-close pairs by divide and conquer (Part B, SF-75 to SF-79; tools/never_close_dc.py, offline only: the filter itself reads none of these).
 # The proof and its assumptions are in docs/safety_filter_never_close_soundness.md; change that file with any change here that touches the method.
 NEVER_CLOSE_DC = {
     "min_split_rad": 0.05,          # rad [SF-75]: a hinge range of a box is not cut once it is this wide or narrower (David's default); a box with nothing left to cut and no proof leaves the pair checked
@@ -164,11 +164,4 @@ NEVER_CLOSE_DC = {
     "fk_check_tol_m": 1.0e-9,       # m [SF-76]: the tool stops if any shape point differs by more than this in that comparison
     "verify_leaves": 2000,          # count [SF-76]: certificate check: settled boxes per declared pair re-checked with the filter's own scalar functions (the lowest-bound boxes first, the rest at random)
     "verify_poses_per_leaf": 8,     # count [SF-76]: random poses inside each such box whose filter gap must be at least the box's lower bound
-    # "Blocked by the torso" extension (temporary labels DNC-1 to DNC-7, docs/reports/safety_filter_dnc_torso_log.md). The margin and the shape set are
-    # ALSO read by the filter at run time (src/safety_filter/shapes.py, resolver.py): the torso guard.
-    "torso_proximity_margin_m": 0.005,   # m [David's TORSO_PROXIMITY_MARGIN]: a pose (or a joint box) is torso-proximate when an arm shape of the guard set can be this close to a torso shape or closer
-    "torso_guard_exclude_links": (1, 2),  # arm link numbers [DNC-2, David 2026-11-16]: the shapes of these links never count for torso proximity (links 1 and 2: their capsules sit within 5 mm of the torso capsule at every joint 1 angle, so they would keep the guard on at every tick); the parts in TORSO_EXEMPT_PARTS (shoulder mounts) never count either. What counts: links 3 to 7, palm, fingers
-    "torso_check_loose_extra_m": 0.01,   # m [DNC-6]: check A: in a torso-dependent pair's boxes an arm shape must be within margin + this of the torso at every sampled pose (David: "5 mm + 1 cm")
-    "torso_check_dependent_poses": 500,  # count [David]: check A: poses sampled from the certifying boxes of each torso-dependent pair
-    "torso_check_free_poses": 200,       # count [David]: check A: poses sampled from a torso-free box of each pair that is not torso-dependent
 }

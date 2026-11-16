@@ -15,8 +15,6 @@ from pathlib import Path
 import mujoco
 import numpy as np
 
-from src.safety_filter import config as cfg
-from src.safety_filter.geometry import capsule_capsule_batch
 from src.safety_filter.robot_model import robot_fingerprint
 
 SIDES = ("left", "right")
@@ -31,27 +29,13 @@ def never_close_pairs():
     return _NEVER_CLOSE
 
 
-def torso_settings():
-    """The torso guard settings the labels of a merged never-close list depend on (config NEVER_CLOSE_DC; DNC-1, DNC-2)."""
-    return {"margin_m": cfg.NEVER_CLOSE_DC["torso_proximity_margin_m"],
-            "exclude_links": [int(k) for k in cfg.NEVER_CLOSE_DC["torso_guard_exclude_links"]]}
-
-
-def torso_guard_counts(shape_entry):
-    """Does this shape (an entry of robot_shapes.json) count for torso proximity (DNC-2)? Arm shapes only, without the parts that touch
-    the torso by construction (TORSO_EXEMPT_PARTS) and without the links in NEVER_CLOSE_DC["torso_guard_exclude_links"]."""
-    excluded = {f"link{int(k)}" for k in cfg.NEVER_CLOSE_DC["torso_guard_exclude_links"]}
-    return shape_entry["arm"] in SIDES and shape_entry["part"] not in cfg.TORSO_EXEMPT_PARTS and shape_entry["part"] not in excluded
-
-
-def never_close_fingerprint(model_fp, pairs, torso):
-    """The stamp of a merged never-close list (block never_close_pairs of robot_shapes.json, DNC-5): SHA-256 over the robot model's
-    fingerprint, the merged entries (pair, source, torso_dependent: so it covers what was taken from never_close_dc.json as well as
-    Stage 1) and the torso settings the labels were made with. The build tool writes it; the loader recomputes it and refuses a block
-    that does not match (edited by hand, or built for another model)."""
-    rows = sorted((min(p["a"], p["b"]), max(p["a"], p["b"]), p["source"], bool(p["torso_dependent"])) for p in pairs)
+def never_close_fingerprint(model_fp, pairs):
+    """The stamp of the merged never-close list (block never_close_pairs of robot_shapes.json, DNC-5): SHA-256 over the robot model's
+    fingerprint and the merged entries (pair and source). tools/build_never_close.py writes it; the loader recomputes it and refuses a
+    block that does not match (edited by hand, or built for another model)."""
+    rows = sorted((min(p["a"], p["b"]), max(p["a"], p["b"]), p["source"]) for p in pairs)
     h = hashlib.sha256()
-    h.update(json.dumps([model_fp, rows, torso], sort_keys=True).encode())
+    h.update(json.dumps([model_fp, rows], sort_keys=True).encode())
     return h.hexdigest()
 
 
@@ -132,25 +116,20 @@ class RobotShapes:
         self.doc = doc
         global _NEVER_CLOSE
         nc = doc.get("never_close", {})
-        merged = doc.get("never_close_pairs")
         if use_never_close and nc and nc.get("fingerprint") != fp:
             raise FingerprintMismatch("the never-close list was built for another robot model")
-        self.torso_dependent = frozenset()                  # never-close pairs that are not trusted while an arm shape is near the torso (DNC-1)
+        merged = doc.get("never_close_pairs")
         if use_never_close and merged is not None:
             # the merged list (Stage 1 sweep + Stage 2 divide and conquer, tools/build_never_close.py, DNC-4): the one the filter uses
             if merged.get("model_fingerprint") != fp:
                 raise FingerprintMismatch("the merged never-close list was built for another robot model")
-            if merged.get("fingerprint") != never_close_fingerprint(fp, merged["pairs"], merged.get("torso")):
+            if merged.get("fingerprint") != never_close_fingerprint(fp, merged["pairs"]):
                 raise FingerprintMismatch("the merged never-close list does not match its stamp; rebuild with tools/build_never_close.py")
-            if merged.get("torso") != torso_settings():
-                raise FingerprintMismatch("the merged never-close list was labelled with other torso settings; label and rebuild")
             self.never_close = frozenset(frozenset((p["a"], p["b"])) for p in merged["pairs"])
-            self.torso_dependent = frozenset(frozenset((p["a"], p["b"])) for p in merged["pairs"] if p["torso_dependent"])
         elif use_never_close:
             self.never_close = frozenset(frozenset((p["a"], p["b"])) for p in nc.get("pairs", []))
         else:
             self.never_close = frozenset()
-        self.never_close_torso_free = self.never_close - self.torso_dependent   # the list while the torso guard is on
         _NEVER_CLOSE = self.never_close
         self.specs = doc["shapes"]
         self._body = {s["id"]: mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, s["frame"]) for s in self.specs}
@@ -171,43 +150,6 @@ class RobotShapes:
         self._adr_fing = {s: np.array([model.jnt_qposadr[j] for j in self._finger[s]]) for s in SIDES}
         self._qbuf, self._kin_q, self._kin_done = np.array(model.qpos0, float), np.array(model.qpos0, float), False
         self.largest_radius = max((s["radius"] for s in self.specs if s["kind"] == "capsule"), default=0.0)
-        self._prepare_torso_guard()
-
-    def _prepare_torso_guard(self):
-        """Index arrays of the torso guard (DNC-1, DNC-2): every (arm shape that counts, torso shape) pair, as positions among the capsules."""
-        caps = [self.specs[k] for k in self._cap_idx]
-        torso = [n for n, sp in enumerate(caps) if sp["part"] == "torso"]
-        if any(sp["part"] == "torso" and sp["kind"] != "capsule" for sp in self.specs):
-            raise NotImplementedError("the torso guard measures capsule against capsule; a torso box is not supported")
-        I, J, side = [], [], []
-        for n, sp in enumerate(caps):
-            if not torso_guard_counts(sp):
-                continue
-            for t in torso:
-                I.append(n)
-                J.append(t)
-                side.append(sp["arm"])
-        self._tg_i, self._tg_j, self._tg_side = np.array(I, int), np.array(J, int), np.array(side, dtype=object)
-        self.torso_guard_ids = [caps[n]["id"] for n in sorted(set(I))]
-
-    def torso_gap(self, sides=None):
-        """The smallest gap (m) between an arm shape of the guard set and a torso shape, at the state last set (set_state or place).
-        The filter's own capsule distance. sides: only the shapes of these arms (default both; the filter always uses both).
-        +inf when no shape counts."""
-        i, j = self._tg_i, self._tg_j
-        if sides is not None:
-            keep = np.isin(self._tg_side, list(sides))
-            i, j = i[keep], j[keep]
-        if not len(i):
-            return float("inf")
-        A, B, _, _ = self.place_arrays()
-        return float(capsule_capsule_batch(A[i], B[i], self._cap_r[i], A[j], B[j], self._cap_r[j], gap_only=True).min())
-
-    def set_torso_proximate(self, proximate):
-        """Torso guard (DNC-1): while an arm shape is within the torso proximity margin, the torso-dependent never-close pairs are not
-        trusted: the touch rules then see the list without them, so those pairs are checked like any other pair."""
-        global _NEVER_CLOSE
-        _NEVER_CLOSE = self.never_close_torso_free if proximate else self.never_close
 
     def _jid(self, name):
         j = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_JOINT, name)

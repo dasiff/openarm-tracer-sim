@@ -78,3 +78,11 @@ Why still 219: the label asks for ONE certifying box whose bound proves every co
 
 ## For David (check A)
 The label and check A cannot both hold as specified. Options, none built: (a) change check A1 to what the label means (for a torso-dependent pair, no certifying box is proven torso-free); (b) count only the shapes a pair's box fully fixes (196 of 219, and check A1 would still need a tight test); (c) decide each box by subdividing it until it is proven torso-free or a torso-near pose is found, so the label means what check A tests.
+
+# Closing note (2026-11-16): torso-dependent extension abandoned
+
+The torso-dependent extension is abandoned. Its label and the run-time torso guard are removed from the code, and the torso self-check script is deleted. The reason: the torso label and check A tested different things. The label asked whether a joint box could be proven torso-free, and check A asked whether an arm was near the torso in every sampled pose. Under the main definition the label gave 219 of 219 (196 of 219 when only the shapes a box fully fixes are counted), so it separated nothing and added no information.
+
+The 219 Stage 2 never-close pairs remain valid. They are merged at build time into robot_shapes.json (`never_close_pairs`: 147 Stage 1 + 219 Stage 2 = 366) without any torso field, and the stamp covers only the model fingerprint and the merged pairs. The DC proof file data/safety_filter/never_close_dc.json still carries the abandoned torso labels from the runs above; it is git-ignored, and the build no longer reads them.
+
+Decisions DNC-1, DNC-2, DNC-3, DNC-6 and DNC-7 are void (labels, guard, guard shape set, check A bound, guard logging). DNC-4 (merge at build time), DNC-5 (the stamp, now covering only the model fingerprint and the merged pairs) and DNC-8 (the git-ignored DC file, the tracked merged list) are kept.

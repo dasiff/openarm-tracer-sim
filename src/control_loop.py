@@ -94,6 +94,7 @@ import mujoco
 import numpy as np
 
 from src import robot_specs
+from src.bridge_override import force_to_target
 from src.base_control import apply_base_velocity, base_yaw, find_base_dof, twist_to_world_velocity
 from src.cameras import CameraRig
 from src.commands import validate_command
@@ -643,6 +644,16 @@ def run_loop(model, data, sources, cfg, viewer=None, logger=None):
             bridge["printed"] += 1
             print(f"[bridge] t={rec_['time']:.2f} s ({status}): {kind}: {side} joint {joint}, value {value:+.3f}, limit {limit:+.3f}")
 
+    def bridge_override(frame_):
+        """Part 2 (src/bridge_override.py): braking must exceed the bridge limits, so the bridge's command jumps to the latest target now and an
+        ERROR is logged. The error means the look-ahead did not catch the obstacle early enough: a bug to investigate."""
+        out, errors = force_to_target(bridge, bridge_step, bcfg["max_target_step_rad"])
+        for line in errors:
+            bridge_note(frame_, line.split(":")[0], 0, "ERROR override: braking exceeded the bridge limits", 1.0, 0.0)
+            print(f"[bridge] ERROR t={data.time:.2f} s: {line}")
+        if out:
+            apply_cmd({"mode": "arms", "arm_targets": out, "period_steps": steps_per_frame})
+
     def bridge_precheck(cmd, frame_):
         """Takes an arms command's targets that lie outside the joint limits out of it (the whole arm targets are rejected and logged). Returns the command, or None if nothing is left.
 
@@ -1147,6 +1158,8 @@ def run_loop(model, data, sources, cfg, viewer=None, logger=None):
             cmd = bridge_take(cmd)
             if cmd is not None:
                 apply_cmd(cmd)
+        if sf_plugin is not None and sf_plugin.take_override():       # Part 2: braking had to exceed the bridge limits
+            bridge_override(frame)
         bridge_update(frame)
 
         # Project forward velocity into world frame using robot yaw

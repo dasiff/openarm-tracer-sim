@@ -50,6 +50,8 @@ class SafetyFilterPlugin:
             raise ValueError(f"safety filter mode must be one of {MODES}, not {mode!r}")
         self.mode, self.filter_step, self.inputs_fn, self.hold_policy = mode, filter_step, inputs_fn, hold_policy
         self.braking, self.obstacle_fn = braking, obstacle_fn
+        self._override = False        # braking asked the loop to override the command bridge (the look-ahead failed)
+        self.override_log = []        # (sim time s, text) of every override
         self.run_name, self.out_dir, self.flush_every, self.clock = run_name, out_dir, int(flush_every), clock
         self.max_minutes, self.max_ticks, self.hold_stop_s = max_minutes, max_ticks, hold_stop_s
         self._hold_t0, self.stop_reason = None, None     # start (sim s) of the current run of held ticks; why limit_reached() said yes
@@ -97,6 +99,9 @@ class SafetyFilterPlugin:
                 self.obstacle_fn.bind(world_objects, held)               # this tick's world and held object for the look-ahead
             filtered, binfo = self.braking.process(self.last_sent, filtered, state, self.obstacle_fn, hold=(status.status == "HOLD"))
             self.ctx["braking"] = binfo
+            if binfo.get("override") is not None and np.any(binfo["override"]):
+                self._override = True
+                self.override_log.append((float(t), "; ".join(self.braking.errors[-2:])))
         elif status.status == "HOLD":
             filtered = np.asarray(self.hold_policy(self.last_sent.copy(), status, list(self.history)), dtype=float)
         sent = raw if self.mode == "shadow" else filtered
@@ -112,6 +117,11 @@ class SafetyFilterPlugin:
             self.save()
         out = {s: [float(v) for v in sent[i]] for i, s in enumerate(SIDES) if s in arm_targets}
         return out
+
+    def take_override(self):
+        """True once after braking asked to override the command bridge (the loop then jumps the bridge's command to the stop target)."""
+        r, self._override = self._override, False
+        return r
 
     def limit_reached(self):
         """True when max_ticks filter calls or max_minutes of wall-clock time are used up (the loop then stops cleanly)."""

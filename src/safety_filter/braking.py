@@ -115,6 +115,8 @@ class BrakingLayer:
         self.v = np.zeros(2)           # profile speed of each arm (m/s), the speed of the last command this layer produced
         self.a = np.zeros(2)           # profile acceleration of each arm (m/s^2)
         self._braking = np.zeros(2, bool)   # look-ahead latch: this arm is braking for an obstacle
+        self._emergency = np.zeros(2, bool)
+        self.errors = []                    # error log: every override (the look-ahead failed to catch an obstacle early enough: a bug to investigate)
         self._ceiling = np.zeros(2, bool)   # look-ahead latch: this arm is held to an allowed-contact surface's approach ceiling
         self._dir = np.zeros((2, 7))   # unit joint direction of each arm's last step (the way it was going; used when stopping)
 
@@ -150,6 +152,7 @@ class BrakingLayer:
         self._dir[:] = 0.0
         self._braking[:] = False
         self._ceiling[:] = False
+        self._emergency = np.zeros(2, bool)
 
     # ---- step 3: hand speed cap ----
     def scale_step(self, i, q_from, step, speed, state):
@@ -254,6 +257,8 @@ class BrakingLayer:
         a_eff, jl, cush = self.d["effective_accel_limit"], float(self.tun["jerk_limit_m_s3"]), self.d["tick_cushion_m"]
         stop = np.zeros(2, bool)
         limit = np.full(2, np.inf)
+        emergency = np.zeros(2, bool)
+        self._emergency = emergency
         info = [None, None]
         for i in range(2):
             ol, orr = at_last[i], at_raw[i]
@@ -266,12 +271,18 @@ class BrakingLayer:
             v, a = self._va(i)
             sd = stopping_distance(v, a, a_eff, jl, cush)
             room = gap - 0.5 * margin
+            was_braking = bool(self._braking[i])
             if ceiling is None:
                 self._ceiling[i] = False
                 if self._braking[i] and not closing:
                     self._braking[i] = False                 # the obstacle cleared
                 elif closing and sd >= room:
                     self._braking[i] = True
+                    if sd - room > float(self.tun["emergency_overshoot_ticks"]) * cush and not was_braking:
+                        emergency[i] = True                  # even the S-curve cannot stop in time: braking must exceed its limits
+                        self.errors.append(f"look-ahead failed ({SIDES[i]}): stopping distance {sd:.4f} m exceeds the room {room:.4f} m "
+                                           f"(speed {v:.3f} m/s, gap {gap:.4f} m, margin {margin:.4f} m)")
+                        print(f"[braking] ERROR {self.errors[-1]}: braking beyond the limits, overriding the bridge")
                 stop[i] = self._braking[i]
             else:
                 self._braking[i] = False
@@ -296,4 +307,11 @@ class BrakingLayer:
             stop, limit, info = self.check(last, raw, state, obstacle_fn)
         stop = stop | np.asarray(hold, bool)
         out, prof = self.step(last, raw, state, stop=stop, speed_limit=limit)
-        return out, {"stop": stop, "limit": limit, "lookahead": info, **prof}
+        override = np.zeros(2, bool)
+        if obstacle_fn is not None:
+            override = self._emergency.copy()
+            for i in np.flatnonzero(override):               # Part 2: braking beyond the limits: stop now (no ramp), the loop overrides the bridge
+                out[i] = np.asarray(last, float)[i]
+                self.v[i] = self.a[i] = 0.0
+                prof = {"speed": self.v.copy(), "accel": self.a.copy()}
+        return out, {"stop": stop, "limit": limit, "lookahead": info, "override": override, **prof}

@@ -274,6 +274,77 @@ check("ceiling: the slow-down is an S-curve within the acceleration and jerk lim
 drop = -np.diff(v_)
 check("ceiling: no single-tick speed drop above accel_limit x dt", drop.max() <= d0["effective_accel_limit"] * DT + 1e-9, f"{drop.max():.6f}")
 
+# ---- step 9: bridge override with error log ----
+import contextlib  # noqa: E402
+import io  # noqa: E402
+from types import SimpleNamespace  # noqa: E402
+
+from src.bridge_override import force_to_target  # noqa: E402
+from src.safety_filter_plugin import SafetyFilterPlugin  # noqa: E402
+
+MARG = 0.02
+
+
+def close_obstacle(q, state):                       # fake arm x = 0.5 * joint 1; the surface is 3 cm ahead of x = 0
+    return [(0.03 - np.asarray(q)[0, 0] * 0.5, MARG, None), None]
+
+
+Le = BrakingLayer(fake_tool)
+Le.v[0] = CAP                                        # the hand is at the cap speed with the obstacle already inside its stopping distance
+last = np.zeros((2, 7))
+raw = last.copy()
+raw[0, 0] = 0.01
+buf = io.StringIO()
+with contextlib.redirect_stdout(buf):
+    out, info = Le.process(last, raw, None, close_obstacle)
+check("override: a forced look-ahead failure (stopping distance beyond the room) sets the override flag", bool(info["override"][0]) and not info["override"][1])
+check("override: the error is logged (layer log and printed line)", len(Le.errors) == 1 and "look-ahead failed" in Le.errors[0] and "[braking] ERROR" in buf.getvalue(), buf.getvalue())
+check("override: braking beyond the limits: the arm stops in that tick (no ramp)", np.array_equal(out, last) and Le.v[0] == 0.0 and Le.a[0] == 0.0)
+# a normal approach never overrides and never logs an error
+Ln = BrakingLayer(fake_tool)
+last = np.zeros((2, 7))
+flags = []
+
+
+def far_surface(q, state):
+    return [(0.60 - np.asarray(q)[0, 0] * 0.5, MARG, None), None]
+
+
+for k in range(700):
+    raw = last.copy()
+    raw[0, 0] += 0.5
+    out, info = Ln.process(last, raw, None, far_surface)
+    flags.append(bool(info["override"].any()))
+    last = out
+check("override: a normal approach (look-ahead on time) never overrides and logs no error", not any(flags) and not Ln.errors and Ln.v[0] == 0.0)
+Lh = BrakingLayer(fake_tool)
+Lh.v[0] = CAP
+_, infoh = Lh.process(np.zeros((2, 7)), np.zeros((2, 7)), None, None, hold=True)
+check("override: a HOLD never overrides (it is smooth)", not infoh["override"].any() and not Lh.errors)
+
+# the bridge side
+bridge = {"cmd": {"left": np.zeros(7)}, "target": {"left": np.array([0.5] + [0.0] * 6)}, "accepted": {"left": np.zeros(7)}}
+outb, errs = force_to_target(bridge, 0.01, 0.25)
+check("bridge override: the command jumps to the target beyond the speed cap and the step rejection", np.allclose(bridge["cmd"]["left"], bridge["target"]["left"]) and np.allclose(bridge["accepted"]["left"], bridge["target"]["left"]) and abs(outb["left"][0] - 0.5) < 1e-12)
+check("bridge override: an error line is returned for a jump beyond the usual limits", len(errs) == 1 and "0.5000" in errs[0] and "did not catch" in errs[0], str(errs))
+bridge2 = {"cmd": {"left": np.zeros(7)}, "target": {"left": np.array([0.004] + [0.0] * 6)}, "accepted": {"left": np.zeros(7)}}
+outb2, errs2 = force_to_target(bridge2, 0.01, 0.25)
+check("bridge override: a jump within the usual limits is not an error", errs2 == [] and abs(outb2["left"][0] - 0.004) < 1e-12)
+check("bridge override: nothing to do before the bridge has a command", force_to_target({"cmd": None, "target": {"left": np.zeros(7)}, "accepted": {}}, 0.01, 0.25) == ({}, []))
+
+# the plug-in passes the request on, once
+def pst(s, reason=""):
+    return SimpleNamespace(status=s, hold_reason=reason, rounds=0, worst_gap=float("nan"), worst_shortfall=0.0, fraction=float("nan"),
+                           worst_pair=None, methods=(), pairs_pushed=0, pairs_skipped=0, pairs_shortened=0, solver_calls=0)
+
+
+lay = BrakingLayer(fake_tool)
+lay.v[0] = CAP
+pl = SafetyFilterPlugin("on", lambda raw, last, state, world, held: (raw, pst("PASS")), lambda holding: (None, [], None), braking=lay, obstacle_fn=close_obstacle, run_name="t", out_dir=None)
+with contextlib.redirect_stdout(io.StringIO()):
+    pl.process({"left": [0.01] + [0.0] * 6, "right": [0.0] * 7}, {}, {"left": [0.0] * 7, "right": [0.0] * 7}, t=1.5)
+check("plug-in: the override request is available once, with a log entry", pl.take_override() is True and pl.take_override() is False and len(pl.override_log) == 1 and pl.override_log[0][0] == 1.5)
+
 if __name__ == "__main__":
     print(f"\n{len(fails)} failed" if fails else "\nall passed")
     sys.exit(1 if fails else 0)

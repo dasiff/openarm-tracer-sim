@@ -326,14 +326,14 @@ class BrakingLayer:
             lim = min(lim, float(speed_limit[i]))
         return bool(stop[i]) or bool(self._shaping[i]) or vs > lim * (1.0 + 1e-9)
 
-    def _hard_arms(self, state):
+    def _hard_arms(self, state, last):
         """Phase D fix 3 (David): the arms whose MEASURED hand speed is above hand_speed_cap_m_s x emergency_speed_multiplier: the last resort,
         when the S-curve and the look-ahead have not held the arm. Needs the measured joints (speed_source "state"). An error is logged when
-        an arm's overspeed starts, not on every tick it lasts."""
+        an arm's overspeed starts, not on every tick it lasts. Phase H fix 2 (David): the clamp holds the joints the bridge already has (the last
+        sent command at onset), so it sends zero step; the measured joints lag the command and were up to 0.76 rad away (brkZ6: the step)."""
         hard = np.zeros(2, bool)
         if self.tun["speed_source"] != "state" or self.last_measure is None:
             return hard
-        measured = np.array([state.q_left, state.q_right], float)
         mult = float(self.tun["emergency_speed_multiplier"])
         lim = float(self.tun["hand_speed_cap_m_s"]) * mult
         for i in range(2):
@@ -341,7 +341,7 @@ class BrakingLayer:
             if v > lim:
                 hard[i] = True
                 if not self._hard_latch[i]:
-                    self._hard_pose[i] = measured[i]          # the pose the arm has now: the clamp holds it
+                    self._hard_pose[i] = np.asarray(last, float)[i].copy()      # the joints the bridge holds now (the last sent command)
                     msg = (f"hard clamp ({SIDES[i]}): measured hand speed {v:.3f} m/s is above {lim:.3f} m/s (cap x {mult:g}); "
                            "the command is set to the measured joints, no S-curve")
                     self.errors.append(msg)
@@ -582,7 +582,7 @@ class BrakingLayer:
         timeout, error): both arms follow the S-curve to rest instead of following the command. Returns (command (2,7), info dict)."""
         if self.tun["speed_source"] == "state" and hasattr(state, "q_left"):
             self.measure(np.array([state.q_left, state.q_right], float), state, call_dt=call_dt)      # the measured joints feed the jerk limiting and the hard clamp
-        hard = self._hard_arms(state)                     # Phase D fix 3: measured overspeed (the last resort)
+        hard = self._hard_arms(state, last)               # Phase D fix 3: measured overspeed (the last resort); Phase H fix 2: holds the last sent joints
         stop = np.zeros(2, bool)
         limit = None
         info = [None, None]

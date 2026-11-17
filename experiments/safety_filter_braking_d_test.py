@@ -221,8 +221,8 @@ def measured_run(v_meas, tun=None, ticks=6, raw_step=0.2):
 
 
 lay3, outs3, qms3 = measured_run(0.33)                      # 0.33 m/s: above 1.5 x the cap (0.30 m/s)
-check("fix 3: a measured 0.33 m/s (above 1.5 x the cap) hard-clamps the arm: the command is the pose it had at the onset, held (ticks 1 to 5)",
-      all(np.array_equal(outs3[k][0][0], qms3[1]) for k in range(1, 6)), f"{outs3[1][0][0][:2]} vs {qms3[1][:2]}")
+check("fix 3 (Phase H fix 2 applies): a measured 0.33 m/s (above 1.5 x the cap) hard-clamps the arm: the command is the joints the bridge held at the onset (the last sent command, not the measured joints), held with zero change (ticks 1 to 5)",
+      all(np.array_equal(outs3[k][0][0], outs3[0][0][0]) for k in range(1, 6)), f"{outs3[1][0][0][:2]} vs {outs3[0][0][0][:2]}")
 check("fix 3: the hard clamp raises the override, so the loop forces the bridge to the clamp", all(bool(outs3[k][1]["override"][0]) for k in range(1, 6)))
 check("fix 3: an error is logged for the overspeed arm", any("hard clamp" in e and "left" in e for e in lay3.errors), str(lay3.errors[:1]))
 check("fix 3: the profile is at rest after the hard clamp (no S-curve)", float(lay3.v[0]) == 0.0 and float(lay3.a[0]) == 0.0, f"v {lay3.v[0]} a {lay3.a[0]}")

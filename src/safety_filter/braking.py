@@ -49,6 +49,8 @@ class ObstacleFeed:
         self.wake, self.hold_arms = None, np.zeros(2, bool)    # Phase F fix 5/6 (SF-82, SF-83): per arm, the wake radius (m) or None (every pair within the static cutoff)
         self.n_calls, self.n_considered = 0, 0                 # run diagnostics: calls of pairs(), and pairs that passed the cutoff (their gap is computed)
         self._rules = {}                                       # Phase F (a cache, no decision): touch.pair_rule per pair of shape attributes (it reads only these)
+        self._excluded = {"left": set(), "right": set()}       # Phase I fix 2 (SF-90): per arm, the released objects excluded from its look-ahead
+        self._prev_held = {}                                   # Phase I fix 2: per arm, the object held on the previous tick
         self._max_margin = max(list(cfg.MARGINS.values()) + [cfg.NEVER_TOUCH_MARGIN_M])
 
     def _rule_of(self, a, b):
@@ -86,6 +88,17 @@ class ObstacleFeed:
         if key != self._wkey:
             self._wkey, self._wplaced = key, [as_placed(o) for o in world_objects]
         self.world, self.held = world_objects, held
+        # Phase I fix 2 (SF-90): an object that was held by an arm and is no longer held (the gripper opened) is excluded from that arm's
+        # look-ahead until the hand is held_world_margin_m away from it; an object picked up again is not excluded
+        cur = {}
+        if held is not None and hasattr(held, "held"):
+            cur = {side: rec["obj"].id for side, rec in held.held.items() if isinstance(rec, dict) and "obj" in rec}
+        for side, oid in self._prev_held.items():
+            if cur.get(side) != oid:
+                self._excluded[side].add(oid)
+        for side, oid in cur.items():
+            self._excluded[side].discard(oid)
+        self._prev_held = cur
 
     def pairs(self, q, state):
         """For each arm, every candidate pair within its (widened) cutoff at pose q: a list of (room, gap, margin, ceiling, hand shape id,
@@ -103,6 +116,16 @@ class ObstacleFeed:
         allp = items + held + list(self._wplaced)
         lo = np.array([_aabb(x)[0] for x in allp])
         hi = np.array([_aabb(x)[1] for x in allp])
+        for side in SIDES:                              # Phase I fix 2 (SF-90): a released object becomes a normal obstacle once every hand shape of the arm is held_world_margin_m away
+            excl = self._excluded[side]
+            if not excl:
+                continue
+            hand_idx = [ia for ia, a in enumerate(allp) if a.arm == side and a.part in HAND_SHAPE_PARTS]
+            for ib, b in enumerate(allp):
+                if b.id in excl and hand_idx:
+                    d = min(float(np.maximum(lo[ia] - hi[ib], lo[ib] - hi[ia]).max()) for ia in hand_idx)
+                    if d > float(cfg.BRAKING["held_world_margin_m"]):
+                        excl.discard(b.id)
         out = [[], []]
         for i, side in enumerate(SIDES):
             thr = self._threshold(i)
@@ -118,6 +141,8 @@ class ObstacleFeed:
                     if a.kind == "box" and b.kind == "box":
                         continue
                     if sep_row[ib] > thr:
+                        continue
+                    if b.id in self._excluded[side]:          # Phase I fix 2: the just-released object, until the hand is held_world_margin_m away
                         continue
                     rule = self._rule_of(a, b)
                     if isinstance(rule, Exempt):

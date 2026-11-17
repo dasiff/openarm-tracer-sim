@@ -200,6 +200,7 @@ BRAKING = {
     "accel_limit_m_s2": 0.50,       # m/s^2, PLACEHOLDER — tuned by test: the one limit for braking and for speeding up, measured at the tool point
     "jerk_limit_m_s3": 2.00,        # m/s^3, PLACEHOLDER — tuned by test: how fast the acceleration may change (per tick: jerk x dt); makes the speed curve S-shaped both ways
     "adaptive_wake": False,         # switch [SF-82, SF-83, Phase F fix 5/6]: False (default, pending David's decision on the wake floor): every pair within the static cutoff (the Phase E behaviour). True: the look-ahead checks a pair only inside the current stopping distance (the wake radius; HOLD adds the margin). With True the fast-palm stop (braking_d) lands at 14.0 mm instead of 14.5 to 17.5 mm.
+    "held_world_margin_m": 0.01,    # m [SF-90, Phase I fix 2, David: 1 cm PLACEHOLDER]: after the gripper opens, the released object is excluded from the arm's look-ahead until every hand shape is this far from it; then it is a normal obstacle
     "approach_ceiling_m_s": {"hotplate": 0.05},  # m/s per allowed-contact surface name (the object id); PLACEHOLDER — tuned by test; a surface not listed gets hand_speed_cap_m_s
     # ---- settings the brief leaves implicit: simplest reading, named so they can change (listed as decisions) ----
     "tick_hz": 150.0,               # Hz: the filter tick = the control loop's source_hz (src/control_loop.py cfg); the jerk limit is counted per tick of this rate

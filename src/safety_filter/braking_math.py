@@ -4,7 +4,10 @@ Decision source: David's braking brief (Part 2). All units SI: m, m/s, m/s^2, m/
 """
 import math
 
+from numba import njit
 
+
+@njit(cache=True)                                  # Phase J fix 2 (SF-93): compiled (pure arithmetic; the same numbers as the Python version it replaces)
 def stopping_distance(v, a0, a_lim, j_lim, cushion=0.0):
     """Distance the hand travels while it brakes to rest, jerk-aware, cautious, closed form.
 

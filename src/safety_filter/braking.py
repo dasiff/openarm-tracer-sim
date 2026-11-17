@@ -13,6 +13,7 @@ import numpy as np
 from src.safety_filter import config as cfg
 from src.safety_filter.braking_math import JerkRamp, slowing_distance, stopping_distance
 from src.safety_filter.touch import Exempt, as_placed, gap_between, pair_rule, wake_dist
+from src.safety_filter.pair_jit import KIND_BOX, KIND_CAPSULE, KIND_CYLINDER, aabb_all, look_kernel    # Phase J fix 2 (SF-93): the compiled candidate loop
 
 SIDES = ("left", "right")
 ACCEL_WINDOW_TICKS = 5    # ticks: the measured acceleration is the average over this many ticks (Phase C fix; PLACEHOLDER — tuned by test)
@@ -35,6 +36,31 @@ def make_tool_fn(shapes, offset=None):
     return tool_fn
 
 
+_KIND_CODE = {"capsule": KIND_CAPSULE, "box": KIND_BOX, "cylinder": KIND_CYLINDER}
+
+
+def _shape_arrays(allp):
+    """Phase J fix 2 (SF-93): the placed shapes as arrays for the compiled loop: kind, arm (0 left, 1 right, -1 other), capsule ends A, B and
+    radius r, box or cylinder centre C, rotation R and half sizes h (a cylinder's radius is r)."""
+    n = len(allp)
+    kind = np.empty(n, np.int64)
+    armc = np.full(n, -1, np.int64)
+    A, B, C = np.zeros((n, 3)), np.zeros((n, 3)), np.zeros((n, 3))
+    r = np.zeros(n)
+    R, h = np.zeros((n, 3, 3)), np.zeros((n, 3))
+    for s, sh in enumerate(allp):
+        kind[s] = _KIND_CODE[sh.kind]
+        if sh.arm in SIDES:
+            armc[s] = SIDES.index(sh.arm)
+        if sh.kind == "capsule":
+            A[s], B[s], r[s] = sh.a, sh.b, sh.r
+        else:
+            C[s], R[s], h[s] = sh.centre, sh.rot, sh.half
+            if sh.kind == "cylinder":
+                r[s] = sh.r
+    return kind, armc, A, B, r, C, R, h
+
+
 class ObstacleFeed:
     """The look-ahead's obstacle query. feed(q, state) -> [None or (gap_m, margin_m, ceiling_m_s or None)] for the two arms: the pair of the
     arm's hand shapes (palm, fingers, link 7, the held object) with any other shape that has the smallest room (gap - margin/2) at pose q.
@@ -51,6 +77,7 @@ class ObstacleFeed:
         self._rules = {}                                       # Phase F (a cache, no decision): touch.pair_rule per pair of shape attributes (it reads only these)
         self._excluded = {"left": set(), "right": set()}       # Phase I fix 2 (SF-90): per arm, the released objects excluded from its look-ahead
         self._prev_held = {}                                   # Phase I fix 2: per arm, the object held on the previous tick
+        self._rule_cache = {}                                  # Phase J fix 2 (a cache, no decision): the rule arrays of the compiled loop, per shape list
         self._max_margin = max(list(cfg.MARGINS.values()) + [cfg.NEVER_TOUCH_MARGIN_M])
 
     def _rule_of(self, a, b):
@@ -114,8 +141,15 @@ class ObstacleFeed:
                 if hs is not None:
                     held.append(hs)
         allp = items + held + list(self._wplaced)
-        lo = np.array([_aabb(x)[0] for x in allp])
-        hi = np.array([_aabb(x)[1] for x in allp])
+        if not allp:
+            return [[], []]
+        compiled = bool(cfg.GEOMETRY["compiled"])
+        if compiled:
+            arr = _shape_arrays(allp)                  # Phase J fix 2 (SF-93): the shapes as arrays for the compiled candidate loop
+            lo, hi = aabb_all(arr[0], arr[2], arr[3], arr[4], arr[5], arr[6], arr[7])
+        else:
+            lo = np.array([_aabb(x)[0] for x in allp])
+            hi = np.array([_aabb(x)[1] for x in allp])
         for side in SIDES:                              # Phase I fix 2 (SF-90): a released object becomes a normal obstacle once every hand shape of the arm is held_world_margin_m away
             excl = self._excluded[side]
             if not excl:
@@ -126,6 +160,8 @@ class ObstacleFeed:
                     d = min(float(np.maximum(lo[ia] - hi[ib], lo[ib] - hi[ia]).max()) for ia in hand_idx)
                     if d > float(cfg.BRAKING["held_world_margin_m"]):
                         excl.discard(b.id)
+        if compiled:
+            return self._pairs_compiled(allp, arr, lo, hi)
         out = [[], []]
         for i, side in enumerate(SIDES):
             thr = self._threshold(i)
@@ -162,6 +198,76 @@ class ObstacleFeed:
                     ceiling = cfg.approach_ceiling(rule.surface) if rule.surface else None      # any allowed-contact surface pair (held beaker or palm)
                     stop = stop_gap(rule.margin, ceiling, rule.work_surface)     # Phase D fix 1: a work surface stops the hand closer to it
                     out[i].append((gap - stop, gap, rule.margin, ceiling, a.id, b.id, nrm, np.asarray(pa, float), stop))
+        return out
+
+    def _rules_for(self, allp):
+        """Phase J fix 2 (a cache, no decision): the rule of every (hand row, other shape) pair of this shape list, as arrays for the compiled
+        loop. Keyed by the rule attributes of the shapes (touch.pair_rule reads only these), so it is rebuilt only when the shape list changes."""
+        key = tuple((a.id, a.arm, a.part, a.kind, a.allowed_contact, a.never_touch, a.work_surface) for a in allp)
+        hit = self._rule_cache.get(key)
+        if hit is not None:
+            return hit
+        hand = [s for s, a in enumerate(allp) if a.arm in SIDES and a.part in HAND_SHAPE_PARTS]
+        H, n = len(hand), len(allp)
+        margin_hn = np.zeros((H, n))
+        act_hn = np.zeros((H, n))
+        exempt_hn = np.ones((H, n), bool)
+        rule_objs = [[None] * n for _ in range(H)]
+        for ro, ia in enumerate(hand):
+            a = allp[ia]
+            for ib, b in enumerate(allp):
+                if ib == ia or b.arm == a.arm or (a.kind == "box" and b.kind == "box"):
+                    continue
+                rule = self._rule_of(a, b)
+                if isinstance(rule, Exempt):
+                    continue
+                exempt_hn[ro, ib] = False
+                margin_hn[ro, ib] = rule.margin
+                act_hn[ro, ib] = rule.activation
+                rule_objs[ro][ib] = rule
+        built = (np.array(hand, int), np.array([SIDES.index(allp[s].arm) for s in hand], int), margin_hn, act_hn, exempt_hn, rule_objs)
+        if len(self._rule_cache) > 16:
+            self._rule_cache.clear()
+        self._rule_cache[key] = built
+        return built
+
+    def _pairs_compiled(self, allp, arr, lo, hi):
+        """Phase J fix 2 (SF-93): the candidate loop as one compiled function (pair_jit.look_kernel). The candidates it returns are turned
+        into the same tuples as the Python loop, in the same order within each arm."""
+        kind, armc, A, B, r, C, R, h = arr
+        rows, rows_arm, margin_hn, act_hn, exempt_hn, rule_objs = self._rules_for(allp)
+        n = len(allp)
+        excl = np.zeros((2, n), bool)
+        for i, side in enumerate(SIDES):
+            if self._excluded[side]:
+                for sidx, a in enumerate(allp):
+                    if a.id in self._excluded[side]:
+                        excl[i, sidx] = True
+        wake_on = self.wake is not None
+        wake = np.asarray(self.wake if wake_on else np.zeros(2), float)
+        maxm = float(self._max_margin)
+        t_static = max(maxm + cfg.PUSH_START_BEYOND_M, float(wake_dist()))
+        (cnt, ro_o, ib_o, arm_o, _sep, gap_o, pa_o, pb_o, push_o, considered) = look_kernel(
+            rows, rows_arm, kind, armc, A, B, r, C, R, h, lo, hi, excl, margin_hn, act_hn, exempt_hn,
+            wake_on, wake, np.asarray(self.hold_arms, bool), float(t_static), maxm + float(cfg.PUSH_START_BEYOND_M), maxm,
+            float(cfg.PUSH_START_BEYOND_M))
+        self.n_considered += int(considered)
+        out = [[], []]
+        for k in range(int(cnt)):
+            ro, ib, i = int(ro_o[k]), int(ib_o[k]), int(arm_o[k])
+            a = allp[int(rows[ro])]
+            b = allp[ib]
+            rule = rule_objs[ro][ib]
+            gap = float(gap_o[k])
+            pa, pb, push = pa_o[k], pb_o[k], push_o[k]
+            d_ = np.asarray(pb, float) - np.asarray(pa, float)               # Phase C step 6: the direction from the hand toward the obstacle
+            if np.linalg.norm(d_) > 1e-9:
+                nrm = d_ / np.linalg.norm(d_)
+            else:
+                nrm = -np.asarray(push, float) / max(np.linalg.norm(push), 1e-12)
+            ceiling = cfg.approach_ceiling(rule.surface) if rule.surface else None
+            stop = stop_gap(rule.margin, ceiling, rule.work_surface)
+            out[i].append((gap - stop, gap, rule.margin, ceiling, a.id, b.id, nrm, np.asarray(pa, float), stop))
         return out
 
     def __call__(self, q, state):

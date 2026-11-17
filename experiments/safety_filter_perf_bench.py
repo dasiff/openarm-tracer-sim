@@ -7,7 +7,9 @@ run). The same inputs for every configuration; each configuration starts from a 
 Configurations (switches set at run time): compiled distances (cfg.GEOMETRY) on or off; adaptive wake (cfg.BRAKING) on or off; HOLD on
 (every call is a HOLD trigger) or off. For each: mean, p95 and max time per call (ms) and the pairs whose gap is computed per call.
 
-Run: python experiments/safety_filter_perf_bench.py <run name> [--step 30]
+Run: python experiments/safety_filter_perf_bench.py <run name> [--step 30] [--rows START:END]
+--rows START:END (Phase J): every recorded call in that row range, in order (consecutive calls, as the filter sees them); the poses of a
+--step run are 30 calls apart, which makes every measured speed a jump and fills the log with emergencies: use --rows for timing.
 """
 import argparse
 import sys
@@ -28,17 +30,23 @@ from src.safety_filter.world import LabMapSource  # noqa: E402
 ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
 ap.add_argument("run")
 ap.add_argument("--step", type=int, default=30)
+ap.add_argument("--rows", default=None, help="START:END recorded rows, every call in order (Phase J)")
 args = ap.parse_args()
 
 d = np.load(ROOT / "data" / "safety_filter" / "plugin_runs" / f"{args.run}.npz", allow_pickle=True)
-idx = np.arange(1, len(d["raw"]), args.step)
-raw, sent, q_meas = d["raw"], d["sent"], d["q_meas"]
+if args.rows:
+    lo_r, hi_r = (int(x) for x in args.rows.split(":"))
+    idx = np.arange(max(lo_r, 1), min(hi_r, len(d["raw"])), 1)
+else:
+    idx = np.arange(1, len(d["raw"]), args.step)
+raw, sent, q_meas = d["raw"], d["sent"], d["q_meas"]     # loaded once
+base, pedestal, fingers = d["base"], d["pedestal"], d["fingers"]     # loaded once (an npz member is read again on every access)
 states = []
 for i in idx:
-    base = d["base"][i]
-    states.append(RobotState(base_xyz=tuple(base[:3]), base_quat=tuple(base[3:7]), pedestal_m=float(d["pedestal"][i]),
+    b = base[i]
+    states.append(RobotState(base_xyz=tuple(b[:3]), base_quat=tuple(b[3:7]), pedestal_m=float(pedestal[i]),
                              q_left=tuple(q_meas[i, 0]), q_right=tuple(q_meas[i, 1]),
-                             finger_left=float(d["fingers"][i, 0]), finger_right=float(d["fingers"][i, 1])))
+                             finger_left=float(fingers[i, 0]), finger_right=float(fingers[i, 1])))
 samples = [(sent[i - 1], raw[i], states[k]) for k, i in enumerate(idx)]
 print(f"{len(samples)} poses from {args.run} (every {args.step}th call)")
 

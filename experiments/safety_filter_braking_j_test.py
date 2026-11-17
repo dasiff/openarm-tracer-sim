@@ -3,6 +3,7 @@ pruning (fixes 3 and 4, SF-94, SF-95); the Numba pair loop matches Python (fix 2
 
 Run: python experiments/safety_filter_braking_j_test.py   (exit 0 = all pass).
 """
+import math
 import sys
 from pathlib import Path
 
@@ -82,6 +83,96 @@ st = steps_of(before, sp)
 check("fix 1: an ongoing stop from steady motion, random measured speeds 0 to 0.2 m/s over 40 ticks: no tick changes the sent speed by more than the accel limit x dt",
       max(st) <= a_eff_dt + 1e-9, f"largest tick change {max(st):.6f} m/s (limit {a_eff_dt:.6f}), profile before {before:.5f} m/s")
 check("fix 1: the stop still brakes (the sent speed ends below where it started)", sp[-1] <= before + 1e-12, f"{before:.5f} -> {sp[-1]:.5f} m/s")
+
+# ---- fix 2 (SF-93): the compiled candidate loop equals the Python loop (1e-6), same candidates in the same order ----
+from types import SimpleNamespace  # noqa: E402
+
+from src.safety_filter.braking import ObstacleFeed  # noqa: E402
+from src.safety_filter.robot_model import load_robot_only_model  # noqa: E402
+from src.safety_filter.shapes import RobotShapes, RobotState  # noqa: E402
+from src.safety_filter.touch import as_placed  # noqa: E402
+from src.safety_filter.world import LabMapSource, catalog_object  # noqa: E402
+
+rec = np.load(ROOT / "data" / "safety_filter" / "plugin_runs" / "brkZ8_phaseI_20261117_193334.npz", allow_pickle=True)
+rs = RobotShapes(load_robot_only_model(), ROOT / "data" / "safety_filter" / "robot_shapes.json")
+world = LabMapSource(str(ROOT / "data" / "safety_filter" / "lab_map.json")).objects()
+poses = []
+for i in range(2500, 5500, 150):
+    b = rec["base"][i]
+    st = RobotState(base_xyz=tuple(b[:3]), base_quat=tuple(b[3:7]), pedestal_m=float(rec["pedestal"][i]),
+                    q_left=tuple(rec["q_meas"][i, 0]), q_right=tuple(rec["q_meas"][i, 1]),
+                    finger_left=float(rec["fingers"][i, 0]), finger_right=float(rec["fingers"][i, 1]))
+    poses.append((np.asarray(rec["q_meas"][i], float), st))
+palm = next(p for p in rs.place(poses[0][1]) if p.part == "palm" and p.arm == "left")
+beaker = catalog_object("beaker", np.asarray(palm.centre if palm.kind == "box" else (palm.a + palm.b) / 2, float))
+held = SimpleNamespace(held={"left": {"kind": "object", "obj": beaker}},
+                       placed=lambda side, pos, rot: as_placed(beaker) if side == "left" else None)
+
+
+def pairs_both(q, st, wake, hold, use_held):
+    """The candidates of the compiled loop and of the Python loop at one pose (same feed state, same wake)."""
+    res = []
+    for compiled in (True, False):
+        cfg.GEOMETRY["compiled"] = compiled
+        feed = ObstacleFeed(rs)
+        feed.bind(world, held if use_held else None)
+        feed.set_wake(wake, hold)
+        res.append(feed.pairs(q, st))
+    cfg.GEOMETRY["compiled"] = True
+    return res
+
+
+def max_diff(ck, cp):
+    """Largest difference of two candidate lists (same count and ids), or None if they differ in count, order or ids."""
+    if len(ck) != len(cp):
+        return None
+    worst = 0.0
+    for x, y in zip(ck, cp):
+        if (x[4], x[5]) != (y[4], y[5]) or (x[2] != y[2]) or ((x[3] is None) != (y[3] is None)):
+            return None
+        worst = max(worst, abs(x[0] - y[0]), abs(x[1] - y[1]), abs(x[8] - y[8]), float(np.max(np.abs(np.asarray(x[6], float) - np.asarray(y[6], float)))),
+                    float(np.max(np.abs(np.asarray(x[7], float) - np.asarray(y[7], float)))))
+    return worst
+
+
+old_cfg = cfg.GEOMETRY["compiled"]
+worst_all, n_cand, n_cyl, mismatches = 0.0, 0, 0, []
+for use_held in (False, True):
+    for wake, hold in ((None, np.zeros(2, bool)), (np.array([0.02, 0.10]), np.zeros(2, bool)), (np.array([0.16, 0.16]), np.array([True, False]))):
+        for q, st in poses[::3]:
+            (kl, kr), (pl, pr) = pairs_both(q, st, wake, hold, use_held)
+            for arm_k, arm_p in ((kl, pl), (kr, pr)):
+                d = max_diff(arm_k, arm_p)
+                n_cand += len(arm_p)
+                n_cyl += sum(1 for c in arm_p if c[5] == beaker.id)
+                if d is None:
+                    mismatches.append((use_held, None if wake is None else wake.tolist(), len(arm_k), len(arm_p)))
+                else:
+                    worst_all = max(worst_all, d)
+cfg.GEOMETRY["compiled"] = old_cfg
+check("fix 2: the compiled candidate loop lists the same candidates as the Python loop (count, order, ids), over poses, wake and HOLD settings, with and without the held beaker",
+      not mismatches, f"{len(poses[::3]) * 6 * 2} pose-configs, {n_cand} candidates, mismatches {mismatches[:3]}")
+check("fix 2: the largest difference of the candidates' numbers (gap, room, stop gap, direction, closest point) is below 1e-6",
+      worst_all < 1e-6, f"largest difference {worst_all:.2e} over {n_cand} candidates; held-beaker candidates {n_cyl}")
+check("fix 2: the held beaker (a cylinder) was among the candidates, so the cylinder kernels were compared", n_cyl > 0, f"{n_cyl} candidates against the beaker")
+
+# the compiled stopping distance is the Python one (pure arithmetic): 1e-12 over a grid
+from src.safety_filter.braking_math import stopping_distance as sd_jit  # noqa: E402
+
+
+def sd_py(v, a0, a_lim, j_lim, cushion=0.0):
+    v = max(0.0, float(v))
+    a0 = max(0.0, float(a0))
+    a, j = float(a_lim), float(j_lim)
+    d1 = v * a0 / j + a0 ** 3 / (3.0 * j * j)
+    v1 = v + a0 * a0 / (2.0 * j)
+    d2 = v1 * v1 / (2.0 * a) + v1 * a / (2.0 * j) if v1 >= a * a / j else v1 ** 1.5 / math.sqrt(j)
+    return d1 + d2 + float(cushion)
+
+
+grid = [(v, a0, 0.5, 2.0, 0.00133) for v in np.linspace(0.0, 0.2, 21) for a0 in np.linspace(-0.5, 0.5, 11)]
+worst_sd = max(abs(sd_jit(*g) - sd_py(*g)) for g in grid)
+check("fix 2: the compiled stopping distance equals the Python formula (1e-12) over a grid of speeds and accelerations", worst_sd < 1e-12, f"largest difference {worst_sd:.2e}")
 
 print(f"{len(fails)} failing check(s)" if fails else "ALL PASS")
 sys.exit(1 if fails else 0)

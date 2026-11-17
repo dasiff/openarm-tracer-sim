@@ -145,10 +145,14 @@ class BrakingLayer:
         self._dir = np.zeros((2, 7))   # unit joint direction of each arm's last step (the way it was going; used when stopping)
 
     # ---- step 2: hand speed ----
-    def measure(self, q, state):
-        """Measured hand speed: |tool point now - tool point at the previous call| / dt, per arm (world frame). Acceleration: difference of
-        consecutive speeds / dt (signed: positive = speeding up). Returns {"pos": (2,3), "vel": (2,3), "speed": (2,), "accel": (2,)}; the
-        first call has no history and gives zeros."""
+    def measure(self, q, state, call_dt=None):
+        """Measured hand speed: |tool point now - tool point at the previous call| / dt, per arm (world frame: a moving base counts, as decided
+        in Phase A). call_dt (s, the time since the previous call, None = unknown): a gap of more than 1.5 ticks starts a new history, because
+        the displacement over a gap is not a speed (integration run brkV: the base drove 2.3 m during a 38 s gap between two filter calls; the
+        old measure divided that by one tick and read 395 m/s, and the hard clamp fired on it). Acceleration: least-squares slope of the speed
+        over ACCEL_WINDOW_TICKS ticks. Returns {"pos", "vel", "speed", "accel"}; the first call (or the first after a gap) gives zeros."""
+        if call_dt is not None and float(call_dt) > 1.5 * self.dt:
+            self._prev_pos = None
         pos = np.array(self.tool_fn(np.asarray(q, float), state), float)
         if self._prev_pos is None:
             vel = np.zeros((2, 3))
@@ -469,11 +473,11 @@ class BrakingLayer:
         self._prev_pa = {(i, ida, idb): pa for i in range(2) for (_g, _m, _c, ida, idb, _n, pa, _s) in self._pairs_of(at_last[i]) if pa is not None}
         return stop, limit, info
 
-    def process(self, last, raw, state, obstacle_fn=None, hold=False):
+    def process(self, last, raw, state, obstacle_fn=None, hold=False, call_dt=None):
         """The whole layer for one tick: look-ahead, hand speed cap and S-curve. hold: True (or (2,) bool) = a HOLD trigger (collision,
         timeout, error): both arms follow the S-curve to rest instead of following the command. Returns (command (2,7), info dict)."""
         if self.tun["speed_source"] == "state" and hasattr(state, "q_left"):
-            self.measure(np.array([state.q_left, state.q_right], float), state)      # the measured joints feed the jerk limiting
+            self.measure(np.array([state.q_left, state.q_right], float), state, call_dt=call_dt)      # the measured joints feed the jerk limiting and the hard clamp
         hard = self._hard_arms(state)                     # Phase D fix 3: measured overspeed (the last resort)
         stop = np.zeros(2, bool)
         limit = None

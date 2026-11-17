@@ -99,7 +99,10 @@ class SafetyFilterPlugin:
         if self.braking is not None:
             if hasattr(self.obstacle_fn, "bind"):
                 self.obstacle_fn.bind(world_objects, held)               # this tick's world and held object for the look-ahead
-            filtered, binfo = self.braking.process(self.last_sent, filtered, state, self.obstacle_fn, hold=(status.status == "HOLD"))
+            prev_t = getattr(self, "_t_braking", None)
+            call_dt = None if prev_t is None else float(t) - prev_t      # the time since the last filter call (a gap restarts the arm's speed history)
+            self._t_braking = float(t)
+            filtered, binfo = self.braking.process(self.last_sent, filtered, state, self.obstacle_fn, hold=(status.status == "HOLD"), call_dt=call_dt)
             self.ctx["braking"] = binfo
             la = binfo["lookahead"]
             nan2 = lambda key: [float(x[key]) if x is not None else float("nan") for x in la]   # noqa: E731

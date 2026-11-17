@@ -312,5 +312,20 @@ check(f"fix 4: random cylinder-box poses ({n4}): the gap is never above the dist
 check("fix 4: random cylinder-box poses: the witness points are |a - b| = gap apart and the box point lies on the box surface",
       witness_err <= 1e-8, f"worst {witness_err:.3e} m")
 
+# ---- measurement (integration run brkV): a gap between two filter calls is not a speed ----
+lay_m2 = BrakingLayer(tool2)
+st_m2 = RobotState(q_left=tuple(q_home[0]), q_right=tuple(q_home[1]))
+lay_m2.measure(q_home, st_m2, call_dt=DT2)
+q_gap = q_home.copy()
+q_gap[0, 0] += 0.01                                          # the arm moves 0.01 rad over a 38 s gap between two calls
+lay_m2.measure(q_gap, st_m2, call_dt=38.0)
+check("measurement: after a 38 s gap between calls the displacement is not a speed (history restarts)", float(np.max(lay_m2.last_measure["speed"])) < 1e-9,
+      f"{float(np.max(lay_m2.last_measure['speed'])):.3e} m/s")
+lay_m2b = BrakingLayer(tool2)
+lay_m2b.measure(q_home, st_m2, call_dt=DT2)
+lay_m2b.measure(q_gap, st_m2, call_dt=DT2)
+check("measurement: one tick later the same 0.01 rad reads as a speed (the gap is what was reset)", float(np.max(lay_m2b.last_measure["speed"])) > 0.1,
+      f"{float(np.max(lay_m2b.last_measure['speed'])):.4f} m/s")
+
 print(f"{len(fails)} failing check(s)" if fails else "ALL PASS")
 sys.exit(1 if fails else 0)

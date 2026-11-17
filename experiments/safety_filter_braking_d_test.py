@@ -74,7 +74,9 @@ check("fix 1: at home the palm is 5 cm above the test bench top (geometry as bui
 
 
 def palm_gap(q, feed):
-    """The smallest gap of a left palm shape to the bench top at pose q (m)."""
+    """The smallest gap of a left palm shape to the bench top at pose q (m). Measured with the static cutoffs: the look-ahead's wake radius
+    (Phase F fix 5) would drop a far pair from the list, and this measures the geometry, not the look-ahead."""
+    feed.set_wake(None, np.zeros(2, bool))
     cands = [c for c in feed.pairs(q, st_home)[0] if c[5] == "bench_top" and c[4].startswith("left_palm")]
     return min(c[1] for c in cands)
 

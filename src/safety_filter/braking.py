@@ -46,6 +46,19 @@ class ObstacleFeed:
         self.shapes = shapes                  # its own RobotShapes (the resolver's kinematics are not shared)
         self.world, self.held = [], None
         self._wkey, self._wplaced = None, []
+        self.wake, self.hold_arms = None, np.zeros(2, bool)    # Phase F fix 5/6 (SF-82, SF-83): per arm, the wake radius (m) or None (every pair within the static cutoff)
+        self.n_calls, self.n_considered = 0, 0                 # run diagnostics: calls of pairs(), and pairs that passed the cutoff (their gap is computed)
+
+    def set_wake(self, wake, hold_arms):
+        """Sets this tick's wake radii (m, per arm; None = the static cutoffs) and the held arms (HOLD: the margin is added to the radius)."""
+        self.wake = None if wake is None else np.asarray(wake, float)
+        self.hold_arms = np.asarray(hold_arms, bool)
+
+    @staticmethod
+    def _activation(rule, wake, hold):
+        """The cutoff of a pair (m) with the wake radius: never wider than the pair rule's static cutoff (Phase F fix 5/6)."""
+        extra = rule.margin if hold else 0.0          # HOLD: the remaining braking distance plus the margin (SF-83)
+        return min(rule.activation, max(rule.margin + cfg.PUSH_START_BEYOND_M, wake + extra))
 
     def bind(self, world_objects, held):
         """Sets this tick's world objects and held-object tracker."""
@@ -58,6 +71,7 @@ class ObstacleFeed:
         """For each arm, every candidate pair within its (widened) cutoff at pose q: a list of (room, gap, margin, ceiling, hand shape id,
         other shape id)."""
         q = np.asarray(q, float)
+        self.n_calls += 1
         items = list(self.shapes.place(replace(state, q_left=tuple(q[0]), q_right=tuple(q[1]))))
         held = []
         if self.held is not None:
@@ -83,8 +97,10 @@ class ObstacleFeed:
                     if isinstance(rule, Exempt):
                         continue
                     sep = float(np.maximum(lo[ia] - hi[ib], lo[ib] - hi[ia]).max())
-                    if sep > rule.activation:
+                    act = rule.activation if self.wake is None else self._activation(rule, float(self.wake[i]), bool(self.hold_arms[i]))
+                    if sep > act:
                         continue
+                    self.n_considered += 1
                     gap, pa, pb, push = gap_between(a, b)
                     gap = float(gap)
                     d_ = np.asarray(pb, float) - np.asarray(pa, float)               # Phase C step 6: the direction from the hand toward the obstacle
@@ -134,6 +150,7 @@ class BrakingLayer:
         self.a = np.zeros(2)           # profile acceleration of each arm (m/s^2)
         self._braking = np.zeros(2, bool)   # look-ahead latch: this arm is braking for an obstacle
         self._emergency = np.zeros(2, bool)
+        self._hold_arms = np.zeros(2, bool)    # Phase F fix 6 (SF-83): the arms of this tick that are held (the HOLD trigger of process)
         self._hard_latch = np.zeros(2, bool)   # Phase D fix 3: an arm already hard-clamped (its error is logged once, when the overspeed starts)
         self._hard_pose = np.zeros((2, 7))     # Phase D fix 3: the pose each hard-clamped arm holds (the one it had when the overspeed started)
         self.errors = []                    # error log: every override (the look-ahead failed to catch an obstacle early enough: a bug to investigate)
@@ -306,6 +323,22 @@ class BrakingLayer:
         self._hard_latch = hard.copy()
         return hard
 
+    def _wake_radii(self):
+        """Phase F fix 5 (SF-82, David's brief): per arm, the look-ahead's wake radius (m). The current stopping distance from the speed and
+        acceleration the ramp starts from (_va), but never below the floor: the stopping distance from the highest speed the ramp can send at
+        the next tick (the sent speed rises by at most the effective acceleration times the tick). A pair beyond the radius cannot be reached
+        before the arm stops, so the look-ahead does not check it; the release distances and the resolver keep the worst-case cutoffs."""
+        a_eff, jl, cush = self.d["effective_accel_limit"], float(self.tun["jerk_limit_m_s3"]), self.d["tick_cushion_m"]
+        capv = float(self.tun["hand_speed_cap_m_s"])
+        out = np.zeros(2)
+        for i in range(2):
+            v, a = self._va(i)
+            now = stopping_distance(v, min(max(a, 0.0), a_eff), a_eff, jl, cush)
+            v_next = min(capv, max(float(self.v[i]), 0.0) + a_eff * self.dt)
+            floor = stopping_distance(v_next, 0.0, a_eff, jl, cush)
+            out[i] = max(now, floor)
+        return out
+
     def _stoppable_speed(self, i, dist):
         """Phase E fix 3 (David): the largest speed (m/s, at most the hand cap) from which the ramp can still stop within dist (m) at the
         target: the two-step stopping formula from the arm's current acceleration (eased to zero first). Same math as the obstacle look-ahead,
@@ -428,6 +461,9 @@ class BrakingLayer:
         the distance to the surface, the speed target becomes the ceiling (through the same jerk-limited ramp).
         Returns (stop (2,) bool, limit (2,) speed limit in m/s (inf = none), info list of dicts)."""
         last, raw = np.asarray(last, float), np.asarray(raw, float)
+        if hasattr(obstacle_fn, "set_wake"):          # Phase F fix 5/6 (SF-82, SF-83): this tick's wake radii and HOLD arms (the feed's pairs)
+            wake = self._wake_radii() if self.tun.get("adaptive_wake", True) else None
+            obstacle_fn.set_wake(wake, self._hold_arms)
         at_last = obstacle_fn(last, state)
         at_raw = obstacle_fn(raw, state)
         eps = float(self.tun["closing_eps_m"])
@@ -521,6 +557,7 @@ class BrakingLayer:
         limit = None
         info = [None, None]
         vel = self._hand_velocity(last, state)
+        self._hold_arms = np.broadcast_to(np.asarray(hold, bool), (2,)).copy()      # Phase F fix 6 (SF-83): the held arms of this tick
         if obstacle_fn is not None:
             stop, limit, info = self.check(last, raw, state, obstacle_fn, vel=vel)
         stop = stop | np.asarray(hold, bool)

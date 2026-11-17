@@ -169,12 +169,12 @@ check("fix 2: and the arms do move toward the jump (the test is not trivially st
       f"moved {outs_j[-1][0, 0] - q_home[0, 0]:.3f} and {outs_j[-1][1, 0] - q_home[1, 0]:.3f} rad")
 
 # (b) the run brkU mechanism: the layer is moving along joint 0 at the cap (its stale direction), then the arm is MEASURED moving at
-# 0.57 m/s (brkU's measured peak), with the source held (HOLD) or jumping 4 rad. Before the fix the ramp kept sending at its own speed.
+# 0.25 m/s (above the cap, below the hard-clamp level), with the source held (HOLD) or jumping 4 rad. Before the fix the ramp kept sending at its own speed.
 eps2 = 1e-5
 q_p = q_home.copy()
 q_p[0, 0] += eps2
 m_per_rad = float(np.linalg.norm(tool2(q_p, st_home)[0] - tool2(q_home, st_home)[0])) / eps2
-dq_tick = 0.57 * DT2 / m_per_rad                            # joint 0 step per tick that moves the measured tool point at 0.57 m/s
+dq_tick = 0.25 * DT2 / m_per_rad                            # joint 0 step per tick that moves the measured tool point at 0.25 m/s
 jump_raw = q_home + np.array([[4.0] + [0.0] * 6, [0.0] * 7])
 for label, hold_flag, source in [("held (HOLD)", True, "hold"), ("source jumps 4 rad", False, "jump")]:
     lay_b = BrakingLayer(tool2)
@@ -195,9 +195,43 @@ for label, hold_flag, source in [("held (HOLD)", True, "hold"), ("source jumps 4
         outs_b.append(out_b.copy())
         last_b = out_b
     sp_b = tool_speed_series(q_home, outs_b, st_home)
-    check(f"fix 2: measured 0.57 m/s while {label}: the sent tool speed never exceeds the cap on any tick (140 ticks)",
+    check(f"fix 2: measured 0.25 m/s while {label}: the sent tool speed never exceeds the cap on any tick (140 ticks)",
           sp_b[:, 0].max() <= CAP * (1 + 1e-6), f"max sent {sp_b[:, 0].max():.4f} m/s, measured peak {meas_peak:.3f} m/s")
-    check(f"fix 2: the test sees the measured overspeed ({label}): measured peak above the cap", meas_peak > 0.5, f"{meas_peak:.3f} m/s")
+    check(f"fix 2: the test sees the measured overspeed ({label}): measured peak above the cap", meas_peak > CAP, f"{meas_peak:.3f} m/s")
+
+# ---- fix 3: the emergency hard clamp: a MEASURED hand speed above cap x emergency_speed_multiplier is not braked by the S-curve: the command
+# is set to the measured joints at once, the loop overrides the bridge, and an error is logged ----
+def measured_run(v_meas, tun=None, ticks=6, raw_step=0.2):
+    """A layer fed measured joints that move joint 0 of the left arm at v_meas (m/s); the source asks for a raw_step rad move."""
+    lay = BrakingLayer(tool2, tun=tun)
+    last = q_home.copy()
+    raw = q_home + np.array([[raw_step] + [0.0] * 6, [0.0] * 7])
+    outs, qms = [], []
+    for k in range(ticks):
+        qm = q_home.copy()
+        qm[0, 0] += k * (v_meas * DT2 / m_per_rad)
+        st_k = RobotState(q_left=tuple(qm[0]), q_right=tuple(q_home[1]))
+        out, info = lay.process(last, raw, st_k, None)
+        outs.append((out.copy(), info))
+        qms.append(qm[0].copy())
+        last = out
+    return lay, outs, qms
+
+
+lay3, outs3, qms3 = measured_run(0.33)                      # 0.33 m/s: above 1.5 x the cap (0.30 m/s)
+check("fix 3: a measured 0.33 m/s (above 1.5 x the cap) hard-clamps the arm: the command is the pose it had at the onset, held (ticks 1 to 5)",
+      all(np.array_equal(outs3[k][0][0], qms3[1]) for k in range(1, 6)), f"{outs3[1][0][0][:2]} vs {qms3[1][:2]}")
+check("fix 3: the hard clamp raises the override, so the loop forces the bridge to the clamp", all(bool(outs3[k][1]["override"][0]) for k in range(1, 6)))
+check("fix 3: an error is logged for the overspeed arm", any("hard clamp" in e and "left" in e for e in lay3.errors), str(lay3.errors[:1]))
+check("fix 3: the profile is at rest after the hard clamp (no S-curve)", float(lay3.v[0]) == 0.0 and float(lay3.a[0]) == 0.0, f"v {lay3.v[0]} a {lay3.a[0]}")
+lay3c, outs3c, _ = measured_run(0.25)                       # 0.25 m/s: above the cap, below 1.5 x the cap
+check("fix 3: control: a measured 0.25 m/s (above the cap, below 1.5 x) is NOT hard-clamped",
+      not any("hard clamp" in e for e in lay3c.errors) and not any(bool(o[1]["override"][0]) for o in outs3c), str(lay3c.errors[:1]))
+sp3c = tool_speed_series(q_home, [o[0] for o in outs3c], st_home)[:, 0]
+check("fix 3: control: that arm is still limited to the cap by the S-curve", sp3c.max() <= CAP * (1 + 1e-6), f"max {sp3c.max():.4f} m/s")
+lay3h, _, _ = measured_run(0.33, tun=dict(cfg.BRAKING, emergency_speed_multiplier=2.0))
+check("fix 3: the multiplier is configurable: at x2.0 the same 0.33 m/s is not an emergency", not any("hard clamp" in e for e in lay3h.errors))
+check("fix 3: the configured multiplier is 1.5 (David's value)", abs(cfg.BRAKING.get("emergency_speed_multiplier", float("nan")) - 1.5) < 1e-12)
 
 print(f"{len(fails)} failing check(s)" if fails else "ALL PASS")
 sys.exit(1 if fails else 0)

@@ -134,6 +134,8 @@ class BrakingLayer:
         self.a = np.zeros(2)           # profile acceleration of each arm (m/s^2)
         self._braking = np.zeros(2, bool)   # look-ahead latch: this arm is braking for an obstacle
         self._emergency = np.zeros(2, bool)
+        self._hard_latch = np.zeros(2, bool)   # Phase D fix 3: an arm already hard-clamped (its error is logged once, when the overspeed starts)
+        self._hard_pose = np.zeros((2, 7))     # Phase D fix 3: the pose each hard-clamped arm holds (the one it had when the overspeed started)
         self.errors = []                    # error log: every override (the look-ahead failed to catch an obstacle early enough: a bug to investigate)
         self._ceiling = np.zeros(2, bool)   # look-ahead latch: this arm is held to an allowed-contact surface's approach ceiling
         self._prev_pa = {}                  # (arm, hand shape, other shape) -> the closest hand point of the previous tick (Phase C closing component)
@@ -201,6 +203,8 @@ class BrakingLayer:
         self._prev_pa = {}
         self._shaping[:] = False
         self._emergency = np.zeros(2, bool)
+        self._hard_latch[:] = False
+        self._hard_pose[:] = 0.0
 
     # ---- step 3: hand speed cap ----
     def scale_step(self, i, q_from, step, speed, state):
@@ -274,6 +278,29 @@ class BrakingLayer:
         if speed_limit is not None:
             lim = min(lim, float(speed_limit[i]))
         return bool(stop[i]) or bool(self._shaping[i]) or vs > lim * (1.0 + 1e-9)
+
+    def _hard_arms(self, state):
+        """Phase D fix 3 (David): the arms whose MEASURED hand speed is above hand_speed_cap_m_s x emergency_speed_multiplier: the last resort,
+        when the S-curve and the look-ahead have not held the arm. Needs the measured joints (speed_source "state"). An error is logged when
+        an arm's overspeed starts, not on every tick it lasts."""
+        hard = np.zeros(2, bool)
+        if self.tun["speed_source"] != "state" or self.last_measure is None:
+            return hard
+        measured = np.array([state.q_left, state.q_right], float)
+        mult = float(self.tun["emergency_speed_multiplier"])
+        lim = float(self.tun["hand_speed_cap_m_s"]) * mult
+        for i in range(2):
+            v = float(self.last_measure["speed"][i])
+            if v > lim:
+                hard[i] = True
+                if not self._hard_latch[i]:
+                    self._hard_pose[i] = measured[i]          # the pose the arm has now: the clamp holds it
+                    msg = (f"hard clamp ({SIDES[i]}): measured hand speed {v:.3f} m/s is above {lim:.3f} m/s (cap x {mult:g}); "
+                           "the command is set to the measured joints, no S-curve")
+                    self.errors.append(msg)
+                    print(f"[braking] ERROR {msg}")
+        self._hard_latch = hard.copy()
+        return hard
 
     def step(self, last, raw, state, stop=None, speed_limit=None):
         """One tick of the profile. Each arm's speed moves toward its target through the jerk-limited ramp (S-shaped both ways); the joint
@@ -447,6 +474,7 @@ class BrakingLayer:
         timeout, error): both arms follow the S-curve to rest instead of following the command. Returns (command (2,7), info dict)."""
         if self.tun["speed_source"] == "state" and hasattr(state, "q_left"):
             self.measure(np.array([state.q_left, state.q_right], float), state)      # the measured joints feed the jerk limiting
+        hard = self._hard_arms(state)                     # Phase D fix 3: measured overspeed (the last resort)
         stop = np.zeros(2, bool)
         limit = None
         info = [None, None]
@@ -462,4 +490,10 @@ class BrakingLayer:
                 out[i] = np.asarray(last, float)[i]
                 self.v[i] = self.a[i] = 0.0
                 prof = {"speed": self.v.copy(), "accel": self.a.copy()}
+        for i in np.flatnonzero(hard):                   # Phase D fix 3: the measured joints, at once, no S-curve; the loop overrides the bridge
+            out[i] = self._hard_pose[i]                   # the pose at the onset of the overspeed (no tracking of the moving arm: it is a stop)
+            self.v[i] = self.a[i] = 0.0
+            self._braking[i] = self._shaping[i] = False
+            override[i] = True
+            prof = {"speed": self.v.copy(), "accel": self.a.copy()}
         return out, {"stop": stop, "limit": limit, "lookahead": info, "override": override, **prof}

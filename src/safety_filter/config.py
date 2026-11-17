@@ -199,6 +199,7 @@ BRAKING = {
     "shape_free_motion": True,      # on/off [Phase C step 3, David]: every command goes through the S-curve (the step toward the source's target is limited to the ramp's speed; the target itself is not changed). False = Phase B behaviour: motion under the cap passes untouched
     "lookahead_speed": "closing",   # text: the speed the look-ahead brakes for: "closing" = the part of the hand speed that closes on the obstacle (the rate the gap shrinks at the wanted command, at most the hand speed); "full" = the whole hand speed (the first, cautious reading: it stops a hand that only moves along a surface)
     "emergency_overshoot_ticks": 2,  # ticks of travel: the look-ahead has failed (override the bridge, log an error) when the stopping distance exceeds the room by more than this many ticks at the hand speed cap
+    "emergency_speed_multiplier": 1.5,  # ratio [Phase D fix 3, David]: the last resort: when the MEASURED hand speed is above hand_speed_cap_m_s x this (0.30 m/s at the 0.20 cap), the arm is held at the pose it had when the overspeed started (no S-curve), the loop overrides the bridge, and an error is logged
     "stop_speed_m_s": 0.002,          # m/s: below this (after a tick below it) the hand counts as at rest and its command is passed as it is: micro-motion is not shaped
     "closing_eps_m": 1e-6,          # m: the gap must shrink by more than this between last and new command to count as closing
 }

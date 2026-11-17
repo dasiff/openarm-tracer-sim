@@ -79,10 +79,10 @@ rows = [("before: Python distances, static cutoffs", False, False, False),
         ("compiled, adaptive, HOLD with the static cutoffs", True, False, True),
         ("compiled, adaptive, HOLD with the margin rule (fix 6)", True, True, True)]
 saved = (cfg.GEOMETRY["compiled"], cfg.BRAKING["adaptive_wake"])
-print(f"{'configuration':58s} {'mean ms':>8s} {'p95 ms':>8s} {'max ms':>8s} {'pairs/call':>10s}")
+print(f"{'configuration':58s} {'mean ms':>8s} {'p95 ms':>8s} {'max ms':>8s} {'pairs/call':>10s} {'pairs p95':>10s}")
 try:
     for name, comp, ad, hold in rows:
         t, p = run(comp, ad, hold)
-        print(f"{name:58s} {t.mean():8.2f} {np.percentile(t, 95):8.2f} {t.max():8.2f} {p.mean():10.1f}", flush=True)
+        print(f"{name:58s} {t.mean():8.2f} {np.percentile(t, 95):8.2f} {t.max():8.2f} {p.mean():10.1f} {np.percentile(p, 95):10.1f}", flush=True)
 finally:
     cfg.GEOMETRY["compiled"], cfg.BRAKING["adaptive_wake"] = saved

@@ -503,6 +503,11 @@ class BrakingLayer:
         for i in range(2):
             v, a = self._va(i)
             now = stopping_distance(v, min(max(a, 0.0), a_eff), a_eff, jl, cush)
+            if self._hold_arms[i]:
+                # Phase J fix 4 (SF-95, David): during HOLD the wake is the remaining braking distance (plus the margin, added by the feed):
+                # no next-tick floor, so the wake shrinks as the arm decelerates and, once stopped, only the margin stays awake
+                out[i] = now
+                continue
             v_next = min(capv, max(float(self.v[i]), 0.0) + a_eff * self.dt)
             floor = stopping_distance(v_next, 0.0, a_eff, jl, cush)
             out[i] = max(now, floor)

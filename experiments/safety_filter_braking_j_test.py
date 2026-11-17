@@ -202,7 +202,7 @@ def palm_gap(q, feed):
     return min(c[1] for c in cands)
 
 
-def descend_palm(adaptive, speed=0.04, ticks=900):
+def descend_palm(adaptive, speed=0.04, ticks=900, hold=False):
     """The Phase D palm descent: a source drives the left palm down at `speed` through the braking layer (adaptive wake as given)."""
     cfg.BRAKING["adaptive_wake"] = adaptive
     feed = ObstacleFeed(rs)
@@ -224,7 +224,7 @@ def descend_palm(adaptive, speed=0.04, ticks=900):
     for k in range(ticks):
         raw = q_home.copy()
         raw[0, j] += rate * (k + 1)
-        out, _info = lay.process(last, raw, st_home, feed)
+        out, _info = lay.process(last, raw, st_home, feed, hold=hold)
         gaps.append(palm_gap(out, feed))
         last = out
     return np.array(gaps), len(lay.errors)
@@ -282,6 +282,44 @@ check("fix 3: at 0.02 m/s the awake pairs are the stop-gap zone plus a few mm of
       n_floor <= n_002 < n_static, f"floor (wake 0) {n_floor}, at 0.02 m/s {n_002} (wake {w_002 * 1000:.1f} mm), static {n_static}")
 check("fix 3: at 0.15 m/s more pairs are awake than at 0.02 m/s", n_015 > n_002, f"0.02 m/s {n_002}, 0.15 m/s {n_015} (wake {w_015 * 1000:.1f} mm)")
 check("fix 3: adaptive wake is on by default (config)", cfg.BRAKING["adaptive_wake"] is True)
+
+# ---- fix 4 (SF-95): during HOLD the wake is the remaining braking distance plus the margin; once stopped only the margin stays awake ----
+def wake_at(speed, hold_on):
+    lay = BrakingLayer(make_tool_fn(rs))
+    lay.v[0] = speed
+    lay.a[0] = 0.0
+    lay._hold_arms = np.array([hold_on, False])
+    return float(lay._wake_radii()[0])
+
+
+def awake_hold(speed, hold_on_wake):
+    """Awake pairs of the busiest pose in HOLD at a speed, with the wake of the old rule (hold_on_wake False) or of fix 4 (True)."""
+    feed = ObstacleFeed(rs)
+    feed.bind(world, None)
+    w = wake_at(speed, hold_on_wake)
+    wake = np.array([w, 0.0])
+    feed.set_wake(wake, np.array([True, False]))
+    n0 = feed.n_considered
+    feed.pairs(q10, st10)
+    return feed.n_considered - n0, w
+
+
+n_hold_before, w_before = awake_hold(0.15, False)
+n_hold_after, w_after = awake_hold(0.15, True)
+check("fix 4: during HOLD at 0.15 m/s no more pairs are awake than before (the next-tick floor is gone): the awake count falls",
+      n_hold_after <= n_hold_before, f"before {n_hold_before} (wake {w_before * 1000:.1f} mm), after {n_hold_after} (wake {w_after * 1000:.1f} mm)")
+cush_m = float(cfg.derived()["tick_cushion_m"])
+check("fix 4: once stopped, the HOLD wake is the tick cushion alone (the stopping distance at rest), so only the margin (plus one tick) stays awake; without HOLD the next-tick floor adds to it",
+      abs(wake_at(0.0, True) - cush_m) < 1e-12 and wake_at(0.0, False) > wake_at(0.0, True),
+      f"HOLD at rest {wake_at(0.0, True) * 1000:.2f} mm (cushion {cush_m * 1000:.2f} mm), no-hold at rest {wake_at(0.0, False) * 1000:.2f} mm")
+gh_on, eh_on = descend_palm(True, hold=True)
+gh_off, eh_off = descend_palm(False, hold=True)
+cfg.BRAKING["adaptive_wake"] = True
+check("fix 4: the palm in HOLD ends at the same gap with the adaptive wake on and off (within 0.05 mm)",
+      abs(gh_on[-1] - gh_off[-1]) < 5e-5, f"on {gh_on[-1] * 1000:.3f} mm, off {gh_off[-1] * 1000:.3f} mm")
+check("fix 4: the palm in HOLD stays where it was (the source's descent is held): gap at the end equals the gap at the start (adaptive on)",
+      abs(float(gh_on[-1]) - float(gh_on[0])) < 5e-5, f"start {float(gh_on[0]) * 1000:.2f} mm, end {float(gh_on[-1]) * 1000:.2f} mm")
+check("fix 4: no look-ahead error in the HOLD descents", eh_on == 0 and eh_off == 0, f"errors on {eh_on}, off {eh_off}")
 
 print(f"{len(fails)} failing check(s)" if fails else "ALL PASS")
 sys.exit(1 if fails else 0)

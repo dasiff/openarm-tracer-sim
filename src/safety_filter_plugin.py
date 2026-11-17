@@ -188,6 +188,11 @@ class SafetyFilterPlugin:
                            "saved": time.strftime("%Y-%m-%d %H:%M:%S"), "joint_order": "[tick, arm (left, right), joint 1-7]"})
         np.savez(tmp, meta=np.array(meta), **self.arrays())
         tmp.replace(final)
+        # Phase F diagnostics: per pair, the ticks in which the scheduler looked at it (awake and checked); written next to the recording
+        sleep = getattr(getattr(getattr(self.filter_step, "__self__", None), "statics", None), "sleep", None)
+        if sleep is not None and getattr(sleep, "looked_ticks", 0):
+            looks = {"|".join(k): v for k, v in sorted(sleep.looked.items())}
+            (d / f"{self.run_name}.looks.json").write_text(json.dumps({"calls": sleep.looked_ticks, "looked": looks}, indent=1), encoding="utf-8")
         return final
 
     def close(self):

@@ -485,6 +485,8 @@ class SleepTimers:
         self.hist = None
         self.n_ticks = self.n_checked = 0          # statistics for the profile; kept over resets
         self.drift_total = 0.0                     # running sum of the per-tick change of the base, pedestal and fingers (Part 2: slow drift adds up)
+        self.looked = {}                           # Phase F (run diagnostics only): pair key -> ticks in which the scheduler looked at it (awake and checked)
+        self.looked_ticks = 0                      # calls of awake(), the denominator of looked
         self.reset()
 
     def reset(self):
@@ -534,7 +536,18 @@ class SleepTimers:
             heapq.heappush(self.heap, (w, p))
 
     def awake(self, res, raw, last, state, world, held):
-        """The mask of the pairs that woke this tick, or None (look at every pair: no valid schedule). All False = pass-through."""
+        """The mask of the pairs that woke this tick, or None (look at every pair: no valid schedule). All False = pass-through.
+        Phase F: also counts, per pair key, the ticks in which the pair was looked at (self.looked; run diagnostics, no effect on the result)."""
+        mask = self._awake_mask(res, raw, last, state, world, held)
+        self.looked_ticks += 1
+        if self.tab is not None:
+            idx = range(len(self.tab)) if mask is None else np.flatnonzero(mask)
+            for p in idx:
+                key = self.tab.keys[int(p)]
+                self.looked[key] = self.looked.get(key, 0) + 1
+        return mask
+
+    def _awake_mask(self, res, raw, last, state, world, held):
         self.now += 1
         self._speed = res.joint_speed_rad_s
         if not cfg.SLEEP["enabled"] or res.joint_speed_rad_s is None or self.tab is None or not gap_rule.bounds_valid(res.dt):

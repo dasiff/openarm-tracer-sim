@@ -168,10 +168,8 @@ ARRAY_FORM = {
 # Never-close pairs taken off the merged list (Braking Phase F fix 3, SF-80, David's decision). tools/build_never_close.py leaves them out of
 # never_close_pairs, so the filter checks them again (rebuild the list with that tool after any change here; it writes a new stamp).
 # The sweep and DC files keep the record of the claim. Both are torso pairs of the left first arm link (shape ids as in robot_shapes.json).
-NEVER_CLOSE_REMOVED = (
-    ("left_link1_2", "torso"),      # SF-80: left link 1 joint 2 vs torso. Removed on David's list. Measured minimum 11.7 mm (brkW); no contact measured.
-    ("left_link1_3", "torso"),      # SF-80: left link 1 joint 3 vs torso. Measured -1.0 mm (brkW, t 69.5 s) and -0.1 mm (brkY, t 86.3 s): touching while listed.
-)
+NEVER_CLOSE_REMOVED = ()            # Phase G fix 1 (David): empty. Both torso pairs (left link 1 joint 3 and joint 2 vs torso) are back on the never-close
+                                    # list; the removal of SF-80 is withdrawn (the margin is too large for them; per-pair margins are a separate task).
 
 # Never-close pairs by divide and conquer (Part B, SF-75 to SF-79; tools/never_close_dc.py, offline only: the filter itself reads none of these).
 # The proof and its assumptions are in docs/safety_filter_never_close_soundness.md; change that file with any change here that touches the method.

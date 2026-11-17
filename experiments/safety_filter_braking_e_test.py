@@ -211,21 +211,21 @@ check("Phase F fix 2 (mechanical): a step cut to the commanded pose never writes
 from src.safety_filter.robot_model import load_robot_only_model  # noqa: E402
 from src.safety_filter.shapes import RobotShapes, RobotState, never_close_pairs  # noqa: E402
 from src.safety_filter.tick_arrays import PairTable  # noqa: E402
-from src.safety_filter.touch import Rule, pair_rule  # noqa: E402
+from src.safety_filter.touch import Exempt, pair_rule  # noqa: E402
 
 _rs = RobotShapes(load_robot_only_model(), ROOT / "data" / "safety_filter" / "robot_shapes.json")
 _st = RobotState(pedestal_m=0.155, q_left=(0.394, -0.257, 0.271, 2.201, -0.065, 0.477, 0.227), q_right=(-0.394, 0.257, -0.271, 2.201, 0.065, -0.477, -0.227))
 _placed = _rs.place(_st)
 _by_id = {p.id: p for p in _placed}
 _tab = PairTable(_placed, len(_placed))
-for _pid in ("left_link1_2", "left_link1_3"):
+for _pid in ("left_link1_2", "left_link1_3"):       # Phase G fix 1 (David): both torso pairs are back on the never-close list
     _r = pair_rule(_by_id[_pid], _by_id["torso"])
-    check(f"Phase F fix 3: {_pid} vs torso is checked (a Rule, not exempt)", isinstance(_r, Rule), f"-> {type(_r).__name__}")
-    check(f"Phase F fix 3: {_pid} vs torso is not on the never-close list", frozenset((_pid, "torso")) not in never_close_pairs())
-    check(f"Phase F fix 3: {_pid} vs torso is in the pair table (checked every tick it is near)", (_pid, "torso") in _tab.key_index)
+    check(f"Phase G fix 1: {_pid} vs torso is on the never-close list", frozenset((_pid, "torso")) in never_close_pairs())
+    check(f"Phase G fix 1: {_pid} vs torso is exempt from the checks (the list)", isinstance(_r, Exempt), f"-> {type(_r).__name__}")
+    check(f"Phase G fix 1: {_pid} vs torso is not in the pair table", (_pid, "torso") not in _tab.key_index)
 _still = frozenset(("left_link1_1", "torso"))
-check("Phase F fix 3: the other torso pairs stay on the list (left link 1 joint 1 vs torso exempt)", _still in never_close_pairs())
-check("Phase F fix 3: the list holds 364 pairs (366 before, minus the two torso pairs)", len(never_close_pairs()) == 364, f"{len(never_close_pairs())}")
+check("Phase G fix 1: the other torso pairs stay on the list (left link 1 joint 1 vs torso exempt)", _still in never_close_pairs())
+check("Phase G fix 1: the list holds 366 pairs (the Phase D list, restored)", len(never_close_pairs()) == 366, f"{len(never_close_pairs())}")
 
 print(f"{len(fails)} failing check(s)" if fails else "ALL PASS")
 sys.exit(1 if fails else 0)

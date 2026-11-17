@@ -4714,7 +4714,7 @@
   "never_close_pairs": {
     "rule": "SF-23 (stage1, sweep) + SF-27 (stage2, divide and conquer); merge DNC-4",
     "model_fingerprint": "781198f99c7e46e8e1f9c90414e4407575cb53a1b92e89d0530e162c02ecb75c",
-    "fingerprint": "9c3621db63f3d77e228da321252ef49e46fb539b894e3553a18fa9f471f84ec8",
+    "fingerprint": "d1a21b1e7550db52a0541d995c9121d632d8978a1c91bf6508bd69ede9a0ea1a",
     "sources": {
       "stage1": {
         "file": "never_close_sweep.json",
@@ -4726,21 +4726,12 @@
       }
     },
     "counts": {
-      "stage1": 145,
+      "stage1": 147,
       "stage2": 219,
-      "removed": 2,
-      "total": 364
+      "removed": 0,
+      "total": 366
     },
-    "removed": [
-      [
-        "left_link1_2",
-        "torso"
-      ],
-      [
-        "left_link1_3",
-        "torso"
-      ]
-    ],
+    "removed": [],
     "pairs": [
       {
         "a": "left_link1_1",
@@ -4954,6 +4945,16 @@
       },
       {
         "a": "left_link1_1",
+        "b": "torso",
+        "source": "stage1"
+      },
+      {
+        "a": "left_link1_2",
+        "b": "torso",
+        "source": "stage1"
+      },
+      {
+        "a": "left_link1_3",
         "b": "torso",
         "source": "stage1"
       },

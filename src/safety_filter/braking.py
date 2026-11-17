@@ -482,7 +482,8 @@ class BrakingLayer:
                     if sd >= room:
                         need_brake = True
                         hard_room = gap - margin     # Phase C fix: an emergency is a stop that would ENTER the margin, not one that overshoots the stop target
-                        if sd - hard_room > float(self.tun["emergency_overshoot_ticks"]) * cush and vp > rest:    # Phase E fix 1 (David): also while already braking: a stop that cannot fit in the margin is an emergency
+                        finger_pair = "finger" in str(ida) or "finger" in str(idb)     # Phase F fix 1 (David): finger motion is gripper actuation, not arm approach: no emergency from a finger pair
+                        if sd - hard_room > float(self.tun["emergency_overshoot_ticks"]) * cush and vp > rest and not finger_pair:    # Phase E fix 1 (David): also while already braking: a stop that cannot fit in the margin is an emergency
                             emergency[i] = True          # even the S-curve cannot stop in time: braking must exceed its limits
                             self.errors.append(f"look-ahead failed ({SIDES[i]}): stopping distance {sd:.4f} m exceeds the room to the margin {hard_room:.4f} m "
                                                f"(speed {vp:.3f} m/s, gap {gap:.4f} m, margin {margin:.4f} m, pair {ida}|{idb})")

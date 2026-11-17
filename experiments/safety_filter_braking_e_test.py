@@ -168,5 +168,33 @@ xs50, sp50, ac50 = free_move(0.5, 300)
 check("fix 3: a target 50 cm away ramps to the full hand speed (cap) normally",
       float(sp50.max()) >= 0.99 * CAP3, f"peak {float(sp50.max()):.4f} m/s vs cap {CAP3}")
 check("fix 3: and the 50 cm move does not overshoot either", float(xs50.max()) <= 0.5 + 1e-9, f"max {xs50.max():.5f}")
+# ---- Phase F fix 1: a finger pair is exempt from the emergency closing-speed test (opening the gripper 6 mm in one tick, the arm nearly still) ----
+def finger_wall(ida, idb, gap0=0.02):
+    """A pair whose closest point moves with the finger (6 mm in one tick), the arm's own command closing the pair by 0.1 mm."""
+    def fn(q, state):
+        x = 0.5 * float(np.asarray(q, float)[0, 0])
+        gap = gap0 - x
+        return [[(gap, MARGIN, None, ida, idb, np.array([1.0, 0.0, 0.0]), np.array([x, 0.0, 0.0]), stop_gap(MARGIN, None))], None]
+    return fn
+
+
+def finger_case(ida, idb):
+    lay = BrakingLayer(tool_lin)
+    lay._braking[0] = False
+    lay.v[0] = 0.0
+    lay._prev_pa[(0, ida, idb)] = np.array([-0.006, 0.0, 0.0])            # the finger's closest point moved 6 mm last tick (0.9 m/s)
+    last_f = np.zeros((2, 7))
+    raw_f = last_f.copy()
+    raw_f[0, 0] = 0.0002                                                  # the arm's own command moves the pair 0.1 mm closer
+    out_f, info_f = lay.process(last_f, raw_f, None, finger_wall(ida, idb, 0.02))
+    return bool(info_f["override"][0]), lay.errors
+
+
+fin_over, fin_err = finger_case("left_finger_left", "right_finger_right")
+check("Phase F fix 1: opening the gripper 6 mm in one tick with the arm nearly still does not fire an emergency (a finger pair)",
+      not fin_over and not any("look-ahead failed" in e for e in fin_err), str(fin_err[:1]))
+pal_over, pal_err = finger_case("left_palm_2", "bench_top")
+check("Phase F fix 1: control: the same closing speed from a palm pair does fire the emergency", pal_over and any("look-ahead failed" in e for e in pal_err), str(pal_err[:1]))
+
 print(f"{len(fails)} failing check(s)" if fails else "ALL PASS")
 sys.exit(1 if fails else 0)

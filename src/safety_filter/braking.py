@@ -176,6 +176,7 @@ class BrakingLayer:
         self.a = np.zeros(2)           # profile acceleration of each arm (m/s^2)
         self._braking = np.zeros(2, bool)   # look-ahead latch: this arm is braking for an obstacle
         self._emergency = np.zeros(2, bool)
+        self._latch_key = [None, None]         # Phase I fix 1 (SF-89): per arm, the (hand shape, other shape) pair that latched the stop
         self._hold_arms = np.zeros(2, bool)    # Phase F fix 6 (SF-83): the arms of this tick that are held (the HOLD trigger of process)
         self._hard_latch = np.zeros(2, bool)   # Phase D fix 3: an arm already hard-clamped (its error is logged once, when the overspeed starts)
         self._hard_pose = np.zeros((2, 7))     # Phase D fix 3: the pose each hard-clamped arm holds (the one it had when the overspeed started)
@@ -246,6 +247,7 @@ class BrakingLayer:
         self.a[:] = 0.0
         self._dir[:] = 0.0
         self._braking[:] = False
+        self._latch_key = [None, None]
         self._ceiling[:] = False
         self._prev_pa = {}
         self._shaping[:] = False
@@ -507,14 +509,17 @@ class BrakingLayer:
             pl = self._pairs_of(at_last[i])
             if not pl:
                 self._braking[i] = self._ceiling[i] = False
+                self._latch_key[i] = None
                 continue
             raw_by = {(p[3], p[4]): p for p in self._pairs_of(at_raw[i])}
             v, a = self._va(i)
             a = min(max(a, 0.0), a_eff)             # the acceleration of the formula never exceeds the effective limit (the worst case the derived constants assume); a per-tick difference of pulsed commands can be far larger
             need_brake, brake_pairs, ceil_pairs, need_ceiling, worst = False, [], [], False, None
+            closing_now, trig_key = {}, None         # Phase I fix 1: closing of every pair this tick; the pair that latched the stop
             for gap, margin, ceiling, ida, idb, nrm, pa, sg in pl:      # sg: this pair's stop gap (the array 'stop' above is the per-arm stop flag)
                 pr = raw_by.get((ida, idb))
                 closing = pr is not None and pr[0] < gap - eps
+                closing_now[(ida, idb)] = closing
                 room = gap - sg     # Phase C step 4 (David): the stop target is just outside the resolver's push-out zone, not the midpoint (0 for the decided zero margin)
                 prev_pa = self._prev_pa.get((i, ida, idb))
                 if mode == "full" or nrm is None:
@@ -549,6 +554,8 @@ class BrakingLayer:
                     brake_pairs.append(room)
                     if sd >= room:
                         need_brake = True
+                        if trig_key is None:
+                            trig_key = (ida, idb)
                         hard_room = gap - margin     # Phase C fix: an emergency is a stop that would ENTER the margin, not one that overshoots the stop target
                         finger_pair = "finger" in str(ida) or "finger" in str(idb)     # Phase F fix 1 (David): finger motion is gripper actuation, not arm approach: no emergency from a finger pair
                         if sd - hard_room > float(self.tun["emergency_overshoot_ticks"]) * cush and vp > rest and not finger_pair:    # Phase E fix 1 (David): also while already braking: a stop that cannot fit in the margin is an emergency
@@ -561,10 +568,18 @@ class BrakingLayer:
                     if v_reach > float(ceiling) and slowing_distance(v_reach, a, float(ceiling), a_eff, jl, cush) >= room:     # Phase E fix 2: the reachable speed
                         need_ceiling = True
             commanded_motion = bool(np.any(raw[i] != last[i]))     # a tick where the source commands no motion says nothing about whether the obstacle cleared
+            latched = self._latch_key[i]                 # Phase I fix 1 (David): the pair that latched the stop
+            latch_closing = closing_now.get(latched, False) if latched is not None else False
             if need_brake:
                 self._braking[i] = True
+                if latched is None or not latch_closing:
+                    self._latch_key[i] = trig_key
+            elif self._braking[i] and latched is not None and not latch_closing and commanded_motion:
+                self._braking[i] = False                 # Phase I fix 1 (David): the source now moves away from the obstacle that latched the stop: release on this tick
+                self._latch_key[i] = None
             elif self._braking[i] and ((not brake_pairs and commanded_motion) or (v <= rest and brake_pairs and all(r_ > cush for r_ in brake_pairs))):
                 self._braking[i] = False                 # nothing closes any more, or stopped with room left (an early stop): speed up again on the S-curve
+                self._latch_key[i] = None
             if need_ceiling:
                 self._ceiling[i] = True
             elif self._ceiling[i] and not ceil_pairs:

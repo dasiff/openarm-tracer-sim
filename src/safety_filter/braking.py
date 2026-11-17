@@ -93,22 +93,26 @@ class ObstacleFeed:
                     else:
                         nrm = -np.asarray(push, float) / max(np.linalg.norm(push), 1e-12)   # overlapping: the direction back out of the obstacle, reversed
                     ceiling = cfg.approach_ceiling(rule.surface) if rule.surface else None      # any allowed-contact surface pair (held beaker or palm)
-                    out[i].append((gap - stop_gap(rule.margin, ceiling), gap, rule.margin, ceiling, a.id, b.id, nrm, np.asarray(pa, float)))
+                    stop = stop_gap(rule.margin, ceiling, rule.work_surface)     # Phase D fix 1: a work surface stops the hand closer to it
+                    out[i].append((gap - stop, gap, rule.margin, ceiling, a.id, b.id, nrm, np.asarray(pa, float), stop))
         return out
 
     def __call__(self, q, state):
-        """For each arm, every candidate pair at pose q as (gap, margin, ceiling or None, hand shape id, other shape id), nearest room first."""
+        """For each arm, every candidate pair at pose q as (gap, margin, ceiling or None, hand shape id, other shape id, direction, closest hand point, stop gap), nearest room first."""
         out = [[], []]
         for i, cands in enumerate(self.pairs(q, state)):
-            out[i] = [(c[1], c[2], c[3], c[4], c[5], c[6], c[7]) for c in sorted(cands, key=lambda c: c[0])]
+            out[i] = [(c[1], c[2], c[3], c[4], c[5], c[6], c[7], c[8]) for c in sorted(cands, key=lambda c: c[0])]
         return out
 
 
-def stop_gap(margin, ceiling):
+def stop_gap(margin, ceiling, work_surface=False):
     """Phase C step 4 (David): the gap at which the hand stops, measured from the modelled surface. Plain obstacle pairs stop just outside the
     resolver's push-out zone (margin + PUSH_STOP_BEYOND_M: the gap rule leaves a pair alone beyond its release distance); an allowed-contact
     surface (a ceiling pair) is approached up to its margin boundary, which the palm and the held beaker both reach by design."""
-    return margin if ceiling is not None else margin + cfg.PUSH_STOP_BEYOND_M
+    if ceiling is not None:
+        return margin
+    # Phase D fix 1 (David): a work surface (the bench top) has the tighter push-stop PUSH_STOP_BEYOND_M_WORK (stop target 1.5 cm)
+    return margin + (cfg.PUSH_STOP_BEYOND_M_WORK if work_surface else cfg.PUSH_STOP_BEYOND_M)
 
 
 def _aabb(sh):
@@ -338,12 +342,14 @@ class BrakingLayer:
             e = tuple(e)
             nrm = np.asarray(e[5], float) if len(e) > 5 and e[5] is not None else None
             pa = np.asarray(e[6], float) if len(e) > 6 and e[6] is not None else None
-            out.append((float(e[0]), float(e[1]), e[2] if len(e) > 2 else None, e[3] if len(e) > 3 else "", e[4] if len(e) > 4 else "", nrm, pa))
+            ceil_e = e[2] if len(e) > 2 else None
+            stop = float(e[7]) if len(e) > 7 and e[7] is not None else stop_gap(float(e[1]), ceil_e)   # the stop gap (8th value); a 7-value entry gets the default
+            out.append((float(e[0]), float(e[1]), ceil_e, e[3] if len(e) > 3 else "", e[4] if len(e) > 4 else "", nrm, pa, stop))
         return out
 
     def check(self, last, raw, state, obstacle_fn, vel=None):
         """The look-ahead, part of the safety check: for each arm and each obstacle pair, can the hand still brake from its current speed and
-        acceleration to the stop target (stop_gap: margin + PUSH_STOP_BEYOND_M from the modelled surface, or the margin for an allowed-contact surface) within the gap?
+        acceleration to the stop target (stop_gap: margin + PUSH_STOP_BEYOND_M from the modelled surface, margin + PUSH_STOP_BEYOND_M_WORK on a work surface, or the margin for an allowed-contact surface) within the gap?
         obstacle_fn(q (2,7), state) -> per arm a list of (gap_m, margin_m, ceiling_m_s or None, hand shape id, other shape id) (ObstacleFeed; a
         single tuple or None is accepted): every pair within worst_stop_dist_m is in it. A ceiling marks an allowed-contact surface (zero margin).
         A pair counts when the wanted command is closing on it (its gap at the command is smaller than at the last command). The speed used for a
@@ -377,10 +383,10 @@ class BrakingLayer:
             a = min(max(a, 0.0), a_eff)             # the acceleration of the formula never exceeds the effective limit (the worst case the derived constants assume); a per-tick difference of pulsed commands can be far larger
             was_braking = bool(self._braking[i])
             need_brake, brake_pairs, ceil_pairs, need_ceiling, worst = False, [], [], False, None
-            for gap, margin, ceiling, ida, idb, nrm, pa in pl:
+            for gap, margin, ceiling, ida, idb, nrm, pa, sg in pl:      # sg: this pair's stop gap (the array 'stop' above is the per-arm stop flag)
                 pr = raw_by.get((ida, idb))
                 closing = pr is not None and pr[0] < gap - eps
-                room = gap - stop_gap(margin, ceiling)     # Phase C step 4 (David): the stop target is just outside the resolver's push-out zone, not the midpoint (0 for the decided zero margin)
+                room = gap - sg     # Phase C step 4 (David): the stop target is just outside the resolver's push-out zone, not the midpoint (0 for the decided zero margin)
                 prev_pa = self._prev_pa.get((i, ida, idb))
                 if mode == "full" or nrm is None:
                     vp = v                                 # the whole hand speed (the cautious reading, and the only one without a direction)
@@ -426,7 +432,7 @@ class BrakingLayer:
             stop[i] = self._braking[i]
             info[i] = {**worst, "braking": bool(self._braking[i]), "ceiling_active": bool(self._ceiling[i]),
                        "surface_gap": min([p[0] for p in pl if p[2] is not None], default=float("nan"))}
-        self._prev_pa = {(i, ida, idb): pa for i in range(2) for (_g, _m, _c, ida, idb, _n, pa) in self._pairs_of(at_last[i]) if pa is not None}
+        self._prev_pa = {(i, ida, idb): pa for i in range(2) for (_g, _m, _c, ida, idb, _n, pa, _s) in self._pairs_of(at_last[i]) if pa is not None}
         return stop, limit, info
 
     def process(self, last, raw, state, obstacle_fn=None, hold=False):

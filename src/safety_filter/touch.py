@@ -37,6 +37,7 @@ class Rule:
     margin: float      # m
     activation: float  # m: a pair becomes active this far inside its margin distance (M288: 1 cm beyond)
     release: float     # m: a pair is released 2 cm beyond it (M288)
+    work_surface: bool = False  # Phase D fix 1: the other shape is a work surface: the push-stop is PUSH_STOP_BEYOND_M_WORK beyond the margin
     surface: str = ""  # Part 2: for a held object against an allowed-contact surface, the surface's name (object id); its approach ceiling applies
 
 
@@ -51,10 +52,11 @@ def wake_dist():
     return cfg.derived()["worst_stop_dist_m"]
 
 
-def _rule(kind, margin, surface=""):
+def _rule(kind, margin, surface="", work_surface=False):
     w = wake_dist()
+    beyond = cfg.PUSH_STOP_BEYOND_M_WORK if work_surface else cfg.PUSH_STOP_BEYOND_M     # Phase D fix 1: a work surface has the tighter push zone
     return Rule(kind=kind, margin=margin, activation=max(margin + cfg.PUSH_START_BEYOND_M, w),
-                release=max(margin + cfg.PUSH_STOP_BEYOND_M, w), surface=surface)
+                release=max(margin + beyond, w), surface=surface, work_surface=work_surface)
 
 
 def pair_rule(a: PlacedShape, b: PlacedShape, use_never_close=True):
@@ -81,12 +83,12 @@ def _pair_rule(a: PlacedShape, b: PlacedShape):
         if robot.part == "held":                                # Part 2: held objects are checked against the world
             if world.allowed_contact:
                 return _rule("held-surface", cfg.HELD_SURFACE_MARGIN_M, surface=world.id)   # zero margin, approach ceiling speed
-            return _rule("held-world", cfg.MARGINS["held_world_margin_m"])               # one margin, full stop at its midpoint
+            return _rule("held-world", cfg.MARGINS["held_world_margin_m"], work_surface=world.work_surface)               # one margin, full stop at its midpoint
         if robot.part == "palm" and world.allowed_contact:  # Phase C step 2 (David): the palm may approach an allowed-contact surface at its approach ceiling, one margin off it
             return _rule("palm-surface", cfg.MARGINS["held_world_margin_m"], surface=world.id)
         if robot.arm == "common":
             return Exempt("robot body against the world is not in the touch rules")
-        return _rule("arm-world", cfg.MARGINS["arm_world_m"])
+        return _rule("arm-world", cfg.MARGINS["arm_world_m"], work_surface=world.work_surface)
     if a.part == "shoulder_mount" and b.part == "shoulder_mount":
         return Exempt("both shoulder mounts are fixed to the torso: they never move relative to each other")
     if a.arm == b.arm and a.arm in SIDES:
@@ -105,7 +107,7 @@ def _pair_rule(a: PlacedShape, b: PlacedShape):
     return _rule("robot-robot", cfg.MARGINS["robot_robot_m"])
 
 
-def shape_of(obj_id, shape, size, centre, rot, arm, part, body="world", never_touch=False, allowed_contact=False):
+def shape_of(obj_id, shape, size, centre, rot, arm, part, body="world", never_touch=False, allowed_contact=False, work_surface=False):
     """A placed shape from a world-style description: a box (half sizes) or a capsule (radius, half length along
     the rotation's z column). Both keep their centre."""
     centre, rot = np.asarray(centre, float), np.asarray(rot, float)
@@ -114,15 +116,15 @@ def shape_of(obj_id, shape, size, centre, rot, arm, part, body="world", never_to
         ax = rot[:, 2]
         return PlacedShape(id=obj_id, arm=arm, part=part, kind="capsule", body=body,
                            a=centre - h * ax, b=centre + h * ax, r=float(r), centre=centre, rot=rot, never_touch=never_touch,
-                           allowed_contact=allowed_contact)
+                           allowed_contact=allowed_contact, work_surface=work_surface)
     return PlacedShape(id=obj_id, arm=arm, part=part, kind="box", body=body, centre=centre, rot=rot,
-                       half=np.asarray(size, float), never_touch=never_touch, allowed_contact=allowed_contact)
+                       half=np.asarray(size, float), never_touch=never_touch, allowed_contact=allowed_contact, work_surface=work_surface)
 
 
 def as_placed(obj: WorldObject) -> PlacedShape:
     """A world object as a placed shape (capsule or box)."""
     return shape_of(obj.id, obj.shape, obj.size, obj.centre, obj.rot_matrix(), "world", "world", never_touch=obj.never_touch,
-                    allowed_contact=obj.allowed_contact)
+                    allowed_contact=obj.allowed_contact, work_surface=obj.work_surface)
 
 
 def gap_between(a: PlacedShape, b: PlacedShape):
@@ -315,7 +317,7 @@ class HeldTracker:
             rot = hand_rot @ rec["off_rot"]
             self.world.add(WorldObject(id=obj.id, shape=obj.shape, size=obj.size, centre=tuple(pos),
                                        rot=tuple(rot.ravel()), graspable=obj.graspable, round=obj.round,
-                                       allowed_contact=obj.allowed_contact))
+                                       allowed_contact=obj.allowed_contact, work_surface=obj.work_surface))
             return "release"
         return None
 

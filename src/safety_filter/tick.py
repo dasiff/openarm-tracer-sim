@@ -81,7 +81,7 @@ class Statics:
         placed = [as_placed(o) for o in objects]
         n = len(placed)
         w = {"objs": list(objects), "placed": placed, "by_id": {s.id: s for s in placed},
-             "sig": tuple((s.id, s.kind, bool(s.never_touch), bool(s.allowed_contact)) for s in placed),
+             "sig": tuple((s.id, s.kind, bool(s.never_touch), bool(s.allowed_contact), bool(s.work_surface)) for s in placed),
              "A": np.zeros((n, 3)), "B": np.zeros((n, 3)), "C": np.zeros((n, 3)), "R": np.zeros((n, 3, 3))}
         for k, s in enumerate(placed):
             if s.kind == "capsule":

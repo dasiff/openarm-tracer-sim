@@ -32,6 +32,7 @@ class WorldObject:
     round: bool = False
     fixture: bool = False
     allowed_contact: bool = False  # Part 2: an allowed-contact surface (OBJECT_CATALOG): a held object may touch it, at the approach ceiling
+    work_surface: bool = False  # Phase D fix 1: a work surface (OBJECT_CATALOG "work_surface", the bench top): a hand's push-stop beyond its margin is PUSH_STOP_BEYOND_M_WORK
     never_touch: bool = False  # SF-65: a never-touch object (e.g. a pet): no exemptions for fingers or held objects, own margin config.NEVER_TOUCH_MARGIN_M
 
     def rot_matrix(self):
@@ -69,7 +70,7 @@ class LabMapSource:
         self.bench_open = doc["bench_open"]
         self._objects = [WorldObject(id=f["name"], shape="box", size=tuple(f["half"]),
                                      centre=tuple(f["center"]), rot=tuple(_rot9(f["quat"])),
-                                     fixture=True)
+                                     fixture=True, work_surface=bool(OBJECT_CATALOG.get(f["name"], {}).get("work_surface", False)))
                          for f in doc["fixtures"]]
 
     def objects(self):
@@ -91,7 +92,7 @@ def catalog_object(entry_id, position, axis=None):
         size = tuple(spec["half_m"])
     return WorldObject(id=entry_id, shape=spec["shape"], size=tuple(size), centre=tuple(centre),
                        rot=tuple(np.eye(3).ravel()), graspable=spec["graspable"], round=spec["round"],
-                       allowed_contact=bool(spec.get("allowed_contact", False)))
+                       allowed_contact=bool(spec.get("allowed_contact", False)), work_surface=bool(spec.get("work_surface", False)))
 
 
 class WorldModelAdapter:

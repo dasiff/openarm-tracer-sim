@@ -44,6 +44,10 @@ NEVER_TOUCH_MARGIN_M = 0.05     # m [SF-65]: 5 cm; David's value for the cat dem
 PUSH_START_BEYOND_M = 0.01      # m, PROVISIONAL [M288]
 PUSH_STOP_BEYOND_M = 0.02       # m, PROVISIONAL [M288]
 
+# Work surfaces (OBJECT_CATALOG "work_surface", the bench top): the push-stop beyond the margin is this instead of PUSH_STOP_BEYOND_M, so a hand may
+# come closer to the bench (the grasp pose 2.3 cm off it). Phase D fix 1 (David).
+PUSH_STOP_BEYOND_M_WORK = 0.005  # m, PLACEHOLDER — tuned by test [Phase D fix 1, David]: stop target on a work surface = margin + this (1.5 cm at the 1 cm margin)
+
 # Torso exemption by REAL geometry (SF-19): an arm shape is exempt from the torso only if its link's real geometry is
 # within 1 mm of the real torso mesh at home (it touches the torso by construction). Parts listed here (provisional; see the report).
 TORSO_EXEMPT_PARTS = ("shoulder_mount",)
@@ -123,6 +127,12 @@ OBJECT_CATALOG = {
         "shape": "box", "half_m": (0.09, 0.09, 0.03),
         "centre_above_bottom_m": 0.03, "graspable": False, "round": False, "allowed_contact": True, "entry_at_top": True,   # the world model keeps the hotplate (a fixture entry) at the centre of its top face (site hotplate_top), not at its bottom   # a held object may touch it (zero margin, approach ceiling)
         "source": "models/objects/hotplate.xml geom task_hotplate_base: box half sizes 0.09 0.09 0.03 at z 0.03",
+    },
+    "bench_top": {
+        # Phase D fix 1 (David): the bench top is a work surface (hands come closer to it: PUSH_STOP_BEYOND_M_WORK). It is a lab-map fixture,
+        # not a world-model object: data/safety_filter/lab_map.json fixture name bench_top takes the flag from here (LabMapSource). The size is the lab map's.
+        "shape": "box", "half_m": (2.2, 0.8, 0.06), "work_surface": True, "graspable": False, "round": False, "allowed_contact": False,
+        "source": "data/safety_filter/lab_map.json fixture bench_top (scene body bench, geom bench_top): box half sizes 2.2 0.8 0.06",
     },
 }
 

@@ -109,5 +109,64 @@ stop_nc, _, _ = lay_nc.check(last_q0, last_q0.copy(), None, wall(0.05))
 check("fix 2: unchanged rule: a pair counts only while the command closes on it (no commanded approach, no brake)",
       not bool(stop_nc[0]), f"stop {stop_nc[0]}")
 
+# ---- fix 3: the distance-aware ramp: a free move's speed never exceeds what the formula allows to still stop at the target ----
+A_EFF = cfg.derived()["effective_accel_limit"]
+JL = cfg.BRAKING["jerk_limit_m_s3"]
+CAP3 = cfg.BRAKING["hand_speed_cap_m_s"]
+
+
+def stoppable(dist, a0):
+    """The largest speed from which the two-step formula stops within dist, from acceleration a0 (no cushion): bisection."""
+    a0 = min(max(a0, 0.0), A_EFF)
+    lo, hi = 0.0, CAP3
+    for _ in range(80):
+        mid = 0.5 * (lo + hi)
+        if stopping_distance(mid, a0, A_EFF, JL, 0.0) <= dist:
+            lo = mid
+        else:
+            hi = mid
+    return lo
+
+
+def free_move(x_target, ticks):
+    """A free move (no obstacle): the tool point (tool_lin, x = 0.5 * joint 0) driven to x_target by a command fixed at the target.
+    Returns the tool positions, speeds and accelerations of the ramp, one per tick."""
+    lay = BrakingLayer(tool_lin)
+    last_q = np.zeros((2, 7))
+    raw_q = last_q.copy()
+    raw_q[0, 0] = 2.0 * x_target
+    xs, vs_, as_ = [], [], []
+    for _ in range(ticks):
+        out, info = lay.process(last_q, raw_q, None, None)
+        last_q = out
+        xs.append(0.5 * float(out[0, 0]))
+        vs_.append(float(info["speed"][0]))
+        as_.append(float(info["accel"][0]))
+    return np.array(xs), np.array(vs_), np.array(as_)
+
+
+def envelope(x_target, xs, accs):
+    """The stoppable speed of each tick, from the distance left and the acceleration before that tick."""
+    x_prev = np.concatenate([[0.0], xs[:-1]])
+    a_prev = np.concatenate([[0.0], accs[:-1]])
+    return np.array([stoppable(x_target - xp, ap) for xp, ap in zip(x_prev, a_prev)])
+
+
+xs5, sp5, ac5 = free_move(0.005, 400)
+env5 = envelope(0.005, xs5, ac5)
+check("fix 3: a target 5 mm away is never overshot (the tool point never passes it)", float(xs5.max()) <= 0.005 + 1e-9, f"max {xs5.max() * 1000:.4f} mm")
+check("fix 3: and the move arrives at the target (within 0.1 mm)", abs(float(xs5[-1]) - 0.005) < 1e-4, f"final {xs5[-1] * 1000:.4f} mm")
+excess5 = sp5 - env5
+k_worst = int(np.argmax(excess5))
+check("fix 3: the speed never exceeds what the formula allows at each tick (the stoppable speed for the distance left and the acceleration; "
+      "the last sub-millimetre may exceed it by the final step's own speed, below 1e-4 m/s)",
+      float(excess5.max()) <= 1e-4, f"worst excess {float(excess5.max()):.3e} m/s at tick {k_worst}, {(0.005 - xs5[k_worst]) * 1e6:.1f} um from the target")
+k_peak = int(np.argmax(sp5))
+check("fix 3: the ramp rides the allowance up to its peak (the speed at the peak is within 10 % of the allowance at that tick)",
+      float(sp5[k_peak]) >= 0.9 * float(env5[k_peak]), f"peak {float(sp5[k_peak]):.5f} m/s vs allowance {float(env5[k_peak]):.5f} m/s")
+xs50, sp50, ac50 = free_move(0.5, 300)
+check("fix 3: a target 50 cm away ramps to the full hand speed (cap) normally",
+      float(sp50.max()) >= 0.99 * CAP3, f"peak {float(sp50.max()):.4f} m/s vs cap {CAP3}")
+check("fix 3: and the 50 cm move does not overshoot either", float(xs50.max()) <= 0.5 + 1e-9, f"max {xs50.max():.5f}")
 print(f"{len(fails)} failing check(s)" if fails else "ALL PASS")
 sys.exit(1 if fails else 0)

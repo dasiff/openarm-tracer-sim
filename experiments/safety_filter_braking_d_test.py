@@ -115,8 +115,8 @@ def descend(work, speed, ticks=900):
 
 
 R_fast = descend(True, 0.04)
-check("fix 1: a fast palm (4 cm/s) stops at the 1.5 cm target: final palm gap in [14.5, 16.0] mm",
-      0.0145 <= R_fast["gaps"][-1] <= 0.0160, f"final {R_fast['gaps'][-1] * 1000:.2f} mm (joint {R_fast['joint']}, d gap/d rad {R_fast['dg']:.3f})")
+check("fix 1: a fast palm (4 cm/s) stops at the 1.5 cm target: final palm gap in [14.5, 17.5] mm (Phase E fix 3: the free-motion cap makes the palm trail its source by the stopping distance; the stop lands on the safe side)",
+      0.0145 <= R_fast["gaps"][-1] <= 0.0175, f"final {R_fast['gaps'][-1] * 1000:.2f} mm (joint {R_fast['joint']}, d gap/d rad {R_fast['dg']:.3f})")
 check("fix 1: the fast palm passes the 2.3 cm grasp pose on its way (it is not held at 3 cm)", R_fast["gaps"].min() <= 0.0235, f"min {R_fast['gaps'].min() * 1000:.2f} mm")
 check("fix 1: once stopped the palm stays still (no creep over the last 200 ticks)", np.max(np.abs(np.diff(R_fast["outs"][-200:], axis=0))) < 1e-9,
       f"{np.max(np.abs(np.diff(R_fast['outs'][-200:], axis=0)))}")
@@ -129,7 +129,7 @@ first_gap = float(R_slow["gaps"][first[0]]) if first.size else float("nan")
 # so a slow approach overshoots the command when the output catches up with a lag (2.7x the commanded step), then the "never past the commanded
 # pose" clip stops it abruptly (acceleration -1.4 m/s2, limit 0.5). The look-ahead then latches a brake at the first brake gap below, above the grasp pose.
 print(f"INFO F-D1: slow palm (1 cm/s) first brake at {first_gap * 1000:.2f} mm (the grasp pose is 23 mm; not asserted until F-D1 is decided)")
-check("fix 1: the slow palm reaches 2.3 cm and stops at 1.5 cm", R_slow["gaps"].min() <= 0.0235 and 0.0145 <= R_slow["gaps"][-1] <= 0.0160,
+check("fix 1: the slow palm reaches 2.3 cm and stops at 1.5 cm", R_slow["gaps"].min() <= 0.0235 and 0.0145 <= R_slow["gaps"][-1] <= 0.0175,
       f"min {R_slow['gaps'].min() * 1000:.2f} mm, final {R_slow['gaps'][-1] * 1000:.2f} mm")
 check("fix 1: no look-ahead error in the slow work-surface descent", not R_slow["errors"], str(R_slow["errors"][:1]))
 

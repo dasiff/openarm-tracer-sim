@@ -410,16 +410,36 @@ check("transparent: a command that breaks the cap is still shaped", not np.array
 Lw = BrakingLayer(fake_tool)
 last = np.zeros((2, 7))
 seq, shaped = [], []
+stream0 = 0.0
 for k in range(500):
-    raw = last.copy()
-    raw[0, 0] += (0.5 if k < 300 else 0.05 / 0.5 / 150.0 * 0.5 * 2)   # first far ahead (above the cap), then a command at 0.05 m/s (0.5 * 0.1 rad.. = 0.05 m/s)
+    # Phase E (fix 3): the sources are independent paths, not the output plus a step: a source that moves with the output never builds a lag,
+    # and the distance-aware cap then holds the hand near one step. First far ahead (above the cap), then a 0.05 m/s stream from where the hand is.
+    if k < 300:
+        raw = np.zeros((2, 7))
+        raw[0, 0] = 0.5 * (k + 1)
+    else:
+        if k == 300:
+            stream0 = float(last[0, 0])
+        raw = np.zeros((2, 7))
+        raw[0, 0] = stream0 + (0.05 / (0.5 * 150.0)) * (k - 299)           # tool 0.5 m per rad: 0.05 m/s = 0.05 / (0.5 * 150) rad per tick
     out, info = Lw.process(last, raw, None, None)
     seq.append(float(Lw.commanded_speed(last, out, None)[0]))
     shaped.append(bool(Lw._shaping[0]))
     last = out
 seq = np.array(seq)
-check("shaping: a source that itself commands a slower speed is followed (never past the commanded pose); no overshoot", abs(seq[-1] - 0.05) < 1e-6 and seq[300:].max() <= 0.2 + 1e-9, f"{seq[-1]}")
-check("shaping: ends when the ramp has converged on the command, which is then passed exactly (free motion)", (not shaped[-1]) and not shaped[0] is None and any(shaped[:300]))
+# Phase E (fix 3): a steady stream is followed within 5 % with a lag equal to the stopping distance at its speed (the distance-aware cap
+# makes the speed oscillate by about 2 mm/s around the command: no exact convergence on a stream). The exact convergence is checked on a fixed target below.
+check("shaping: a source that itself commands a slower speed is followed within 5 % (never past the commanded pose); no overshoot",
+      abs(float(np.mean(seq[-100:])) - 0.05) < 0.0025 and float(np.max(np.abs(seq[-100:] - 0.05))) < 0.005 and seq[300:].max() <= 0.2 + 1e-9, f"mean {float(np.mean(seq[-100:])):.5f}")
+Lf_fix = BrakingLayer(fake_tool)
+last_f = np.zeros((2, 7))
+raw_f = last_f.copy()
+raw_f[0, 0] = 0.02                                          # a fixed target: the ramp converges on it and the command is passed exactly
+for _ in range(600):
+    out_f, _ = Lf_fix.process(last_f, raw_f, None, None)
+    last_f = out_f
+check("shaping: ends when the ramp has converged on a fixed command, which is then reached exactly (free motion)",
+      (not Lf_fix._shaping[0]) and float(np.max(np.abs(last_f - raw_f))) < 1e-9 and any(shaped[:300]))
 
 # ---- Phase B integration findings: the look-ahead acceleration is clamped; an early stop with room left is released ----
 Lc2 = BrakingLayer(fake_tool)

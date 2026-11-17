@@ -174,9 +174,9 @@ def bench2cm(q, state):                                    # the hand's gap to t
 L6 = BrakingLayer(xy_tool)
 last6 = np.zeros((2, 7))
 stops6 = 0
-for k in range(300):                                       # the source moves the hand along the bench at 0.12 m/s for 2 s
-    raw6 = last6.copy()
-    raw6[0, 0] += 0.12 * DT3 / 0.5
+for k in range(300):                                       # the source moves the hand along the bench at 0.12 m/s for 2 s (an independent stream, Phase E fix 3)
+    raw6 = np.zeros((2, 7))
+    raw6[0, 0] = 0.12 * DT3 * (k + 1) / 0.5
     out6, info6 = L6.process(last6, raw6, None, bench2cm)
     stops6 += int(info6["stop"].any())
     last6 = out6

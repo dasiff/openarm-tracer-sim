@@ -306,6 +306,26 @@ class BrakingLayer:
         self._hard_latch = hard.copy()
         return hard
 
+    def _stoppable_speed(self, i, dist):
+        """Phase E fix 3 (David): the largest speed (m/s, at most the hand cap) from which the ramp can still stop within dist (m) at the
+        target: the two-step stopping formula from the arm's current acceleration (eased to zero first). Same math as the obstacle look-ahead,
+        applied to the command target. No tick cushion: the stop lands on the target."""
+        if dist <= 0.0:
+            return 0.0
+        capv = float(self.tun["hand_speed_cap_m_s"])
+        a_eff, jl = self.d["effective_accel_limit"], float(self.tun["jerk_limit_m_s3"])
+        a0 = min(max(float(self.a[i]), 0.0), a_eff)
+        if stopping_distance(capv, a0, a_eff, jl, 0.0) <= dist:
+            return capv
+        lo, hi = 0.0, capv
+        for _ in range(60):
+            mid = 0.5 * (lo + hi)
+            if stopping_distance(mid, a0, a_eff, jl, 0.0) <= dist:
+                lo = mid
+            else:
+                hi = mid
+        return lo
+
     def step(self, last, raw, state, stop=None, speed_limit=None):
         """One tick of the profile. Each arm's speed moves toward its target through the jerk-limited ramp (S-shaped both ways); the joint
         step is the commanded direction scaled to the ramp's speed.
@@ -328,12 +348,15 @@ class BrakingLayer:
                 if n > 0:
                     self._dir[i] = delta / n
                 continue
+            stop_cap = None
             if stop[i] or not np.any(delta):
                 direction = self._dir[i]
                 target = 0.0 if stop[i] else 0.0
             else:
                 direction = delta
                 target = min(float(vs[i]), capv)
+                stop_cap = self._stoppable_speed(i, float(vs[i]) * self.dt)     # Phase E fix 3: never faster than can still stop at the target (vs * dt is the tool distance left)
+                target = min(target, stop_cap)
             if speed_limit is not None:
                 target = min(target, float(speed_limit[i]))
             v1, a1 = self.ramp.step(v0, a0, target)
@@ -343,6 +366,9 @@ class BrakingLayer:
             # allowed-contact surfaces are NOT clamped here: they are reached on the S-curve, as before.)
             if v1 > capv:
                 v1 = capv
+                a1 = float(np.clip((v1 - v0) / self.dt, -self.d["effective_accel_limit"], self.d["effective_accel_limit"]))
+            if stop_cap is not None and v1 > stop_cap:          # Phase E fix 3 (David): the ramp's speed capped to the stoppable speed of this tick (the ramp follows a falling target one tick late)
+                v1 = stop_cap
                 a1 = float(np.clip((v1 - v0) / self.dt, -self.d["effective_accel_limit"], self.d["effective_accel_limit"]))
             if not np.any(direction):
                 v1, a1 = 0.0, 0.0

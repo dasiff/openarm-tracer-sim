@@ -147,6 +147,13 @@ SLEEP = {
     "stats_cap_ticks": 2000,        # ticks [SF-72]: the sleep length histogram (for the profile) stops counting at this many ticks
 }
 
+# Compiled distance functions (Braking Phase F fix 4, SF-81, David's decision: compile). True: geometry.capsule_capsule, capsule_box,
+# cylinder_capsule and cylinder_box run as numba code (src/safety_filter/geometry_jit.py). False: the Python reference (geometry._py_*).
+# The two agree to 1e-6 m (experiments/safety_filter_jit_test.py). The compiled code compiles on its first call in each process.
+GEOMETRY = {
+    "compiled": True,               # switch [SF-81]: True = numba (about the speed of C for these loops); False = the Python reference, for before/after timing
+}
+
 # Array form of a tick (Stage 5 speed, SF-69 to SF-71; src/safety_filter/tick.py, tick_arrays.py). Sizes and the tolerances of the bounds
 # that rule pairs out. The bounds only decide which pairs get the exact check; the exact number is always the scalar function's.
 ARRAY_FORM = {
@@ -194,6 +201,7 @@ BRAKING = {
     "hand_speed_cap_m_s": 0.20,     # m/s, PLACEHOLDER — tuned by test: hand-level speed limit at the tool point; separate from the bridge's per-joint 0.5 rad/s cap; enforced every tick by scaling back the joint commands
     "accel_limit_m_s2": 0.50,       # m/s^2, PLACEHOLDER — tuned by test: the one limit for braking and for speeding up, measured at the tool point
     "jerk_limit_m_s3": 2.00,        # m/s^3, PLACEHOLDER — tuned by test: how fast the acceleration may change (per tick: jerk x dt); makes the speed curve S-shaped both ways
+    "adaptive_wake": True,          # switch [SF-82, SF-83, Phase F fix 5/6]: True = the look-ahead checks a pair only inside the current stopping distance (the wake radius; HOLD adds the margin); False = every pair within the static cutoff (the Phase E behaviour)
     "approach_ceiling_m_s": {"hotplate": 0.05},  # m/s per allowed-contact surface name (the object id); PLACEHOLDER — tuned by test; a surface not listed gets hand_speed_cap_m_s
     # ---- settings the brief leaves implicit: simplest reading, named so they can change (listed as decisions) ----
     "tick_hz": 150.0,               # Hz: the filter tick = the control loop's source_hz (src/control_loop.py cfg); the jerk limit is counted per tick of this rate

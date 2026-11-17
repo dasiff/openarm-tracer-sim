@@ -18,6 +18,8 @@ from dataclasses import dataclass
 
 import numpy as np
 
+from src.safety_filter import config as cfg   # Phase F fix 4 (SF-81): the public contacts run compiled when cfg.GEOMETRY["compiled"]
+
 
 @dataclass(frozen=True)
 class Contact:
@@ -58,8 +60,8 @@ def closest_points_segments(p1, q1, p2, q2):
     return p1 + s * d1, p2 + t * d2
 
 
-def capsule_capsule(A1, B1, r1, A2, B2, r2):
-    """Gap, closest points and push direction between two capsules (ends A, B, radius r)."""
+def _py_capsule_capsule(A1, B1, r1, A2, B2, r2):
+    """Python reference of capsule_capsule (Phase F: the compiled one is geometry_jit.cc_contact; this one stays the reference)."""
     A1, B1, A2, B2 = (np.asarray(x, float) for x in (A1, B1, A2, B2))
     p1, p2 = closest_points_segments(A1, B1, A2, B2)
     d = p1 - p2
@@ -91,8 +93,8 @@ def _sd_box_local(p, h):
     return outside + inside
 
 
-def capsule_box(A, B, r, c, R, h):
-    """Gap, closest points and push direction between a capsule (ends A, B, radius r) and a box."""
+def _py_capsule_box(A, B, r, c, R, h):
+    """Python reference of capsule_box (Phase F: the compiled one is geometry_jit.cb_contact; this one stays the reference)."""
     A, B = np.asarray(A, float), np.asarray(B, float)
     c, h = np.asarray(c, float), np.asarray(h, float)
     R = np.asarray(R, float)
@@ -296,8 +298,9 @@ def _seg_min_cyl(A, B, c, R, rc, hc):
     return best_v, best_t
 
 
-def cylinder_capsule(c, R, rc, hc, A, B, r):
-    """Gap between the solid cylinder (first shape) and the capsule (second: segment A-B, radius r): the least signed distance from the segment
+def _py_cylinder_capsule(c, R, rc, hc, A, B, r):
+    """Python reference of cylinder_capsule (Phase F: the compiled one is geometry_jit.cyl_cap_contact; this one stays the reference).
+    Gap between the solid cylinder (first shape) and the capsule (second: segment A-B, radius r): the least signed distance from the segment
     to the cylinder minus r. Returns Contact(gap, point_a on the cylinder, point_b on the segment, push: moves the capsule away from the cylinder).
     Overlapping: the gap is negative, the depth at the segment's deepest point."""
     c, R = np.asarray(c, float), np.asarray(R, float)
@@ -402,8 +405,9 @@ def _gjk_distance(sup, start):
     raise RuntimeError("GJK did not converge")
 
 
-def cylinder_box(c, R, rc, hc, cb, Rb, hb):
-    """Gap between the solid cylinder (first shape) and the solid box (second: centre cb, rotation Rb, half sizes hb). Returns Contact(gap,
+def _py_cylinder_box(c, R, rc, hc, cb, Rb, hb):
+    """Python reference of cylinder_box (Phase F: the compiled one is geometry_jit.cyl_box_contact; this one stays the reference).
+    Gap between the solid cylinder (first shape) and the solid box (second: centre cb, rotation Rb, half sizes hb). Returns Contact(gap,
     point_a on the cylinder, point_b on the box, push: moves the box away from the cylinder). Separated: the distance (GJK, exact to GJK_TOL_M).
     Touching on a box face or the cylinder axis: gap 0. Deep overlap: minus the penetration depth, the least support of the difference over
     the box faces, the axis and OVERLAP_DIRS fixed directions, then a local search (approximate; not used in normal operation)."""
@@ -445,3 +449,54 @@ def cylinder_box(c, R, rc, hc, cb, Rb, hb):
             step *= 0.6
     a, b = sup(u)
     return Contact(gap=-float(best), point_a=a, point_b=b, push=u)
+
+
+# ---------- public contacts (Phase F fix 4, SF-81): compiled when cfg.GEOMETRY["compiled"], else the Python reference above ----------
+
+_JIT = None
+
+
+def _jit():
+    """geometry_jit, imported on first use (numba is slow to import, and the Python path does not need it)."""
+    global _JIT
+    if _JIT is None:
+        from src.safety_filter import geometry_jit
+        _JIT = geometry_jit
+    return _JIT
+
+
+def capsule_capsule(A1, B1, r1, A2, B2, r2):
+    """Gap, closest points and push direction between two capsules (ends A, B, radius r)."""
+    if not cfg.GEOMETRY["compiled"]:
+        return _py_capsule_capsule(A1, B1, r1, A2, B2, r2)
+    g, pa, pb, push = _jit().cc_contact(np.asarray(A1, float), np.asarray(B1, float), float(r1),
+                                        np.asarray(A2, float), np.asarray(B2, float), float(r2))
+    return Contact(gap=float(g), point_a=pa, point_b=pb, push=push)
+
+
+def capsule_box(A, B, r, c, R, h):
+    """Gap, closest points and push direction between a capsule (ends A, B, radius r) and a box."""
+    if not cfg.GEOMETRY["compiled"]:
+        return _py_capsule_box(A, B, r, c, R, h)
+    g, pa, pb, push = _jit().cb_contact(np.asarray(A, float), np.asarray(B, float), float(r), np.asarray(c, float),
+                                        np.asarray(R, float), np.asarray(h, float))
+    return Contact(gap=float(g), point_a=pa, point_b=pb, push=push)
+
+
+def cylinder_capsule(c, R, rc, hc, A, B, r):
+    """Gap between the solid cylinder (first shape) and a capsule (see _py_cylinder_capsule)."""
+    if not cfg.GEOMETRY["compiled"]:
+        return _py_cylinder_capsule(c, R, rc, hc, A, B, r)
+    g, pa, pb, push = _jit().cyl_cap_contact(np.asarray(c, float), np.asarray(R, float), float(rc), float(hc),
+                                             np.asarray(A, float), np.asarray(B, float), float(r))
+    return Contact(gap=float(g), point_a=pa, point_b=pb, push=push)
+
+
+def cylinder_box(c, R, rc, hc, cb, Rb, hb):
+    """Gap between the solid cylinder (first shape) and a solid box (see _py_cylinder_box)."""
+    if not cfg.GEOMETRY["compiled"]:
+        return _py_cylinder_box(c, R, rc, hc, cb, Rb, hb)
+    j = _jit()
+    g, pa, pb, push = j.cyl_box_contact(np.asarray(c, float), np.asarray(R, float), float(rc), float(hc), np.asarray(cb, float),
+                                        np.asarray(Rb, float), np.asarray(hb, float), j.DIRS, j.LS_NORMALS)
+    return Contact(gap=float(g), point_a=pa, point_b=pb, push=push)

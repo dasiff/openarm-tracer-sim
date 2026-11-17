@@ -419,7 +419,6 @@ class BrakingLayer:
             raw_by = {(p[3], p[4]): p for p in self._pairs_of(at_raw[i])}
             v, a = self._va(i)
             a = min(max(a, 0.0), a_eff)             # the acceleration of the formula never exceeds the effective limit (the worst case the derived constants assume); a per-tick difference of pulsed commands can be far larger
-            was_braking = bool(self._braking[i])
             need_brake, brake_pairs, ceil_pairs, need_ceiling, worst = False, [], [], False, None
             for gap, margin, ceiling, ida, idb, nrm, pa, sg in pl:      # sg: this pair's stop gap (the array 'stop' above is the per-arm stop flag)
                 pr = raw_by.get((ida, idb))
@@ -447,7 +446,7 @@ class BrakingLayer:
                     if sd >= room:
                         need_brake = True
                         hard_room = gap - margin     # Phase C fix: an emergency is a stop that would ENTER the margin, not one that overshoots the stop target
-                        if sd - hard_room > float(self.tun["emergency_overshoot_ticks"]) * cush and vp > rest and not was_braking:
+                        if sd - hard_room > float(self.tun["emergency_overshoot_ticks"]) * cush and vp > rest:    # Phase E fix 1 (David): also while already braking: a stop that cannot fit in the margin is an emergency
                             emergency[i] = True          # even the S-curve cannot stop in time: braking must exceed its limits
                             self.errors.append(f"look-ahead failed ({SIDES[i]}): stopping distance {sd:.4f} m exceeds the room to the margin {hard_room:.4f} m "
                                                f"(speed {vp:.3f} m/s, gap {gap:.4f} m, margin {margin:.4f} m, pair {ida}|{idb})")

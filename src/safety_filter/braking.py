@@ -406,6 +406,8 @@ class BrakingLayer:
         rest = float(self.tun["stop_speed_m_s"])
         mode = self.tun["lookahead_speed"]
         a_eff, jl, cush = self.d["effective_accel_limit"], float(self.tun["jerk_limit_m_s3"]), self.d["tick_cushion_m"]
+        capv_hand = float(self.tun["hand_speed_cap_m_s"])
+        vs_all = self.commanded_speed(last, raw, state)     # Phase E fix 2: the commanded tool speed of each arm (the closing share of the ramp's motion)
         stop = np.zeros(2, bool)
         limit = np.full(2, np.inf)
         emergency = np.zeros(2, bool)
@@ -436,7 +438,15 @@ class BrakingLayer:
                     vp = max(0.0, float(np.dot(vel[i], nrm)))   # the tool point's velocity (the first tick of a pair)
                 else:
                     vp = v
-                sd = stopping_distance(vp, a, a_eff, jl, cush)
+                # Phase E fix 2 (David): the look-ahead uses the speed the ramp WILL reach, not the measured closing speed alone. The ramp's own
+                # speed v (the profile, or the measured speed when that is faster) leads a lagging arm; its share along the pair's closing
+                # direction is the commanded closing rate over the commanded speed. The two-step formula then eases the current acceleration to
+                # zero before braking (it adds a^2/(2 j) to that speed). The measured closing speed still counts when it is higher.
+                closing_rate = max(0.0, gap - pr[0]) / self.dt if pr is not None else 0.0
+                vs_i = float(vs_all[i])
+                share = min(1.0, closing_rate / vs_i) if vs_i > 1e-9 else 1.0
+                v_reach = max(vp, v * share) if closing else vp
+                sd = stopping_distance(v_reach, a, a_eff, jl, cush)
                 if worst is None or room < worst["room"]:
                     worst = {"gap": gap, "margin": margin, "ceiling": ceiling, "stop_dist": sd, "room": room, "closing": closing, "pair": f"{ida}|{idb}", "speed": v}
                 if not closing:
@@ -453,7 +463,7 @@ class BrakingLayer:
                             print(f"[braking] ERROR {self.errors[-1]}: braking beyond the limits, overriding the bridge")
                 else:
                     ceil_pairs.append(float(ceiling))
-                    if v > float(ceiling) and slowing_distance(vp, a, float(ceiling), a_eff, jl, cush) >= room:
+                    if v_reach > float(ceiling) and slowing_distance(v_reach, a, float(ceiling), a_eff, jl, cush) >= room:     # Phase E fix 2: the reachable speed
                         need_ceiling = True
             commanded_motion = bool(np.any(raw[i] != last[i]))     # a tick where the source commands no motion says nothing about whether the obstacle cleared
             if need_brake:

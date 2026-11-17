@@ -75,5 +75,39 @@ out1c, info1c = lay1c.process(last, raw_step, None, wall(0.20))
 check("fix 1: control: a braking arm with room to stop (20 cm gap) does not fire the emergency",
       not bool(info1c["override"][0]) and not lay1c.errors, str(lay1c.errors[:1]))
 
+# ---- fix 2: the look-ahead uses the speed the ramp will reach (its own speed, the closing share of its motion, plus the current acceleration) ----
+def trigger_gap(v_meas, v_prof, a0, raw_step_rad=0.02, margin=MARGIN):
+    """The largest gap (m) at which a fresh layer starts braking for the wall, scanned from 40 cm down in 0.5 mm steps. The hand's measured
+    closing speed v_meas (m/s), the ramp's own speed v_prof (m/s), its acceleration a0 (m/s^2); the command closes on the wall (a full closing share)."""
+    last_q = np.zeros((2, 7))
+    raw_q = last_q.copy()
+    raw_q[0, 0] = raw_step_rad
+    for g in np.arange(0.40, 0.0, -0.0005):
+        lay = BrakingLayer(tool_lin)
+        lay.v[0] = v_prof
+        lay.a[0] = a0
+        lay._prev_pa[(0, "left_palm_2", "bench_top")] = np.array([-v_meas * DT, 0.0, 0.0])
+        stop, _, _ = lay.check(last_q, raw_q, None, wall(g, margin))
+        if stop[0]:
+            return float(g)
+    return float("nan")
+
+
+g_const = trigger_gap(0.2, 0.2, 0.0)
+g_acc = trigger_gap(0.2, 0.2, 0.4)
+check("fix 2: an accelerating arm (0.4 m/s2) starts braking earlier than a constant-speed arm at the same speed and distance",
+      g_acc > g_const + 0.002, f"constant {g_const * 1000:.1f} mm, accelerating {g_acc * 1000:.1f} mm")
+g_lag = trigger_gap(0.02, 0.2, 0.0)
+g_still = trigger_gap(0.02, 0.02, 0.0)
+check("fix 2: the ramp's speed counts when the measured speed lags it: a ramp at 0.20 m/s with the arm measured at 0.02 m/s brakes earlier than a ramp at 0.02 m/s",
+      g_lag > g_still + 0.005, f"ramp 0.20 m/s {g_lag * 1000:.1f} mm, ramp 0.02 m/s {g_still * 1000:.1f} mm")
+last_q0 = np.zeros((2, 7))
+lay_nc = BrakingLayer(tool_lin)
+lay_nc._prev_pa[(0, "left_palm_2", "bench_top")] = np.array([-0.2 * DT, 0.0, 0.0])
+lay_nc.v[0] = 0.2
+stop_nc, _, _ = lay_nc.check(last_q0, last_q0.copy(), None, wall(0.05))
+check("fix 2: unchanged rule: a pair counts only while the command closes on it (no commanded approach, no brake)",
+      not bool(stop_nc[0]), f"stop {stop_nc[0]}")
+
 print(f"{len(fails)} failing check(s)" if fails else "ALL PASS")
 sys.exit(1 if fails else 0)

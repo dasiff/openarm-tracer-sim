@@ -67,5 +67,39 @@ check("fix 2: the cap follows the profile's acceleration", c_profile == layer(0.
 check("fix 2: the profile acceleration is clamped to the effective limit in the cap (a_eff)",
       abs(layer(0.12, 5.0)._stoppable_speed(0, 0.03) - layer(0.12, A_EFF)._stoppable_speed(0, 0.03)) < 1e-12)
 
+# ---- fix 3 (David): an arm-to-arm pair is reached by the closing component only; arm-to-world keeps the whole ramp speed ----
+from src.safety_filter.braking import stop_gap  # noqa: E402
+
+MARG = cfg.MARGINS["arm_world_m"]
+SG = stop_gap(MARG, None)
+
+
+def brakes(idb):
+    """Does the look-ahead brake the left arm for a finger pair (left_finger_left vs idb) that the command closes at the tool speed, with the
+    ramp at 0.15 m/s, the hand point at rest, and 3 cm of room to the stop gap?"""
+    lay = BrakingLayer(tool_lin)
+    lay.v[0] = 0.15
+    lay.a[0] = 0.0
+    lay._prev_pa[(0, "left_finger_left", idb)] = np.zeros(3)
+
+    def fn(q, state):
+        x = 0.5 * float(np.asarray(q, float)[0, 0])
+        pa = np.array([x, 0.0, 0.0])
+        return [[(SG + 0.03 - x, MARG, None, "left_finger_left", idb, np.array([1.0, 0.0, 0.0]), pa, SG)], None]
+
+    q0 = np.zeros((2, 7))
+    qr = q0.copy()
+    qr[0, 0] = 0.01
+    stop, _limit, _info = lay.check(q0, qr, None, fn)
+    return bool(stop[0])
+
+
+world_brake = brakes("bench_top")
+arm_brake = brakes("right_finger_right")
+check("fix 3: arm-to-world (a bench pair) with the same closing and ramp speed still brakes (the whole ramp speed counts)", world_brake,
+      f"stop {world_brake}")
+check("fix 3: arm-to-arm (the other arm's finger) with the same closing uses the closing component only: no brake from the ramp speed",
+      not arm_brake, f"stop {arm_brake}")
+
 print(f"{len(fails)} failing check(s)" if fails else "ALL PASS")
 sys.exit(1 if fails else 0)

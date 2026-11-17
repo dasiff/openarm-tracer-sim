@@ -535,7 +535,11 @@ class BrakingLayer:
                 closing_rate = max(0.0, gap - pr[0]) / self.dt if pr is not None else 0.0
                 vs_i = float(vs_all[i])
                 share = min(1.0, closing_rate / vs_i) if vs_i > 1e-9 else 1.0
-                v_reach = max(vp, v * share) if closing else vp
+                # Phase G fix 3 (David): an arm-to-arm pair (the other arm's shapes) is reached by the closing component only, not by the whole
+                # ramp speed scaled by the closing share (the share saturates at 1 when the commanded closing rate of the pair reaches the commanded
+                # tool speed, which is how the whole speed kept the left arm held during BACK). The other arm and the held beaker stay obstacles.
+                arm_to_arm = str(idb).startswith("right_" if i == 0 else "left_")
+                v_reach = max(vp, v * share) if (closing and not arm_to_arm) else vp
                 sd = stopping_distance(v_reach, a, a_eff, jl, cush)
                 if worst is None or room < worst["room"]:
                     worst = {"gap": gap, "margin": margin, "ceiling": ceiling, "stop_dist": sd, "room": room, "closing": closing, "pair": f"{ida}|{idb}", "speed": v}

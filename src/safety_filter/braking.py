@@ -39,6 +39,12 @@ def make_tool_fn(shapes, offset=None):
 _KIND_CODE = {"capsule": KIND_CAPSULE, "box": KIND_BOX, "cylinder": KIND_CYLINDER}
 
 
+def _stop_of(rule):
+    """The stop gap of a pair rule (m): the distance from the margin boundary a stop lands at (stop_gap of the rule's surface)."""
+    ceiling = cfg.approach_ceiling(rule.surface) if rule.surface else None
+    return stop_gap(rule.margin, ceiling, rule.work_surface)
+
+
 def _shape_arrays(allp):
     """Phase J fix 2 (SF-93): the placed shapes as arrays for the compiled loop: kind, arm (0 left, 1 right, -1 other), capsule ends A, B and
     radius r, box or cylinder centre C, rotation R and half sizes h (a cylinder's radius is r)."""
@@ -92,11 +98,12 @@ class ObstacleFeed:
 
     def _threshold(self, i):
         """The largest box separation (m) a pair of arm i can have and still be a candidate: the largest cutoff any pair rule gives
-        (margin + push start, or the worst stopping distance), or with the wake radius of arm i (plus the largest margin, for HOLD)."""
+        (margin + push start, or the worst stopping distance), or with the wake radius of arm i (plus the largest stop gap, Phase J fix 3)."""
         t_static = max(self._max_margin + cfg.PUSH_START_BEYOND_M, wake_dist())
         if self.wake is None:
             return t_static
-        return min(t_static, max(self._max_margin + cfg.PUSH_START_BEYOND_M, float(self.wake[i]) + self._max_margin))
+        return min(t_static, max(self._max_margin + cfg.PUSH_START_BEYOND_M,
+                                 float(self.wake[i]) + self._max_margin + cfg.PUSH_STOP_BEYOND_M))
 
     def set_wake(self, wake, hold_arms):
         """Sets this tick's wake radii (m, per arm; None = the static cutoffs) and the held arms (HOLD: the margin is added to the radius)."""
@@ -104,10 +111,11 @@ class ObstacleFeed:
         self.hold_arms = np.asarray(hold_arms, bool)
 
     @staticmethod
-    def _activation(rule, wake, hold):
-        """The cutoff of a pair (m) with the wake radius: never wider than the pair rule's static cutoff (Phase F fix 5/6)."""
-        extra = rule.margin if hold else 0.0          # HOLD: the remaining braking distance plus the margin (SF-83)
-        return min(rule.activation, max(rule.margin + cfg.PUSH_START_BEYOND_M, wake + extra))
+    def _activation(rule, wake, hold, reach):
+        """The cutoff of a pair (m) with the wake radius (Phase J fix 3, SF-94): the wake (the stopping distance now or on the next tick) plus
+        the pair's stop gap (reach: the distance a stop triggers at), or plus the margin in HOLD (SF-83); never wider than the static cutoff.
+        At rest the cutoff is the stop gap, so a pair that a stop must catch is always awake."""
+        return min(rule.activation, wake + (rule.margin if hold else reach))
 
     def bind(self, world_objects, held):
         """Sets this tick's world objects and held-object tracker."""
@@ -184,7 +192,7 @@ class ObstacleFeed:
                     if isinstance(rule, Exempt):
                         continue
                     sep = float(sep_row[ib])
-                    act = rule.activation if self.wake is None else self._activation(rule, float(self.wake[i]), bool(self.hold_arms[i]))
+                    act = rule.activation if self.wake is None else self._activation(rule, float(self.wake[i]), bool(self.hold_arms[i]), _stop_of(rule))
                     if sep > act:
                         continue
                     self.n_considered += 1
@@ -211,6 +219,7 @@ class ObstacleFeed:
         H, n = len(hand), len(allp)
         margin_hn = np.zeros((H, n))
         act_hn = np.zeros((H, n))
+        sg_hn = np.zeros((H, n))
         exempt_hn = np.ones((H, n), bool)
         rule_objs = [[None] * n for _ in range(H)]
         for ro, ia in enumerate(hand):
@@ -224,8 +233,9 @@ class ObstacleFeed:
                 exempt_hn[ro, ib] = False
                 margin_hn[ro, ib] = rule.margin
                 act_hn[ro, ib] = rule.activation
+                sg_hn[ro, ib] = _stop_of(rule)
                 rule_objs[ro][ib] = rule
-        built = (np.array(hand, int), np.array([SIDES.index(allp[s].arm) for s in hand], int), margin_hn, act_hn, exempt_hn, rule_objs)
+        built = (np.array(hand, int), np.array([SIDES.index(allp[s].arm) for s in hand], int), margin_hn, act_hn, sg_hn, exempt_hn, rule_objs)
         if len(self._rule_cache) > 16:
             self._rule_cache.clear()
         self._rule_cache[key] = built
@@ -235,7 +245,7 @@ class ObstacleFeed:
         """Phase J fix 2 (SF-93): the candidate loop as one compiled function (pair_jit.look_kernel). The candidates it returns are turned
         into the same tuples as the Python loop, in the same order within each arm."""
         kind, armc, A, B, r, C, R, h = arr
-        rows, rows_arm, margin_hn, act_hn, exempt_hn, rule_objs = self._rules_for(allp)
+        rows, rows_arm, margin_hn, act_hn, sg_hn, exempt_hn, rule_objs = self._rules_for(allp)
         n = len(allp)
         excl = np.zeros((2, n), bool)
         for i, side in enumerate(SIDES):
@@ -248,9 +258,9 @@ class ObstacleFeed:
         maxm = float(self._max_margin)
         t_static = max(maxm + cfg.PUSH_START_BEYOND_M, float(wake_dist()))
         (cnt, ro_o, ib_o, arm_o, _sep, gap_o, pa_o, pb_o, push_o, considered) = look_kernel(
-            rows, rows_arm, kind, armc, A, B, r, C, R, h, lo, hi, excl, margin_hn, act_hn, exempt_hn,
-            wake_on, wake, np.asarray(self.hold_arms, bool), float(t_static), maxm + float(cfg.PUSH_START_BEYOND_M), maxm,
-            float(cfg.PUSH_START_BEYOND_M))
+            rows, rows_arm, kind, armc, A, B, r, C, R, h, lo, hi, excl, margin_hn, act_hn, sg_hn, exempt_hn,
+            wake_on, wake, np.asarray(self.hold_arms, bool), float(t_static), maxm + float(cfg.PUSH_START_BEYOND_M),
+            maxm + float(cfg.PUSH_STOP_BEYOND_M))
         self.n_considered += int(considered)
         out = [[], []]
         for k in range(int(cnt)):

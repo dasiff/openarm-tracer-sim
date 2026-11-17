@@ -174,5 +174,114 @@ grid = [(v, a0, 0.5, 2.0, 0.00133) for v in np.linspace(0.0, 0.2, 21) for a0 in 
 worst_sd = max(abs(sd_jit(*g) - sd_py(*g)) for g in grid)
 check("fix 2: the compiled stopping distance equals the Python formula (1e-12) over a grid of speeds and accelerations", worst_sd < 1e-12, f"largest difference {worst_sd:.2e}")
 
+# ---- fix 3 (SF-94): the adaptive wake: the activation is the wake plus the stop gap, never wider than the static cutoff ----
+from src import task_config as tc  # noqa: E402
+from src.safety_filter.braking import BrakingLayer, make_tool_fn  # noqa: E402
+from src.safety_filter.world import WorldObject  # noqa: E402
+
+q_home = np.array([tc.TASK_CFG["home_q_left"], tc.TASK_CFG["home_q_right"]], float)
+st_home = RobotState(q_left=tuple(q_home[0]), q_right=tuple(q_home[1]))
+placed_home = rs.place(st_home)
+palm_caps = [p for p in placed_home if p.arm == "left" and p.part == "palm"]
+palm_low = min(min(p.a[2], p.b[2]) - p.r for p in palm_caps)
+px_ = float(np.mean([p.a[0] for p in palm_caps]))
+py_ = float(np.mean([p.a[1] for p in palm_caps]))
+
+
+def bench_top(work=True):
+    """The bench top's shape under the palm (as in the Phase D test): its top face 5 cm below the palm's lowest point at home."""
+    zc = palm_low - 0.05 - 0.06
+    return WorldObject(id="bench_top", shape="box", size=(0.5, 0.5, 0.06), centre=(px_, py_, zc), rot=tuple(np.eye(3).ravel()),
+                       fixture=True, work_surface=work)
+
+
+def palm_gap(q, feed):
+    """The smallest gap of a left palm shape to the bench top at pose q, measured with the static cutoffs (the geometry)."""
+    feed.set_wake(None, np.zeros(2, bool))
+    cands = [c for c in feed.pairs(q, st_home)[0] if c[5] == "bench_top" and c[4].startswith("left_palm")]
+    return min(c[1] for c in cands)
+
+
+def descend_palm(adaptive, speed=0.04, ticks=900):
+    """The Phase D palm descent: a source drives the left palm down at `speed` through the braking layer (adaptive wake as given)."""
+    cfg.BRAKING["adaptive_wake"] = adaptive
+    feed = ObstacleFeed(rs)
+    feed.bind([bench_top()], None)
+    eps = 1e-4
+    g0 = palm_gap(q_home, feed)
+    best = None
+    for jj in range(7):
+        qp = q_home.copy()
+        qp[0, jj] += eps
+        dg = (palm_gap(qp, feed) - g0) / eps
+        if best is None or dg < best[1]:
+            best = (jj, dg)
+    j, dg = best
+    rate = speed / (abs(dg) * cfg.BRAKING["tick_hz"])
+    lay = BrakingLayer(make_tool_fn(rs))
+    last = q_home.copy()
+    gaps = []
+    for k in range(ticks):
+        raw = q_home.copy()
+        raw[0, j] += rate * (k + 1)
+        out, _info = lay.process(last, raw, st_home, feed)
+        gaps.append(palm_gap(out, feed))
+        last = out
+    return np.array(gaps), len(lay.errors)
+
+
+g_on, err_on = descend_palm(True)
+g_off, err_off = descend_palm(False)
+cfg.BRAKING["adaptive_wake"] = True
+check("fix 3: the palm stop distance is unchanged by the adaptive wake: final palm gap equal to adaptive off within 0.05 mm",
+      abs(g_on[-1] - g_off[-1]) < 5e-5, f"adaptive on {g_on[-1] * 1000:.3f} mm, off {g_off[-1] * 1000:.3f} mm")
+check("fix 3: with the adaptive wake on the fast palm stops in the Phase D window (14.5 to 17.5 mm)", 0.0145 <= g_on[-1] <= 0.0175,
+      f"{g_on[-1] * 1000:.2f} mm")
+check("fix 3: the palm's gap sequence is the same with the adaptive wake on and off (every tick within 0.05 mm)",
+      float(np.max(np.abs(g_on - g_off))) < 5e-5, f"largest tick difference {float(np.max(np.abs(g_on - g_off))) * 1000:.3f} mm")
+check("fix 3: no look-ahead error in either descent", err_on == 0 and err_off == 0, f"errors on {err_on}, off {err_off}")
+
+# pairs awake at a given speed (the wake of the arm's current motion, on the recorded pose 10)
+def static_count(q, st):
+    feed = ObstacleFeed(rs)
+    feed.bind(world, None)
+    feed.set_wake(None, np.zeros(2, bool))
+    n0 = feed.n_considered
+    feed.pairs(q, st)
+    return feed.n_considered - n0
+
+
+best_pose = max(range(len(poses)), key=lambda k: static_count(*poses[k]))     # the recorded pose with the most pairs inside the static cutoff
+q10, st10 = poses[best_pose]
+
+
+def awake_at(speed, wake_override=None):
+    feed = ObstacleFeed(rs)
+    feed.bind(world, None)
+    lay = BrakingLayer(make_tool_fn(rs))
+    lay.v[0] = speed
+    lay.a[0] = 0.0
+    w = lay._wake_radii() if wake_override is None else wake_override
+    feed.set_wake(w, np.zeros(2, bool))
+    n0 = feed.n_considered
+    feed.pairs(q10, st10)
+    return feed.n_considered - n0, w[0]
+
+
+n_static = None
+feed_s = ObstacleFeed(rs)
+feed_s.bind(world, None)
+feed_s.set_wake(None, np.zeros(2, bool))
+n0 = feed_s.n_considered
+feed_s.pairs(q10, st10)
+n_static = feed_s.n_considered - n0
+n_002, w_002 = awake_at(0.02)
+n_015, w_015 = awake_at(0.15)
+n_floor, _ = awake_at(0.02, wake_override=np.zeros(2))
+check("fix 3: at 0.02 m/s the awake pairs are the stop-gap zone plus a few mm of wake (between the floor and the static count)",
+      n_floor <= n_002 < n_static, f"floor (wake 0) {n_floor}, at 0.02 m/s {n_002} (wake {w_002 * 1000:.1f} mm), static {n_static}")
+check("fix 3: at 0.15 m/s more pairs are awake than at 0.02 m/s", n_015 > n_002, f"0.02 m/s {n_002}, 0.15 m/s {n_015} (wake {w_015 * 1000:.1f} mm)")
+check("fix 3: adaptive wake is on by default (config)", cfg.BRAKING["adaptive_wake"] is True)
+
 print(f"{len(fails)} failing check(s)" if fails else "ALL PASS")
 sys.exit(1 if fails else 0)

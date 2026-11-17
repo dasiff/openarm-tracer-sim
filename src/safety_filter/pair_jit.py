@@ -80,12 +80,12 @@ def pair_geometry(ka, Aa, Ba, ra, Ca, Ra, ha, kb, Ab, Bb, rb, Cb, Rb, hb):
 
 
 @njit(cache=True)
-def look_kernel(rows, rows_arm, kind, arm, A, B, r, C, R, h, lo, hi, excl, margin_hn, act_hn, exempt_hn,
-                wake_on, wake, hold, t_static, t_push, t_margin, push_start):
+def look_kernel(rows, rows_arm, kind, arm, A, B, r, C, R, h, lo, hi, excl, margin_hn, act_hn, sg_hn, exempt_hn,
+                wake_on, wake, hold, t_static, t_push, t_margin):
     """The candidate loop. rows: the hand shapes (both arms), rows_arm: their arm (0 left, 1 right). excl: (2, n) bool, the released
-    objects excluded per arm. margin_hn, act_hn, exempt_hn: (rows, n) rule values of each hand row against each shape (margin, static
-    activation cutoff, exempt). wake_on and wake (2,): the adaptive wake radius per arm (None when off). hold (2,): the HOLD flag per arm.
-    t_static, t_push, t_margin: the threshold constants (largest cutoff, push start beyond the largest margin, largest margin).
+    objects excluded per arm. margin_hn, act_hn, sg_hn, exempt_hn: (rows, n) rule values of each hand row against each shape (margin, static
+    activation cutoff, stop gap, exempt). wake_on and wake (2,): the adaptive wake radius per arm (None when off). hold (2,): the HOLD flag
+    per arm. t_static: the largest candidate threshold; t_push: the push start beyond the largest margin; t_margin: the largest stop gap.
     Returns (count, hand row, other shape, arm, separation, gap, point on a, point on b, push, pairs whose gap was computed)."""
     n = kind.shape[0]
     H = rows.shape[0]
@@ -128,8 +128,8 @@ def look_kernel(rows, rows_arm, kind, arm, A, B, r, C, R, h, lo, hi, excl, margi
                 continue
             act = act_hn[ro, ib]
             if wake_on:
-                extra = margin_hn[ro, ib] if hold[i] else 0.0
-                act = min(act, max(margin_hn[ro, ib] + push_start, wake[i] + extra))
+                reach = margin_hn[ro, ib] if hold[i] else sg_hn[ro, ib]     # Phase J fix 3 (SF-94): the wake plus the stop gap; HOLD: plus the margin (fix 4 later)
+                act = min(act, wake[i] + reach)
             if sep > act:
                 continue
             considered += 1

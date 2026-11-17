@@ -113,15 +113,11 @@ RESOLVER = {
 # centre_above_bottom_m: the shape centre relative to the entry's position (its bottom centre).
 OBJECT_CATALOG = {
     "beaker": {
-        # Phase C step 1 (David): the beaker is 0.10 m tall (half height 0.05 m, radius 0.035 m). Its collision shape is a CAPSULE whose
-        # segment half length is half_height - radius = 0.015 m, so the capsule's total extent is the cylinder's: its lowest point is the
-        # cylinder's flat bottom (contact with a horizontal surface is exact). Phase B used the full half height as the segment, which made the
-        # shape 0.17 m tall and stopped the real beaker 3.5 cm above the plate. NOT a flat-ended cylinder kind: that needs new distance
-        # functions in geometry and in the batched pair table (open decision for David). The capsule lies inside the cylinder, so at the
-        # bottom rim (lateral contact) the shape under-covers the cylinder by up to 3.5 cm.
-        "shape": "capsule", "radius_m": 0.035, "half_height_m": 0.05,
+        # Phase D fix 4 (David): the beaker's collision shape is its TRUE cylinder: a flat-ended solid, radius 0.035 m, height 0.10 m (half height
+        # 0.05 m). Its bottom is flat, so a flat contact is exact (Phase C used a capsule inside it: a 3.5 cm error at the bottom rim).
+        "shape": "cylinder", "radius_m": 0.035, "half_height_m": 0.05,
         "centre_above_bottom_m": 0.05, "graspable": True, "round": True, "allowed_contact": False,
-        "source": "models/objects/beaker.xml geom task_beaker_glass: cylinder radius 0.035, half height 0.05 at z 0.05; catalog shape capsule (M287)",
+        "source": "models/objects/beaker.xml geom task_beaker_glass: cylinder radius 0.035, half height 0.05 at z 0.05 (shape cylinder, Phase D fix 4)",
     },
     "hotplate": {
         "shape": "box", "half_m": (0.09, 0.09, 0.03),

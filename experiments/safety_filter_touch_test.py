@@ -95,7 +95,7 @@ def held_and_broad():
     ids = [o.id for o in world.objects()]
     check("attach: the held beaker left the world (the far one stays)", ids == ["beaker_far"], f"-> {ids}")
     held0 = ht.placed("left", pos, rot)
-    check("attach: held shape exists and is a capsule (the beaker is a capsule, SF-8)", held0 is not None and held0.kind == "capsule")
+    check("attach: held shape exists and is a cylinder (the beaker is a cylinder, Phase D fix 4)", held0 is not None and held0.kind == "cylinder")
 
     # move the arm: the held shape must keep its offset in the hand frame
     st2 = RobotState(pedestal_m=0.15, q_left=(0.3, -0.2, 0.1, 0.9, 0.2, 0.1, 0.0), q_right=st.q_right,
@@ -152,7 +152,7 @@ def catalog_and_config():
     size = [float(x) for x in g.get("size").split()]
     pos = [float(x) for x in g.get("pos").split()]
     cat = cfg.OBJECT_CATALOG["beaker"]
-    check("catalog: the beaker is a capsule (round, M287, SF-8)", cat["shape"] == "capsule" and cat["round"] is True)
+    check("catalog: the beaker is a cylinder (round, Phase D fix 4)", cat["shape"] == "cylinder" and cat["round"] is True)
     check("catalog: beaker radius matches models/objects/beaker.xml", abs(cat["radius_m"] - size[0]) < 1e-12, f"({size[0]})")
     check("catalog: beaker half height matches", abs(cat["half_height_m"] - size[1]) < 1e-12, f"({size[1]})")
     check("catalog: beaker centre above its bottom matches", abs(cat["centre_above_bottom_m"] - pos[2]) < 1e-12, f"({pos[2]})")

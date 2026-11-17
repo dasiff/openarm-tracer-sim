@@ -33,7 +33,7 @@ palm = next(p for p in placed if p.part == "palm" and p.arm == "left")
 
 def cat_at(shape, gap):
     """A never-touch capsule whose surface is `gap` m from the shape: the cat's centre is moved along +x from the shape's centre (bisection)."""
-    c = (shape.a + shape.b) / 2
+    c = (shape.a + shape.b) / 2 if shape.kind == "capsule" else np.asarray(shape.centre, float)     # a held cylinder has a centre (Phase D fix 4)
     mk = lambda t: WorldObject(id="cat", shape="capsule", size=(0.10, 0.05), centre=tuple(c + np.array([t, 0, 0])), rot=tuple(np.eye(3).ravel()), never_touch=True)  # noqa: E731
     lo, hi = 0.0, 1.0
     for _ in range(60):

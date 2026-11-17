@@ -233,5 +233,84 @@ lay3h, _, _ = measured_run(0.33, tun=dict(cfg.BRAKING, emergency_speed_multiplie
 check("fix 3: the multiplier is configurable: at x2.0 the same 0.33 m/s is not an emergency", not any("hard clamp" in e for e in lay3h.errors))
 check("fix 3: the configured multiplier is 1.5 (David's value)", abs(cfg.BRAKING.get("emergency_speed_multiplier", float("nan")) - 1.5) < 1e-12)
 
+# ---- fix 4: the beaker is its true cylinder (radius 0.035 m, height 0.10 m, flat ends); cylinder-to-capsule and cylinder-to-box distances ----
+from src.safety_filter import tick_arrays as ta  # noqa: E402
+from src.safety_filter.geometry import cylinder_box as geo_cylinder_box, cylinder_capsule as geo_cylinder_capsule, cyl_signed_distance as geo_cyl_sd  # noqa: E402
+from src.safety_filter.touch import gap_between, shape_of  # noqa: E402
+from src.safety_filter.world import catalog_object  # noqa: E402
+from src.safety_filter.shapes import PlacedShape  # noqa: E402
+
+bcat = cfg.OBJECT_CATALOG["beaker"]
+check("fix 4: the beaker is a cylinder of radius 0.035 m and height 0.10 m (half height 0.05 m)",
+      bcat["shape"] == "cylinder" and abs(bcat["radius_m"] - 0.035) < 1e-12 and abs(bcat["half_height_m"] - 0.05) < 1e-12, str(bcat))
+I3 = np.eye(3)
+flat_top = shape_of("flat", "box", (0.5, 0.5, 0.06), np.array([0.1, -0.2, -0.06]), I3, "world", "world")          # a flat surface with its top at z = 0
+bottom_on = as_placed(catalog_object("beaker", np.array([0.1, -0.2, 0.0])))                                     # the beaker's flat bottom on z = 0
+g_b, pa_b, pb_b, push_b = gap_between(bottom_on, flat_top)
+check("fix 4: a cylinder standing on a flat surface: gap 0 (Phase C's capsule gave 3.5 cm at the rim)", abs(g_b) < 1e-9, f"gap {g_b}")
+check("fix 4: the flat contact's push points straight up (it moves the cylinder off the surface)", push_b[2] > 1.0 - 1e-9, str(push_b))
+# lateral: the cylinder's side 2 cm from a vertical face of a box (the face at x = 0.055; the side at x = 0.035)
+side_box = shape_of("side", "box", (0.5, 0.5, 0.5), np.array([0.555, 0.0, 0.5]), I3, "world", "world")
+cyl_side = as_placed(catalog_object("beaker", np.array([0.0, 0.0, 0.0])))
+g_l = gap_between(cyl_side, side_box)[0]
+check("fix 4: lateral approach: the cylinder's side 2 cm from a vertical face: gap 0.02", abs(g_l - 0.02) < 1e-9, f"gap {g_l}")
+# rim to edge: the box's top edge at (0, y, 0) (the box lies at x <= 0, z <= 0); the rim nearest it at (0.02, y, 0.03): gap = sqrt(0.02^2 + 0.03^2)
+edge_box = shape_of("edge", "box", (0.5, 0.5, 0.5), np.array([-0.5, 0.0, -0.5]), I3, "world", "world")
+rim_cyl = as_placed(catalog_object("beaker", np.array([0.055, 0.0, 0.03])))
+g_e = gap_between(rim_cyl, edge_box)[0]
+check("fix 4: rim against a box edge (a corner approach): gap is the closed-form sqrt(0.02^2 + 0.03^2)", abs(g_e - float(np.hypot(0.02, 0.03))) < 1e-9, f"gap {g_e} vs {np.hypot(0.02, 0.03)}")
+# capsule against the cylinder's side: a horizontal capsule (radius 1 cm) 2 cm off the side
+cap_side = PlacedShape(id="cap", arm="left", part="link7", kind="capsule", body="x", a=np.array([-0.5, 0.035 + 0.03, 0.05]),
+                       b=np.array([0.5, 0.035 + 0.03, 0.05]), r=0.01)
+g_c = gap_between(cap_side, cyl_side)[0]
+check("fix 4: a capsule 2 cm off the cylinder's side (its radius 1 cm): gap 0.02", abs(g_c - 0.02) < 1e-9, f"gap {g_c}")
+# the batched pair table agrees with the object form for a held cylinder against a box (and bounds it)
+held_cyl = shape_of("left_held", "cylinder", (0.035, 0.05), np.array([0.1, -0.2, 0.05]), I3, "left", "held")
+wbox = shape_of("tb", "box", (0.5, 0.5, 0.06), np.array([0.1, -0.2, -0.06]), I3, "world", "world")
+hb_gap = gap_between(held_cyl, wbox)[0]
+tab4 = ta.PairTable([held_cyl, wbox], n_robot=1)
+P4 = ta.PoseArrays(np.zeros((2, 3)), np.zeros((2, 3)), np.array([held_cyl.centre, wbox.centre]), np.array([held_cyl.rot, wbox.rot]),
+                   np.array([held_cyl.aabb()[0], wbox.aabb()[0]]), np.array([held_cyl.aabb()[1], wbox.aabb()[1]]), [])
+check("fix 4: the batched pair table has the cylinder pair and its exact gap equals the object form", len(tab4) == 1 and abs(ta.exact_gap(tab4, P4, 0) - hb_gap) < 1e-12,
+      f"{ta.exact_gap(tab4, P4, 0)} vs {hb_gap}")
+glo4, ghi4 = ta.approx_gaps(tab4, P4, np.array([0]))
+check("fix 4: the batched bounds of the cylinder pair contain the exact gap", glo4[0] <= hb_gap + 1e-12 and hb_gap <= ghi4[0] + 1e-12, f"[{glo4[0]}, {ghi4[0]}] vs {hb_gap}")
+
+# random separated cylinder-box poses: the gap never exceeds the distance to a sampled point of the cylinder's surface (the GJK gap is not too
+# large), and the witness points lie on their surfaces at that separation
+def _box_sd(P, Cb, Rb, hb):
+    Q = np.abs((P - Cb[None, :]) @ Rb) - hb
+    return np.linalg.norm(np.maximum(Q, 0.0), axis=1) + np.minimum(Q.max(axis=1), 0.0)
+
+
+_th = np.linspace(0.0, 2 * np.pi, 60, endpoint=False)
+_side = np.array([[np.cos(t), np.sin(t), z] for t in _th for z in np.linspace(-1, 1, 30)])
+_caps = np.array([[rr * np.cos(t), rr * np.sin(t), zz] for t in _th for rr in np.linspace(0, 1, 8) for zz in (-1.0, 1.0)])
+_surf = np.vstack([_side, _caps])                                         # unit-cylinder surface samples (local, scaled below)
+rng4 = np.random.default_rng(4)
+over_sample, witness_err, n4 = -np.inf, 0.0, 0
+for _ in range(20):
+    Rq = np.linalg.qr(rng4.normal(size=(3, 3)))[0]
+    Rq = Rq * np.sign(np.linalg.det(Rq))
+    cq = rng4.normal(size=3) * 0.05
+    bq = cq + rng4.normal(size=3) * 0.15
+    Rbq = np.linalg.qr(rng4.normal(size=(3, 3)))[0]
+    Rbq = Rbq * np.sign(np.linalg.det(Rbq))
+    hq = rng4.uniform(0.02, 0.1, 3)
+    cr = geo_cylinder_box(cq, Rq, 0.035, 0.05, bq, Rbq, hq)
+    if cr.gap <= 1e-6:
+        continue
+    n4 += 1
+    samples = cq[None, :] + (_surf * np.array([0.035, 0.035, 0.05])) @ Rq.T
+    sample_min = float(_box_sd(samples, bq, Rbq, hq).min())
+    over_sample = max(over_sample, cr.gap - sample_min)
+    witness_err = max(witness_err, abs(float(np.linalg.norm(cr.point_a - cr.point_b)) - cr.gap),
+                      abs(float(geo_cyl_sd(cr.point_a, cq, Rq, 0.035, 0.05))),
+                      abs(float(_box_sd(cr.point_b[None, :], bq, Rbq, hq)[0])))
+check(f"fix 4: random cylinder-box poses ({n4}): the gap is never above the distance to a sampled surface point (GJK is not too large)",
+      over_sample <= 1e-9, f"worst excess {over_sample:.3e} m")
+check("fix 4: random cylinder-box poses: the witness points are |a - b| = gap apart and the box point lies on the box surface",
+      witness_err <= 1e-8, f"worst {witness_err:.3e} m")
+
 print(f"{len(fails)} failing check(s)" if fails else "ALL PASS")
 sys.exit(1 if fails else 0)

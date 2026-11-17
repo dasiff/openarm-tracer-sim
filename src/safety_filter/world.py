@@ -24,8 +24,8 @@ from src.safety_filter.config import LAB_MAP_BENCH_OPEN, OBJECT_CATALOG
 @dataclass(frozen=True)
 class WorldObject:
     id: str
-    shape: str                 # "box" or "capsule" (a capsule's axis is the rotation's z column)
-    size: tuple                # box: half sizes (3); capsule: (radius, half length of the segment)
+    shape: str                 # "box", "capsule" (its axis is the rotation's z column) or "cylinder" (flat ends, its axis is the z column)
+    size: tuple                # box: half sizes (3); capsule: (radius, half length of the segment); cylinder: (radius, half height)
     centre: tuple              # world, metres
     rot: tuple                 # world rotation, row-major 3x3 (9 numbers)
     graspable: bool = False
@@ -42,6 +42,8 @@ class WorldObject:
         """Radius of a sphere around the centre that contains the object (for the match rule)."""
         if self.shape == "capsule":
             return float(self.size[0] + self.size[1])
+        if self.shape == "cylinder":
+            return float(np.hypot(self.size[0], self.size[1]))   # radius and half height
         return float(np.linalg.norm(self.size))
 
 
@@ -88,6 +90,8 @@ def catalog_object(entry_id, position, axis=None):
         centre = np.asarray(position, float) + np.array([0.0, 0.0, spec["centre_above_bottom_m"]])
     if spec["shape"] == "capsule":
         size = (spec["radius_m"], spec["half_height_m"] - spec["radius_m"])   # the segment half length: the cylinder's half height less the radius (see OBJECT_CATALOG)
+    elif spec["shape"] == "cylinder":
+        size = (spec["radius_m"], spec["half_height_m"])     # Phase D fix 4: the true cylinder (radius, half height)
     else:
         size = tuple(spec["half_m"])
     return WorldObject(id=entry_id, shape=spec["shape"], size=tuple(size), centre=tuple(centre),

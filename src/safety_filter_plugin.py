@@ -250,6 +250,9 @@ def make_sim_plugin(model, data, cfg, loop_handles):
             hp = tracker.placed(s, *shapes.hand_frame(s))
             if hp is not None and hp.kind == "capsule":
                 he[i, 0], he[i, 1], he[i, 2, 0] = hp.a, hp.b, hp.r
+            elif hp is not None and hp.kind == "cylinder":     # Phase D fix 4: a held cylinder is recorded as its axis segment and radius (diagnostics only)
+                ax = hp.rot[:, 2] * hp.half[2]
+                he[i, 0], he[i, 1], he[i, 2, 0] = hp.centre - ax, hp.centre + ax, hp.r
         if plugin_ref:
             plugin_ref[0].ctx["held_ends"] = he
         return state, view.objects(), tracker

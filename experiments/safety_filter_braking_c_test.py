@@ -30,8 +30,8 @@ g = [e for e in root.iter("geom") if e.get("name") == "task_beaker_glass"][0]
 r_xml, h_xml = [float(x) for x in g.get("size").split()][:2]
 bottom_z = 1.0
 beaker = catalog_object("beaker", np.array([0.0, 0.0, bottom_z]))
-ext_lo = beaker.centre[2] - (beaker.size[1] + beaker.size[0])
-ext_hi = beaker.centre[2] + (beaker.size[1] + beaker.size[0])
+ext_lo = beaker.centre[2] - beaker.size[1]           # Phase D fix 4: the beaker is a cylinder (radius, half height): its extent is the half height
+ext_hi = beaker.centre[2] + beaker.size[1]
 check("step 1: the beaker's collision shape spans the cylinder's height exactly (lowest point = flat bottom)",
       abs(ext_lo - bottom_z) < 1e-12 and abs((ext_hi - ext_lo) - 2 * h_xml) < 1e-12, f"lo {ext_lo} hi {ext_hi} xml half {h_xml}")
 check("step 1: the beaker's collision radius is the cylinder radius", abs(beaker.size[0] - r_xml) < 1e-12)

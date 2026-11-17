@@ -85,6 +85,10 @@ class PlacedShape:
         if self.kind == "capsule":
             lo = np.minimum(self.a, self.b) - self.r
             hi = np.maximum(self.a, self.b) + self.r
+        elif self.kind == "cylinder":                 # Phase D fix 4: exact box of a solid cylinder (axis e = rot[:, 2])
+            e = self.rot[:, 2]
+            ext = self.r * np.sqrt(np.maximum(1.0 - e * e, 0.0)) + self.half[2] * np.abs(e)
+            lo, hi = self.centre - ext, self.centre + ext
         else:
             ext = np.abs(self.rot) @ self.half
             lo, hi = self.centre - ext, self.centre + ext

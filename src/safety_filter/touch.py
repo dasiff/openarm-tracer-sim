@@ -22,7 +22,7 @@ from dataclasses import dataclass, replace
 import numpy as np
 
 from src.safety_filter import config as cfg
-from src.safety_filter.geometry import (capsule_box, capsule_box_batch, capsule_capsule, capsule_capsule_batch)
+from src.safety_filter.geometry import (capsule_box, capsule_box_batch, capsule_capsule, capsule_capsule_batch, cylinder_box, cylinder_capsule)
 from src.safety_filter.shapes import PlacedShape, never_close_pairs
 from src.safety_filter.config import OBJECT_CATALOG
 from src.safety_filter.world import WorldObject, catalog_object
@@ -111,6 +111,11 @@ def shape_of(obj_id, shape, size, centre, rot, arm, part, body="world", never_to
     """A placed shape from a world-style description: a box (half sizes) or a capsule (radius, half length along
     the rotation's z column). Both keep their centre."""
     centre, rot = np.asarray(centre, float), np.asarray(rot, float)
+    if shape == "cylinder":                             # Phase D fix 4: a flat-ended solid; half = (radius, radius, half height), the box that holds it
+        r, hh = size
+        return PlacedShape(id=obj_id, arm=arm, part=part, kind="cylinder", body=body, centre=centre, rot=rot, r=float(r),
+                           half=np.array([float(r), float(r), float(hh)]), never_touch=never_touch, allowed_contact=allowed_contact,
+                           work_surface=work_surface)
     if shape == "capsule":
         r, h = size
         ax = rot[:, 2]
@@ -127,8 +132,26 @@ def as_placed(obj: WorldObject) -> PlacedShape:
                     allowed_contact=obj.allowed_contact, work_surface=obj.work_surface)
 
 
+def _cylinder_gap(a: PlacedShape, b: PlacedShape):
+    """Phase D fix 4: a flat-ended cylinder against a capsule or a box: (gap, point on a, point on b, push: moves a away from b)."""
+    if a.kind == "cylinder" and b.kind == "cylinder":
+        raise ValueError("cylinder against cylinder is not a checked pair (one cylinder object in the world)")
+    cyl, oth = (a, b) if a.kind == "cylinder" else (b, a)
+    if oth.kind == "capsule":
+        c = cylinder_capsule(cyl.centre, cyl.rot, cyl.r, cyl.half[2], oth.a, oth.b, oth.r)     # push: moves the capsule away
+        if cyl is a:
+            return c.gap, c.point_a, c.point_b, -c.push
+        return c.gap, c.point_b, c.point_a, c.push
+    c = cylinder_box(cyl.centre, cyl.rot, cyl.r, cyl.half[2], oth.centre, oth.rot, oth.half)  # push: moves the box away
+    if cyl is a:
+        return c.gap, c.point_a, c.point_b, -c.push
+    return c.gap, c.point_b, c.point_a, c.push
+
+
 def gap_between(a: PlacedShape, b: PlacedShape):
-    """(gap, closest point on a, closest point on b, push direction from b to a), for a capsule-capsule or capsule-box pair."""
+    """(gap, closest point on a, closest point on b, push direction from b to a), for a capsule-capsule, capsule-box or cylinder pair."""
+    if a.kind == "cylinder" or b.kind == "cylinder":
+        return _cylinder_gap(a, b)
     if a.kind == "capsule" and b.kind == "capsule":
         c = capsule_capsule(a.a, a.b, a.r, b.a, b.b, b.r)
     elif a.kind == "capsule" and b.kind == "box":
@@ -156,7 +179,10 @@ def _aabb_arrays(shapes):
     los = np.empty((n, 3))
     his = np.empty((n, 3))
     caps = [k for k, s in enumerate(shapes) if s.kind == "capsule"]
-    boxes = [k for k, s in enumerate(shapes) if s.kind != "capsule"]
+    boxes = [k for k, s in enumerate(shapes) if s.kind == "box"]
+    for k, s in enumerate(shapes):                  # Phase D fix 4: a cylinder's own axis-aligned box
+        if s.kind == "cylinder":
+            los[k], his[k] = s.aabb()
     if caps:
         A = np.array([shapes[k].a for k in caps])
         B = np.array([shapes[k].b for k in caps])
@@ -223,6 +249,10 @@ def evaluate_pairs(robot_shapes, world_objects):
         gaps = capsule_box_batch(A, B, rr, C, R, H, gap_only=True)
         for (a, b, r, _), g in zip(cb, gaps):
             out.append(PairReport(a=a.id, b=b.id, rule=r, gap=float(g), in_margin=bool(g < r.margin)))
+    for a, b, r in cand:                                 # Phase D fix 4: a cylinder pair is not batched (its own exact distance)
+        if a.kind == "cylinder" or b.kind == "cylinder":
+            g = float(gap_between(a, b)[0])
+            out.append(PairReport(a=a.id, b=b.id, rule=r, gap=g, in_margin=bool(g < r.margin)))
     return out
 
 

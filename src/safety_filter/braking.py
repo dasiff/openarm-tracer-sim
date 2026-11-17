@@ -388,7 +388,9 @@ class BrakingLayer:
                 q_new = last.copy()
                 q_new[i] = out[i]
                 v_act = float(self.commanded_speed(last, q_new, state)[i])
-                v1, a1 = v_act, (v_act - v0) / self.dt
+                # Phase F (chatter diagnosis): the acceleration is limited like every other branch (it was unlimited: a step cut to the pose could set
+                # an acceleration far above the limit)
+                v1, a1 = v_act, float(np.clip((v_act - v0) / self.dt, -self.d["effective_accel_limit"], self.d["effective_accel_limit"]))
                 self._shaping[i] = False                  # the ramp allowed more than the command asked for: the command goes through as it is
             self.v[i], self.a[i] = v1, a1
         return out, {"speed": self.v.copy(), "accel": self.a.copy()}

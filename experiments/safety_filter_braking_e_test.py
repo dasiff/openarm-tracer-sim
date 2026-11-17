@@ -196,5 +196,16 @@ check("Phase F fix 1: opening the gripper 6 mm in one tick with the arm nearly s
 pal_over, pal_err = finger_case("left_palm_2", "bench_top")
 check("Phase F fix 1: control: the same closing speed from a palm pair does fire the emergency", pal_over and any("look-ahead failed" in e for e in pal_err), str(pal_err[:1]))
 
+# ---- Phase F fix 2 (chatter diagnosis, mechanical part): the acceleration written when a step is cut to the commanded pose stays within the limit ----
+lay_c = BrakingLayer(tool_lin)
+lay_c.v[0] = 0.09                                         # the ramp moves at 0.09 m/s and the command is 0.3 um away: the output must stop in one tick
+lay_c.a[0] = 0.0
+last_c = np.zeros((2, 7))
+raw_c = last_c.copy()
+raw_c[0, 0] = 0.3e-6 / 0.5                                # tool_lin: x = 0.5 * joint 0; below ~0.6 um the stoppable speed allows the commanded speed, so the step is cut to the pose
+out_c, info_c = lay_c.process(last_c, raw_c, None, None)
+check("Phase F fix 2 (mechanical): a step cut to the commanded pose never writes an acceleration above the effective limit",
+      abs(float(lay_c.a[0])) <= cfg.derived()["effective_accel_limit"] * (1 + 1e-9), f"a {float(lay_c.a[0]):.4f}")
+
 print(f"{len(fails)} failing check(s)" if fails else "ALL PASS")
 sys.exit(1 if fails else 0)

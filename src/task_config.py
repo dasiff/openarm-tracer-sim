@@ -420,6 +420,7 @@ PICK_PLACE_CFG = {
     "clearance_m": 0.20,                   # pad centre height above the surface the target sits on for the 'over' waypoints (design plan 3.3); if unreachable: ~0.12, recorded [row M089]
     "carry_gap_m": 0.04,                   # the held beaker's bottom passes this far above the hotplate top [row M112 PENDING David: no decision recorded]
     "setdown_gap_m": 0.002,                # the beaker's bottom is this far above the plate when the gripper opens [row M112 PENDING David: no decision recorded]
+    "back_lift_m": 0.10,                   # m [SF-87, Phase H fix 1, David's decision: lift first]: after the release the pad goes straight up this far (the wrist clears the hotplate and bench) before the level retreat of BACK; the BACK run of Phase G dipped the wrist into the hotplate. 0.10 m is the value used for the Phase H run; confirm
     "speed_m_s": 0.12, "slow_speed_m_s": 0.04,       # pad centre speed in transit, and for the descent, the move in and the set-down [row M112 PENDING David: no decision recorded]
     "turn_rad_s": 0.5,                     # orientation speed limit of a waypoint move [row M112 PENDING David: no decision recorded]
     "joint_limited_duration": True,        # a waypoint move lasts at least min_jerk_peak_factor * (the arc length of its farthest-travelling joint along a dry-run IK of the path) / MINK_CFG["max_joint_speed"], so the reference never outruns the joints; False = the old distance / speed time only [row M194]

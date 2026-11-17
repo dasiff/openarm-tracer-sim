@@ -202,7 +202,6 @@ class BrakingLayer:
         self._braking = np.zeros(2, bool)   # look-ahead latch: this arm is braking for an obstacle
         self._emergency = np.zeros(2, bool)
         self._latch_key = [None, None]         # Phase I fix 1 (SF-89): per arm, the (hand shape, other shape) pair that latched the stop
-        self._stop_prev = np.zeros(2, bool)    # Phase I fix 3 (SF-91): the stop flags of the previous tick (a stop that begins)
         self._hold_arms = np.zeros(2, bool)    # Phase F fix 6 (SF-83): the arms of this tick that are held (the HOLD trigger of process)
         self._hard_latch = np.zeros(2, bool)   # Phase D fix 3: an arm already hard-clamped (its error is logged once, when the overspeed starts)
         self._hard_pose = np.zeros((2, 7))     # Phase D fix 3: the pose each hard-clamped arm holds (the one it had when the overspeed started)
@@ -274,7 +273,6 @@ class BrakingLayer:
         self._dir[:] = 0.0
         self._braking[:] = False
         self._latch_key = [None, None]
-        self._stop_prev = np.zeros(2, bool)
         self._ceiling[:] = False
         self._prev_pa = {}
         self._shaping[:] = False
@@ -427,10 +425,10 @@ class BrakingLayer:
         capv = float(self.tun["hand_speed_cap_m_s"])
         for i in range(2):
             v0, a0 = self._va(i)
-            if stop[i] and not self._stop_prev[i]:
-                # Phase I fix 3 (SF-91, David): a stop that begins (no stop on the last tick) starts the ramp from the profile's planned speed, not the
-                # measured speed. The measured speed was 0.029 m/s when the stop began in brkZ5 (the sent speed jumped from 0 to 0.029 in one tick).
-                # The S-curve state is not checked: a moving arm is almost always on the S-curve, so a check on it left the fix to rest only.
+            if stop[i]:
+                # Phase J fix 1 (SF-92, David): every tick of a stop (the start and the ongoing stop) starts the ramp from the profile's planned speed,
+                # not the measured speed. Phase I fix 3 (SF-91) did this on the start tick only; the ongoing stop still used the measured speed, which
+                # gave the 2.47 and 1.35 m/s2 sent-speed spikes of brkZ8 (the measured joint drifts while the profile is near rest).
                 v0, a0 = float(self.v[i]), float(self.a[i])
             delta = raw[i] - last[i]
             if not self.tun.get("shape_free_motion", True) and not self._needs_shaping(i, float(vs[i]), stop, speed_limit):
@@ -486,7 +484,6 @@ class BrakingLayer:
                 v1, a1 = v_act, float(np.clip((v_act - v0) / self.dt, -self.d["effective_accel_limit"], self.d["effective_accel_limit"]))
                 self._shaping[i] = False                  # the ramp allowed more than the command asked for: the command goes through as it is
             self.v[i], self.a[i] = v1, a1
-        self._stop_prev = np.asarray(stop, bool).copy()          # Phase I fix 3: this tick's stop, for the next tick's stop start
         return out, {"speed": self.v.copy(), "accel": self.a.copy()}
 
     # ---- step 5: look-ahead ----

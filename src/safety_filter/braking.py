@@ -48,6 +48,26 @@ class ObstacleFeed:
         self._wkey, self._wplaced = None, []
         self.wake, self.hold_arms = None, np.zeros(2, bool)    # Phase F fix 5/6 (SF-82, SF-83): per arm, the wake radius (m) or None (every pair within the static cutoff)
         self.n_calls, self.n_considered = 0, 0                 # run diagnostics: calls of pairs(), and pairs that passed the cutoff (their gap is computed)
+        self._rules = {}                                       # Phase F (a cache, no decision): touch.pair_rule per pair of shape attributes (it reads only these)
+        self._max_margin = max(list(cfg.MARGINS.values()) + [cfg.NEVER_TOUCH_MARGIN_M])
+
+    def _rule_of(self, a, b):
+        """touch.pair_rule, cached per pair of shape attributes (the rule reads the id, arm, part, kind and the three flags of each shape)."""
+        ka = (a.id, a.arm, a.part, a.kind, a.allowed_contact, a.never_touch, a.work_surface)
+        kb = (b.id, b.arm, b.part, b.kind, b.allowed_contact, b.never_touch, b.work_surface)
+        key = (ka, kb)
+        rule = self._rules.get(key)
+        if rule is None:
+            rule = self._rules[key] = pair_rule(a, b)
+        return rule
+
+    def _threshold(self, i):
+        """The largest box separation (m) a pair of arm i can have and still be a candidate: the largest cutoff any pair rule gives
+        (margin + push start, or the worst stopping distance), or with the wake radius of arm i (plus the largest margin, for HOLD)."""
+        t_static = max(self._max_margin + cfg.PUSH_START_BEYOND_M, wake_dist())
+        if self.wake is None:
+            return t_static
+        return min(t_static, max(self._max_margin + cfg.PUSH_START_BEYOND_M, float(self.wake[i]) + self._max_margin))
 
     def set_wake(self, wake, hold_arms):
         """Sets this tick's wake radii (m, per arm; None = the static cutoffs) and the held arms (HOLD: the margin is added to the radius)."""
@@ -85,18 +105,24 @@ class ObstacleFeed:
         hi = np.array([_aabb(x)[1] for x in allp])
         out = [[], []]
         for i, side in enumerate(SIDES):
+            thr = self._threshold(i)
             for ia, a in enumerate(allp):
                 if a.arm != side or a.part not in HAND_SHAPE_PARTS:
                     continue
+                # Phase F (exact; a speed change, no decision): the box separation of this hand shape with every shape at once; a pair beyond every cutoff the feed can
+                # use is skipped before its rule is looked up (the same numbers as the pair-by-pair separation)
+                sep_row = np.maximum(lo[ia] - hi, lo - hi[ia]).max(axis=1)
                 for ib, b in enumerate(allp):
                     if ib == ia or (b.arm == side):
                         continue
                     if a.kind == "box" and b.kind == "box":
                         continue
-                    rule = pair_rule(a, b)
+                    if sep_row[ib] > thr:
+                        continue
+                    rule = self._rule_of(a, b)
                     if isinstance(rule, Exempt):
                         continue
-                    sep = float(np.maximum(lo[ia] - hi[ib], lo[ib] - hi[ia]).max())
+                    sep = float(sep_row[ib])
                     act = rule.activation if self.wake is None else self._activation(rule, float(self.wake[i]), bool(self.hold_arms[i]))
                     if sep > act:
                         continue

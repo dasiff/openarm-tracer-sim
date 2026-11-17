@@ -117,6 +117,7 @@ check("fix 6: outside HOLD the pair keeps the wake radius alone (no margin added
 
 # ---- the wire: the layer gives the feed this tick's wake radii and held arms before the look-ahead reads it ----
 q0 = np.zeros((2, 7))
+cfg.BRAKING["adaptive_wake"] = True          # the wiring is tested with the switch on (its default is off, pending David's decision on the floor)
 rec = Recorder()
 lay_w = layer_at(0.05)
 lay_w._hold_arms = np.array([True, True])            # what process() sets from its HOLD trigger, before check()

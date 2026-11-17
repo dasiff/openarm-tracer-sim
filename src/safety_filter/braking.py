@@ -306,6 +306,13 @@ class BrakingLayer:
             if speed_limit is not None:
                 target = min(target, float(speed_limit[i]))
             v1, a1 = self.ramp.step(v0, a0, target)
+            # Phase D fix 2 (David): the hand speed cap holds on every tick, on the step itself, not only on the target. The ramp can only brake
+            # at the acceleration limit, so a start above the cap (the measured speed of a fast arm) was sent at the ramp's speed: run brkU sent
+            # 0.688 m/s with the cap at 0.20. A step faster than the cap is scaled back to it; the profile follows. (The approach ceilings of
+            # allowed-contact surfaces are NOT clamped here: they are reached on the S-curve, as before.)
+            if v1 > capv:
+                v1 = capv
+                a1 = float(np.clip((v1 - v0) / self.dt, -self.d["effective_accel_limit"], self.d["effective_accel_limit"]))
             if not np.any(direction):
                 v1, a1 = 0.0, 0.0
             step = self.scale_step(i, last, direction, v1, state) if v1 > 0.0 else np.zeros(7)

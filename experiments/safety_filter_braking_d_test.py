@@ -138,5 +138,66 @@ check("fix 1: control: the same fast descent with no work flag stops at 3 cm (th
       0.0290 <= R_plain["gaps"][-1] <= 0.0315, f"final {R_plain['gaps'][-1] * 1000:.2f} mm")
 check("fix 1: control: that palm never reaches the 2.3 cm grasp pose", R_plain["gaps"].min() >= 0.0295, f"min {R_plain['gaps'].min() * 1000:.2f} mm")
 
+# ---- fix 2: the hand speed cap holds on every tick, on the step itself (run brkU: a start above the cap was sent at the ramp's speed) ----
+CAP = cfg.BRAKING["hand_speed_cap_m_s"]
+DT2 = cfg.derived()["tick_dt_s"]
+tool2 = make_tool_fn(rs)
+
+
+def tool_speed_series(first, outs, st):
+    """The tool point speed (m/s) of each tick from the sent poses, per arm (n, 2): the first tick is measured from `first`."""
+    seq = [np.asarray(first, float)] + [np.asarray(o, float) for o in outs]
+    pts = np.array([tool2(q, st) for q in seq])
+    return np.linalg.norm(np.diff(pts, axis=0), axis=2) / DT2
+
+
+# (a) a 4 rad jump of the source's target on both arms: the cap holds on every tick, and the arms do move
+lay_j = BrakingLayer(tool2)
+raw_j = q_home.copy()
+raw_j[0, 0] += 4.0
+raw_j[1, 0] += 4.0
+outs_j, last_j = [], q_home.copy()
+for k in range(300):
+    out_j, _ = lay_j.process(last_j, raw_j, st_home, None)
+    outs_j.append(out_j.copy())
+    last_j = out_j
+sp_j = tool_speed_series(q_home, outs_j, st_home)
+check("fix 2: a 4 rad jump of the source target: the tool point never exceeds the cap on any tick (both arms, 300 ticks)",
+      sp_j.max() <= CAP * (1 + 1e-6), f"max {sp_j.max():.4f} m/s on tick {int(np.argmax(sp_j.max(axis=1)))}")
+check("fix 2: and the arms do move toward the jump (the test is not trivially still)",
+      abs(outs_j[-1][0, 0] - q_home[0, 0]) > 0.05 and abs(outs_j[-1][1, 0] - q_home[1, 0]) > 0.05,
+      f"moved {outs_j[-1][0, 0] - q_home[0, 0]:.3f} and {outs_j[-1][1, 0] - q_home[1, 0]:.3f} rad")
+
+# (b) the run brkU mechanism: the layer is moving along joint 0 at the cap (its stale direction), then the arm is MEASURED moving at
+# 0.57 m/s (brkU's measured peak), with the source held (HOLD) or jumping 4 rad. Before the fix the ramp kept sending at its own speed.
+eps2 = 1e-5
+q_p = q_home.copy()
+q_p[0, 0] += eps2
+m_per_rad = float(np.linalg.norm(tool2(q_p, st_home)[0] - tool2(q_home, st_home)[0])) / eps2
+dq_tick = 0.57 * DT2 / m_per_rad                            # joint 0 step per tick that moves the measured tool point at 0.57 m/s
+jump_raw = q_home + np.array([[4.0] + [0.0] * 6, [0.0] * 7])
+for label, hold_flag, source in [("held (HOLD)", True, "hold"), ("source jumps 4 rad", False, "jump")]:
+    lay_b = BrakingLayer(tool2)
+    last_b = q_home.copy()
+    outs_b, meas_peak = [], 0.0
+    for k in range(140):
+        qm = q_home.copy()
+        if k >= 20:
+            qm[0, 0] += (k - 20) * dq_tick                  # from tick 20 the measured arm moves at 0.57 m/s
+        st_k = RobotState(q_left=tuple(qm[0]), q_right=tuple(q_home[1]))
+        if k < 20:
+            raw_b, hold_k = jump_raw, False                 # phase 1: the layer sends at the cap along joint 0 (its stale direction)
+        else:
+            raw_b, hold_k = (last_b.copy() if source == "hold" else jump_raw), hold_flag
+        out_b, _ = lay_b.process(last_b, raw_b, st_k, None, hold=hold_k)
+        if k >= 20:
+            meas_peak = max(meas_peak, float(lay_b.last_measure["speed"][0]))
+        outs_b.append(out_b.copy())
+        last_b = out_b
+    sp_b = tool_speed_series(q_home, outs_b, st_home)
+    check(f"fix 2: measured 0.57 m/s while {label}: the sent tool speed never exceeds the cap on any tick (140 ticks)",
+          sp_b[:, 0].max() <= CAP * (1 + 1e-6), f"max sent {sp_b[:, 0].max():.4f} m/s, measured peak {meas_peak:.3f} m/s")
+    check(f"fix 2: the test sees the measured overspeed ({label}): measured peak above the cap", meas_peak > 0.5, f"{meas_peak:.3f} m/s")
+
 print(f"{len(fails)} failing check(s)" if fails else "ALL PASS")
 sys.exit(1 if fails else 0)

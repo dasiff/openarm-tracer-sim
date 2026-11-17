@@ -207,5 +207,25 @@ out_c, info_c = lay_c.process(last_c, raw_c, None, None)
 check("Phase F fix 2 (mechanical): a step cut to the commanded pose never writes an acceleration above the effective limit",
       abs(float(lay_c.a[0])) <= cfg.derived()["effective_accel_limit"] * (1 + 1e-9), f"a {float(lay_c.a[0]):.4f}")
 
+# ---------- Phase F fix 3 (SF-80): the two left link 1 torso pairs are off the never-close list, so the filter checks them ----------
+from src.safety_filter.robot_model import load_robot_only_model  # noqa: E402
+from src.safety_filter.shapes import RobotShapes, RobotState, never_close_pairs  # noqa: E402
+from src.safety_filter.tick_arrays import PairTable  # noqa: E402
+from src.safety_filter.touch import Rule, pair_rule  # noqa: E402
+
+_rs = RobotShapes(load_robot_only_model(), ROOT / "data" / "safety_filter" / "robot_shapes.json")
+_st = RobotState(pedestal_m=0.155, q_left=(0.394, -0.257, 0.271, 2.201, -0.065, 0.477, 0.227), q_right=(-0.394, 0.257, -0.271, 2.201, 0.065, -0.477, -0.227))
+_placed = _rs.place(_st)
+_by_id = {p.id: p for p in _placed}
+_tab = PairTable(_placed, len(_placed))
+for _pid in ("left_link1_2", "left_link1_3"):
+    _r = pair_rule(_by_id[_pid], _by_id["torso"])
+    check(f"Phase F fix 3: {_pid} vs torso is checked (a Rule, not exempt)", isinstance(_r, Rule), f"-> {type(_r).__name__}")
+    check(f"Phase F fix 3: {_pid} vs torso is not on the never-close list", frozenset((_pid, "torso")) not in never_close_pairs())
+    check(f"Phase F fix 3: {_pid} vs torso is in the pair table (checked every tick it is near)", (_pid, "torso") in _tab.key_index)
+_still = frozenset(("left_link1_1", "torso"))
+check("Phase F fix 3: the other torso pairs stay on the list (left link 1 joint 1 vs torso exempt)", _still in never_close_pairs())
+check("Phase F fix 3: the list holds 364 pairs (366 before, minus the two torso pairs)", len(never_close_pairs()) == 364, f"{len(never_close_pairs())}")
+
 print(f"{len(fails)} failing check(s)" if fails else "ALL PASS")
 sys.exit(1 if fails else 0)

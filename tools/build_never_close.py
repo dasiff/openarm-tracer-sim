@@ -53,9 +53,14 @@ def merge(shapes_path=SHAPES_FILE, dc_path=DC_FILE):
         raise SystemExit("stale: never_close_dc.json is for another robot model; run tools/never_close_dc.py")
     ids = {s["id"] for s in doc["shapes"]}
     stage1 = load_never_close(fp, doc["shapes"])
+    removed = {frozenset(p) for p in cfg.NEVER_CLOSE_REMOVED}     # SF-80: pairs taken off the list (checked again); the sweep and DC files keep their record
+    found = set()
     pairs, seen = [], set()
     for p in stage1["pairs"]:
         key = frozenset((p["a"], p["b"]))
+        if key in removed:
+            found.add(key)
+            continue
         if key not in seen:
             seen.add(key)
             pairs.append({"a": p["a"], "b": p["b"], "source": "stage1"})
@@ -68,12 +73,19 @@ def merge(shapes_path=SHAPES_FILE, dc_path=DC_FILE):
         if a not in ids or b not in ids:
             raise SystemExit(f"never_close_dc.json names a shape that is not in the shapes file: {a} vs {b}")
         key = frozenset((a, b))
+        if key in removed:
+            found.add(key)
+            continue
         if key in seen:
             n_both += 1                       # already proven by Stage 1: kept as a Stage 1 entry
             continue
         seen.add(key)
         pairs.append({"a": a, "b": b, "source": "stage2"})
         n2 += 1
+    missing = removed - found
+    if missing:                                # a stale config entry must not pass silently
+        raise SystemExit("cfg.NEVER_CLOSE_REMOVED names pairs that are not on the never-close list: "
+                         + "; ".join(sorted(" vs ".join(sorted(k)) for k in missing)))
     doc["never_close"] = stage1
     doc["never_close_pairs"] = {
         "rule": "SF-23 (stage1, sweep) + SF-27 (stage2, divide and conquer); merge DNC-4",
@@ -81,7 +93,8 @@ def merge(shapes_path=SHAPES_FILE, dc_path=DC_FILE):
         "fingerprint": never_close_fingerprint(fp, pairs),
         "sources": {"stage1": {"file": Path(SWEEP_FILE).name, "sha256": sha256_file(SWEEP_FILE)},
                     "stage2": {"file": dc_path.name, "sha256": sha256_file(dc_path)}},
-        "counts": {"stage1": n1, "stage2": n2, "total": len(pairs)},
+        "counts": {"stage1": n1, "stage2": n2, "removed": len(found), "total": len(pairs)},
+        "removed": sorted(sorted(k) for k in found),
         "pairs": pairs,
     }
     tmp = shapes_path.with_suffix(".json.tmp")

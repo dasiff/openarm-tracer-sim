@@ -85,7 +85,7 @@ def main():
     out, st = res.step(HOME, HOME, BASE)
     check("nothing near: the raw array object comes back, status PASS", out is HOME and st.status == "PASS" and st.rounds == 0)
     far_last, far_raw = HOME.copy(), HOME.copy()
-    far_raw[0, 0] += 0.01
+    far_raw[1, 0] += 0.01       # right arm: at HOME the left link 1 joint 3 is 2.9 mm from the torso (checked since Phase F fix 3), so a left move is not far
     out, st = res.step(far_raw, far_last, BASE)
     check("a small move far from everything: identical array (same object, bit for bit)", out is far_raw and st.status == "PASS")
     last_in, raw_in = raw_hh.copy(), raw_hh.copy()

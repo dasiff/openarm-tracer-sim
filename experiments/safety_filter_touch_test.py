@@ -216,7 +216,9 @@ def never_close_list():
     rs = RobotShapes(m, SHAPES)
     nc = rs.doc.get("never_close")
     check("never_close block present, stamped with the robot fingerprint", bool(nc) and nc["fingerprint"] == rs.doc["fingerprint"])
-    pairs = nc["pairs"]
+    from src.safety_filter import config as cfg
+    removed = {frozenset(p) for p in cfg.NEVER_CLOSE_REMOVED}      # SF-80: the sweep record keeps these pairs; the list the filter uses does not
+    pairs = [p for p in nc["pairs"] if frozenset((p["a"], p["b"])) not in removed]
     check("never_close lists at least one pair", len(pairs) > 0, f"({len(pairs)} pairs, {nc['swept']} swept, {nc['not_swept']} not swept)")
     ok_rule = all(p["min_gap_m"] - p["bound_m"] >= p["margin_m"] + 0.01 - 1e-12 for p in pairs)
     check("every listed pair: min real gap - step-size bound >= margin + 1 cm", ok_rule)

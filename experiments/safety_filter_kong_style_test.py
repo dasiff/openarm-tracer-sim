@@ -344,7 +344,7 @@ def sec_pass_through():
     out, st = res.step(HOME, HOME, BASE)
     check("nothing near: the raw array object itself comes back, status PASS, 0 rounds", out is HOME and st.status == "PASS" and st.rounds == 0)
     far_raw = HOME.copy()
-    far_raw[0, 0] += 0.01
+    far_raw[1, 0] += 0.01       # right arm: at HOME the left link 1 joint 3 is 2.9 mm from the torso (checked since Phase F fix 3), so a left move is not far
     out, st = new_resolver().step(far_raw, HOME.copy(), BASE)
     check("a small move far from everything: the identical array object, status PASS", out is far_raw and st.status == "PASS")
     raw_in = left_hand_at_y(res, 0.026)

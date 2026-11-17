@@ -120,5 +120,50 @@ check("fix 2: after moving 1.5 cm away (more than held_world_margin_m), the beak
       f"{len(beaker_pairs(feed))} pairs")
 check("fix 2: the margin is held_world_margin_m (1 cm placeholder, SF-90)", abs(cfg.BRAKING["held_world_margin_m"] - 0.01) < 1e-12)
 
+# ---- fix 3 (SF-91): a stop that begins starts the ramp from the profile's planned speed, not the measured speed ----
+def fix3_stop(moving, measured_speed):
+    """Returns (sent speed on the last free tick, sent speed on the stop's first tick, profile speed before the stop, shaping before the stop).
+    moving=False: the brkZ5 case: a tiny move sets the arm's direction, then no motion, so the profile settles at rest; the measured speed is
+    0.029 m/s (the sag at the release). moving=True: steady motion at 0.1 m/s commanded (the profile settles at its speed under the stop cap);
+    the measured speed is 0.13 m/s. Then a stop begins with no motion commanded."""
+    lay = BrakingLayer(tool_lin)
+    lay.last_measure = {"speed": np.zeros(2), "accel": np.zeros(2), "vel": np.zeros((2, 3))}
+    out = np.zeros((2, 7))
+
+    def advance(cur, raw):
+        new, _ = lay.step(cur, raw, None)
+        return new, float(lay.commanded_speed(cur, new, None)[0])
+
+    s_before = 0.0
+    if moving:
+        dq = 0.1 * lay.dt / 0.5                    # the joint step per tick for 0.1 m/s at the tool (0.5 m/rad)
+        for _ in range(60):
+            raw = out.copy()
+            raw[0, 0] += dq
+            out, s_before = advance(out, raw)
+    else:
+        raw = out.copy()
+        raw[0, 0] = 1e-5
+        out, s_before = advance(out, raw)
+        for _ in range(10):
+            out, s_before = advance(out, out)
+    v_before, shaping_before = float(lay.v[0]), bool(lay._shaping[0])
+    lay.last_measure = {"speed": np.array([measured_speed, 0.0]), "accel": np.zeros(2), "vel": np.zeros((2, 3))}
+    out2, _ = lay.step(out, out, None, stop=np.array([True, False]))
+    s2 = float(lay.commanded_speed(out, out2, None)[0])
+    return s_before, s2, v_before, shaping_before
+
+
+a_eff_dt = cfg.derived()["effective_accel_limit"] * cfg.derived()["tick_dt_s"]
+s_b, s_2, v_b, sh_b = fix3_stop(False, 0.029)
+check("fix 3 precondition (brkZ5, at rest): the profile is at rest and not shaping before the stop", v_b == 0.0 and not sh_b,
+      f"profile {v_b:.6f} m/s, shaping {sh_b}")
+check("fix 3 (brkZ5, at rest): the first stop tick's speed change is within the jerk limit (no 0 -> 0.029 jump)",
+      abs(s_2 - s_b) <= a_eff_dt + 1e-9, f"speed {s_b:.5f} -> {s_2:.5f} m/s (limit {a_eff_dt:.4f} m/s per tick)")
+s_b, s_2, v_b, sh_b = fix3_stop(True, 0.13)
+check("fix 3 precondition (moving): the profile is moving at its own speed before the stop", v_b > 1e-3, f"profile {v_b:.5f} m/s, shaping {sh_b}")
+check("fix 3 (moving): a stop that begins while moving, measured 0.13 m/s: the first tick's speed change is within the jerk limit",
+      abs(s_2 - s_b) <= a_eff_dt + 1e-9, f"speed {s_b:.5f} -> {s_2:.5f} m/s (limit {a_eff_dt:.4f} m/s per tick)")
+
 print(f"{len(fails)} failing check(s)" if fails else "ALL PASS")
 sys.exit(1 if fails else 0)

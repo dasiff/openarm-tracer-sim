@@ -4,7 +4,7 @@
 Six configurations run on the same raw command stream:
   1  no filter: output = raw
   2  Kong's compiled filter (SafetyFilter, collision_avoidance=True), streamed: first tick reset from HOME, then reset=False
-  3  our resolver, layered (RESOLVER mode "layered"), gap rule "paper_plain" (gap rule off),
+  3  our resolver, layered (RESOLVER mode "layered", elbow_swing_hand_target "slid"), gap rule "paper_plain" (gap rule off),
      arm-versus-arm pairs only, Kong's capsule radii, every cfg.MARGINS entry 0.0
   4  our resolver, layered, full gap rule ("ours"), our own shapes and margins (default), for information
   5  our resolver, kong_style (RESOLVER mode "kong_style"), same setup as 3
@@ -269,24 +269,26 @@ def run_resolver(res, raw, q_ref):
 
 
 def resolver_state():
-    """The config values the rows change: resolver mode, gap-rule mode, touch margins."""
-    return {"mode": cfg.RESOLVER["mode"],
+    """The config values the rows change: resolver mode, elbow-swing hand target, gap-rule mode, touch margins."""
+    return {"mode": cfg.RESOLVER["mode"], "elbow_swing_hand_target": cfg.RESOLVER["elbow_swing_hand_target"],
             "gap_rule_mode": cfg.GAP_RULE["mode"], "margins": dict(cfg.MARGINS)}
 
 
 @contextlib.contextmanager
 def resolver_settings(mode, gap_mode, margins):
-    """Sets the values for one row: resolver mode, gap-rule mode, touch margins.
+    """Sets the values for one row: resolver mode, elbow-swing hand target "slid" (the fix), gap-rule mode, touch margins.
     Every value is put back when the row ends, also when the row raises."""
     saved = resolver_state()
     try:
         cfg.RESOLVER["mode"] = mode
+        cfg.RESOLVER["elbow_swing_hand_target"] = "slid"
         cfg.GAP_RULE["mode"] = gap_mode
         cfg.MARGINS.clear()
         cfg.MARGINS.update(margins)
         yield
     finally:
         cfg.RESOLVER["mode"] = saved["mode"]
+        cfg.RESOLVER["elbow_swing_hand_target"] = saved["elbow_swing_hand_target"]
         cfg.GAP_RULE["mode"] = saved["gap_rule_mode"]
         cfg.MARGINS.clear()
         cfg.MARGINS.update(saved["margins"])
@@ -495,7 +497,7 @@ def run_comparison(args, kin, m, sh):
         return fx.new_resolver()
 
     def resolver_row(key, num, mode, gap_mode, margins, required, make):
-        settings = {"resolver_mode": mode, "gap_rule_mode": gap_mode,
+        settings = {"resolver_mode": mode, "elbow_swing_hand_target": "slid", "gap_rule_mode": gap_mode,
                     "margins": dict(margins), "shapes": required}
         if required == "kong_radii" and kong_err is not None:
             return {"name": key, "error": kong_err, "settings": settings}

@@ -238,8 +238,7 @@ class Resolver:
         e_new = S + ((E - S) @ axis) * axis + rho * r2 / n2     # a swing about the S-W line keeps both arm lengths
         u = (e_new - S) / np.linalg.norm(e_new - S)
         l = (W - e_new) / np.linalg.norm(W - e_new)
-        # the hand pose after any hand slide earlier in this tick on this arm (SF-106): the arm's current joints, not the raw command
-        p_raw, r_raw = self.kin.hand_pose(self._state(t, q), side)
+        p_raw, r_raw = self._swing_hand_target(t, side, targets)
         try:
             qc = self.kin.convert_directions(self._state(t, q), side, u, l, r_raw)
         except RuntimeError as exc:
@@ -250,6 +249,15 @@ class Resolver:
         methods.append(ELBOW_SWING)
         targets[side] = (p_raw, r_raw)
         return True
+
+    def _swing_hand_target(self, t, side, targets):
+        """The hand pose an elbow swing aims at (SF-49): "slid" = the target set earlier in this tick (a hand slide's), else the raw commanded pose."""
+        m = cfg.RESOLVER["elbow_swing_hand_target"]
+        if m not in ("slid", "raw"):
+            raise ValueError(f"RESOLVER['elbow_swing_hand_target'] must be 'slid' or 'raw', not {m!r}")
+        if m == "slid" and side in targets:
+            return targets[side]
+        return self.kin.hand_pose(self._state(t, t.raw), side)
 
     # ---- step shortening ----
     def _shorten(self, t, q, sides, methods, targets, st, passes=None, fraction=None):

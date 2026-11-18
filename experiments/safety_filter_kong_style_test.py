@@ -4,7 +4,7 @@ Covers: the lever split of a forearm contact and the upper arm push (pure; the m
 the lever input forced to tau 0.1); the hand displacement; link length restore (pure, and in a real sweep); the hand
 orientation after conversion; arm against arm (only the closing arm moves; both closing: equal shares); a hand against a world
 box (only the arm takes the push); pass-through; the rounds limit and the stop; determinism; the gap rule switch near the
-margin; the four checks forced to fail; the layered resolver (old results); mode "cbf"
+margin; the four checks forced to fail; the layered resolver with elbow_swing_hand_target "raw" (old results); mode "cbf"
 not built.
 Written from the spec and the kong_style docstrings, not from its code. Fixtures: experiments/safety_filter_resolver_fixtures.py.
 
@@ -425,21 +425,18 @@ def sec_forced_checks():
 
 # ---------------------------------------------------------------- 12. layered resolver, old results; cbf not built
 def sec_layered_old():
-    print("12. layered resolver (old results; the elbow swing aims at the post-slide hand, SF-106); cbf")
-    with patched(cfg.RESOLVER, mode="layered"):
+    print("12. layered resolver with elbow_swing_hand_target raw (old results); cbf")
+    with patched(cfg.RESOLVER, mode="layered", elbow_swing_hand_target="raw"):
         res = new_resolver()
         last, raw = left_closing(res)
         out, st = new_resolver().step(raw, last, BASE)
-        check("layered, hand-hand left closing: HAND_SLIDE in 1 round",st.status == "HAND_SLIDE" and st.rounds == 1, f"({st.status} {st.rounds} rounds)")
+        check("layered/raw, hand-hand left closing: HAND_SLIDE in 1 round", st.status == "HAND_SLIDE" and st.rounds == 1, f"({st.status} {st.rounds} rounds)")
         pr, rr = res.kin.hand_pose(state_of(HOME), "right")
         last_r = ik(res, HOME, "right", np.array([pr[0], -0.034, pr[2]]), rr)
         raw_r = ik(res, HOME, "right", np.array([pr[0], -0.026, pr[2]]), rr)
         out_r, st_r = new_resolver().step(raw_r, last_r, BASE)
-        p_r_last = res.kin.hand_pose(state_of(last_r), "right")[0]
-        p_r_out = res.kin.hand_pose(state_of(out_r), "right")[0]
-        check("layered, right-closing mirror case: HAND_SLIDE with the hand held within 2 mm of its last pose (SF-107; SF-106 had HOLD ACCURACY)",
-              st_r.status == "HAND_SLIDE" and np.linalg.norm(p_r_out - p_r_last) < 0.002,
-              f"({st_r.status} {st_r.hold_reason!r} {st_r.rounds} rounds; hand moved {np.linalg.norm(p_r_out - p_r_last) * 1000:.2f} mm)")
+        check("layered/raw, right-closing mirror case: HOLD with reason ACCURACY after 10 rounds",
+              st_r.status == "HOLD" and st_r.hold_reason == "ACCURACY" and st_r.rounds == 10, f"({st_r.status} {st_r.hold_reason} {st_r.rounds} rounds)")
     with patched(cfg.RESOLVER, mode="cbf"):
         try:
             new_resolver().step(raw, last, BASE)

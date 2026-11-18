@@ -1,8 +1,9 @@
 """Robot shapes: loads data/safety_filter/robot_shapes.json and places every shape from a joint state.
 
-The forward kinematics is MuJoCo's on the robot-only model (no scene, no world data): the joint state
-(base pose, pedestal height, the arm joints and the finger travel) goes into its qpos, mj_kinematics
-gives the body frames, and each shape's body-local ends or box are mapped to the world.
+The forward kinematics is the compiled arm chain of arm_fk.py (SF-103: the same numbers as MuJoCo's mj_kinematics on the
+robot-only model, no scene, no world data): the joint state (base pose, pedestal height, the arm joints and the finger travel)
+goes into the qpos vector, the chain gives the body frames and joint anchors, and each shape's body-local ends or box is mapped
+to the world by one compiled pass.
 
 Refuses to load when the model's fingerprint differs from the one stamped in the file (SF-5).
 """
@@ -15,6 +16,7 @@ from pathlib import Path
 import mujoco
 import numpy as np
 
+from src.safety_filter.arm_fk import RobotKinematics, place_kernel
 from src.safety_filter.robot_model import robot_fingerprint
 
 SIDES = ("left", "right")
@@ -112,7 +114,7 @@ class RobotShapes:
         Raises: FingerprintMismatch if the model's fingerprint is not the file's stamp.
         """
         self.model = model
-        self.data = mujoco.MjData(model)
+        self.data = RobotKinematics(model)      # the compiled arm chain (SF-103): xpos, xmat, xipos, xanchor, xaxis as MjData had them
         doc = json.loads(Path(shapes_path).read_text(encoding="utf-8"))
         fp = robot_fingerprint(model)
         if doc.get("fingerprint") != fp:
@@ -150,6 +152,7 @@ class RobotShapes:
             self._finger[side] = [self._jid(f"openarm_{side}_finger_joint{k}") for k in (1, 2)]
         self._base = self._jid("base_float")
         self._pedestal = self._jid("pedestal_joint")
+        self._hand_b = {s: mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, f"openarm_{s}_link7") for s in SIDES}
         self._prepare_arrays()
         self._adr_base, self._adr_ped = int(model.jnt_qposadr[self._base]), int(model.jnt_qposadr[self._pedestal])
         self._adr_arm = {s: np.array([model.jnt_qposadr[j] for j in self._joint[s]]) for s in SIDES}
@@ -179,10 +182,9 @@ class RobotShapes:
         q_buf[self._adr_fing["left"]] = state.finger_left
         q_buf[self._adr_arm["right"]] = arms[1]
         q_buf[self._adr_fing["right"]] = state.finger_right
-        if self._kin_done and np.array_equal(q_buf, self._kin_q) and np.array_equal(d.qpos, q_buf):
+        if self._kin_done and np.array_equal(q_buf, self._kin_q):
             return
-        d.qpos[:] = q_buf
-        mujoco.mj_kinematics(m, d)
+        d.update(q_buf)
         self._kin_q[:] = q_buf
         self._kin_done = True
 
@@ -201,51 +203,43 @@ class RobotShapes:
                 raise ValueError(f"{side}: expected {ARM_JOINTS} finite joint angles")
             q[self._adr_arm[side]] = qa
             q[self._adr_fing[side]] = f
-        if self._kin_done and np.array_equal(q, self._kin_q) and np.array_equal(d.qpos, q):
+        if self._kin_done and np.array_equal(q, self._kin_q):
             return
-        d.qpos[:] = q
-        mujoco.mj_kinematics(m, d)
+        d.update(q)
         self._kin_q[:] = q
         self._kin_done = True
 
     def _prepare_arrays(self):
-        """Index arrays so that place() is one vectorised pass (built once)."""
+        """Index arrays so that place_arrays() is one compiled pass (built once). A kind that is absent gives empty arrays."""
         cap_idx, box_idx = [], []
         for k, sp in enumerate(self.specs):
             (cap_idx if sp["kind"] == "capsule" else box_idx).append(k)
         self._cap_idx, self._box_idx = np.array(cap_idx, int), np.array(box_idx, int)
         mb = lambda n: mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_BODY, n)
-        if len(cap_idx):
-            self._cap_ba = np.array([mb(self.specs[k]["ends_body"][0]) for k in cap_idx])
-            self._cap_bb = np.array([mb(self.specs[k]["ends_body"][1]) for k in cap_idx])
-            self._cap_la = np.array([self.specs[k]["ends_local"][0] for k in cap_idx], float)
-            self._cap_lb = np.array([self.specs[k]["ends_local"][1] for k in cap_idx], float)
-            self._cap_r = np.array([self.specs[k]["radius"] for k in cap_idx], float)
-            # a capsule may cover only a fraction range [t0, t1] of the segment between its two body-local ends (SF-14)
-            self._cap_t0 = np.array([self.specs[k].get("t_range", [0.0, 1.0])[0] for k in cap_idx], float)
-            self._cap_t1 = np.array([self.specs[k].get("t_range", [0.0, 1.0])[1] for k in cap_idx], float)
-        if len(box_idx):
-            self._box_b = np.array([mb(self.specs[k]["frame"]) for k in box_idx])
-            self._box_c = np.array([self.specs[k]["center_local"] for k in box_idx], float)
-            self._box_rl = np.array([_quat_to_mat(self.specs[k]["quat_local"]) for k in box_idx])
-            self._box_h = np.array([self.specs[k]["half"] for k in box_idx], float)
+        self._cap_ba = np.array([mb(self.specs[k]["ends_body"][0]) for k in cap_idx], np.int64)
+        self._cap_bb = np.array([mb(self.specs[k]["ends_body"][1]) for k in cap_idx], np.int64)
+        self._cap_la = np.array([self.specs[k]["ends_local"][0] for k in cap_idx], float).reshape(-1, 3)
+        self._cap_lb = np.array([self.specs[k]["ends_local"][1] for k in cap_idx], float).reshape(-1, 3)
+        self._cap_r = np.array([self.specs[k]["radius"] for k in cap_idx], float)
+        # a capsule may cover only a fraction range [t0, t1] of the segment between its two body-local ends (SF-14)
+        self._cap_t0 = np.array([self.specs[k].get("t_range", [0.0, 1.0])[0] for k in cap_idx], float)
+        self._cap_t1 = np.array([self.specs[k].get("t_range", [0.0, 1.0])[1] for k in cap_idx], float)
+        self._box_b = np.array([mb(self.specs[k]["frame"]) for k in box_idx], np.int64)
+        self._box_c = np.array([self.specs[k]["center_local"] for k in box_idx], float).reshape(-1, 3)
+        self._box_rl = np.array([_quat_to_mat(self.specs[k]["quat_local"]) for k in box_idx], float).reshape(-1, 3, 3)
+        self._box_h = np.array([self.specs[k]["half"] for k in box_idx], float).reshape(-1, 3)
 
     def place_arrays(self):
         """The shapes of the state last set, as arrays: capsule ends A, B (in the order of the capsule shapes) and box centres C
-        and rotations R (in the order of the box shapes). The numbers place() puts into its PlacedShape objects."""
+        and rotations R (in the order of the box shapes), None for a kind that is absent. The numbers place() puts into its
+        PlacedShape objects; one compiled pass (SF-103)."""
         d = self.data
-        xpos = d.xpos
-        xmat = d.xmat.reshape(-1, 3, 3)
-        A = B = C = Rw = None
-        if len(self._cap_idx):
-            A0 = xpos[self._cap_ba] + np.einsum("kij,kj->ki", xmat[self._cap_ba], self._cap_la)
-            B0 = xpos[self._cap_bb] + np.einsum("kij,kj->ki", xmat[self._cap_bb], self._cap_lb)
-            A = A0 + self._cap_t0[:, None] * (B0 - A0)
-            B = A0 + self._cap_t1[:, None] * (B0 - A0)
-        if len(self._box_idx):
-            C = xpos[self._box_b] + np.einsum("kij,kj->ki", xmat[self._box_b], self._box_c)
-            Rw = np.einsum("kij,kjl->kil", xmat[self._box_b], self._box_rl)
-        return A, B, C, Rw
+        nc, nb = len(self._cap_idx), len(self._box_idx)
+        A, B = np.empty((nc, 3)), np.empty((nc, 3))
+        C, R = np.empty((nb, 3)), np.empty((nb, 3, 3))
+        place_kernel(d.xpos, d.xmat, self._cap_ba, self._cap_bb, self._cap_la, self._cap_lb, self._cap_t0, self._cap_t1,
+                     self._box_b, self._box_c, self._box_rl, A, B, C, R)
+        return (A if nc else None), (B if nc else None), (C if nb else None), (R if nb else None)
 
     def place(self, state: RobotState):
         """All shapes in the world for this joint state (one vectorised pass). Returns a list of PlacedShape in spec order."""
@@ -268,5 +262,5 @@ class RobotShapes:
 
     def hand_frame(self, side):
         """Pose (position, rotation) of link 7 of one arm in the world, for the held-object offsets."""
-        b = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_BODY, f"openarm_{side}_link7")
+        b = self._hand_b[side]
         return self.data.xpos[b].copy(), self.data.xmat[b].reshape(3, 3).copy()

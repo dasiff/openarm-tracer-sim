@@ -691,7 +691,8 @@ Status: Stage 2b BUILT on branch safety-filter, not pushed (SF numbers may be re
 - **SF-48**: The gap rule (speed limit, SF-29) stays in both resolvers: gap_rule_mode 'ours' (default) and 'paper_plain' both work in kong_style; the gap rule gives each pair's push amount, the resolver shares it.
 - **SF-49**: Layered fix: config elbow_swing_hand_target 'slid' (default) or 'raw' (old behaviour). [The setting is removed by SF-106.]
 - **SF-50**: Spec test line relaxed: 'realized hand orientation within 1e-6 rad' in experiments/safety_filter_spec_test.py now compares to the accuracy value from config (0.5 degrees); one Jacobian step cannot reach 1e-6 (error 6.4e-4 rad).
-- **SF-106**: Phase R: the layered elbow swing aims at the post-slide hand pose of its arm (current joints); the 'raw' setting is removed. The closing right arm check still fails (HOLD, ACCURACY after 10 rounds); see SF-106 in docs/mpvi_decisions.md.
+- **SF-106**: Phase R: the layered elbow swing aims at the post-slide hand pose of its arm (current joints); the 'raw' setting is removed. The closing right arm check failed (HOLD, ACCURACY after 10 rounds) until SF-107; see SF-106 in docs/mpvi_decisions.md.
+- **SF-107**: Phase R cleanup part 2: the layered hand slide removes all of the hand's motion in the tick, the part along the surface too (target = the hand's last-tick pose, every hand slide). The closing right arm check now passes, but the arm is held, not moved (hand 0.2 mm, joints 0.0106 rad). New failures, the rule this reverses: the 'kept along the surface' checks in spec_test (10 mm case, 9.690 mm) and resolver_test (3.73 mm), and kong_style_test's SF-106 check. Those are David's decision; see SF-107 in docs/mpvi_decisions.md.
 
 ### Known limitations
 

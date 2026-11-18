@@ -187,7 +187,7 @@ class Resolver:
             mine, direction, point = (a, pp.dir_a, pp.point_a) if a.arm == side else (b, pp.dir_b, pp.point_b)
             cat = category_of(mine)
             if cat == HAND:
-                self._hand_slide(t, q, side, direction, methods, targets)
+                self._hand_slide(t, q, side, methods, targets)
             elif cat in (UPPER_ARM, FOREARM):
                 if not self._elbow_swing(t, q, side, cat, point, direction * share, methods, targets):
                     shorten.append(side)
@@ -197,20 +197,16 @@ class Resolver:
             self._shorten(t, q, shorten, methods, targets, st)
 
     # ---- hand slide ----
-    def _hand_slide(self, t, q, side, direction, methods, targets):
+    def _hand_slide(self, t, q, side, methods, targets):
+        """SF-107: the hand stays where it was at the last command. All of the hand's motion this tick is removed, the part into
+        the obstacle and the part along the surface, so the hand does not drift sideways. The arm's other joints are solved to
+        hold it there (Jacobian step, the raw orientation)."""
         i = _ARM_INDEX[side]
         p_last, _ = self.kin.hand_pose(self._state(t, t.last), side)
-        p_now, _ = self.kin.hand_pose(self._state(t, q), side)
         _, r_raw = self.kin.hand_pose(self._state(t, t.raw), side)
-        into = -np.asarray(direction, float)               # unit vector into the obstacle
-        v = p_now - p_last
-        along = float(v @ into)
-        if along > 0.0:
-            v = v - along * into                           # remove only the part pointing into the obstacle
-        target = p_last + v
-        q[i] = self.kin.jacobian_step(self._state(t, q), side, target, r_raw)
+        q[i] = self.kin.jacobian_step(self._state(t, q), side, p_last, r_raw)
         methods.append(HAND_SLIDE)
-        targets[side] = (target, r_raw)
+        targets[side] = (p_last, r_raw)
 
     # ---- elbow swing ----
     def _elbow_swing(self, t, q, side, cat, point, push_vec, methods, targets):

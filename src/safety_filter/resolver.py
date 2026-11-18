@@ -10,6 +10,8 @@ holds what the resolver shares with it: the construction, the start of a tick (b
 asleep), the status record (FilterStatus), step shortening (_shorten), the four checks after a push (_checks) and the
 release band between ticks (_update_active). The earlier layered resolver (hand slide, elbow swing) was removed in
 Phase R cleanup 3 (decision row SF-108).
+
+Robot state may come from the simulator; the resolver never reads world data from it (it takes world objects as numbers).
 """
 
 from dataclasses import dataclass, field

@@ -1,22 +1,15 @@
-"""The resolver (Stage 2; M293 to M295, SF-28 to SF-39): from a raw arm command to the filtered command, per control tick.
+"""The resolver (Stage 2; M293 to M295, SF-28 to SF-58): from a raw arm command to the filtered command, per control tick.
 
 Inputs per tick: raw command and last filtered command (each a (2, 7) array: left arm, right arm, rad), the robot state
 for everything but the arm joints (base, pedestal, fingers), the world objects the world model gives, and the held
 objects. The tick length dt is given at construction (the caller reads it from the control config, 1 / source_hz).
 Output: (filtered command, FilterStatus).
 
-1. Pass-through: no pair needs action -> the raw array itself comes back, untouched (status PASS).
-2. A pair needs action when its gap falls short of what the gap rule allows for this tick (gap_rule.shortfall) by more than
-   trigger_m AND an arm of the pair is closing (moving only that arm to its raw command makes the gap smaller).
-   An arm that is not closing is never acted on (a parked arm stays parked).
-3. Rounds (up to RESOLVER["rounds"]): each round fixes only the single worst pair, then every pair is checked again; the
-   rounds stop when the worst shortfall is under stop_m. Per closing arm of the worst pair, by the category of its contact
-   shape (link_rules): hand -> hand slide; upper arm / forearm -> elbow swing; shoulder, or a point an elbow swing cannot
-   move -> step shortening. Both arms closing: each takes half of the push.
-4. Checks after any push (branch guard, shape re-check, joint limits, accuracy); a failure holds still: the last filtered
-   command comes back with status HOLD and a reason code.
-
-Robot state may come from the simulator; the resolver never reads world data from it (it takes world objects as numbers).
+The push itself is kong_style.py, the only resolver: Resolver.step hands every tick to it (kong_style.step). This module
+holds what the resolver shares with it: the construction, the start of a tick (begin: the candidate pairs and the pairs
+asleep), the status record (FilterStatus), step shortening (_shorten), the four checks after a push (_checks) and the
+release band between ticks (_update_active). The earlier layered resolver (hand slide, elbow swing) was removed in
+Phase R cleanup 3 (decision row SF-108).
 """
 
 from dataclasses import dataclass, field
@@ -24,17 +17,13 @@ from dataclasses import dataclass, field
 import numpy as np
 
 from src.safety_filter import config as cfg
-from src.safety_filter import gap_rule
 from src.safety_filter.arm_conversion import ArmKinematics, rotation_error_rad, with_arms
-from src.safety_filter.link_rules import FOREARM, HAND, UPPER_ARM, category_of
-from src.safety_filter.push_direction import contact_fraction, elbow_displacement, pair_push
 from src.safety_filter.shapes import SIDES, RobotState
 from src.safety_filter.tick import Statics, _Tick
 from src.safety_filter.touch import Exempt, as_placed, evaluate_pairs, gap_between, pair_rule  # noqa: F401  (names other scripts look up here)
 
 PASS, ELBOW_SWING, HAND_SLIDE, STEP_SHORTENED, HOLD, KONG_PUSH = "PASS", "ELBOW_SWING", "HAND_SLIDE", "STEP_SHORTENED", "HOLD", "KONG_PUSH"
-STATUSES = (PASS, ELBOW_SWING, HAND_SLIDE, STEP_SHORTENED, HOLD, KONG_PUSH)   # KONG_PUSH last: older recordings keep their indices
-MODES = ("layered", "kong_style", "cbf")
+STATUSES = (PASS, ELBOW_SWING, HAND_SLIDE, STEP_SHORTENED, HOLD, KONG_PUSH)   # KONG_PUSH last: older recordings keep their indices. ELBOW_SWING and HAND_SLIDE are no longer produced (layered resolver removed, SF-108); they stay so older recordings still decode
 HOLD_REASONS = ("BRANCH_GUARD", "SHAPE_RECHECK", "JOINT_LIMITS", "ACCURACY", "SHORTEN_ZERO", "NO_SOLVER", "SOLVER_FAILED", "NOT_FINITE")
 _ARM_INDEX = {"left": 0, "right": 1}
 
@@ -113,59 +102,10 @@ class Resolver:
     def step(self, raw, last, state: RobotState, world_objects=(), held=None):
         """One control tick. raw, last: (2, 7) arrays (rad). Returns (filtered, FilterStatus).
         On PASS the filtered command is the raw array object itself (not a copy).
-        Dispatches on config RESOLVER["mode"] (SF-40): "layered" (this file), "kong_style" (kong_style.py), "cbf" (not built)."""
-        mode = cfg.RESOLVER["mode"]
-        if mode not in MODES:
-            raise ValueError(f"RESOLVER['mode'] must be one of {MODES}, not {mode!r}")
-        if mode == "cbf":
-            raise NotImplementedError("CBF resolver not built")
-        if mode == "kong_style":
-            from src.safety_filter import kong_style
-            return kong_style.step(self, raw, last, state, world_objects, held)
-        return self._step_layered(raw, last, state, world_objects, held)
-
-    def _step_layered(self, raw, last, state, world_objects, held):
-        last = np.asarray(last, float)
-        if not np.isfinite(np.asarray(raw, float)).all():
-            return last.copy(), FilterStatus(status=HOLD, hold_reason="NOT_FINITE")
-        t, first = self.begin(np.asarray(raw), last, state, world_objects, held)
-        if t is None:
-            return raw, FilterStatus()
-        if first is None:
-            self._update_active(t, t.raw)
-            return raw, FilterStatus()
-        key0, s0 = first
-        st = FilterStatus(worst_pair=key0, worst_gap=t.gap(t.raw, key0), worst_shortfall=s0)
-        q = np.array(t.raw, float)
-        methods, targets = [], {}
-        try:
-            rounds = 0
-            while rounds < cfg.RESOLVER["rounds"]:
-                w = t.worst(q)
-                if w is None or (rounds > 0 and w[1] < cfg.RESOLVER["stop_m"]):
-                    break
-                self._fix(t, q, w, methods, targets, st)
-                rounds += 1
-            st.rounds = rounds
-            if (cfg.RESOLVER["shorten_after_failed_push"] and STEP_SHORTENED not in methods
-                    and t.worst_value_discover(q) >= cfg.RESOLVER["stop_m"]):
-                changed = [s for s in SIDES if not np.array_equal(q[_ARM_INDEX[s]], t.raw[_ARM_INDEX[s]])]
-                if changed:
-                    self._shorten(t, q, changed, methods, targets, st)
-            reason = self._checks(t, q, targets)
-            if reason:
-                raise _Hold(reason)
-        except _Hold as h:
-            st.status, st.hold_reason = HOLD, h.reason
-            st.methods = tuple(methods)
-            self._update_active(t, last)
-            return last.copy(), st
-        st.methods = tuple(dict.fromkeys(methods))
-        st.hand_targets = {s: (np.array(v[0]), np.array(v[1])) for s, v in targets.items()}
-        st.status = (STEP_SHORTENED if STEP_SHORTENED in methods else ELBOW_SWING if ELBOW_SWING in methods
-                     else HAND_SLIDE if HAND_SLIDE in methods else PASS)
-        self._update_active(t, q)
-        return q, st
+        The resolver is kong_style (kong_style.py), the only one. This method is the resolver's interface: a future resolver
+        (CBF, not built) takes the same arguments and returns the same pair from here."""
+        from src.safety_filter import kong_style
+        return kong_style.step(self, raw, last, state, world_objects, held)
 
     # ------------------------------------------------------------------
     def _update_active(self, t, q):
@@ -174,90 +114,6 @@ class Resolver:
 
     def _state(self, t, q):
         return with_arms(t.state, q)
-
-    def _fix(self, t, q, worst, methods, targets, st):
-        """One round: fix the worst pair for each of its closing arms (the push shared equally)."""
-        key, short = worst
-        arms = t.closing(key)
-        share = short / len(arms)
-        shorten = []
-        a, b = t.shape(q, key[0]), t.shape(q, key[1])
-        pp = pair_push(a, b)             # one snapshot of the pair for every closing arm, so the arms take equal shares
-        for side in arms:
-            mine, direction, point = (a, pp.dir_a, pp.point_a) if a.arm == side else (b, pp.dir_b, pp.point_b)
-            cat = category_of(mine)
-            if cat == HAND:
-                self._hand_slide(t, q, side, direction, methods, targets)
-            elif cat in (UPPER_ARM, FOREARM):
-                if not self._elbow_swing(t, q, side, cat, point, direction * share, methods, targets):
-                    shorten.append(side)
-            else:
-                shorten.append(side)
-        if shorten:
-            self._shorten(t, q, shorten, methods, targets, st)
-
-    # ---- hand slide ----
-    def _hand_slide(self, t, q, side, direction, methods, targets):
-        i = _ARM_INDEX[side]
-        p_last, _ = self.kin.hand_pose(self._state(t, t.last), side)
-        p_now, _ = self.kin.hand_pose(self._state(t, q), side)
-        _, r_raw = self.kin.hand_pose(self._state(t, t.raw), side)
-        into = -np.asarray(direction, float)               # unit vector into the obstacle
-        v = p_now - p_last
-        along = float(v @ into)
-        if along > 0.0:
-            v = v - along * into                           # remove only the part pointing into the obstacle
-        target = p_last + v
-        q[i] = self.kin.jacobian_step(self._state(t, q), side, target, r_raw)
-        methods.append(HAND_SLIDE)
-        targets[side] = (target, r_raw)
-
-    # ---- elbow swing ----
-    def _elbow_swing(self, t, q, side, cat, point, push_vec, methods, targets):
-        """Returns False when the swing cannot move this contact (the caller then shortens the step)."""
-        i = _ARM_INDEX[side]
-        S, E, W = self.kin.sew(self._state(t, q), side)
-        axis = W - S
-        la = float(np.linalg.norm(axis))
-        if la < 1e-9:
-            return False
-        axis = axis / la
-        if np.linalg.norm(np.cross(point - S, axis)) < cfg.RESOLVER["swing_unmovable_m"]:
-            return False
-        radial = (E - S) - ((E - S) @ axis) * axis
-        rho = float(np.linalg.norm(radial))
-        if rho < cfg.RESOLVER["swing_straight_m"]:
-            return False
-        tfrac = contact_fraction(point, S, E) if cat == UPPER_ARM else contact_fraction(point, E, W)
-        disp = elbow_displacement(push_vec, tfrac, cat == UPPER_ARM)
-        e_t = (E + disp) - S
-        r2 = e_t - (e_t @ axis) * axis
-        n2 = float(np.linalg.norm(r2))
-        if n2 < 1e-9:
-            return False
-        e_new = S + ((E - S) @ axis) * axis + rho * r2 / n2     # a swing about the S-W line keeps both arm lengths
-        u = (e_new - S) / np.linalg.norm(e_new - S)
-        l = (W - e_new) / np.linalg.norm(W - e_new)
-        p_raw, r_raw = self._swing_hand_target(t, side, targets)
-        try:
-            qc = self.kin.convert_directions(self._state(t, q), side, u, l, r_raw)
-        except RuntimeError as exc:
-            raise _Hold("NO_SOLVER" if str(exc).startswith("NO_SOLVER") else "SOLVER_FAILED")
-        q2 = q.copy()
-        q2[i] = qc
-        q[i] = self.kin.jacobian_step(self._state(t, q2), side, p_raw, r_raw)
-        methods.append(ELBOW_SWING)
-        targets[side] = (p_raw, r_raw)
-        return True
-
-    def _swing_hand_target(self, t, side, targets):
-        """The hand pose an elbow swing aims at (SF-49): "slid" = the target set earlier in this tick (a hand slide's), else the raw commanded pose."""
-        m = cfg.RESOLVER["elbow_swing_hand_target"]
-        if m not in ("slid", "raw"):
-            raise ValueError(f"RESOLVER['elbow_swing_hand_target'] must be 'slid' or 'raw', not {m!r}")
-        if m == "slid" and side in targets:
-            return targets[side]
-        return self.kin.hand_pose(self._state(t, t.raw), side)
 
     # ---- step shortening ----
     def _shorten(self, t, q, sides, methods, targets, st, passes=None, fraction=None):

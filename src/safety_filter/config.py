@@ -80,19 +80,13 @@ RESOLVER = {
     "closing_eps_m": 1.0e-9,     # m, PROVISIONAL [SF-30]: an arm is closing when moving only that arm to its raw command makes the pair's gap smaller by more than this
     "shorten_halvings": 12,      # count, PROVISIONAL [SF-34]: halvings of the step fraction in the step shortening search (resolution 1/4096)
     "shorten_min_fraction": 0.001,  # fraction, PROVISIONAL [SF-34]: if the largest passing fraction is below this the result is hold-still (reason SHORTEN_ZERO)
-    "shorten_after_failed_push": True,  # on/off [SF-34]: if the shape re-check still fails after the rounds of an elbow swing or hand slide, try step shortening once before holding still (M293: "if that does not clear it, shorten the step")
-    "swing_unmovable_m": 0.002,  # m, PROVISIONAL [SF-32]: a contact point closer than this to the straight line from shoulder to wrist cannot be moved by an elbow swing; it is handled by step shortening
-    "swing_straight_m": 0.002,   # m, PROVISIONAL [SF-32]: an elbow closer than this to the shoulder-wrist line (arm straight) cannot swing; step shortening instead
     "branch_guard_joints": (0, 1, 2, 3, 4, 5, 6),  # joint indices (0 = joint 1) [SF-35]: the branch guard looks at these joints; the plan names none, so all seven (decision needed)
     "accuracy_pos_m": 0.002,     # m, PROVISIONAL [SF-35, SF-2]: hand position after a push must be within this of its target
     "accuracy_deg": 0.5,         # deg, PROVISIONAL [SF-35, SF-2]: hand orientation after a push must be within this of its target
     "shortening_accuracy_target": "raw",  # text [SF-36]: "raw" = after step shortening the hand must be within the accuracy of the RAW commanded pose (the task text; fails whenever shortening slows the hand by more than 2 mm); "skip" = no accuracy check after shortening
     "jacobian_damping": 1.0e-4,  # damping of the one Jacobian step (Levenberg-Marquardt term, unit rad^2/m^2 mixed; PROVISIONAL) [SF-32]: keeps the single step finite near singular arm poses
     "solver_current_reset": True,   # on/off [SF-32]: the converter is reset to the working pose before each call, so one call never depends on the last one (determinism)
-    "elbow_displacement_mode": "plain",  # text [SF-32]: "plain" = the elbow is displaced by the full push vector of the contact (no lever weighting) -- PLACEHOLDER, the plan does not define the lever rule for a fixed shoulder or wrist end
     # ---- Stage 2b (SF-40 to SF-50) ----
-    "mode": "kong_style",        # text [SF-40, SF-41]: which resolver runs: "kong_style" = one combined push of the shoulder/elbow/wrist/hand points, then link length restore, then conversion (default, David's decision); "layered" = the separate tools (elbow swing, hand slide, step shortening); "cbf" = not built, raises NotImplementedError
-    "elbow_swing_hand_target": "slid",  # text [SF-49]: layered resolver only: "slid" = after a hand slide in the same tick every later elbow swing (and the accuracy check) aims at the slid hand position; "raw" = the old behaviour (aims at the raw commanded hand pose)
     "min_lever_fraction": 0.2,   # fraction [SF-44]: kong_style: an upper arm contact closer than this share of the way from the shoulder to the elbow is not pushed (the elbow would have to move 1/fraction times the push); step shortening is used for it instead
     "lever_weight_elbow": 1.0,   # weight, no unit [SF-43]: kong_style forearm contact: how willing the elbow is to move compared with the wrist (wE in the split formula); 1.0 = equal
     "lever_weight_wrist": 1.0,   # weight, no unit [SF-43]: kong_style forearm contact: how willing the wrist is to move compared with the elbow (wW in the split formula); 1.0 = equal

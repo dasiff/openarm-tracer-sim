@@ -435,8 +435,11 @@ def sec_layered_old():
         last_r = ik(res, HOME, "right", np.array([pr[0], -0.034, pr[2]]), rr)
         raw_r = ik(res, HOME, "right", np.array([pr[0], -0.026, pr[2]]), rr)
         out_r, st_r = new_resolver().step(raw_r, last_r, BASE)
-        check("layered, right-closing mirror case: HOLD with reason ACCURACY after 10 rounds (SF-106: still held, see the spec test)",
-              st_r.status == "HOLD" and st_r.hold_reason == "ACCURACY" and st_r.rounds == 10, f"({st_r.status} {st_r.hold_reason} {st_r.rounds} rounds)")
+        p_r_last = res.kin.hand_pose(state_of(last_r), "right")[0]
+        p_r_out = res.kin.hand_pose(state_of(out_r), "right")[0]
+        check("layered, right-closing mirror case: HAND_SLIDE with the hand held within 2 mm of its last pose (SF-107; SF-106 had HOLD ACCURACY)",
+              st_r.status == "HAND_SLIDE" and np.linalg.norm(p_r_out - p_r_last) < 0.002,
+              f"({st_r.status} {st_r.hold_reason!r} {st_r.rounds} rounds; hand moved {np.linalg.norm(p_r_out - p_r_last) * 1000:.2f} mm)")
     with patched(cfg.RESOLVER, mode="cbf"):
         try:
             new_resolver().step(raw, last, BASE)

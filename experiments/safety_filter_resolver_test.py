@@ -112,16 +112,15 @@ def main():
           f"(raw {float(v_raw @ into)*1000:.1f} mm, out {float(v_out @ into)*1000:.2f} mm)")
     check("the right (parked) arm is untouched", np.array_equal(out[1], last_hh[1]))
     check("the gap did not close below what the rule allows", hand_hand_gap(out)[0] >= g_last - 0.0015, f"({hand_hand_gap(out)[0]*1000:.2f} mm)")
-    # motion along the surface is kept: add a sideways (z) move to the raw command
+    # SF-107: the hand slide removes all of the hand's motion, so a sideways (z) move along the surface is removed too:
+    # add that move to the raw command and check that the hand stays within 2 mm of its last pose
     p_l0, r_l0 = kin.hand_pose(state_of(HOME), "left")
     raw_side = ik(res, raw_hh, "left", np.array([p_raw[0], p_raw[1], p_raw[2] + 0.004]), r_l0)
     out2, st2 = res.step(raw_side, last_hh, BASE)
-    p_raw2, _ = kin.hand_pose(state_of(raw_side), "left")
     p_out2, _ = kin.hand_pose(state_of(out2), "left")
-    t_raw = (p_raw2 - p_last) - float((p_raw2 - p_last) @ into) * into
-    t_out = (p_out2 - p_last) - float((p_out2 - p_last) @ into) * into
-    check("a sideways move along the surface is kept (within 2 mm)", st2.status == "HAND_SLIDE" and np.linalg.norm(t_raw - t_out) < 0.002,
-          f"({st2.status}, {np.linalg.norm(t_raw - t_out)*1000:.2f} mm)")
+    check("a sideways move along the surface is removed: the hand stays within 2 mm of its last pose (SF-107)",
+          st2.status == "HAND_SLIDE" and np.linalg.norm(p_out2 - p_last) < 0.002,
+          f"({st2.status}, hand moved {np.linalg.norm(p_out2 - p_last) * 1000:.2f} mm)")
 
     print("elbow swing")
     ticks = run_stream(res, convergence_stream(res))

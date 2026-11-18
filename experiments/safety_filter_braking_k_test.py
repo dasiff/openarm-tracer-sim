@@ -1,0 +1,55 @@
+"""Braking Phase K (profile the remaining cost): one check per fix. Kinematics only (no simulator).
+
+Fix 1 (SF-96): the static lever of the pair sleep timers is computed as arrays; it equals the Python loop it replaces.
+
+Run: python experiments/safety_filter_braking_k_test.py   (exit 0 = all pass).
+"""
+import sys
+from pathlib import Path
+
+import numpy as np
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+from src.safety_filter import config as cfg  # noqa: E402
+from src.safety_filter.resolver import Resolver  # noqa: E402
+from src.safety_filter.robot_model import load_robot_only_model  # noqa: E402
+from src.safety_filter.shapes import RobotShapes, RobotState  # noqa: E402
+from src.safety_filter.tick import _Tick  # noqa: E402
+from src.safety_filter.world import LabMapSource  # noqa: E402
+
+fails = []
+
+
+def check(name, ok, info=""):
+    print(("PASS " if ok else "FAIL ") + name + (f"  [{info}]" if info else ""))
+    if not ok:
+        fails.append(name)
+
+
+rs = RobotShapes(load_robot_only_model(), ROOT / cfg.SHAPES_FILE)
+res = Resolver(rs, 1.0 / float(cfg.BRAKING["tick_hz"]))
+world = LabMapSource(str(ROOT / "data" / "safety_filter" / "lab_map.json")).objects()
+rec = np.load(ROOT / "data" / "safety_filter" / "plugin_runs" / "brkZ8_phaseI_20261117_193334.npz", allow_pickle=True)
+
+# ---- fix 1 (SF-96): the static lever as arrays equals the loop ----
+worst, worst_rows = 0.0, []
+for i in range(2000, 5800, 400):
+    b = rec["base"][i]
+    st = RobotState(base_xyz=tuple(b[:3]), base_quat=tuple(b[3:7]), pedestal_m=float(rec["pedestal"][i]),
+                    q_left=tuple(rec["q_meas"][i, 0]), q_right=tuple(rec["q_meas"][i, 1]),
+                    finger_left=float(rec["fingers"][i, 0]), finger_right=float(rec["fingers"][i, 1]))
+    raw = np.asarray(rec["raw"][i], float)
+    last = np.asarray(rec["sent"][i - 1], float)
+    t = _Tick(res, raw, last, st, world, None, awake=None)
+    sl = res.statics.sleep
+    a = sl._static_lever(t)
+    b_ = sl._static_lever_loop(t)
+    d = float(np.max(np.abs(a - b_)))
+    worst = max(worst, d)
+    worst_rows.append(i)
+check("fix 1 (SF-96): the static lever as arrays equals the Python loop it replaces (1e-12) at 10 recorded poses",
+      worst < 1e-12, f"largest difference {worst:.2e} over rows {worst_rows}")
+
+print(f"{len(fails)} failing check(s)" if fails else "ALL PASS")
+sys.exit(1 if fails else 0)

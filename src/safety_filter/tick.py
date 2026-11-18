@@ -507,7 +507,32 @@ class SleepTimers:
 
     def _static_lever(self, t):
         """Per item and arm joint: an upper bound, for EVERY pose, of the distance of any point of the item from the joint's anchor:
-        the lengths of the links between the joint and the item's link (fixed) plus the item's reach from its own link's last joint."""
+        the lengths of the links between the joint and the item's link (fixed) plus the item's reach from its own link's last joint.
+        Phase K fix 1: the same numbers as _static_lever_loop, as arrays (the loop made about 500 small numpy calls per tick)."""
+        tab, st, P = t.tab, self.st, t._P0
+        t.res.shapes.set_state(with_arms(t.state, t.last))
+        d = t.res.shapes.data
+        lever = np.zeros((tab.n, ARM_JOINTS))
+        L_all = np.asarray(tab.link, int)
+        for s, side in enumerate(SIDES):
+            anc = d.xanchor[st.jids[side]].copy()
+            seg = np.linalg.norm(np.diff(anc, axis=0), axis=1)                      # fixed distances between consecutive joint anchors
+            cs = np.concatenate([[0.0], np.cumsum(seg)])                             # cs[j] = seg[0] + ... + seg[j-1]
+            ks = np.flatnonzero((tab.item_side == s) & (L_all > 0))
+            if not len(ks):
+                continue
+            Lk = L_all[ks]
+            a = anc[Lk - 1]
+            cap = np.maximum(np.linalg.norm(P.A[ks] - a, axis=1), np.linalg.norm(P.B[ks] - a, axis=1))
+            box = np.linalg.norm(P.C[ks] - a, axis=1) + np.linalg.norm(tab.half[ks], axis=1)
+            e = np.where(tab.is_capsule[ks], cap, box)
+            for i in range(ARM_JOINTS):
+                m = i < Lk                                                           # joint i lies between the torso and the item's link
+                lever[ks[m], i] = cs[Lk[m] - 1] - cs[i] + e[m]                       # seg[i:L-1].sum() + e
+        return lever
+
+    def _static_lever_loop(self, t):
+        """The reference of _static_lever (the Python loop it replaces, Phase K fix 1): the same numbers."""
         tab, st, P = t.tab, self.st, t._P0
         t.res.shapes.set_state(with_arms(t.state, t.last))
         d = t.res.shapes.data

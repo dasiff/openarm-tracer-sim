@@ -3,6 +3,8 @@
 Written for: David (project lead). Branch safety-filter, worktree ~/projects/openarm-tracer-sim-sf-d. NOT pushed.
 Commits: f6d5859 (step 2, compiled chain, SF-103), b8c1efd (step 3 wiring, SF-104, WIP), this report (WIP).
 
+Correction (Phase Q): the touch failure in section 9 was caused by the wiring, not by a test-code problem or the environment. The wiring was reverted in 719e44c and touch passes again.
+
 ## 1. Answer
 
 **No. The full filter call median in the integration is 7.75 ms, not under 6 ms.** The same-window baseline (Phase M code) was 8.22 ms, so the wiring saves 0.47 ms of median (6%).
@@ -112,7 +114,7 @@ So the closed loop, with its discrete decisions (halving steps, pair sets, look-
 | exit 0 | 24 | includes the two new tests (fk_test, fk_wiring_test) |
 | **braking_j: exit 1, a regression from the wiring** | 1 | Fix 3 checks: adaptive wake on 15.991 mm vs off 16.252 mm (limit 0.05 mm); largest tick difference 0.556 mm. The same file passes at f988735 (exit 0, run in a scratch worktree). |
 | spec: exit 1, already failing at f988735 | 1 | "the closing right arm moves" (exact-equality check). Same failure at f988735 (scratch run). Not caused by this change. |
-| touch: exit 1, test-code error | 1 | `never_close_list()` calls `mujoco.mj_geomDistance(m, d, a, b, 0.5, fr)`; MuJoCo 3.13 rejects the argument types. Fails before any filter kinematics runs. Not caused by this change; not run at f988735. |
+| touch: exit 1, test-code error | 1 | `never_close_list()` calls `mujoco.mj_geomDistance(m, d, a, b, 0.5, fr)`; MuJoCo 3.13 rejects the argument types. CORRECTED in Phase Q: this failure IS caused by the wiring. The test passes `RobotShapes.data` as the MjData argument; the wiring made that object a RobotKinematics. It passes again after the revert (Phase Q report). |
 | sequential_push: exit 1, missing fixture | 1 | `data/safety_filter/kong_single_pair_fixtures.json` is produced by `scripts/safety_filter_kong_single_pair_fixtures.py`, which has not been run in these worktrees, and the file is not in the main repo. Not caused by this change. |
 
 ## 10. Not done, and decisions for David
@@ -129,7 +131,7 @@ Decisions for David:
    b. Make the kinematics bit-identical to MuJoCo: mirror MuJoCo's quaternion arithmetic (mju_mulQuat, axis-angle, quat-to-matrix) and check that the replay commands are identical. This keeps the behaviour, but the expected gain is still about 0.5 ms, so it does not reach 6 ms.
    c. Accept the new trajectory as equivalent. Then the braking_j fix-3 expectations need your review, because that test compares two runs that the rounding change moves apart.
 2. **Where the remaining time is.** The arm kinematics is not the bottleneck. The next target is the resolver's tick machinery (4.6 ms median in the integration; Phase L profile: Tick.gap, candidate machinery, guard fractions). Decide whether to continue the performance work there.
-3. **Pre-existing test problems** (touch's call signature, sequential_push's missing fixture, spec's closing-arm check). Not fixed here; say if you want them fixed.
+3. **Pre-existing test problems** (sequential_push's missing fixture, spec's closing-arm check). The touch failure in this list was a wiring regression, not a test problem (corrected in Phase Q). Not fixed here; say if you want them fixed.
 
 ## 11. Files
 

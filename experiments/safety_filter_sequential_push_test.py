@@ -428,18 +428,17 @@ def sec_other_tests():
 
 
 def main():
-    with patched(cfg.RESOLVER, mode="kong_style"):
-        sec_fixtures()
-        sec_order()
-        sec_skip_rule()
-        sec_remeasure()
-        sec_one_conversion()
-        sec_large_push()
-        sec_rounds_stop_determinism()
-        sec_forced_checks()
-        sec_status_record()
-        sec_no_summing()
-        sec_other_tests()
+    sec_fixtures()
+    sec_order()
+    sec_skip_rule()
+    sec_remeasure()
+    sec_one_conversion()
+    sec_large_push()
+    sec_rounds_stop_determinism()
+    sec_forced_checks()
+    sec_status_record()
+    sec_no_summing()
+    sec_other_tests()
     print(f"{RESULTS['ok']} of {RESULTS['run']} checks ok")
     print("PASS" if not FAILS else f"FAIL: {FAILS}")
     return 1 if FAILS else 0

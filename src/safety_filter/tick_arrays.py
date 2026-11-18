@@ -40,6 +40,7 @@ import numpy as np
 
 from src.safety_filter import config as cfg
 from src.safety_filter.geometry import capsule_box, capsule_box_batch, capsule_capsule, capsule_capsule_batch, cylinder_box, cylinder_capsule
+from src.safety_filter.batch_jit import capsule_box_gap_batch, capsule_capsule_gap_batch    # Phase K fix 2 (SF-97): the gap-only batches, compiled
 from src.safety_filter.touch import Exempt, pair_rule
 
 SIDE_INDEX = {"left": 0, "right": 1}
@@ -162,7 +163,7 @@ def approx_gaps(tab, P, idx):
         cc = need[tab.is_cc[need]]
         if len(cc):
             a, b = tab.ka[cc], tab.kb[cc]
-            g = capsule_capsule_batch(P.A[a], P.B[a], tab.radius[a], P.A[b], P.B[b], tab.radius[b], gap_only=True)
+            g = capsule_capsule_gap_batch(P.A[a], P.B[a], tab.radius[a], P.A[b], P.B[b], tab.radius[b])
             P.glo[cc], P.ghi[cc] = g - cfg.ARRAY_FORM['cc_eps_m'], g + cfg.ARRAY_FORM['cc_eps_m']
         cy = need[tab.is_cy[need]]                  # Phase D fix 4: cylinder pairs: lower bound = the boxes' separation (never above the gap), upper bound = the centre distance
         if len(cy):
@@ -172,7 +173,7 @@ def approx_gaps(tab, P, idx):
         cb = need[~tab.is_cc[need] & ~tab.is_cy[need]]
         if len(cb):
             c, b = tab.cb_cap[cb], tab.cb_box[cb]
-            v = capsule_box_batch(P.A[c], P.B[c], tab.radius[c], P.C[b], P.R[b], tab.half[b], gap_only=True)
+            v = capsule_box_gap_batch(P.A[c], P.B[c], tab.radius[c], P.C[b], P.R[b], tab.half[b])
             length = np.linalg.norm(P.B[c] - P.A[c], axis=1)
             P.glo[cb] = v - cfg.ARRAY_FORM['cb_low_per_m'] * length - cfg.ARRAY_FORM['bound_slack_m']
             P.ghi[cb] = v + cfg.ARRAY_FORM['cb_high_per_m'] * length + cfg.ARRAY_FORM['bound_slack_m']

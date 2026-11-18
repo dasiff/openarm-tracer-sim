@@ -1,5 +1,7 @@
 """Braking Phase K (profile the remaining cost): one check per fix. Kinematics only (no simulator).
 
+Fix 2 (SF-97): the compiled gap-only batch distances equal the numpy versions (1e-10).
+
 Fix 1 (SF-96): the static lever of the pair sleep timers is computed as arrays; it equals the Python loop it replaces.
 
 Run: python experiments/safety_filter_braking_k_test.py   (exit 0 = all pass).
@@ -50,6 +52,33 @@ for i in range(2000, 5800, 400):
     worst_rows.append(i)
 check("fix 1 (SF-96): the static lever as arrays equals the Python loop it replaces (1e-12) at 10 recorded poses",
       worst < 1e-12, f"largest difference {worst:.2e} over rows {worst_rows}")
+
+# ---- fix 2 (SF-97): the compiled gap-only batch distances equal the numpy versions they replace (1e-10) ----
+from src.safety_filter import geometry as _geo  # noqa: E402
+from src.safety_filter import batch_jit as _bj  # noqa: E402
+
+rng = np.random.default_rng(3)
+N = 600
+A1 = rng.normal(0, 0.3, (N, 3)); B1 = A1 + rng.normal(0, 0.2, (N, 3))
+A2 = rng.normal(0, 0.3, (N, 3)); B2 = A2 + rng.normal(0, 0.2, (N, 3))
+B2[:20] = A2[:20]                                   # degenerate second segments
+r1 = rng.uniform(0.01, 0.05, N); r2 = rng.uniform(0.01, 0.05, N)
+g_np = _geo.capsule_capsule_batch(A1, B1, r1, A2, B2, r2, gap_only=True)
+g_jit = _bj.capsule_capsule_gap_batch(A1, B1, r1, A2, B2, r2)
+d_cc = float(np.max(np.abs(g_np - g_jit)))
+check("fix 2 (SF-97): capsule-capsule gaps, compiled equal numpy (1e-10) over 600 random pairs (20 degenerate)", d_cc < 1e-10, f"largest difference {d_cc:.2e}")
+
+Cb = rng.normal(0, 0.3, (N, 3)); hb = rng.uniform(0.01, 0.2, (N, 3))
+Rb = np.zeros((N, 3, 3))
+for k in range(N):
+    Q, _ = np.linalg.qr(rng.normal(size=(3, 3)))
+    Rb[k] = Q
+Ac = rng.normal(0, 0.4, (N, 3)); Bc = Ac + rng.normal(0, 0.3, (N, 3))
+rc = rng.uniform(0.005, 0.05, N)
+g_np = _geo.capsule_box_batch(Ac, Bc, rc, Cb, Rb, hb, gap_only=True)
+g_jit = _bj.capsule_box_gap_batch(Ac, Bc, rc, Cb, Rb, hb)
+d_cb = float(np.max(np.abs(g_np - g_jit)))
+check("fix 2 (SF-97): capsule-box gaps, compiled equal numpy (1e-10) over 600 random pairs (grid 33, 14 golden steps)", d_cb < 1e-10, f"largest difference {d_cb:.2e}")
 
 print(f"{len(fails)} failing check(s)" if fails else "ALL PASS")
 sys.exit(1 if fails else 0)

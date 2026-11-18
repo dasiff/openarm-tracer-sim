@@ -16,8 +16,11 @@ build/
 *.swp
 *.swo
 
-# Data and logs
-data/
+# Data and logs (data/ is ignored, except the safety-filter fixture file, which is tracked; a `!` line cannot re-include a file under an ignored directory, so the rule ignores the contents)
+data/*
+!data/safety_filter/
+data/safety_filter/*
+!data/safety_filter/kong_single_pair_fixtures.json
 *.hdf5
 *.h5
 *.log

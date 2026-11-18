@@ -57,7 +57,7 @@ class SafetyFilterPlugin:
         self._hold_t0, self.stop_reason = None, None     # start (sim s) of the current run of held ticks; why limit_reached() said yes
         self.last_sent = None
         self.history = deque(maxlen=int(history_len))
-        self.rec = {k: [] for k in ("t", "raw", "filtered", "sent", "status", "reason", "filter_time", "rounds", "worst_gap",
+        self.rec = {k: [] for k in ("t", "raw", "filtered", "sent", "status", "reason", "filter_time", "braking_time", "rounds", "worst_gap",
                                     "worst_shortfall", "fraction", "worst_pair", "methods", "pairs_pushed", "pairs_skipped",
                                     "pairs_shortened", "solver_calls", "q_meas", "base", "pedestal", "fingers", "held_ends",
                                     "brake_stop", "brake_limit", "brake_gap", "brake_room", "brake_sd", "brake_speed", "brake_pair", "brake_override",
@@ -95,6 +95,7 @@ class SafetyFilterPlugin:
                 print(f"[safety filter] ERROR in the filter (error {self._n_errors}), braking: {type(exc).__name__}: {exc}")
             filtered, status = self.last_sent.copy(), FilterStatus(status="HOLD", hold_reason="FILTER_ERROR")
         dt_filter = self.clock() - t0
+        dt_braking = 0.0                                # Phase L fix 1 (SF-99): the braking layer's time this tick (0 without it)
         filtered = np.asarray(filtered, dtype=float)
         if self.braking is not None:
             if hasattr(self.obstacle_fn, "bind"):
@@ -102,7 +103,9 @@ class SafetyFilterPlugin:
             prev_t = getattr(self, "_t_braking", None)
             call_dt = None if prev_t is None else float(t) - prev_t      # the time since the last filter call (a gap restarts the arm's speed history)
             self._t_braking = float(t)
+            tb0 = self.clock()
             filtered, binfo = self.braking.process(self.last_sent, filtered, state, self.obstacle_fn, hold=(status.status == "HOLD"), call_dt=call_dt)
+            dt_braking = self.clock() - tb0
             self.ctx["braking"] = binfo
             la = binfo["lookahead"]
             nan2 = lambda key: [float(x[key]) if x is not None else float("nan") for x in la]   # noqa: E731
@@ -121,7 +124,7 @@ class SafetyFilterPlugin:
         elif status.status == "HOLD":
             filtered = np.asarray(self.hold_policy(self.last_sent.copy(), status, list(self.history)), dtype=float)
         sent = raw if self.mode == "shadow" else filtered
-        self._record(t, raw, filtered, sent, status, dt_filter, state)
+        self._record(t, raw, filtered, sent, status, dt_filter, state, dt_braking)
         self.history.append({"raw": raw, "sent": sent.copy(), "status": status.status, "reason": status.hold_reason})
         if status.status != "PASS" and np.allclose(sent, self.last_sent, atol=1e-9):      # held: not PASS and the command sent did not change
             self._hold_t0 = float(t) if self._hold_t0 is None else self._hold_t0
@@ -155,7 +158,7 @@ class SafetyFilterPlugin:
         return False
 
     # ------------------------------------------------------------------
-    def _record(self, t, raw, filtered, sent, st, dt_filter, state=None):
+    def _record(self, t, raw, filtered, sent, st, dt_filter, state=None, dt_braking=0.0):
         r = self.rec
         if state is not None and hasattr(state, "q_left"):      # the measured robot state at this call (for gaps of the REAL arm afterwards)
             r["q_meas"].append(np.array([state.q_left, state.q_right], dtype=float))
@@ -164,7 +167,7 @@ class SafetyFilterPlugin:
             r["fingers"].append(np.array([state.finger_left, state.finger_right], dtype=float))
             r["held_ends"].append(np.array(self.ctx.get("held_ends", np.full((2, 3, 3), np.nan)), dtype=float))   # per side: a, b, then (r, 0, 0)
         r["t"].append(float(t)); r["raw"].append(raw.copy()); r["filtered"].append(filtered.copy()); r["sent"].append(sent.copy())
-        r["status"].append(st.status); r["reason"].append(st.hold_reason or ""); r["filter_time"].append(dt_filter)
+        r["status"].append(st.status); r["reason"].append(st.hold_reason or ""); r["filter_time"].append(dt_filter); r["braking_time"].append(dt_braking)
         r["rounds"].append(st.rounds); r["worst_gap"].append(st.worst_gap); r["worst_shortfall"].append(st.worst_shortfall)
         r["fraction"].append(st.fraction); r["worst_pair"].append("|".join(st.worst_pair) if st.worst_pair else "")
         r["methods"].append(",".join(st.methods)); r["pairs_pushed"].append(st.pairs_pushed)

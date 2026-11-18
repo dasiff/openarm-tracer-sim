@@ -3,7 +3,7 @@
 Date: 2026-11-18. Branch safety-filter, worktree ~/projects/openarm-tracer-sim-sf-d. Nothing pushed.
 Decision row: SF-108 (docs/mpvi_decisions.md). Earlier rows SF-31 to SF-34, SF-40, SF-41, SF-49, SF-106, SF-107 are marked superseded; their text is kept.
 
-Written for: David (decisions in section 8).
+Written for: David (decisions in section 9).
 
 ## 1. Summary
 

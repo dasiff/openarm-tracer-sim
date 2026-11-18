@@ -1,5 +1,7 @@
 """Braking Phase L (performance, continued): one check per fix. Kinematics only (no simulator) except where noted.
 
+Fix 3 (SF-101): the compiled static lever equals the Python loop (1e-12).
+
 Fix 2 (SF-100): the compiled exact pair gap equals the Python reference (1e-6).
 
 Fix 1 (SF-99): the plugin's per-call recorder holds the braking layer's time next to the resolver's time, so the full call (resolver plus
@@ -102,6 +104,21 @@ for i in (2000, 3000, 4000, 5000):
         n_pairs += 1
 check("fix 2 (SF-100): the compiled exact pair gap equals the Python reference (1e-6) over the table's pairs at 4 recorded poses",
       worst_gap < 1e-6, f"largest difference {worst_gap:.2e} over {n_pairs} pair evaluations")
+
+# ---- fix 3 (SF-101): the compiled static lever equals the Python loop (1e-12) at recorded poses ----
+worst_lever, lever_rows = 0.0, []
+for i in (2000, 3000, 4000, 5000):
+    b = rec["base"][i]
+    st = RobotState(base_xyz=tuple(b[:3]), base_quat=tuple(b[3:7]), pedestal_m=float(rec["pedestal"][i]),
+                    q_left=tuple(rec["q_meas"][i, 0]), q_right=tuple(rec["q_meas"][i, 1]),
+                    finger_left=float(rec["fingers"][i, 0]), finger_right=float(rec["fingers"][i, 1]))
+    t = _Tick(res, np.asarray(rec["raw"][i], float), np.asarray(rec["sent"][i - 1], float), st, world, None, awake=None)
+    sl = res.statics.sleep
+    d = float(np.max(np.abs(sl._static_lever(t) - sl._static_lever_loop(t))))
+    worst_lever = max(worst_lever, d)
+    lever_rows.append(i)
+check("fix 3 (SF-101): the compiled static lever equals the Python loop it replaces (1e-12) at 4 recorded poses",
+      worst_lever < 1e-12, f"largest difference {worst_lever:.2e} over rows {lever_rows}")
 
 print(f"{len(fails)} failing check(s)" if fails else "ALL PASS")
 sys.exit(1 if fails else 0)

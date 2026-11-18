@@ -128,3 +128,34 @@ def pair_gap_at(a, b, kind, A, B, C, R, radius, half):
     cylinder_capsule and cylinder_box (through pair_jit.pair_geometry), so the same numbers."""
     g, p1, p2, pu = pair_geometry(kind[a], A[a], B[a], radius[a], C[a], R[a], half[a], kind[b], A[b], B[b], radius[b], C[b], R[b], half[b])
     return g
+
+
+@njit(cache=True)
+def static_lever_kernel(link, item_side, is_capsule, half, A, B, C, anc):
+    """Phase L fix 3 (SF-101): the static lever of the pair sleep timers, compiled: per item and arm joint, the cumulative link lengths
+    between the joint and the item's link plus the item's reach from its own link's last joint (see tick.SleepTimers._static_lever).
+    anc: (2, 7, 3) the arm joints' anchors per side. Returns (n, 7)."""
+    n = link.shape[0]
+    lever = np.zeros((n, 7))
+    for side in range(2):
+        cs = np.zeros(7)                                     # cs[j] = the sum of the first j link lengths of this arm
+        for j in range(6):
+            dx, dy, dz = anc[side, j + 1, 0] - anc[side, j, 0], anc[side, j + 1, 1] - anc[side, j, 1], anc[side, j + 1, 2] - anc[side, j, 2]
+            cs[j + 1] = cs[j] + np.sqrt(dx * dx + dy * dy + dz * dz)
+        for k in range(n):
+            L = link[k]
+            if item_side[k] != side or L == 0:
+                continue
+            ax, ay, az = anc[side, L - 1, 0], anc[side, L - 1, 1], anc[side, L - 1, 2]
+            if is_capsule[k]:
+                d1 = np.sqrt((A[k, 0] - ax) ** 2 + (A[k, 1] - ay) ** 2 + (A[k, 2] - az) ** 2)
+                d2 = np.sqrt((B[k, 0] - ax) ** 2 + (B[k, 1] - ay) ** 2 + (B[k, 2] - az) ** 2)
+                e = max(d1, d2)
+            else:
+                d1 = np.sqrt((C[k, 0] - ax) ** 2 + (C[k, 1] - ay) ** 2 + (C[k, 2] - az) ** 2)
+                d2 = np.sqrt(half[k, 0] ** 2 + half[k, 1] ** 2 + half[k, 2] ** 2)
+                e = d1 + d2
+            for i in range(7):
+                if i < L:
+                    lever[k, i] = cs[L - 1] - cs[i] + e
+    return lever

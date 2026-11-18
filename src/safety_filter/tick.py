@@ -18,6 +18,7 @@ import numpy as np
 from src.safety_filter import config as cfg
 from src.safety_filter import gap_rule
 from src.safety_filter import tick_arrays as ta
+from src.safety_filter.batch_jit import static_lever_kernel      # Phase L fix 3 (SF-101): the static lever, compiled
 from src.safety_filter.link_rules import category_of_part
 from src.safety_filter.shapes import ARM_JOINTS, SIDES, PlacedShape
 from src.safety_filter.touch import Exempt, _aabb_arrays, as_placed, gap_between, pair_rule
@@ -508,6 +509,15 @@ class SleepTimers:
         """Per item and arm joint: an upper bound, for EVERY pose, of the distance of any point of the item from the joint's anchor:
         the lengths of the links between the joint and the item's link (fixed) plus the item's reach from its own link's last joint.
         Phase K fix 1: the same numbers as _static_lever_loop, as arrays (the loop made about 500 small numpy calls per tick)."""
+        tab, st, P = t.tab, self.st, t._P0
+        t.res.shapes.set_arms(t.last, t.state)
+        d = t.res.shapes.data
+        anc = np.stack([d.xanchor[st.jids[side]].copy() for side in SIDES])          # (2, 7, 3): the arm joints' anchors per side
+        return static_lever_kernel(np.asarray(tab.link, np.int64), np.asarray(tab.item_side, np.int64), np.asarray(tab.is_capsule, bool),
+                                   np.asarray(tab.half, float), np.asarray(P.A, float), np.asarray(P.B, float), np.asarray(P.C, float), anc)
+
+    def _static_lever_vector(self, t):
+        """The vectorised numpy version of _static_lever (Phase K fix 1), kept as the middle reference."""
         tab, st, P = t.tab, self.st, t._P0
         t.res.shapes.set_arms(t.last, t.state)
         d = t.res.shapes.data

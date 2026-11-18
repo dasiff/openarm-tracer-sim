@@ -174,33 +174,3 @@ class RobotKinematics:
     def update(self, qpos):
         kinematics(np.asarray(qpos, float), self.qpos0, self.parent, self.bpos, self.bmat, self.ipos, self.jstart, self.jnum, self.jtype,
                    self.jqadr, self.jpos, self.jaxis, self.xpos, self.xmat, self.xipos, self.xanchor, self.xaxis)
-
-
-@njit(cache=True)
-def _to_world(xpos, xmat, body, v, out):
-    """World position of the body-local point v of one body: out = xpos[body] + xmat[body] @ v."""
-    for i in range(3):
-        out[i] = xpos[body, i] + xmat[body, 3 * i] * v[0] + xmat[body, 3 * i + 1] * v[1] + xmat[body, 3 * i + 2] * v[2]
-
-
-@njit(cache=True)
-def place_kernel(xpos, xmat, cap_ba, cap_bb, cap_la, cap_lb, cap_t0, cap_t1, box_b, box_c, box_rl, A, B, C, R):
-    """The shape arrays of RobotShapes.place_arrays from the body frames, in place (SF-103; the same formulas as the numpy version):
-    a capsule's ends are A0, B0 (the body-local ends mapped to the world); its covered part is A = A0 + t0 (B0 - A0) and B = A0 + t1 (B0 - A0).
-    A box's centre is C = xpos + xmat @ centre_local and its rotation R = xmat @ quat_local_matrix."""
-    a0 = np.empty(3)
-    b0 = np.empty(3)
-    for k in range(cap_ba.shape[0]):
-        _to_world(xpos, xmat, cap_ba[k], cap_la[k], a0)
-        _to_world(xpos, xmat, cap_bb[k], cap_lb[k], b0)
-        for i in range(3):
-            A[k, i] = a0[i] + cap_t0[k] * (b0[i] - a0[i])
-            B[k, i] = a0[i] + cap_t1[k] * (b0[i] - a0[i])
-    for k in range(box_b.shape[0]):
-        b = box_b[k]
-        out = np.empty(3)
-        _to_world(xpos, xmat, b, box_c[k], out)
-        for i in range(3):
-            C[k, i] = out[i]
-            for j in range(3):
-                R[k, i, j] = xmat[b, 3 * i] * box_rl[k, 0, j] + xmat[b, 3 * i + 1] * box_rl[k, 1, j] + xmat[b, 3 * i + 2] * box_rl[k, 2, j]

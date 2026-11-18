@@ -18,7 +18,6 @@ import numpy as np
 from scipy.spatial.transform import Rotation
 
 from src.safety_filter import config as cfg
-from src.safety_filter.arm_fk import hand_jacobian
 from src.safety_filter.shapes import ARM_JOINTS, SIDES, RobotShapes, RobotState
 
 SOLVER_UPPER_LEN_M = 0.3   # m: lengths of the direction-only frame handed to the solver (any value; the solver reads directions) [SF-1]
@@ -59,7 +58,6 @@ class ArmKinematics:
         self.body0 = bid("openarm_body_link0")
         self.jids = {s: list(shapes._joint[s]) for s in SIDES}
         self.dofs = {s: np.array([m.jnt_dofadr[j] for j in self.jids[s]]) for s in SIDES}
-        self._arm_joints = {s: np.array(self.jids[s], np.int64) for s in SIDES}     # the arm's seven joint ids (SF-103)
         self.limits = {s: np.array([m.jnt_range[j] for j in self.jids[s]]) for s in SIDES}
 
     # ---- kinematics (each call sets the state; callers that need several things use the *_now helpers) ----
@@ -95,10 +93,10 @@ class ArmKinematics:
         (link 7 frame) from its pose at `state` toward target_pos (m) and target_rot (3x3). Exactly one step, no iteration."""
         self.set_state(state)
         pos, rot = self.hand_pose_now(side)
-        jp, jr = np.zeros((3, ARM_JOINTS)), np.zeros((3, ARM_JOINTS))
-        # the Jacobian of mj_jacBody at the hand's frame origin, from the compiled chain's axes and anchors (SF-103)
-        hand_jacobian(self.data.xpos[self.hand_body[side]], self.data.xanchor, self.data.xaxis, self._arm_joints[side], jp, jr)
-        J = np.vstack([jp, jr])
+        jp, jr = np.zeros((3, self.model.nv)), np.zeros((3, self.model.nv))
+        mujoco.mj_comPos(self.model, self.data)           # the Jacobian needs the joint axes in the world (cdof)
+        mujoco.mj_jacBody(self.model, self.data, jp, jr, self.hand_body[side])
+        J = np.vstack([jp[:, self.dofs[side]], jr[:, self.dofs[side]]])
         err = np.concatenate([np.asarray(target_pos, float) - pos, Rotation.from_matrix(np.asarray(target_rot) @ rot.T).as_rotvec()])
         lam = cfg.RESOLVER["jacobian_damping"]
         dq = J.T @ np.linalg.solve(J @ J.T + lam * np.eye(6), err)

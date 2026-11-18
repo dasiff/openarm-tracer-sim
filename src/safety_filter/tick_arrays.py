@@ -40,7 +40,7 @@ import numpy as np
 
 from src.safety_filter import config as cfg
 from src.safety_filter.geometry import capsule_box, capsule_box_batch, capsule_capsule, capsule_capsule_batch, cylinder_box, cylinder_capsule
-from src.safety_filter.batch_jit import capsule_box_gap_batch, capsule_capsule_gap_batch    # Phase K fix 2 (SF-97): the gap-only batches, compiled
+from src.safety_filter.batch_jit import capsule_box_gap_batch, capsule_capsule_gap_batch, pair_gap_at    # Phase K fix 2 (SF-97) and Phase L fix 2 (SF-100): compiled
 from src.safety_filter.touch import Exempt, pair_rule
 
 SIDE_INDEX = {"left": 0, "right": 1}
@@ -143,7 +143,19 @@ def _cylinder_upper(tab, P, p):
 
 
 def exact_gap(tab, P, p):
-    """The gap of pair p at the pose: touch.gap_between's number (same function, same argument order)."""
+    """The gap of pair p at the pose: touch.gap_between's number (same function, same argument order). Phase L fix 2 (SF-100): compiled
+    (batch_jit.pair_gap_at, the same contact functions) when cfg.GEOMETRY is compiled; _exact_gap_python is the reference."""
+    if not cfg.GEOMETRY["compiled"]:
+        return _exact_gap_python(tab, P, p)
+    if tab.is_cy[p] or tab.is_cc[p]:
+        a, b = tab.ka[p], tab.kb[p]
+    else:
+        a, b = tab.cb_cap[p], tab.cb_box[p]
+    return float(pair_gap_at(a, b, tab.kind_code, P.A, P.B, P.C, P.R, tab.radius, tab.half))
+
+
+def _exact_gap_python(tab, P, p):
+    """The reference of exact_gap (the Python path of the contact functions)."""
     if tab.is_cy[p]:
         return _cylinder_exact(tab, P, p)
     if tab.is_cc[p]:

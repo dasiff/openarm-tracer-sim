@@ -8,6 +8,8 @@ The numpy versions stay as the reference: tests compare the two on random and re
 import numpy as np
 from numba import njit
 
+from src.safety_filter.pair_jit import pair_geometry
+
 
 @njit(cache=True)
 def capsule_capsule_gap(A1, B1, r1, A2, B2, r2):
@@ -117,3 +119,12 @@ def capsule_box_gap_batch(A, B, r, c, R, h, grid=33, refine=14):
     """Python entry of capsule_box_gap (the grid of the numpy version: linspace(0, 1, grid), refine golden-section steps)."""
     f = lambda x: np.ascontiguousarray(x, dtype=float)                       # noqa: E731
     return capsule_box_gap(f(A), f(B), f(r), f(c), f(R), f(h), np.linspace(0.0, 1.0, grid), refine)
+
+
+@njit(cache=True)
+def pair_gap_at(a, b, kind, A, B, C, R, radius, half):
+    """Phase L fix 2 (SF-100): the exact gap of the pair of table items a and b at a pose (kind codes, capsule ends A and B, centres C,
+    rotations R, radii, half sizes: the tick's item arrays). The same contact functions as geometry.capsule_capsule, capsule_box,
+    cylinder_capsule and cylinder_box (through pair_jit.pair_geometry), so the same numbers."""
+    g, p1, p2, pu = pair_geometry(kind[a], A[a], B[a], radius[a], C[a], R[a], half[a], kind[b], A[b], B[b], radius[b], C[b], R[b], half[b])
+    return g

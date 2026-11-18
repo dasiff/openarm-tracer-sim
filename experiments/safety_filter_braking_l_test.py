@@ -1,5 +1,7 @@
 """Braking Phase L (performance, continued): one check per fix. Kinematics only (no simulator) except where noted.
 
+Fix 2 (SF-100): the compiled exact pair gap equals the Python reference (1e-6).
+
 Fix 1 (SF-99): the plugin's per-call recorder holds the braking layer's time next to the resolver's time, so the full call (resolver plus
 braking) is in the recording.
 
@@ -66,6 +68,40 @@ check("fix 1 (SF-99): the full call (resolver plus braking) is the sum: about 15
 plugin_off = SafetyFilterPlugin("on", slow_resolver, lambda holding: (state, [], None), run_name="test_phase_l_nb", braking=None)
 plugin_off.process(arm_targets, {"left": False, "right": False}, current, t=0.0)
 check("fix 1 (SF-99): without a braking layer the braking time is recorded as zero", plugin_off.rec["braking_time"][-1] == 0.0)
+
+# ---- fix 2 (SF-100): the compiled exact pair gap equals the Python reference (1e-6), over the tick's pairs at recorded poses ----
+from src import task_config as _tc  # noqa: E402,F401
+from src.safety_filter import config as cfg  # noqa: E402
+from src.safety_filter import tick_arrays as ta  # noqa: E402
+from src.safety_filter.resolver import Resolver  # noqa: E402
+from src.safety_filter.robot_model import load_robot_only_model  # noqa: E402
+from src.safety_filter.shapes import RobotShapes  # noqa: E402
+from src.safety_filter.tick import _Tick  # noqa: E402
+from src.safety_filter.world import LabMapSource  # noqa: E402
+
+rs = RobotShapes(load_robot_only_model(), ROOT / cfg.SHAPES_FILE)
+res = Resolver(rs, 1.0 / float(cfg.BRAKING["tick_hz"]))
+world = LabMapSource(str(ROOT / "data" / "safety_filter" / "lab_map.json")).objects()
+rec = np.load(ROOT / "data" / "safety_filter" / "plugin_runs" / "brkZ8_phaseI_20261117_193334.npz", allow_pickle=True)
+worst_gap, n_pairs = 0.0, 0
+for i in (2000, 3000, 4000, 5000):
+    b = rec["base"][i]
+    st = RobotState(base_xyz=tuple(b[:3]), base_quat=tuple(b[3:7]), pedestal_m=float(rec["pedestal"][i]),
+                    q_left=tuple(rec["q_meas"][i, 0]), q_right=tuple(rec["q_meas"][i, 1]),
+                    finger_left=float(rec["fingers"][i, 0]), finger_right=float(rec["fingers"][i, 1]))
+    t = _Tick(res, np.asarray(rec["raw"][i], float), np.asarray(rec["sent"][i - 1], float), st, world, None, awake=None)
+    P = t._place(np.asarray(rec["sent"][i - 1], float))
+    for p in range(min(len(t.tab), 150)):
+        cfg.GEOMETRY["compiled"] = True
+        g_jit = ta.exact_gap(t.tab, P, p)
+        cfg.GEOMETRY["compiled"] = False
+        g_py = ta.exact_gap(t.tab, P, p)
+        cfg.GEOMETRY["compiled"] = True
+        if np.isfinite(g_py):
+            worst_gap = max(worst_gap, abs(g_jit - g_py))
+        n_pairs += 1
+check("fix 2 (SF-100): the compiled exact pair gap equals the Python reference (1e-6) over the table's pairs at 4 recorded poses",
+      worst_gap < 1e-6, f"largest difference {worst_gap:.2e} over {n_pairs} pair evaluations")
 
 print(f"{len(fails)} failing check(s)" if fails else "ALL PASS")
 sys.exit(1 if fails else 0)

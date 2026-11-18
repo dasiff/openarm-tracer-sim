@@ -40,7 +40,7 @@ import numpy as np
 
 from src.safety_filter import config as cfg
 from src.safety_filter.geometry import capsule_box, capsule_box_batch, capsule_capsule, capsule_capsule_batch, cylinder_box, cylinder_capsule
-from src.safety_filter.batch_jit import capsule_box_gap_batch, capsule_capsule_gap_batch, pair_gap_at    # Phase K fix 2 (SF-97) and Phase L fix 2 (SF-100): compiled
+from src.safety_filter.batch_jit import capsule_box_gap_batch, capsule_capsule_gap_batch, pair_gap_at, pair_separation_kernel    # Phase K fix 2 (SF-97) and Phase L fix 2 (SF-100): compiled
 from src.safety_filter.touch import Exempt, pair_rule
 
 SIDE_INDEX = {"left": 0, "right": 1}
@@ -109,10 +109,16 @@ class PoseArrays:
 
 
 def box_separation(tab, P):
-    """Separation of the two axis-aligned boxes of every checked pair at the pose (negative when they overlap): touch.evaluate_pairs' cut."""
+    """Separation of the two axis-aligned boxes of every checked pair at the pose (negative when they overlap): touch.evaluate_pairs' cut.
+    Phase M fix 1 (SF-102): compiled (batch_jit.pair_separation_kernel); _box_separation_numpy is the reference."""
     if P.sep is None:
-        P.sep = np.maximum(P.lo[tab.I] - P.hi[tab.J], P.lo[tab.J] - P.hi[tab.I]).max(axis=1) if len(tab) else np.zeros(0)
+        P.sep = pair_separation_kernel(P.lo, P.hi, np.asarray(tab.I, np.int64), np.asarray(tab.J, np.int64)) if len(tab) else np.zeros(0)
     return P.sep
+
+
+def _box_separation_numpy(tab, P):
+    """The reference of box_separation (numpy)."""
+    return np.maximum(P.lo[tab.I] - P.hi[tab.J], P.lo[tab.J] - P.hi[tab.I]).max(axis=1) if len(tab) else np.zeros(0)
 
 
 def _cylinder_exact(tab, P, p):

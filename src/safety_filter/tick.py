@@ -18,7 +18,7 @@ import numpy as np
 from src.safety_filter import config as cfg
 from src.safety_filter import gap_rule
 from src.safety_filter import tick_arrays as ta
-from src.safety_filter.batch_jit import static_lever_kernel      # Phase L fix 3 (SF-101): the static lever, compiled
+from src.safety_filter.batch_jit import lever_kernel, static_lever_kernel      # Phase L fix 3 (SF-101), Phase M fix 1 (SF-102): compiled
 from src.safety_filter.link_rules import category_of_part
 from src.safety_filter.shapes import ARM_JOINTS, SIDES, PlacedShape
 from src.safety_filter.touch import Exempt, _aabb_arrays, as_placed, gap_between, pair_rule
@@ -309,6 +309,12 @@ class _Tick:
         at most lever[i] x |d| (turning the joints one at a time from the shoulder outwards keeps the distances beyond the joint)."""
         tab = self.tab
         anc = P.anchors[np.maximum(tab.item_side, 0)]                                    # (n, 7, 3)
+        return lever_kernel(anc, P.A, P.B, P.C, tab.half, tab.is_capsule, np.asarray(tab.link, np.int64))     # Phase M fix 1 (SF-102): compiled
+
+    def _lever_at_numpy(self, P):
+        """The reference of lever_at (numpy)."""
+        tab = self.tab
+        anc = P.anchors[np.maximum(tab.item_side, 0)]
         cap = np.maximum(np.linalg.norm(P.A[:, None, :] - anc, axis=2), np.linalg.norm(P.B[:, None, :] - anc, axis=2))
         box = np.linalg.norm(P.C[:, None, :] - anc, axis=2) + np.linalg.norm(tab.half, axis=1)[:, None]
         dist = np.where(tab.is_capsule[:, None], cap, box)

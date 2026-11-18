@@ -159,3 +159,44 @@ def static_lever_kernel(link, item_side, is_capsule, half, A, B, C, anc):
                 if i < L:
                     lever[k, i] = cs[L - 1] - cs[i] + e
     return lever
+
+
+@njit(cache=True)
+def pair_separation_kernel(lo, hi, I, J):
+    """Phase M fix 1 (SF-102): the separation of the two axis-aligned boxes of every pair (I, J): the largest over the three axes of the
+    gap between the boxes, negative when they overlap (tick_arrays.box_separation's numbers)."""
+    m = I.shape[0]
+    out = np.empty(m)
+    for p in range(m):
+        best = -1e300
+        for k in range(3):
+            s1 = lo[I[p], k] - hi[J[p], k]
+            s2 = lo[J[p], k] - hi[I[p], k]
+            if s1 > best:
+                best = s1
+            if s2 > best:
+                best = s2
+        out[p] = best
+    return out
+
+
+@njit(cache=True)
+def lever_kernel(anc, A, B, C, half, is_capsule, link):
+    """Phase M fix 1 (SF-102): tick.lever_at as a loop: per item and arm joint, the item's largest distance from the joint's anchor (capsule:
+    the farther of its two ends; box or cylinder: centre plus half diagonal), for the joints between the torso and the item's link, else 0.
+    anc: (n, 7, 3) the item's side's joint anchors."""
+    n = A.shape[0]
+    out = np.zeros((n, 7))
+    for k in range(n):
+        hn = np.sqrt(half[k, 0] ** 2 + half[k, 1] ** 2 + half[k, 2] ** 2)
+        for i in range(7):
+            if i < link[k]:
+                ax, ay, az = anc[k, i, 0], anc[k, i, 1], anc[k, i, 2]
+                if is_capsule[k]:
+                    d1 = np.sqrt((A[k, 0] - ax) ** 2 + (A[k, 1] - ay) ** 2 + (A[k, 2] - az) ** 2)
+                    d2 = np.sqrt((B[k, 0] - ax) ** 2 + (B[k, 1] - ay) ** 2 + (B[k, 2] - az) ** 2)
+                    out[k, i] = max(d1, d2)
+                else:
+                    d = np.sqrt((C[k, 0] - ax) ** 2 + (C[k, 1] - ay) ** 2 + (C[k, 2] - az) ** 2)
+                    out[k, i] = d + hn
+    return out

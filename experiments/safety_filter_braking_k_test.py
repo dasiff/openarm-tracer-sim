@@ -1,5 +1,7 @@
 """Braking Phase K (profile the remaining cost): one check per fix. Kinematics only (no simulator).
 
+Fix 3 (SF-98): set_arms equals set_state(with_arms(...)) exactly.
+
 Fix 2 (SF-97): the compiled gap-only batch distances equal the numpy versions (1e-10).
 
 Fix 1 (SF-96): the static lever of the pair sleep timers is computed as arrays; it equals the Python loop it replaces.
@@ -79,6 +81,24 @@ g_np = _geo.capsule_box_batch(Ac, Bc, rc, Cb, Rb, hb, gap_only=True)
 g_jit = _bj.capsule_box_gap_batch(Ac, Bc, rc, Cb, Rb, hb)
 d_cb = float(np.max(np.abs(g_np - g_jit)))
 check("fix 2 (SF-97): capsule-box gaps, compiled equal numpy (1e-10) over 600 random pairs (grid 33, 14 golden steps)", d_cb < 1e-10, f"largest difference {d_cb:.2e}")
+
+# ---- fix 3 (SF-98): set_arms (the arms as an array) places the body frames exactly as set_state(with_arms(state, q)) ----
+from src.safety_filter.arm_conversion import with_arms as _with_arms  # noqa: E402
+
+worst_fk = 0.0
+for i in range(2000, 5800, 900):
+    b = rec["base"][i]
+    st = RobotState(base_xyz=tuple(b[:3]), base_quat=tuple(b[3:7]), pedestal_m=float(rec["pedestal"][i]),
+                    q_left=tuple(rec["q_meas"][i, 0]), q_right=tuple(rec["q_meas"][i, 1]),
+                    finger_left=float(rec["fingers"][i, 0]), finger_right=float(rec["fingers"][i, 1]))
+    q = np.asarray(rec["q_meas"][i], float) + np.random.default_rng(i).normal(0, 0.05, (2, 7))
+    rs.set_state(_with_arms(st, q))
+    xa = rs.data.xpos.copy()
+    rs.set_arms(q, st)
+    xb = rs.data.xpos.copy()
+    worst_fk = max(worst_fk, float(np.max(np.abs(xa - xb))))
+check("fix 3 (SF-98): set_arms places the body frames exactly as set_state(with_arms(state, q)) (0.0 difference, 4 recorded states, perturbed arms)",
+      worst_fk == 0.0, f"largest difference {worst_fk:.2e}")
 
 print(f"{len(fails)} failing check(s)" if fails else "ALL PASS")
 sys.exit(1 if fails else 0)

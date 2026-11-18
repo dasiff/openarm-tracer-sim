@@ -26,8 +26,7 @@ def make_tool_fn(shapes, offset=None):
     off = np.asarray(cfg.BRAKING["tool_offset_local_m"] if offset is None else offset, float)
 
     def tool_fn(q, state):
-        s = replace(state, q_left=tuple(q[0]), q_right=tuple(q[1]))
-        shapes.set_state(s)
+        shapes.set_arms(q, state)                    # Phase K fix 3 (SF-98): the same as set_state(replace(state, q_left=..., q_right=...))
         out = np.zeros((2, 3))
         for i, side in enumerate(SIDES):
             pos, rot = shapes.hand_frame(side)

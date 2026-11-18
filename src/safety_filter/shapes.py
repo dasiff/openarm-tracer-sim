@@ -163,6 +163,29 @@ class RobotShapes:
             raise ValueError(f"robot model has no joint {name}")
         return j
 
+    def set_arms(self, q, state: RobotState):
+        """set_state(with_arms(state, q)) with the two arms given as a (2, 7) array (Phase K fix 3, SF-98): the same numbers (base, pedestal and
+        fingers from the state), without building a state object and its tuples on every call (about 30 calls per tick)."""
+        m, d = self.model, self.data
+        q_buf = self._qbuf
+        q_buf[:] = m.qpos0
+        q_buf[self._adr_base:self._adr_base + 3] = state.base_xyz
+        q_buf[self._adr_base + 3:self._adr_base + 7] = state.base_quat
+        q_buf[self._adr_ped] = state.pedestal_m
+        arms = np.asarray(q, dtype=float)
+        if arms.shape != (2, ARM_JOINTS) or not np.isfinite(arms).all():
+            raise ValueError(f"expected two arms of {ARM_JOINTS} finite joint angles")
+        q_buf[self._adr_arm["left"]] = arms[0]
+        q_buf[self._adr_fing["left"]] = state.finger_left
+        q_buf[self._adr_arm["right"]] = arms[1]
+        q_buf[self._adr_fing["right"]] = state.finger_right
+        if self._kin_done and np.array_equal(q_buf, self._kin_q) and np.array_equal(d.qpos, q_buf):
+            return
+        d.qpos[:] = q_buf
+        mujoco.mj_kinematics(m, d)
+        self._kin_q[:] = q_buf
+        self._kin_done = True
+
     def set_state(self, state: RobotState):
         """Puts the joint state into the data and runs the kinematics (no dynamics, no stepping). When the joint state is the
         one the kinematics was last run for, nothing is recomputed (SF-70)."""

@@ -18,7 +18,6 @@ import numpy as np
 from src.safety_filter import config as cfg
 from src.safety_filter import gap_rule
 from src.safety_filter import tick_arrays as ta
-from src.safety_filter.arm_conversion import with_arms
 from src.safety_filter.link_rules import category_of_part
 from src.safety_filter.shapes import ARM_JOINTS, SIDES, PlacedShape
 from src.safety_filter.touch import Exempt, _aabb_arrays, as_placed, gap_between, pair_rule
@@ -152,7 +151,7 @@ class _Tick:
 
     def _build(self, q):
         st, sh, w = self.st, self.res.shapes, self._w
-        sh.set_state(with_arms(self.state, q))
+        sh.set_arms(q, self.state)                   # Phase K fix 3 (SF-98)
         cA, cB, bC, bR = sh.place_arrays()
         held = []
         if self.held is not None:
@@ -510,7 +509,7 @@ class SleepTimers:
         the lengths of the links between the joint and the item's link (fixed) plus the item's reach from its own link's last joint.
         Phase K fix 1: the same numbers as _static_lever_loop, as arrays (the loop made about 500 small numpy calls per tick)."""
         tab, st, P = t.tab, self.st, t._P0
-        t.res.shapes.set_state(with_arms(t.state, t.last))
+        t.res.shapes.set_arms(t.last, t.state)
         d = t.res.shapes.data
         lever = np.zeros((tab.n, ARM_JOINTS))
         L_all = np.asarray(tab.link, int)
@@ -534,7 +533,7 @@ class SleepTimers:
     def _static_lever_loop(self, t):
         """The reference of _static_lever (the Python loop it replaces, Phase K fix 1): the same numbers."""
         tab, st, P = t.tab, self.st, t._P0
-        t.res.shapes.set_state(with_arms(t.state, t.last))
+        t.res.shapes.set_arms(t.last, t.state)
         d = t.res.shapes.data
         lever = np.zeros((tab.n, ARM_JOINTS))
         for s, side in enumerate(SIDES):

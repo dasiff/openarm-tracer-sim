@@ -92,7 +92,6 @@ RESOLVER = {
     "elbow_displacement_mode": "plain",  # text [SF-32]: "plain" = the elbow is displaced by the full push vector of the contact (no lever weighting) -- PLACEHOLDER, the plan does not define the lever rule for a fixed shoulder or wrist end
     # ---- Stage 2b (SF-40 to SF-50) ----
     "mode": "kong_style",        # text [SF-40, SF-41]: which resolver runs: "kong_style" = one combined push of the shoulder/elbow/wrist/hand points, then link length restore, then conversion (default, David's decision); "layered" = the separate tools (elbow swing, hand slide, step shortening); "cbf" = not built, raises NotImplementedError
-    "elbow_swing_hand_target": "slid",  # text [SF-49]: layered resolver only: "slid" = after a hand slide in the same tick every later elbow swing (and the accuracy check) aims at the slid hand position; "raw" = the old behaviour (aims at the raw commanded hand pose)
     "min_lever_fraction": 0.2,   # fraction [SF-44]: kong_style: an upper arm contact closer than this share of the way from the shoulder to the elbow is not pushed (the elbow would have to move 1/fraction times the push); step shortening is used for it instead
     "lever_weight_elbow": 1.0,   # weight, no unit [SF-43]: kong_style forearm contact: how willing the elbow is to move compared with the wrist (wE in the split formula); 1.0 = equal
     "lever_weight_wrist": 1.0,   # weight, no unit [SF-43]: kong_style forearm contact: how willing the wrist is to move compared with the elbow (wW in the split formula); 1.0 = equal

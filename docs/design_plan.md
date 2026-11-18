@@ -689,8 +689,9 @@ Status: Stage 2b BUILT on branch safety-filter, not pushed (SF numbers may be re
 - **SF-46**: Jump-through guard: the straight joint-space path from the last filtered command to the raw command is sampled (ceil(largest keypoint move / its capsule radius), at most 50 = tunnel_guard_max_samples); if any sample has a pair below tunnel_guard_min_gap_m (0.0) the step is shortened by the existing step shortening (12 halvings, 0.001 floor) with the pass test 'no sample from 0 to the fraction violates'; the shortened command is the raw command for the rest of the tick.
 - **SF-47**: kong_style accuracy check: the hand pose after the sweeps must be within 2 mm and 0.5 degrees of the PUSHED hand target (the last sweep's restored hand point and the commanded orientation), not of the original command.
 - **SF-48**: The gap rule (speed limit, SF-29) stays in both resolvers: gap_rule_mode 'ours' (default) and 'paper_plain' both work in kong_style; the gap rule gives each pair's push amount, the resolver shares it.
-- **SF-49**: Layered fix: config elbow_swing_hand_target 'slid' (default) or 'raw' (old behaviour).
+- **SF-49**: Layered fix: config elbow_swing_hand_target 'slid' (default) or 'raw' (old behaviour). [The setting is removed by SF-106.]
 - **SF-50**: Spec test line relaxed: 'realized hand orientation within 1e-6 rad' in experiments/safety_filter_spec_test.py now compares to the accuracy value from config (0.5 degrees); one Jacobian step cannot reach 1e-6 (error 6.4e-4 rad).
+- **SF-106**: Phase R: the layered elbow swing aims at the post-slide hand pose of its arm (current joints); the 'raw' setting is removed. The closing right arm check still fails (HOLD, ACCURACY after 10 rounds); see SF-106 in docs/mpvi_decisions.md.
 
 ### Known limitations
 

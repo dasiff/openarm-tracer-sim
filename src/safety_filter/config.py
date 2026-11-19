@@ -55,6 +55,13 @@ TORSO_EXEMPT_PARTS = ("shoulder_mount",)
 # Held objects (M289, SF-4): match radius beyond an object's own radius (the pad match is a sanity check since Part 2; the object named by the policy command is the primary source; no fallback capsule: no match = empty gripper).
 HELD_MATCH_EXTRA_M = 0.01       # m, PROVISIONAL [M289]: the nearest graspable object within its radius + 1 cm of the finger pad midpoint
 
+# Object identification (Phase S, S4, SF-110): the detector that names a held object when neither the task plan's name nor the pad match does
+# (src/safety_filter/object_detector.py). The filter calls only the interface; the implementation is chosen here.
+OBJECT_DETECTOR = {
+    "implementation": "sim",    # text [SF-110]: which ObjectDetector runs (object_detector.DETECTORS): "sim" = the ground-truth stand-in until perception exists
+    "sim_radius_m": 0.02,       # m, PROVISIONAL [SF-110]: the sim stand-in names the nearest non-fixture object only if its shape is within this gap of the finger pads
+}
+
 # Broad phase (M291): padding added to the arm's key-point box: the largest capsule radius plus the
 # activation distance plus the world margin, and at least the release distance.
 BROAD_WORLD_MARGIN_M = 0.01     # m, PROVISIONAL [M291]: the world margin added to the broad-phase box

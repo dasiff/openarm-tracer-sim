@@ -964,4 +964,7 @@ DONE 1: b5e23b1 (seven importers deleted; speed_metrics kept).
 DONE 2: 3e4fa97 (scripts/safety_filter_speed_util.py: 27 names from speed_common verbatim, plus the reactive helpers; four edited functions for the removed mode and the deleted modules; speed_gate and speed_metrics change one import line each). Checks: AST (27 definitions equal except the four edited); no unresolved globals; import of gate and metrics; --help; part A on four kong recordings, 40 ticks, and part B on the punch stream, 40 ticks, old tree (3fd6925, before SF-108) vs new: identical outputs (field by field, timing excluded). Not run: simulator streams cat and shadow_pp (MuJoCo).
 DONE 3: e5ca964 (link_rules.py comment now points to git history).
 RUN 03:53 the 18 safety-filter tests of experiments/run_tests.sh, one at a time: tmux sf18; script (scratchpad) run18.sh; summary data/logs/safety18_summary.txt (ALL_DONE at the end); per-test logs data/logs/safety18_<name>.log.
+RESULT 18 safety-filter tests (data/logs/safety18_summary.txt, 03:53 to 03:57): all 18 exit 0, no tracebacks. spec 27 ok, resolver 28, kong_style 35, gap_rule 15, link_rules 53, sequential_push 43 of 43, structure 6, touch 56.
+CURRENT: task done. Open for David (report 20261119_0358_port_speed_gate.md, section 6): layered golden entries in GOLDEN_SET cannot be replayed; elbow_snap_sweep.py is broken (imports the deleted solver_roundtrip); the helper module's size; speed_metrics kept.
+REPORT docs/reports/20261119_0358_port_speed_gate.md. Nothing pushed.
 

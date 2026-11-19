@@ -122,7 +122,7 @@ def held_and_broad():
     world2 = WorldView(_Src([catalog_object("beaker", pad + np.array([0.5, 0, 0]) - np.array([0, 0, 0.05]))]))
     ht2 = HeldTracker(world2)
     ev = ht2.update("left", True, placed, pos, rot)
-    check("no match, no name: nothing attached (empty gripper, no fallback capsule)", ev is None and ht2.placed("left", pos, rot) is None, f"-> {ev}")
+    check("no match, no name: the unidentified generic box is held (SF-113), no finger-gap capsule", ev == "attach" and ht2.identity_of("left") == "unidentified" and ht2.placed("left", pos, rot).kind == "box", f"-> {ev}")
     check("no fallback in config", not hasattr(cfg, "HELD_FALLBACK_HEIGHT_M"))
 
     # broad phase: near objects are candidates; far ones are not; pairs being pushed stay until released

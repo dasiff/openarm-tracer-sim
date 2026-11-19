@@ -78,6 +78,7 @@ class PlacedShape:
     allowed_contact: bool = False  # Part 2: set on a world shape made from an allowed-contact object (e.g. the hotplate): a held object may touch it
     never_touch: bool = False  # SF-65: set on a world shape made from a never-touch object
     work_surface: bool = False  # Phase D fix 1: set on a world shape made from a work surface (the bench top): its push-stop is PUSH_STOP_BEYOND_M_WORK
+    support: str = ""  # S1 (SF-113): a held unidentified box: the id of the work surface it rests on, exempt from it
     segment: str = ""  # the resolver's segment (SF-20): upper_arm (links 1-3: contacts move the elbow only), forearm (links 4-6), hand (link 7, palm, fingers), shoulder, body
 
     def aabb(self):

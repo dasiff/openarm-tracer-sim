@@ -78,7 +78,8 @@ t1 = HeldTracker(w1)
 with warnings.catch_warnings(record=True) as w:
     warnings.simplefilter("always")
     ev = t1.update("left", True, placed, pos, rot, name="beaker")
-check("held by name, pads agree: attached, no warning", ev == "attach" and not w and t1.placed("left", pos, rot).id == "left_held")
+wmsgs = [str(x.message) for x in w]    # SF-112: the width check may warn (the fixture beaker is wider than the finger gap); it never rejects the match
+check("held by name, pads agree: attached; any warning is the width check only (SF-112)", ev == "attach" and all("across the pads" in m for m in wmsgs) and t1.placed("left", pos, rot).id == "left_held", f"warnings {len(wmsgs)}")
 w2 = WorldView(Src([catalog_object("beaker", pad + np.array([1.0, 0, -0.05]))]))
 t2 = HeldTracker(w2)
 with warnings.catch_warnings(record=True) as w:
@@ -104,9 +105,9 @@ t6 = HeldTracker(WorldView(Src([])))
 with warnings.catch_warnings(record=True) as w:
     warnings.simplefilter("always")
     ev = t6.update("left", True, placed, pos, rot, name="no_such_object")
-check("unknown name and nothing at the pads: empty gripper (gripper-only shapes)", ev is None and t6.placed("left", pos, rot) is None)
+check("unknown name and nothing at the pads: unidentified generic box, not an empty gripper (SF-113)", ev == "attach" and t6.identity_of("left") == "unidentified" and t6.placed("left", pos, rot).kind == "box")
 t7 = HeldTracker(WorldView(Src([])))
-check("empty gripper: verdict on, no name, no match: no held shape, no fallback", t7.update("left", True, placed, pos, rot) is None and t7.placed("left", pos, rot) is None)
+check("verdict on, no name, no match: the unidentified generic box is held (SF-113), no finger-gap capsule", t7.update("left", True, placed, pos, rot) == "attach" and t7.placed("left", pos, rot).kind == "box")
 shapes_empty = evaluate_pairs(placed, [HOT, bench])
 shapes_held = evaluate_pairs(placed + [held_beaker(0.005, hot_top)], [HOT, bench])
 check("empty gripper uses the gripper-only shape set (no held pairs); held adds held pairs", not any("held" in p.a + p.b for p in shapes_empty) and any("held" in p.a + p.b for p in shapes_held))

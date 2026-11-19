@@ -52,8 +52,10 @@ PUSH_STOP_BEYOND_M_WORK = 0.005  # m, PLACEHOLDER — tuned by test [Phase D fix
 # within 1 mm of the real torso mesh at home (it touches the torso by construction). Parts listed here (provisional; see the report).
 TORSO_EXEMPT_PARTS = ("shoulder_mount",)
 
-# Held objects (M289, SF-4): match radius beyond an object's own radius (the pad match is a sanity check since Part 2; the object named by the policy command is the primary source; no fallback capsule: no match = empty gripper).
-HELD_MATCH_EXTRA_M = 0.01       # m, PROVISIONAL [M289]: the nearest graspable object within its radius + 1 cm of the finger pad midpoint
+# Held objects (M289, SF-4; Phase S S2, SF-112): the pad match. A graspable object is a candidate when its shape is within HELD_MATCH_EXTRA_M of the space between
+# the finger pads (overlapping, within this tolerance), ahead of the palm, and the nearest to the palm wins. No match and no name: the object is unidentified (SF-113).
+HELD_MATCH_EXTRA_M = 0.01       # m, PROVISIONAL [M289, SF-112]: the pad match's overlap tolerance: an object whose shape is within 1 cm of the space between the finger pads is a candidate
+HELD_WIDTH_TOL_M = 0.02        # m, PROVISIONAL [SF-112]: the pad match's width check: an object wider or narrower than the finger gap by more than this is logged as a warning; the match stands
 
 # Object identification (Phase S, S4, SF-110): the detector that names a held object when neither the task plan's name nor the pad match does
 # (src/safety_filter/object_detector.py). The filter calls only the interface; the implementation is chosen here.

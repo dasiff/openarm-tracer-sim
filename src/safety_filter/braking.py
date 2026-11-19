@@ -87,8 +87,8 @@ class ObstacleFeed:
 
     def _rule_of(self, a, b):
         """touch.pair_rule, cached per pair of shape attributes (the rule reads the id, arm, part, kind and the three flags of each shape)."""
-        ka = (a.id, a.arm, a.part, a.kind, a.allowed_contact, a.never_touch, a.work_surface)
-        kb = (b.id, b.arm, b.part, b.kind, b.allowed_contact, b.never_touch, b.work_surface)
+        ka = (a.id, a.arm, a.part, a.kind, a.allowed_contact, a.never_touch, a.work_surface, a.support)
+        kb = (b.id, b.arm, b.part, b.kind, b.allowed_contact, b.never_touch, b.work_surface, b.support)
         key = (ka, kb)
         rule = self._rules.get(key)
         if rule is None:
@@ -210,7 +210,7 @@ class ObstacleFeed:
     def _rules_for(self, allp):
         """Phase J fix 2 (a cache, no decision): the rule of every (hand row, other shape) pair of this shape list, as arrays for the compiled
         loop. Keyed by the rule attributes of the shapes (touch.pair_rule reads only these), so it is rebuilt only when the shape list changes."""
-        key = tuple((a.id, a.arm, a.part, a.kind, a.allowed_contact, a.never_touch, a.work_surface) for a in allp)
+        key = tuple((a.id, a.arm, a.part, a.kind, a.allowed_contact, a.never_touch, a.work_surface, a.support) for a in allp)
         hit = self._rule_cache.get(key)
         if hit is not None:
             return hit

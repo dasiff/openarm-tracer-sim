@@ -25,6 +25,7 @@ from src.safety_filter import config as cfg
 from src.safety_filter.geometry import (capsule_box, capsule_box_batch, capsule_capsule, capsule_capsule_batch, cylinder_box, cylinder_capsule)
 from src.safety_filter.shapes import PlacedShape, never_close_pairs
 from src.safety_filter.config import OBJECT_CATALOG
+from src.safety_filter.object_detector import FingerState, make_object_detector, pad_space
 from src.safety_filter.world import WorldObject, catalog_object
 
 HAND_PARTS = ("palm", "finger", "held")
@@ -73,6 +74,8 @@ def _pair_rule(a: PlacedShape, b: PlacedShape):
         return Exempt("world against world is not a robot pair")
     if a.arm == "world" or b.arm == "world":
         robot = b if a.arm == "world" else a
+        if robot.support and (a if a.arm == "world" else b).id == robot.support:     # S1 (SF-113): an unidentified held box is exempt from the surface it rests on
+            return Exempt("the unidentified held box rests on its support surface (SF-113)")
         if (a if a.arm == "world" else b).never_touch:          # SF-65: no finger or held-object exemption, own margin
             if robot.arm == "common":
                 return Exempt("robot body against the world is not in the touch rules")
@@ -107,7 +110,7 @@ def _pair_rule(a: PlacedShape, b: PlacedShape):
     return _rule("robot-robot", cfg.MARGINS["robot_robot_m"])
 
 
-def shape_of(obj_id, shape, size, centre, rot, arm, part, body="world", never_touch=False, allowed_contact=False, work_surface=False):
+def shape_of(obj_id, shape, size, centre, rot, arm, part, body="world", never_touch=False, allowed_contact=False, work_surface=False, support=""):
     """A placed shape from a world-style description: a box (half sizes) or a capsule (radius, half length along
     the rotation's z column). Both keep their centre."""
     centre, rot = np.asarray(centre, float), np.asarray(rot, float)
@@ -115,15 +118,15 @@ def shape_of(obj_id, shape, size, centre, rot, arm, part, body="world", never_to
         r, hh = size
         return PlacedShape(id=obj_id, arm=arm, part=part, kind="cylinder", body=body, centre=centre, rot=rot, r=float(r),
                            half=np.array([float(r), float(r), float(hh)]), never_touch=never_touch, allowed_contact=allowed_contact,
-                           work_surface=work_surface)
+                           work_surface=work_surface, support=support)
     if shape == "capsule":
         r, h = size
         ax = rot[:, 2]
         return PlacedShape(id=obj_id, arm=arm, part=part, kind="capsule", body=body,
                            a=centre - h * ax, b=centre + h * ax, r=float(r), centre=centre, rot=rot, never_touch=never_touch,
-                           allowed_contact=allowed_contact, work_surface=work_surface)
+                           allowed_contact=allowed_contact, work_surface=work_surface, support=support)
     return PlacedShape(id=obj_id, arm=arm, part=part, kind="box", body=body, centre=centre, rot=rot,
-                       half=np.asarray(size, float), never_touch=never_touch, allowed_contact=allowed_contact, work_surface=work_surface)
+                       half=np.asarray(size, float), never_touch=never_touch, allowed_contact=allowed_contact, work_surface=work_surface, support=support)
 
 
 def as_placed(obj: WorldObject) -> PlacedShape:
@@ -278,67 +281,173 @@ def broad_phase(robot_shapes, desired_shapes, world_objects, world_margin, relea
     return out
 
 
+def _width_across(shape, u):
+    """Phase S, S2 (SF-112): the extent of a placed world shape along the unit vector u (m): the width across the finger pads."""
+    if shape.kind == "capsule":
+        return 2.0 * float(shape.r) + abs(float(np.dot(np.asarray(shape.b) - np.asarray(shape.a), u)))
+    if shape.kind == "cylinder":
+        c = abs(float(np.dot(np.asarray(shape.rot)[:, 2], u)))
+        return 2.0 * (float(shape.r) * float(np.sqrt(max(0.0, 1.0 - c * c))) + float(shape.half[2]) * c)
+    return 2.0 * float(np.sum(np.abs(np.asarray(shape.rot).T @ u) * np.asarray(shape.half, float)))
+
+
 class HeldTracker:
-    """Held objects (M289, SF-4, Part 2): attaches the held object to the hand, places it each tick, releases it.
+    """Held objects (M289, SF-4, Part 2; Phase S S1, S2): attaches the held object to the hand, places it each tick, releases it.
 
-    Which object is held comes from the policy command ("you are holding object X": the `name` argument of update()), looked up in the
-    object catalog (config.OBJECT_CATALOG). The match at the finger pads is a sanity check (a warning when it names another object), and
-    the source only when no name is given. If neither says anything is held, the gripper is empty (gripper-only shapes): there is no
-    fallback capsule."""
+    The grasp signal is the holding verdict (the squeeze check). The identity chain (SF-113), first answer wins:
+      1. the policy command's name ("you are holding object X": the `name` argument, looked up in OBJECT_CATALOG);
+      2. the pad match (SF-112): the graspable world object whose shape overlaps the space between the finger pads, forward of the palm,
+         the one nearest the palm (measured forward along the fingers); an object behind the hand never counts;
+      3. "unidentified" (SF-113): a generic box (square section of the finger gap, from the work surface under the pads up to half the
+         table-to-gripper height above the gripper). The ObjectDetector (src/safety_filter/object_detector.py) is asked; a name it returns swaps
+         the box for that object's real shape.
+    A name that disagrees with the pad match is a warning; a width mismatch is a warning and never rejects a match (SF-112).
+    self.events collects the episode annotation: attach (with its identity), unidentified, swap and release events."""
 
-    def __init__(self, world_view):
+    def __init__(self, world_view, detector=None):
         self.world = world_view
-        self.held = {}          # side -> dict (the attached object)
-        self.identity_source = None   # "command" or "pads": where the identity of the last attached object came from
+        self.held = {}                  # side -> dict (the attached object, its hand offset, its identity and support surface)
+        self.identity = {}              # side -> identity of the object held now: "command", "pads", "detector" or "unidentified" (None: nothing held)
+        self.identity_source = None     # identity of the last attached object (kept for the older callers)
+        self.labels = {}                # side -> display label while an identification runs ("identifying object"); none otherwise
+        self.events = []                # the episode annotation: dicts with "side", "event" and what it says
         self.warnings = []
+        self.detector = detector if detector is not None else make_object_detector()
+        self._n_unidentified = 0
 
     def _pad(self, placed, side):
-        centres = []
-        for s in placed:
-            if s.part == "finger" and s.arm == side:
-                centres.append((s.a + s.b) / 2)
-        if len(centres) != 2:
+        """The finger pads of one arm: (midpoint, finger gap, pad a, pad b, finger radius)."""
+        fingers = [s for s in placed if s.part == "finger" and s.arm == side]
+        if len(fingers) != 2:
             raise ValueError(f"{side}: expected two finger capsules")
-        return np.mean(centres, axis=0), float(np.linalg.norm(centres[0] - centres[1]))
+        centres = [(s.a + s.b) / 2 for s in fingers]
+        a, b = centres[0], centres[1]
+        return (a + b) / 2, float(np.linalg.norm(a - b)), a, b, float(fingers[0].r)
+
+    def _palm_centre(self, placed, side, hand_pos):
+        """The palm: the mean centre of this arm's palm capsules (the hand position if there are none)."""
+        centres = [(s.a + s.b) / 2 for s in placed if s.part == "palm" and s.arm == side]
+        return np.mean(centres, axis=0) if centres else np.asarray(hand_pos, float)
 
     def _warn(self, msg):
         warnings.warn(msg)
         self.warnings.append(msg)
 
+    def _pad_match(self, placed, side, hand_pos, mid, gap, a, b, radius):
+        """SF-112: the graspable object the pads hold: overlapping the space between the pads (within HELD_MATCH_EXTRA_M), forward of the palm
+        (its centre ahead of the palm along the fingers), the nearest to the palm. A width mismatch is a warning only."""
+        pads = pad_space(side, FingerState(a, b, radius))
+        palm = self._palm_centre(placed, side, hand_pos)
+        d = np.asarray(mid, float) - palm
+        nd = float(np.linalg.norm(d))
+        fwd = d / nd if nd > 1e-9 else None           # the direction the fingers point, from the palm to the pads
+        best, best_s = None, None
+        for o in self.world.objects():
+            if o.fixture or not o.graspable:
+                continue
+            if float(gap_between(pads, as_placed(o))[0]) > cfg.HELD_MATCH_EXTRA_M:
+                continue                              # the object's shape must overlap the space between the pads (within the tolerance)
+            s = float(np.dot(np.asarray(o.centre, float) - palm, fwd)) if fwd is not None else 0.0
+            if s < 0.0:
+                continue                              # behind the hand: never counts
+            if best_s is None or s < best_s:
+                best, best_s = o, s
+        if best is not None and gap > 1e-9:
+            u = (np.asarray(b, float) - np.asarray(a, float)) / gap
+            width = _width_across(as_placed(best), u)
+            if abs(width - gap) > cfg.HELD_WIDTH_TOL_M:
+                self._warn(f"{side}: the pad match '{best.id}' is {width * 100:.1f} cm across the pads, the fingers measure {gap * 100:.1f} cm (width check; the match stands)")
+        return best
+
+    def _support_under(self, mid):
+        """The work surface the held object would sit on: the highest work-surface top below the pads whose footprint holds the pad midpoint
+        (None if there is none; the caller then uses the floor)."""
+        best, best_top = None, None
+        for o in self.world.objects():
+            if not o.work_surface:
+                continue
+            R = o.rot_matrix()
+            local = R.T @ (np.asarray(mid, float) - np.asarray(o.centre, float))
+            half = np.asarray(o.size, float)
+            if abs(local[0]) > half[0] or abs(local[1]) > half[1]:
+                continue
+            top = float(o.centre[2]) + float(np.sum(np.abs(R[2, :]) * half))
+            if top <= float(mid[2]) and (best_top is None or top > best_top):
+                best, best_top = o, top
+        return best, best_top
+
+    def _attach(self, side, obj, identity, hand_pos, hand_rot, support="", in_world=True):
+        """Holds obj in the hand: its pose is kept relative to the hand frame; it leaves the world list (when it is in it)."""
+        off_pos = hand_rot.T @ (np.asarray(obj.centre) - hand_pos)
+        off_rot = hand_rot.T @ obj.rot_matrix()
+        self.held[side] = {"kind": "object", "obj": obj, "off_pos": off_pos, "off_rot": off_rot, "identity": identity, "support": support}
+        self.identity[side] = identity
+        self.identity_source = identity
+        if in_world:
+            self.world.remove(obj.id)
+        self.events.append({"side": side, "event": "attach", "object": obj.id, "identity": identity})
+
+    def _unidentified(self, side, mid, gap, a, b, radius, hand_pos, hand_rot):
+        """SF-113: the generic box for a held object nothing names, then the detector's answer (a name swaps the box for its real shape)."""
+        support, top_s = self._support_under(mid)
+        z_low = top_s if top_s is not None else 0.0
+        if top_s is None:
+            self._warn(f"{side}: no work surface under the pads; the generic box stands on the floor (z = 0)")
+        z_grip = float(mid[2])
+        z_top = z_grip + max(z_grip - z_low, 0.0) / 2.0          # the top: half the table-to-gripper distance above the gripper
+        if z_top - z_low < 1e-6:
+            z_top = z_low + gap                                  # the gripper is at the table: a box of the gap's height, so it has a size
+            self._warn(f"{side}: the gripper is at the surface; the generic box gets the finger gap as its height")
+        self._n_unidentified += 1
+        box_id = f"unidentified_{side}_{self._n_unidentified}"
+        half = (gap / 2.0, gap / 2.0, (z_top - z_low) / 2.0)
+        centre = (float(mid[0]), float(mid[1]), (z_low + z_top) / 2.0)
+        box = WorldObject(id=box_id, shape="box", size=tuple(half), centre=centre, rot=tuple(np.eye(3).ravel()), graspable=False)
+        support_id = support.id if support is not None else ""
+        self.events.append({"side": side, "event": "unidentified", "object": box_id, "support": support_id, "box_half_m": [float(x) for x in half],
+                            "box_centre_m": [float(x) for x in centre], "pad_gap_m": gap})
+        self.labels[side] = "identifying object"
+        try:
+            name = self.detector.identify(side, FingerState(a, b, radius), self.world)
+        finally:
+            self.labels.pop(side, None)
+        if name is not None:
+            if name in OBJECT_CATALOG:
+                found = self.world.find(name)                # the object's world shape if the filter has it, else the catalog's; centred at the pads
+                real = replace(found if found is not None else catalog_object(name, np.zeros(3)), centre=tuple(mid), id=name)
+                self.events.append({"side": side, "event": "swap", "from": box_id, "to": name, "shape": real.shape})
+                self._attach(side, real, "detector", hand_pos, hand_rot)
+                return
+            self._warn(f"{side}: the detector named '{name}', which is not in the object catalog; the generic box stays")
+        self._attach(side, box, "unidentified", hand_pos, hand_rot, support=support_id, in_world=False)
+
     def update(self, side, holding, placed, hand_pos, hand_rot, name=None):
         """holding: this tick's holding verdict for the side. name: the object the policy command says is held (or None).
         placed: the robot's placed shapes this tick. hand_pos, hand_rot: link 7 pose (world).
         Returns the event for this tick: None, 'attach' or 'release'."""
-        want = bool(holding)                    # Phase C step 7 (David): the grasp signal is the holding verdict; the name (the policy command) is the identity
+        want = bool(holding)
         if want and side not in self.held:
-            pad, _ = self._pad(placed, side)
-            by_pad, best_d = None, None                 # the sanity check: the nearest graspable object within its radius + 1 cm of the pad midpoint
-            for o in self.world.objects():
-                if o.fixture or not o.graspable:
-                    continue
-                d = float(np.linalg.norm(np.asarray(o.centre) - pad))
-                if d - o.bound_radius() <= cfg.HELD_MATCH_EXTRA_M and (by_pad is None or d < best_d):
-                    by_pad, best_d = o, d
-            obj = by_pad
+            mid, gap, a, b, radius = self._pad(placed, side)
+            by_pad = self._pad_match(placed, side, hand_pos, mid, gap, a, b, radius)
+            obj, identity = None, None
             if name:
                 if name not in OBJECT_CATALOG:
                     self._warn(f"{side}: the command names '{name}', which is not in the object catalog; using the pad match")
                 else:
                     obj = self.world.find(name)
                     if obj is None:                     # named but not in the world list: the catalog shape, centred at the pads
-                        proto = catalog_object(name, np.zeros(3))
-                        obj = replace(proto, centre=tuple(pad), id=name)
+                        obj = replace(catalog_object(name, np.zeros(3)), centre=tuple(mid), id=name)
+                    identity = "command"
                     if by_pad is not None and by_pad.id != name:
                         self._warn(f"{side}: the command says '{name}' is held but the pads match '{by_pad.id}'; using '{name}'")
                     elif by_pad is None:
                         self._warn(f"{side}: the command says '{name}' is held but no graspable object is at the pads (pad check failed)")
-            if obj is None:
-                return None                             # no object named and none at the pads: empty gripper (gripper-only shapes)
-            self.identity_source = "command" if (name and obj.id == name) else "pads"
-            off_pos = hand_rot.T @ (np.asarray(obj.centre) - hand_pos)
-            off_rot = hand_rot.T @ obj.rot_matrix()
-            self.held[side] = {"kind": "object", "obj": obj, "off_pos": off_pos, "off_rot": off_rot}
-            self.world.remove(obj.id)
+            if obj is None and by_pad is not None:
+                obj, identity = by_pad, "pads"
+            if obj is not None:
+                self._attach(side, obj, identity, hand_pos, hand_rot)
+                return "attach"
+            self._unidentified(side, mid, gap, a, b, radius, hand_pos, hand_rot)     # SF-113: nothing names it and the pads match nothing
             return "attach"
         if not want and side in self.held:
             rec = self.held.pop(side)
@@ -346,10 +455,20 @@ class HeldTracker:
             pos = hand_pos + hand_rot @ rec["off_pos"]
             rot = hand_rot @ rec["off_rot"]
             self.world.add(WorldObject(id=obj.id, shape=obj.shape, size=obj.size, centre=tuple(pos),
-                                       rot=tuple(rot.ravel()), graspable=obj.graspable, round=obj.round,
-                                       allowed_contact=obj.allowed_contact, work_surface=obj.work_surface))
+                                       rot=tuple(rot.ravel()), graspable=obj.graspable or rec.get("identity") == "unidentified",
+                                       round=obj.round, allowed_contact=obj.allowed_contact, work_surface=obj.work_surface))
+            self.identity.pop(side, None)
+            self.events.append({"side": side, "event": "release", "object": obj.id, "identity": rec.get("identity")})
             return "release"
         return None
+
+    def identity_of(self, side):
+        """The identity of the object held by one side now ("command", "pads", "detector", "unidentified"), or None."""
+        return self.identity.get(side)
+
+    def display_label(self, side):
+        """"identifying object" while the detector runs for this side (the sim stand-in answers in the same tick), otherwise None."""
+        return self.labels.get(side)
 
     def placed(self, side, hand_pos, hand_rot):
         """The held shape of one arm this tick, placed from the hand frame (None if nothing is held: the gripper-only shapes are used)."""
@@ -358,4 +477,4 @@ class HeldTracker:
             return None
         obj = rec["obj"]
         return shape_of(f"{side}_held", obj.shape, obj.size, hand_pos + hand_rot @ rec["off_pos"],
-                        hand_rot @ rec["off_rot"], side, "held", body=f"openarm_{side}_link7")
+                        hand_rot @ rec["off_rot"], side, "held", body=f"openarm_{side}_link7", support=rec.get("support", ""))

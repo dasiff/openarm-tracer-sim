@@ -6,7 +6,7 @@ passing fraction, category dispatch, the SHORTEN_ZERO hold); each of the four ch
 reason; arm against arm (only the closing arm moves, equal shares, a parked arm is not touched); rounds limit and stop;
 determinism; the paper_plain switch; the SEW points against Kong's own forward kinematics; the converter round trip; the recording.
 
-Run: python experiments/safety_filter_resolver_test.py   (exit 0 = pass). Needs Kong's licensed wheel (Linux) for the elbow swing.
+Run: python experiments/safety_filter_resolver_test.py   (exit 0 = pass).
 """
 
 import sys

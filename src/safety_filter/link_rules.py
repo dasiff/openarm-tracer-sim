@@ -1,12 +1,13 @@
 """Link categories of the resolver (SF-28): which move handles a contact on which part of an arm.
 
 Every capsule of an arm gets exactly one category:
-  shoulder   links 1 and 2 (and the shoulder mount, link 0, fixed to the torso): handled by step shortening only.
-  upper_arm  links 3 and 4: handled by the elbow swing.
-  forearm    links 5 and 6: handled by the elbow swing.
-  hand       link 7, both palm capsules, every finger capsule, and the held object: handled by the hand slide.
-A contact point that an elbow swing cannot move (a point on the straight line from the shoulder to the wrist)
-is handled by step shortening instead; the resolver tests that (it needs the pose).
+  shoulder   links 1 and 2 (and the shoulder mount, link 0, fixed to the torso).
+  upper_arm  links 3 and 4.
+  forearm    links 5 and 6.
+  hand       link 7, both palm capsules, every finger capsule, and the held object.
+kong_style uses the categories only to share a push between a link's ends (SF-43 to SF-45). The layered handling that
+these categories used to select (the elbow swing for the arm links, the hand slide for the hand, step shortening for the
+shoulder) was removed with the layered resolver (SF-108, Phase S S6 verification: SF-114).
 
 This differs from the segment map stored in robot_shapes.json (SF-22: links 1 to 3 upper arm, 4 to 6 forearm). The
 resolver does not read that field; the table below is the only source of the categories (SF-28).

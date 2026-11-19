@@ -61,7 +61,7 @@ class SafetyFilterPlugin:
                                     "worst_shortfall", "fraction", "worst_pair", "methods", "pairs_pushed", "pairs_skipped",
                                     "pairs_shortened", "solver_calls", "q_meas", "base", "pedestal", "fingers", "held_ends",
                                     "brake_stop", "brake_limit", "brake_gap", "brake_room", "brake_sd", "brake_speed", "brake_pair", "brake_override",
-                                    "brake_sgap", "held_name")}
+                                    "brake_sgap", "held_name", "held_identity")}
         self.n_calls, self._t0 = 0, clock()
         self.ctx = {"t": 0.0, "manip_started": False}   # read by the extra-objects test hook
 
@@ -116,6 +116,8 @@ class SafetyFilterPlugin:
             r["brake_speed"].append(np.asarray(binfo["speed"], float))
             hn = self.ctx.get("held_names") or {}
             r["held_name"].append(",".join(str(hn.get(s_, "")) for s_ in SIDES))     # Phase C step 7: the object name the command gave, per side ("" = none)
+            hi = self.ctx.get("held_identity") or {}
+            r["held_identity"].append(",".join(str(hi.get(s_) or "") for s_ in SIDES))   # Phase S (SF-113): the identity of what each hand holds: command, pads, detector, unidentified ("" = none)
             r["brake_sgap"].append(np.array([float(x["surface_gap"]) if x is not None else float("nan") for x in la]))   # gap of the nearest held-vs-allowed-contact pair
             r["brake_pair"].append(",".join((x["pair"] if x is not None else "-") for x in la))
             if binfo.get("override") is not None and np.any(binfo["override"]):
@@ -188,7 +190,8 @@ class SafetyFilterPlugin:
         d.mkdir(parents=True, exist_ok=True)
         final, tmp = d / f"{self.run_name}.npz", d / f"{self.run_name}.tmp.npz"
         meta = json.dumps({"mode": self.mode, "run_name": self.run_name, "n_calls": self.n_calls,
-                           "saved": time.strftime("%Y-%m-%d %H:%M:%S"), "joint_order": "[tick, arm (left, right), joint 1-7]"})
+                           "saved": time.strftime("%Y-%m-%d %H:%M:%S"), "joint_order": "[tick, arm (left, right), joint 1-7]",
+                           "held_events": self.ctx.get("held_events", [])})
         np.savez(tmp, meta=np.array(meta), **self.arrays())
         tmp.replace(final)
         # Phase F diagnostics: per pair, the ticks in which the scheduler looked at it (awake and checked); written next to the recording
@@ -256,6 +259,9 @@ def make_sim_plugin(model, data, cfg, loop_handles):
         for s in SIDES:
             pos, rot = shapes.hand_frame(s)
             tracker.update(s, bool(holding.get(s, False)), placed, pos, rot, name=(plugin_ctx().get("held_names") or {}).get(s))
+        if plugin_ref:                                          # Phase S (SF-113): the episode annotation of the held objects (identity per side, events so far)
+            plugin_ref[0].ctx["held_identity"] = {s_: tracker.identity_of(s_) for s_ in SIDES}
+            plugin_ref[0].ctx["held_events"] = tracker.events
         he = np.full((2, 3, 3), np.nan)
         for i, s in enumerate(SIDES):
             hp = tracker.placed(s, *shapes.hand_frame(s))

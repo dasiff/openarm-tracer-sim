@@ -103,3 +103,17 @@ Diff against 0c96d55 (the start): 21 files, 1056 insertions, 147 deletions.
 - Full safety-filter regression on the final state: 33 of 33 exit 0 (`data/logs/phS_reg_20261119_124334.summary`; logs `data/logs/phS_reg_20261119_124334.<test>.log`).
 - Earlier run on the S5/S4/S3 state: 31 of 31 exit 0 (`data/logs/phS_reg_20261119_123444.summary`).
 - New tests: `safety_filter_object_detector_test` 9/9, `safety_filter_release_reversal_test` 9/9, `safety_filter_held_identity_test` 24/24, `safety_filter_no_layered_test` 6/6, `sag_layer_test` 17/17.
+
+## 9. David's answers (2026-11-19)
+
+Recorded as SF-115 (`docs/mpvi_decisions.md`, `docs/design_plan.md`).
+
+- D1 keep 3 commands and 1e-9 rad.
+- D2 confirm the S5 change; run the baselines before any push. Run: manual scenario, pre-S5 commit 7290d3c and HEAD, compared with the CURRENT manual reference (section 10).
+- D3 keep the 9-tick ramp-down (the braking profile does its job).
+- D4 yes, unify the R2/R3 commanded-motion rules to the last-different-command comparison, as a separate follow-up task (not done here).
+- D5 SF-112 matches the build.
+- D6 accept all provisional values.
+- D7 accept the z = 0 floor fallback with a warning as a placeholder.
+- D8 what the manip gate still does: the flag only sets the plug-in's `manip_started`, which `src/cat_demo.py` reads to decide when the made-up objects join the world. No filter check depends on it. No change made.
+- D9 defer the viewer label.

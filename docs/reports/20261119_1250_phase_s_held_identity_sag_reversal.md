@@ -117,3 +117,21 @@ Recorded as SF-115 (`docs/mpvi_decisions.md`, `docs/design_plan.md`).
 - D7 accept the z = 0 floor fallback with a warning as a placeholder.
 - D8 what the manip gate still does: the flag only sets the plug-in's `manip_started`, which `src/cat_demo.py` reads to decide when the made-up objects join the world. No filter check depends on it. No change made.
 - D9 defer the viewer label.
+
+## 10. Baseline check before push (D2, 2026-11-19)
+
+Logs: `data/logs/phS_base_*`, `data/logs/phS_tp_*`, `data/logs/phS_held_*` (summaries `phS_base_20261119_144254.summary`, `phS_tp_20261119_145106.summary`, `phS_held_20261119_144446.summary`).
+
+| Scenario | Reference | Pre-S5 (7290d3c) vs reference | HEAD (eee4005) vs reference | Pre-S5 vs HEAD | HEAD repeat |
+|---|---|---|---|---|---|
+| manual (84 rows, 23 columns) | CURRENT `manual_reference_20261103.csv` (e127479) | exact, max diff 0 | exact, max diff 0 | identical | byte-identical |
+| teleop (78 rows) | none (NO_CURRENT) | n/a | n/a | identical to 9 decimals | byte-identical |
+| policy (84 rows) | none (NO_CURRENT) | n/a | n/a | identical to 9 decimals | byte-identical |
+| held 200 g pick-and-place | CURRENT `held_200g_20261104_m258` (e50815d) | NOT RUN: aborts at t = 57 s, `KeyError: 'C_p'` in the launcher | not finished: no output for about 26 min, CPU-bound, stopped | n/a | n/a |
+
+What this shows:
+- The arms move in the teleop and policy runs (joint ranges 0.03 to 3.4 rad), and the CSV prints nine decimals, so the trim changes these runs by less than 1e-9 degrees. Most likely the gravity feedforward removes the sag error; not traced.
+- The held launcher reads `mpm.TRACE["left"]["C_p"]`, which the scripted trim wrote before M262 (Nov 5). Since M262 moved the trim into the control loop, this launcher cannot run on any later code. The held baseline was therefore stale before Phase S.
+- **Open, unexplained:** the HEAD held run printed no status line in about 26 minutes (CPU-bound at 100%, 4.1 GB), while the pre-S5 run printed 176 lines in 5.5 minutes and aborted at t = 67 s. The stall appeared only in the held launcher, not in manual, teleop or policy (12 to 60 s each). Not diagnosed. A faulthandler stack dump of HEAD's held run would show where it stalls (the attempt was denied; not retried).
+
+Recommendation: do not push until the held-run stall is diagnosed and the held baseline is either re-registered from current code or explicitly set aside by David.

@@ -28,6 +28,8 @@ carries over, as today. Known limit: the trim also runs on joint-only moves (rec
 The trim's values (gains, limits) are the existing PICK_PLACE_CFG values (sag_gain_per_s, sag_max_m, sag_max_rad) and are not retuned.
 """
 
+import logging
+
 import mujoco
 import numpy as np
 from scipy.spatial.transform import Rotation
@@ -38,6 +40,7 @@ from src.open_catch import stall_done
 from src.task_config import MINK_CFG, PICK_PLACE_CFG, SAG_LAYER_CFG, TASK_CFG
 
 TASK_OPEN = TASK_CFG.get("finger_open", 0.044)     # the open travel, as the scripted module reads it
+_log = logging.getLogger(__name__)                 # SF-116: solver failures and recoveries are logged at INFO (no handler is set by the repo)
 
 SAG_TRACE = {}                    # logging only: side -> the correction dict {"p", "r"} of that side (read by the run recorder's C_p and C_r columns)
 SAG_LAYERS = {}                   # logging only: side -> the SagLayer of that side (read by the signal trace, see trace_values)
@@ -89,6 +92,9 @@ class SagLayer:
         self.open_t = None            # the time the open that is being watched started
         self.still = None             # the stall test's state of that open
         self.log = []                 # entries {"t", "kind", ...}: a reset, a solver fallback
+        self._fail_streak = 0         # SF-116: consecutive ticks on which the solver failed (0 when it succeeded on the last tick)
+        self._fail_logged = False     # SF-116: the first failure of this episode has been logged
+        self._recovery_logged = False # SF-116: the first recovery of this episode has been logged
 
     def _pose(self, other_qpos, q):
         """The hand pose of joint targets q (7), with the other joints of the robot state (scratch copy, kinematics only)."""
@@ -111,21 +117,55 @@ class SagLayer:
         p_ref, R_ref = self._pose(data.qpos, q_src)                                          # the reference: the hand pose the targets imply
         p_now, R_now = self.arm.pad_pose(data)                                               # the measured hand pose
         self.diag = {"t": t, "fk_p": p_ref.copy(), "fk_R": R_ref.copy()}                     # logging only
+        # SF-116 (Phase S fix): the trim is integrated on a trial copy, and the copy is kept only if the solver succeeds on this tick.
+        # On a solver failure the trim keeps its last value from a successful solve. Both gates must pass for the trim to change:
+        # not frozen (S5) and the solver succeeded (SF-116).
+        trial = {"p": self.C["p"].copy(), "r": self.C["r"].copy()}
         if not self.frozen:                                                                  # S5: a standing command holds the trim (C kept, not integrated)
-            _sag_trim_step(self.C, PICK_PLACE_CFG, self.model, self.side, t, p_ref - p_now,
+            _sag_trim_step(trial, PICK_PLACE_CFG, self.model, self.side, t, p_ref - p_now,
                            Rotation.from_matrix(R_ref @ R_now.T).as_rotvec(), dt)
-        R_t = (Rotation.from_rotvec(self.C["r"]) * Rotation.from_matrix(R_ref)).as_matrix()
+        R_t = (Rotation.from_rotvec(trial["r"]) * Rotation.from_matrix(R_ref)).as_matrix()
         if self.q_cmd is None:
             self.q_cmd = data.qpos[self.arm.qadr].copy()
         self.arm.q_cmd = self.q_cmd
         self.arm.dt = dt
         try:
-            self.arm.step(data, p_ref + self.C["p"], R_t)                                    # the existing solver, one step toward the corrected pose
-        except Exception as e:                                                               # the solver found no solution: the source's targets pass (NEEDS DECISION)
-            self.log.append({"t": t, "kind": "solver_no_solution", "why": str(e)})
+            self.arm.step(data, p_ref + trial["p"], R_t)                                     # the existing solver, one step toward the corrected pose
+        except Exception as e:                                                               # the solver found no solution: the source's targets pass, the trim is not updated (SF-116)
+            self._solver_failed(t, e)
             return q_src.copy()
+        self.C["p"], self.C["r"] = trial["p"], trial["r"]
+        self._solver_ok(t)
         self.q_cmd = self.arm.q_cmd.copy()
         return self.q_cmd.copy()
+
+    def _solver_failed(self, t, e):
+        """SF-116: one tick on which the solver failed. The exception text is in the log entry and, for the first failure of the episode, at INFO."""
+        self._fail_streak += 1
+        self.log.append({"t": t, "kind": "solver_no_solution", "why": f"{type(e).__name__}: {e}"})
+        if not self._fail_logged:
+            self._fail_logged = True
+            _log.info("sag %s: first solver failure at t=%.3f s: %s: %s. The trim is held (not integrated) on failing ticks.",
+                      self.side, t, type(e).__name__, e)
+
+    def _solver_ok(self, t):
+        """SF-116: a successful solve. A failure streak that was running ends here: its length is logged at INFO."""
+        if self._fail_streak == 0:
+            return
+        if not self._recovery_logged:
+            self._recovery_logged = True
+            _log.info("sag %s: first solver recovery at t=%.3f s after %d consecutive failures; the trim integrates again.",
+                      self.side, t, self._fail_streak)
+        _log.info("sag %s: failure streak ended at t=%.3f s: %d consecutive solver failures.", self.side, t, self._fail_streak)
+        self.log.append({"t": t, "kind": "solver_recovered", "streak": self._fail_streak})
+        self._fail_streak = 0
+
+    def end_episode(self, t):
+        """SF-116: called at the end of the episode. A failure streak still running is logged with its count (the streak has no successful solve to end it)."""
+        if self._fail_streak:
+            _log.info("sag %s: episode ended at t=%.3f s inside a failure streak of %d consecutive solver failures.", self.side, t, self._fail_streak)
+            self.log.append({"t": t, "kind": "episode_ended_in_streak", "streak": self._fail_streak})
+            self._fail_streak = 0
 
     def _track_still(self, q_src, t):
         """S5 (Phase S, SF-109): counts the commands in a row that leave this arm's targets unchanged (every joint within freeze_tol_rad of the

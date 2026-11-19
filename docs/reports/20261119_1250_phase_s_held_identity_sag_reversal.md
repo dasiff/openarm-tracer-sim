@@ -187,3 +187,29 @@ Interpretation (not verified):
 - Not measured: whether the pick succeeds before S5 with the same shim and seed. The pre-S5 run never reached the pick (its launcher crashed at t = 57 s).
 
 Recommended next steps (none done): run pre-S5 (7290d3c) with the same shim and seed to compare the pick; add the exception text to the shim's log. Do not push until the pick succeeds on HEAD or the S5 gate is changed.
+
+## 13. Sag trim fix for solver failures (SF-116, commit 394567c) and the held run again
+
+Fix: `SagLayer.correct` integrates the trim on a trial copy and keeps it only when the arm solver succeeds on that tick. On a failure the trim keeps its last value from a successful solve and the source targets pass through, as before. Both gates must pass for the trim to change: not frozen (S5) and solver success. Per arm. The first failure of each episode is logged at INFO with the exception text; the first recovery is logged once; every failure streak is logged at its end with its count; `end_episode()` logs a streak still running at the end. The repo sets no logging handler, so INFO lines appear only when a handler is configured (the scratch launcher does that). Why the solver fails was not investigated (separate task).
+
+Tests: `experiments/sag_solver_failure_test.py` 10 of 10 (scripted solver: hold on failure, one-tick integration on recovery, both gates, log lines, open streak at episode end, per-arm independence). `experiments/sag_layer_test.py` 17 of 17, `experiments/held_mass_ramp_test.py` 40 PASS, `experiments/open_catch_test.py` 12 PASS.
+
+Held 200 g run on 394567c, seed 4294874296 (scratch pin), `python -u`, 10-minute cap, launcher copy with the trace key read from `SAG_TRACE`/`SAG_LAYERS` and INFO logging. Launch 18:07:16, loop start 18:10:19 (recording start), exit 1 at 18:14:07 (6 min 51 s). Log: `data/logs/held11_fix_20261119_180708.log`; outputs `data/logs/held11_fix_out_20261119_180708/`.
+
+| Question | Answer |
+|---|---|
+| Pick succeeds? | No. Attempt 1 (t = 69.5 s): IN not reached in 15 s, 3.3 mm and 1.1 deg short. Attempt 2 (t = 102.1 s): same numbers. PLAN_FAILED (retries used up). |
+| Carry, place | Not reached. |
+| Final trim, left and right | Exactly zero: p = (0, 0, 0) m and r = (0, 0, 0) rad, both arms. |
+| Frozen at exit | Both (left since 124.8 s, right since 31.0 s). |
+| Solver failures | Left: 12,850, all in one streak from t = 1.400 s to 125.267 s. Right: 4,480, one streak from 1.400 s to 31.260 s. No recovery was logged on either arm: the solver never succeeded in the run. |
+| First failure (INFO) | `NoSolutionFound: QP solver daqp failed to find a solution..` at t = 1.400 s on both arms, with the trim still at zero. |
+
+What this shows:
+- The windup in the previous run (both trims at 40 mm and 0.1 rad) was real, and the fix removes it. But the pick missed by the same 3.3 mm and 1.1 deg in both runs, which means the trim never reached the arm in either run. The solver failed on every call, so the output was always the uncorrected source targets. The windup did not cause the miss.
+- So on HEAD the held run's arms get no sag correction at any point, and the pick is uncorrected. The brief's mechanism (windup causes the miss) doesn't hold for this run.
+- Not tested: whether the pick succeeds on pre-S5 with the same shim and seed (that would show whether S5 is the cause). Also not tested: whether the solver fails for the same reason on the pre-S5 code (it wasn't run there).
+
+Not done: no investigation of why the solver fails; the stale launcher (`KeyError 'C_p'`) is unchanged; scratch edits (seed pin, trace read, INFO config) are not in the branch; nothing pushed.
+
+Recommended next steps (need David's decision): (1) run pre-S5 (7290d3c) with the same shim and seed to see whether the pick succeeds there; (2) decide whether S5's sag call on every arm command should stay, since the solver fails from the first tick on staging commands; (3) the solver failure cause is a separate task.

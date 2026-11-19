@@ -327,6 +327,9 @@ class BrakingLayer:
         self._tool_prev = None              # tool points of the last sent pose (the hand velocity when the jerk source is "sent")
         self._shaping = np.zeros(2, bool)   # this arm's command is going through the S-curve (it stays so until the ramp has converged on the commanded speed)
         self._dir = np.zeros((2, 7))   # unit joint direction of each arm's last step (the way it was going; used when stopping)
+        self._src_ref = [None, None]   # S3 (SF-111, Phase S): per arm, the last DIFFERENT source command (7,), None before the first
+        self._src_step = np.zeros((2, 7))   # S3: per arm, the step from the last different command to the one before it (the arm's motion)
+        self._rev_pending = np.zeros(2, bool)   # S3: per arm, a source reversal seen while braking; the stop releases once no closing pair needs it
 
     # ---- step 2: hand speed ----
     def measure(self, q, state, call_dt=None):
@@ -394,6 +397,9 @@ class BrakingLayer:
         self._emergency = np.zeros(2, bool)
         self._hard_latch[:] = False
         self._hard_pose[:] = 0.0
+        self._src_ref = [None, None]
+        self._src_step[:] = 0.0
+        self._rev_pending[:] = False
 
     # ---- step 3: hand speed cap ----
     def scale_step(self, i, q_from, step, speed, state):
@@ -624,6 +630,27 @@ class BrakingLayer:
             out.append((float(e[0]), float(e[1]), ceil_e, e[3] if len(e) > 3 else "", e[4] if len(e) > 4 else "", nrm, pa, stop))
         return out
 
+    def _track_source(self, raw):
+        """Phase S, S3 (SF-111): per arm, this tick's source command against the last DIFFERENT source command (some joint more than
+        BRAKING src_diff_tol_rad away from it), not the previous tick's. A repeated target between chunk updates is not a new command, so it
+        cannot hide a reversal or delay the release. Returns (2,) bool: this tick's new command reverses the arm's motion (the step to it
+        opposes the step that brought the arm to the last different command)."""
+        tol = float(self.tun["src_diff_tol_rad"])
+        rev = np.zeros(2, bool)
+        for i in range(2):
+            cur = np.asarray(raw[i], float)
+            ref = self._src_ref[i]
+            if ref is None:
+                self._src_ref[i] = cur.copy()
+                continue
+            step = cur - ref
+            if float(np.max(np.abs(step))) <= tol:                  # a repeat of the last different command: not a new command
+                continue
+            rev[i] = bool(np.dot(step, self._src_step[i]) < 0.0)
+            self._src_step[i] = step
+            self._src_ref[i] = cur.copy()
+        return rev
+
     def check(self, last, raw, state, obstacle_fn, vel=None):
         """The look-ahead, part of the safety check: for each arm and each obstacle pair, can the hand still brake from its current speed and
         acceleration to the stop target (stop_gap: margin + PUSH_STOP_BEYOND_M from the modelled surface, margin + PUSH_STOP_BEYOND_M_WORK on a work surface, or the margin for an allowed-contact surface) within the gap?
@@ -639,6 +666,7 @@ class BrakingLayer:
         the distance to the surface, the speed target becomes the ceiling (through the same jerk-limited ramp).
         Returns (stop (2,) bool, limit (2,) speed limit in m/s (inf = none), info list of dicts)."""
         last, raw = np.asarray(last, float), np.asarray(raw, float)
+        rev = self._track_source(raw)                  # S3 (SF-111): the source's reversals, against its last different command
         if hasattr(obstacle_fn, "set_wake"):          # Phase F fix 5/6 (SF-82, SF-83): this tick's wake radii and HOLD arms (the feed's pairs)
             wake = self._wake_radii() if self.tun.get("adaptive_wake", True) else None
             obstacle_fn.set_wake(wake, self._hold_arms)
@@ -660,6 +688,7 @@ class BrakingLayer:
             if not pl:
                 self._braking[i] = self._ceiling[i] = False
                 self._latch_key[i] = None
+                self._rev_pending[i] = False
                 continue
             raw_by = {(p[3], p[4]): p for p in self._pairs_of(at_raw[i])}
             v, a = self._va(i)
@@ -720,16 +749,24 @@ class BrakingLayer:
             commanded_motion = bool(np.any(raw[i] != last[i]))     # a tick where the source commands no motion says nothing about whether the obstacle cleared
             latched = self._latch_key[i]                 # Phase I fix 1 (David): the pair that latched the stop
             latch_closing = closing_now.get(latched, False) if latched is not None else False
+            if rev[i] and self._braking[i]:              # S3 (SF-111): the source reversed while this arm is braking: the stop releases as soon as no closing pair needs it
+                self._rev_pending[i] = True
             if need_brake:
                 self._braking[i] = True
                 if latched is None or not latch_closing:
                     self._latch_key[i] = trig_key
+            elif self._braking[i] and self._rev_pending[i] and not latch_closing:
+                self._braking[i] = False                 # S3 (SF-111): a reversal of the source releases the stop once the latched pair no longer closes on the command (no delay for repeated targets)
+                self._latch_key[i] = None
+                self._rev_pending[i] = False
             elif self._braking[i] and latched is not None and not latch_closing and commanded_motion:
                 self._braking[i] = False                 # Phase I fix 1 (David): the source now moves away from the obstacle that latched the stop: release on this tick
                 self._latch_key[i] = None
             elif self._braking[i] and ((not brake_pairs and commanded_motion) or (v <= rest and brake_pairs and all(r_ > cush for r_ in brake_pairs))):
                 self._braking[i] = False                 # nothing closes any more, or stopped with room left (an early stop): speed up again on the S-curve
                 self._latch_key[i] = None
+            if not self._braking[i]:
+                self._rev_pending[i] = False
             if need_ceiling:
                 self._ceiling[i] = True
             elif self._ceiling[i] and not ceil_pairs:
@@ -755,6 +792,8 @@ class BrakingLayer:
         self._hold_arms = np.broadcast_to(np.asarray(hold, bool), (2,)).copy()      # Phase F fix 6 (SF-83): the held arms of this tick
         if obstacle_fn is not None:
             stop, limit, info = self.check(last, raw, state, obstacle_fn, vel=vel)
+        else:
+            self._track_source(np.asarray(raw, float))         # S3: keep the last different command current without a look-ahead
         stop = stop | np.asarray(hold, bool)
         out, prof = self.step(last, raw, state, stop=stop, speed_limit=limit)
         override = np.zeros(2, bool)

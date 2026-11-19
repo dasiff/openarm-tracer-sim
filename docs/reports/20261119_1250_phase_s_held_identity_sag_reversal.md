@@ -135,3 +135,24 @@ What this shows:
 - **Open, unexplained:** the HEAD held run printed no status line in about 26 minutes (CPU-bound at 100%, 4.1 GB), while the pre-S5 run printed 176 lines in 5.5 minutes and aborted at t = 67 s. The stall appeared only in the held launcher, not in manual, teleop or policy (12 to 60 s each). Not diagnosed. A faulthandler stack dump of HEAD's held run would show where it stalls (the attempt was denied; not retried).
 
 Recommendation: do not push until the held-run stall is diagnosed and the held baseline is either re-registered from current code or explicitly set aside by David.
+
+## 11. Diagnosis of the held-run "stall" (2026-11-19; no fix made)
+
+Logs: `data/logs/diag_held_head_20261119_161755.log` (no flushes, killed), `data/logs/diag2_held_head_*` (flushed print), `data/logs/diag4_pre_*` and `data/logs/diag4_head_*` (same seed).
+
+Launch command (held 200 g, scratch worktree of HEAD 3d72ffe; the launcher copy is `data/bounce_check_20261103/run_mass.py` with its ROOT line set to the worktree and one `faulthandler.dump_traceback_later(45, repeat=True)` line added at the top):
+
+    cd <scratch worktree of 3d72ffe> && OPENARM_SIGNAL_TRACE=1 timeout 115 bash experiments/run_capped.sh <log> env MUJOCO_GL=egl timeout 90 .venv/bin/python <launcher copy> <out_dir> --liquid 0.100
+
+Findings:
+- **Where it is:** the control loop never starts within 90 s (control ticks reached: 0). The run is in the stance search: `apply_stance_selection` (stance_select.py) -> `iter_verified_stances` (edge_sampling.py) -> `check` -> `full_check.check` -> `_place_window` -> `solve_logged` -> `_solve_stance` -> `_solve_pose_point` -> `_admissible` -> `arm_distances` -> `_min`, which calls `mujoco.mj_geomDistance` for each geom pair.
+- **Last function entered (dump):** `full_check._min`, inside `arm_distances`, inside `_admissible`. Two dumps (45 s and 90 s) show the same depth.
+- **Memory:** flat, not growing. `ps` samples during the 26-minute run: 4,138,908 kB at 20:08 and again at 20:28. The 90-second runs peaked at 4.10 to 4.16 GB.
+- **Errors:** none. No Python traceback. The 90-second runs end by `timeout` (exit 124).
+- **Why there was no output:** stdout is block-buffered, and the stance search prints its `[sampler]` lines with plain `print`. The killed run (no flushes) had 0 `[sampler]` lines while its dump showed 8 stance-search frames. The run with a flushed print showed 2. The pre-S5 run had output because it ended in an exception, which flushes stdout.
+- **Why HEAD looked slower:** the sampler seed is `time.time_ns() % 2**32` when unset (edge_sampling.py, iter_verified_stances), so each run tries a different candidate order. Pre-S5 seed 4294874296 gave candidate 1 at (0.8954, 1.0863, pedestal 0.1606): FAIL in 30.15 s. HEAD with the same pinned seed gave the same candidate, the same FAIL reason, in 35.26 s. Per-candidate behaviour matches; the runs differ by seed.
+- **Interpretation (not confirmed):** the 26-minute HEAD run was most likely still searching candidates, about 30 to 40 s each, when it was killed. The pre-S5 run with the same seed reached the loop after about 5 minutes of search. Confirming this needs HEAD run to the loop with the pinned seed, unbuffered (`python -u`), for about 6 minutes; the 90-second limit did not allow it.
+
+Not done: no change to the branch. Scratch edits (a flushed print in `stance_select.check`, the seed pin at `edge_sampling.py` line 410) were made only in scratch worktrees, which have been removed. Steps 2 and 4 of the brief (tick print, prints inside the loop) were not applicable, since the loop never starts in 90 s; the stance-search print and the stack dumps were used instead. The stale launcher (`KeyError 'C_p'`) is unchanged.
+
+Recommendation: before any push, run the held HEAD case with seed 4294874296 unbuffered for about 6 minutes and confirm it reaches the loop like pre-S5 does. Then decide the held baseline: the launcher is stale since M262, and its seed should be pinned if it is to be regenerated.

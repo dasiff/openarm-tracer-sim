@@ -24,7 +24,7 @@ PART_CATEGORY = {
     "link3": UPPER_ARM, "link4": UPPER_ARM,
     "link5": FOREARM, "link6": FOREARM,
     "link7": HAND, "palm": HAND, "finger": HAND, "held": HAND,
-    # the three capsules of Kong's compiled filter, rebuilt for the comparison (scripts/safety_filter_kong_comparison.py)
+    # the three capsules of Kong's compiled filter, rebuilt for the Stage 2 comparison (that script was deleted in ef68e88; see git history)
     "kong_upper": UPPER_ARM, "kong_lower": FOREARM, "kong_hand": HAND,
 }
 

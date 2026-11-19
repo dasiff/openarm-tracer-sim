@@ -156,3 +156,34 @@ Findings:
 Not done: no change to the branch. Scratch edits (a flushed print in `stance_select.check`, the seed pin at `edge_sampling.py` line 410) were made only in scratch worktrees, which have been removed. Steps 2 and 4 of the brief (tick print, prints inside the loop) were not applicable, since the loop never starts in 90 s; the stance-search print and the stack dumps were used instead. The stale launcher (`KeyError 'C_p'`) is unchanged.
 
 Recommendation: before any push, run the held HEAD case with seed 4294874296 unbuffered for about 6 minutes and confirm it reaches the loop like pre-S5 does. Then decide the held baseline: the launcher is stale since M262, and its seed should be pinned if it is to be regenerated.
+
+## 12. Held 200 g run on HEAD with the pinned seed (2026-11-19, diagnostic; no fix made)
+
+Setup: commit a14b423 (code identical to 3d72ffe). Scratch edits only, removed afterwards: the sampler seed pinned to 4294874296 in `iter_verified_stances`, and the launcher's trim read changed to `SAG_TRACE`/`SAG_LAYERS` (the stale `mpm.TRACE["C_p"]` read is what crashed the pre-S5 run). Command: `OPENARM_SIGNAL_TRACE=1 timeout 660 bash experiments/run_capped.sh <log> env MUJOCO_GL=egl timeout 600 .venv/bin/python -u <launcher copy> <out_dir> --liquid 0.100`. Log: `data/logs/held10_head_20261119_163146.log`; outputs `data/logs/held10_head_out_20261119_163146/`. Launch 16:32:01, exit 1 at 16:38:53 (6 min 52 s wall clock).
+
+| Question | Answer |
+|---|---|
+| Reached the control loop | Yes. Recording started 16:35:13 (about 3 min 12 s after launch). |
+| Stance search | Candidate 1 FAIL in 44.5 s (0.8954, 1.0863, pedestal 0.161); candidate 2 FAIL in 0.04 s; candidate 3 PASS (38.5 s) and dry run PASS (19.8 s), pedestal 0.0704. |
+| Pick | Attempt 1 (t = 69.5 s): OVER 4.5 s, DOWN 3.7 s, IN 3.0 s. IN not reached in 15 s (3.3 mm and 1.1 deg from the waypoint). Recovery OPEN, BACK, HOME. |
+| Pick attempt 2 (t = 102.1 s) | Same sequence; IN failed again with the same numbers. Retries used up (retry_max 1); outcome PLAN_FAILED. |
+| Carry | Not reached. |
+| Place | Not reached. |
+| Stops, braking, held-object identity | None in the log. The safety filter is off by default (SAFETY_FILTER_PLUGIN_CFG mode "off"), so no braking and no held tracking ran. |
+| Sag freeze events, left | Freeze 30.98 s, resume 69.47 s (pick start); freeze and resume pairs at 91.52, 92.28/92.71, 92.73/93.72, 100.89/100.97, 101.86/102.08, 124.11/124.17; freeze at 124.81 s, never resumed. |
+| Sag freeze events, right | Freeze 30.98 s, never resumed. |
+| Final trim, left | p = (-13.4, 16.9, -33.7) mm, |p| = 40.0 mm (the limit, sag_max_m 0.04); r = (0.015, -0.083, -0.053) rad, |r| = 0.100 rad (the limit, sag_max_rad 0.1). |
+| Final trim, right | p = (24.8, -17.3, -26.2) mm, |p| = 40.0 mm; r = (-0.070, 0.064, -0.033) rad, |r| = 0.100 rad. |
+| Frozen at exit | Both arms. |
+| Frozen during carry | Not applicable (no carry). The left trim was integrating during pick attempt 1 (69.5 to 91.5 s). |
+| Errors | No traceback. The sag layer logged `solver_no_solution`: left 12,850 times (first at t = 1.400 s, last at 125.267 s), right 4,480 times (first at 1.400 s, last at 31.260 s). |
+
+Solver failures by window: left before 30.98 s 4,437; during the frozen window 44; during pick attempt 1 (69.5 to 91.5 s) 3,307; after 91.5 s 5,062. Right before 30.98 s 4,437; after 43. The exception text is not recorded (the shim logged only the kind).
+
+Interpretation (not verified):
+- Before S5 the sag layer ran the solver only for manipulation commands. S5 runs it for every arm command. From the first control tick (t = 1.400 s, with the trim still about zero) the solver fails on the staging commands. When it fails, the layer returns the source targets, so no correction is applied.
+- The trim is integrated before the solver call, so it keeps integrating on the failing ticks and reaches its limits on both arms.
+- The solver keeps failing during the pick (3,307 failures in attempt 1), so the pick runs uncorrected. The 3.3 mm miss at IN fits that, but this link is untested.
+- Not measured: whether the pick succeeds before S5 with the same shim and seed. The pre-S5 run never reached the pick (its launcher crashed at t = 57 s).
+
+Recommended next steps (none done): run pre-S5 (7290d3c) with the same shim and seed to compare the pick; add the exception text to the shim's log. Do not push until the pick succeeds on HEAD or the S5 gate is changed.

@@ -103,7 +103,7 @@ from src.task_config import COMMAND_BRIDGE_CFG
 from src.holding import HoldDetector                          # M253: the holding verdict, the same rule as the signal trace
 from src.open_catch import OpenCatch, SourceGate                # M253: catches an open while holding; gates the sources (always on)
 from src.weigh_helper import WeighHelper                         # M258: weighs each grasp once, pausing its source (always on)
-from src.sag_layer import MANIPULATION_SOURCES, SAG_TRACE, SagLayer, correct_command                    # M262: the sag trim, a layer between the source and the bridge (always on); M264: it acts on the manipulation source only
+from src.sag_layer import SAG_TRACE, SagLayer, correct_command                    # M262: the sag trim, a layer between the source and the bridge (always on); S5 (Phase S): the trim's per-arm freeze decides, no source gate
 from src.task_config import PICK_PLACE_CFG                       # M258: the weighing's values (liftoff_*, settle_*)
 from src.task_config import CHUNK_CFG
 from src.elbow_guard import ElbowGuard                        # M269: the elbow height guard, clamps the arm targets (ctrl_block)
@@ -683,9 +683,11 @@ def run_loop(model, data, sources, cfg, viewer=None, logger=None):
         return cmd
 
     def sag_correct(cmd):
-        """M262/M264: the sag trim layer for one command (src/sag_layer.py correct_command): corrected only when it is the manipulation source's."""
+        """M262, S5 (Phase S): the sag trim layer for one command (src/sag_layer.py correct_command): every arm target; each arm's trim holds while its command stands still."""
         nominal = cmd.get("period_steps", steps_per_frame) * model.opt.timestep
         return correct_command(sag, cmd, data, t, nominal)
+
+    MANIPULATION_SOURCES = ("vla",)   # the safety filter's manipulation flag (the cmd "manip" tag): the sources named here (M264). The sag trim no longer reads it (S5)
 
     def is_manipulation(name):
         """M264: whether a source is the manipulation source now: a source named in MANIPULATION_SOURCES, or the auto source (the scripted policy)
@@ -1142,7 +1144,7 @@ def run_loop(model, data, sources, cfg, viewer=None, logger=None):
                         print(f"[{name}] {n}")
                 if clean is not None:
                     clean["period_steps"] = command_steps(src)
-                    clean["manip"] = is_manipulation(name)            # M264: the sag layer acts on the manipulation source's arm commands only
+                    clean["manip"] = is_manipulation(name)            # the safety filter's manipulation flag (the sag trim no longer reads it, S5)
                     cmds.append(clean)
         gate.hold_steps(catch, hold_det, data, t, frame,
                         lambda s_, v_, f_: (sag[s_].release_open(t), apply_cmd({"mode": "arms", "gripper": {s_: v_}, "gripper_force": {s_: release_cap(f_)}})),   # M253/M255: the release carries the caught command's own force cap; M263: it arms the sag reset (the only arming)

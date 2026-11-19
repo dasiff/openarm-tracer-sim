@@ -768,6 +768,13 @@ SAG_LAYER_CFG = {
     # Plain on/off switch, no unit. True (default): the sag trim runs as a layer for every arm command of every source. False (experiment only):
     # the layer passes the source's joint targets through unchanged, so the arm gets no sag correction. [row M262]
     "enabled": True,
+    # Per-arm freeze (Phase S, S5, row SF-109; replaces the old source-name gate of M264). The trim of an arm stops accumulating while that
+    # arm's command stands still: a command "changed" when some joint differs from the arm's previous command by more than freeze_tol_rad.
+    # freeze_tol_rad: radians, the change threshold (1e-9 rad is float noise, the same test as the filter's "different" command, SF-111).
+    "freeze_tol_rad": 1e-9,
+    # freeze_still_ticks: count of commands in a row that do not change the arm, after which the trim freezes. 3 (about 20 ms at the 150 Hz
+    # control tick): one or two repeated targets between chunk updates do not freeze it, and the lag is well below a sag's time scale. [row SF-109]
+    "freeze_still_ticks": 3,
 }
 
 # ----------------------------------------------------------------------------------------------------------

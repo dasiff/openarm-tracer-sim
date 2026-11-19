@@ -55,6 +55,11 @@ def source_targets(data, offset):
     return HOME + np.asarray(offset, float)
 
 
+def sweep(k):
+    """Targets that change on every command (a sine sweep). S5: a command that stands still freezes the trim, so the cases that check integration send these."""
+    return source_targets(None, [0.03 * np.sin(0.05 * k), 0.0, 0, 0, 0, 0, 0])
+
+
 def case_a(model, data):
     """The layer's correction for a sequence of commands equals the old in-script trim for the same inputs (the same integration, the same gains
     and limits, the same freeze)."""
@@ -92,12 +97,12 @@ def case_b(model, data):
     before = layer.C["p"].copy()
     t = 0.0
     for k in range(60):
-        layer.correct(source_targets(data, [0.03, 0.0, 0, 0, 0, 0, 0]), data, t, NOMINAL)
+        layer.correct(sweep(k), data, t, NOMINAL)
         t += NOMINAL
     frozen = np.array_equal(layer.C["p"], before)
     hmr.stop_rate(model, "left", t)
     for k in range(60):
-        layer.correct(source_targets(data, [0.03, 0.0, 0, 0, 0, 0, 0]), data, t, NOMINAL)
+        layer.correct(sweep(k), data, t, NOMINAL)
         t += NOMINAL
     resumed = not np.array_equal(layer.C["p"], before)
     hmr.reset(model)
@@ -111,7 +116,7 @@ def case_c(model, data):
     layer = SagLayer(model, data, "left", HOME)
     t = 0.0
     for k in range(30):
-        layer.correct(source_targets(data, [0.03, 0.0, 0, 0, 0, 0, 0]), data, t, NOMINAL)
+        layer.correct(sweep(k), data, t, NOMINAL)
         t += NOMINAL
     held = layer.C["p"].copy()
     t += 5.0                                             # the pause: five simulated seconds with no commands
@@ -124,7 +129,7 @@ def case_c(model, data):
 
     sag_layer._sag_trim_step = spy
     try:
-        layer.correct(source_targets(data, [0.03, 0.0, 0, 0, 0, 0, 0]), data, t, NOMINAL)
+        layer.correct(sweep(30), data, t, NOMINAL)
     finally:
         sag_layer._sag_trim_step = real
     ok = np.array_equal(held, held) and seen_dt == [NOMINAL] and abs(layer.C["p"] - held).max() < 0.01
@@ -267,26 +272,36 @@ def case_c_periodic(model, data):
     data.qvel[:] = 0.0
     t = 0.0
     peak = 0.0
-    for k in range(int(10.0 / NOMINAL)):
-        layer.correct(source_targets(data, [0.03, 0.0, 0, 0, 0, 0, 0]), data, t, NOMINAL)
-        layer.track_open(data, t)
-        peak = max(peak, float(np.linalg.norm(layer.C["p"])))
-        t += NOMINAL
-    ok = layer.reset_at is None and not any(e["kind"] == "release_reset" for e in layer.log) and peak > 0.01 and float(np.linalg.norm(layer.C["p"])) > 0.01
+    n_ticks = int(10.0 / NOMINAL)
+
+    def run():
+        nonlocal t, peak
+        for k in range(n_ticks):
+            layer.correct(sweep(k), data, t, NOMINAL)
+            layer.track_open(data, t)
+            peak = max(peak, float(np.linalg.norm(layer.C["p"])))
+            t += NOMINAL
+    _, steps = _count_steps(run)
+    ok = layer.reset_at is None and not any(e["kind"] == "release_reset" for e in layer.log) and steps == n_ticks and peak > 0.0
     return check("(c) no periodic reset over 10 s with the gripper open (the trim keeps integrating)", ok,
-                 f"resets {0 if layer.reset_at is None else 1}; peak |C| {1000 * peak:.2f} mm, final {1000 * float(np.linalg.norm(layer.C['p'])):.2f} mm")
+                 f"resets {0 if layer.reset_at is None else 1}; trim steps {steps} of {n_ticks} ticks; peak |C| {1000 * peak:.2f} mm, final {1000 * float(np.linalg.norm(layer.C['p'])):.2f} mm")
+
+
+SAG_STILL_N = int(SAG_LAYER_CFG["freeze_still_ticks"])
 
 
 def _arm_cmd(q, manip):
-    """A command as the loop builds it (an arms command with the source's manipulation tag)."""
+    """A command as the loop builds it: an arms command with the safety filter's manipulation tag (the sag trim no longer reads it, S5)."""
     return {"mode": "arms", "arm_targets": {"left": [float(v) for v in q]}, "gripper": {"left": 0.044}, "manip": manip, "period_steps": 3}
 
 
-def case_m264_a(model, data):
-    """M264 (a): a staging command passes through unchanged and the trim does not integrate (no call to the trim step, C stays zero), also after
-    a long run of staging commands."""
+def _pair(model, data):
     layer = SagLayer(model, data, "left", HOME)
-    layers = {"left": layer, "right": SagLayer(model, data, "right", np.asarray(TASK_CFG["home_q_right"], float))}
+    return layer, {"left": layer, "right": SagLayer(model, data, "right", np.asarray(TASK_CFG["home_q_right"], float))}
+
+
+def _count_steps(fn):
+    """Runs fn() with the trim step spied on. Returns (fn's result, number of trim steps taken)."""
     real = sag_layer._sag_trim_step
     calls = []
 
@@ -295,59 +310,123 @@ def case_m264_a(model, data):
         return real(*a, **k)
     sag_layer._sag_trim_step = spy
     try:
-        same = True
-        for k in range(300):
-            q = source_targets(data, [0.03 * np.sin(0.01 * k), 0.02, 0.01, 0, 0, 0, 0])
-            out = correct_command(layers, _arm_cmd(q, False), data, k * NOMINAL, NOMINAL)
-            same = same and np.array_equal(np.array(out["arm_targets"]["left"]), q)
+        res = fn()
     finally:
         sag_layer._sag_trim_step = real
-    ok = same and not calls and not np.any(layer.C["p"]) and not np.any(layer.C["r"])
-    return check("M264 (a) a staging command passes through unchanged; the trim does not integrate (300 staging commands)", ok,
-                 f"targets unchanged {same}; trim steps {len(calls)}; C zero {not np.any(layer.C['p'])}")
+    return res, len(calls)
 
 
-def case_m264_b(model, data):
-    """M264 (b): a manipulation command integrates and is corrected exactly as the layer's own correct() does."""
-    a = SagLayer(model, data, "left", HOME)
-    ref = SagLayer(model, data, "left", HOME)
-    layers = {"left": a, "right": SagLayer(model, data, "right", np.asarray(TASK_CFG["home_q_right"], float))}
-    same, changed = True, False
-    for k in range(120):
-        q = source_targets(data, [0.03, 0.0, 0.01, 0, 0, 0, 0])
-        out = np.array(correct_command(layers, _arm_cmd(q, True), data, k * NOMINAL, NOMINAL)["arm_targets"]["left"])
-        exp = ref.correct(q, data, k * NOMINAL, NOMINAL)
-        same = same and np.allclose(out, exp, atol=1e-12)
-        changed = changed or not np.allclose(out, q)
-    ok = same and changed and np.any(a.C["p"])
-    return check("M264 (b) a manipulation command integrates and is corrected as the layer's own correction (120 commands)", ok,
-                 f"same as the layer's correction {same}; changed from the source {changed}; |C| {1000 * float(np.linalg.norm(a.C['p'])):.2f} mm")
+def _moving(layers, data, k0, n, manip=False):
+    """n commands from tick k0 that all change the targets (a sine sweep). Returns the next tick."""
+    for k in range(k0, k0 + n):
+        q = source_targets(data, [0.03 * np.sin(0.05 * k), 0.02 * np.cos(0.05 * k), 0.01, 0, 0, 0, 0])
+        correct_command(layers, _arm_cmd(q, manip), data, k * NOMINAL, NOMINAL)
+    return k0 + n
 
 
-def case_m264_c(model, data):
-    """M264 (c): the trim is zero at the first manipulation command after a long run of staging commands: the first manipulation command gives
-    exactly the correction a fresh layer gives for that command (the takeover zeroes the trim the first time)."""
-    a = SagLayer(model, data, "left", HOME)
-    layers = {"left": a, "right": SagLayer(model, data, "right", np.asarray(TASK_CFG["home_q_right"], float))}
-    for k in range(60):                                  # a manipulation run that builds a large trim
-        correct_command(layers, _arm_cmd(source_targets(data, [0.04, 0.0, 0.0, 0, 0, 0, 0]), True), data, k * NOMINAL, NOMINAL)
-    built = 1000 * float(np.linalg.norm(a.C["p"]))
-    for k in range(60, 60 + 400):                        # a long run of staging commands
-        correct_command(layers, _arm_cmd(source_targets(data, [0.0, 0.0, 0.0, 0, 0, 0, 0]), False), data, k * NOMINAL, NOMINAL)
-    t0 = 460 * NOMINAL
+def _standing(layers, data, k0, n, q, manip=False):
+    """n commands from tick k0 with the same targets q (the command stands still). Returns the next tick."""
+    for k in range(k0, k0 + n):
+        correct_command(layers, _arm_cmd(q, manip), data, k * NOMINAL, NOMINAL)
+    return k0 + n
+
+
+def case_s5_a(model, data):
+    """S5 (a): a standing command freezes the trim after freeze_still_ticks unchanged commands. From then on nothing is integrated, and the
+    trim value is kept (not zeroed): C does not move over 60 standing commands."""
+    layer, layers = _pair(model, data)
+    k = _moving(layers, data, 0, 120)
     q = source_targets(data, [0.01, 0.0, 0.0, 0, 0, 0, 0])
-    correct_command(layers, _arm_cmd(q, True), data, t0, NOMINAL)
-    fresh = SagLayer(model, data, "left", HOME)
-    fresh.correct(q, data, t0, NOMINAL)                  # the trim: one step from zero, as a fresh layer gives it
-    ok = np.allclose(a.C["p"], fresh.C["p"], atol=1e-15) and np.allclose(a.C["r"], fresh.C["r"], atol=1e-15) and a.manip_active \
-        and any(e["kind"] == "takeover" for e in a.log)
-    return check("M264 (c) the trim is zero at the first manipulation command after a long staging run (takeover)", ok,
-                 f"trim before the takeover {built:.2f} mm; after the first manipulation command the trim equals a fresh layer's one step: {ok}")
+    cs = []
+
+    def stand():
+        for j in range(60):
+            correct_command(layers, _arm_cmd(q, False), data, (k + j) * NOMINAL, NOMINAL)
+            cs.append(layer.C["p"].copy())
+    _, steps = _count_steps(stand)
+    held = all(np.array_equal(c, cs[SAG_STILL_N - 1]) for c in cs[SAG_STILL_N - 1:])
+    ok = steps == SAG_STILL_N and layer.frozen and held and float(np.linalg.norm(cs[-1])) > 0.0
+    return check("S5 (a) a standing command freezes the trim after freeze_still_ticks commands: no integration after, C kept", ok,
+                 f"trim steps in 60 standing commands {steps} (expected {SAG_STILL_N}); frozen {layer.frozen}; C held {held}; |C| {1000 * float(np.linalg.norm(cs[-1])):.2f} mm")
+
+
+def case_s5_b(model, data):
+    """S5 (b): the trim resumes at the first changed command after a freeze, and integrates on every changed command after that."""
+    layer, layers = _pair(model, data)
+    k = _moving(layers, data, 0, 60)
+    q = source_targets(data, [0.01, 0.0, 0.0, 0, 0, 0, 0])
+    k = _standing(layers, data, k, SAG_STILL_N + 10, q)
+    frozen_then = layer.frozen
+    _, steps = _count_steps(lambda: _moving(layers, data, k, 20))
+    kinds = [e["kind"] for e in layer.log if e["kind"] in ("freeze", "resume")]
+    ok = frozen_then and not layer.frozen and steps == 20 and kinds[-2:] == ["freeze", "resume"]
+    return check("S5 (b) the trim resumes at the first changed command and integrates on each one after", ok,
+                 f"frozen while standing {frozen_then}; trim steps in 20 changed commands {steps}; log {kinds[-2:]}")
+
+
+def case_s5_c(model, data):
+    """S5 (c): a change below freeze_tol_rad (1e-10 rad) does not resume the trim; a change above it (1e-8 rad) does."""
+    layer, layers = _pair(model, data)
+    k = _moving(layers, data, 0, 60)
+    q = source_targets(data, [0.01, 0.0, 0.0, 0, 0, 0, 0])
+    k = _standing(layers, data, k, SAG_STILL_N + 5, q)
+    q_tiny = q.copy()
+    q_tiny[0] += 1e-10
+    k = _standing(layers, data, k, 1, q_tiny)
+    still = layer.frozen
+    q_small = q_tiny.copy()
+    q_small[0] += 1e-8
+    _standing(layers, data, k, 1, q_small)
+    ok = still and not layer.frozen
+    return check("S5 (c) a 1e-10 rad change keeps the trim frozen; a 1e-8 rad change resumes it", ok,
+                 f"frozen after the 1e-10 change {still}; resumed after the 1e-8 change {not layer.frozen}")
+
+
+def case_s5_d(model, data):
+    """S5 (d): no source gate. The same command stream gives the same corrected output whatever the manipulation tag says (the tag is the
+    safety filter's, not the trim's), and a non-manipulation source's moving command is corrected."""
+    la, lla = _pair(model, data)
+    lb, llb = _pair(model, data)
+    same, changed = True, False
+    k = 0
+    for j in range(120):
+        q = source_targets(data, [0.03 * np.sin(0.05 * j), 0.02 * np.cos(0.05 * j), 0.01, 0, 0, 0, 0])
+        out_a = np.array(correct_command(lla, _arm_cmd(q, False), data, j * NOMINAL, NOMINAL)["arm_targets"]["left"])
+        out_b = np.array(correct_command(llb, _arm_cmd(q, True), data, j * NOMINAL, NOMINAL)["arm_targets"]["left"])
+        same = same and np.array_equal(out_a, out_b)
+        changed = changed or not np.allclose(out_a, q)
+    ok = same and changed and float(np.linalg.norm(la.C["p"])) > 0.0
+    return check("S5 (d) no source gate: the tag does not change the correction; a non-manipulation source's moving command is corrected", ok,
+                 f"same output with either tag {same}; corrected {changed}; |C| {1000 * float(np.linalg.norm(la.C['p'])):.2f} mm")
+
+
+def case_s5_e(model, data):
+    """S5 (e): a frozen trim value is preserved, not zeroed, and it still acts through the command: 400 standing commands keep C exactly, and
+    the output of a standing command differs from the source's raw targets while C is not zero."""
+    layer, layers = _pair(model, data)
+    k = _moving(layers, data, 0, 120)
+    q = source_targets(data, [0.01, 0.0, 0.0, 0, 0, 0, 0])
+    k = _standing(layers, data, k, SAG_STILL_N + 2, q)
+    c_frozen = layer.C["p"].copy()
+    k = _standing(layers, data, k, 400, q)
+    out = np.array(correct_command(layers, _arm_cmd(q, False), data, k * NOMINAL, NOMINAL)["arm_targets"]["left"])
+    ok = np.array_equal(layer.C["p"], c_frozen) and float(np.linalg.norm(c_frozen)) > 0.0 and not np.allclose(out, q) and layer.frozen
+    return check("S5 (e) a frozen trim value is preserved over 400 standing commands and still acts through the command", ok,
+                 f"C unchanged {np.array_equal(layer.C['p'], c_frozen)}; |C| {1000 * float(np.linalg.norm(c_frozen)):.2f} mm; output corrected {not np.allclose(out, q)}")
+
+
+def case_s5_f(model, data):
+    """S5 (f): the source-name gate is gone from the layer: sag_layer.py names no source and has no manipulation gate."""
+    import inspect
+    text = inspect.getsource(sag_layer)
+    ok = '"vla"' not in text and "MANIPULATION_SOURCES" not in text and "manipulation(" not in text and "manip_active" not in text
+    return check("S5 (f) wiring: sag_layer.py has no source-name gate (no 'vla', no MANIPULATION_SOURCES, no manipulation step)", ok,
+                 f"source-name gate text present: {not ok}")
 
 
 def main():
     model, data = robot()
-    results = [case_a(model, data), case_a_open(model, data), case_b(model, data), case_c(model, data), case_c_periodic(model, data), case_d(model, data), case_e(model, data), case_f(model, data), case_g(model, data), case_h(model, data), case_i(model, data), case_m264_a(model, data), case_m264_b(model, data), case_m264_c(model, data)]
+    results = [case_a(model, data), case_a_open(model, data), case_b(model, data), case_c(model, data), case_c_periodic(model, data), case_d(model, data), case_e(model, data), case_f(model, data), case_g(model, data), case_h(model, data), case_i(model, data), case_s5_a(model, data), case_s5_b(model, data), case_s5_c(model, data), case_s5_d(model, data), case_s5_e(model, data), case_s5_f(model, data)]
     print(f"{sum(results)} of {len(results)} passed")
     return 0 if all(results) else 1
 

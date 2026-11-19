@@ -14,6 +14,10 @@ What it does, per arm, for every arm command a source sends:
 With the setting off (SAG_LAYER_CFG["enabled"] False) the layer returns the source's targets unchanged.
 
 Frozen during a held-mass ramp: _sag_trim_step reads the held-mass record (hmr.ramp_running) and keeps C while a ramp runs (M238).
+Frozen while the arm's command stands still (Phase S, S5, row SF-109; replaces the M264 source-name gate): each arm
+counts the commands in a row that do not change its targets (every joint within SAG_LAYER_CFG freeze_tol_rad of the previous command). From
+freeze_still_ticks such commands the trim holds its value (no integration; C is kept, not zeroed, and still acts through the command); the
+first changed command resumes it. Derived from the command stream only: no per-source flag, no special case for the base.
 Holds its value during a helper pause: a paused source sends no commands, so nothing is integrated; after the pause the first command
 integrates one nominal period only (the gap is not counted).
 Reset (M263, David): ONLY when the open-catch helper releases a caught open. The release arms the watch (release_open); when that release
@@ -36,8 +40,6 @@ from src.task_config import MINK_CFG, PICK_PLACE_CFG, SAG_LAYER_CFG, TASK_CFG
 TASK_OPEN = TASK_CFG.get("finger_open", 0.044)     # the open travel, as the scripted module reads it
 
 SAG_TRACE = {}                    # logging only: side -> the correction dict {"p", "r"} of that side (read by the run recorder's C_p and C_r columns)
-MANIPULATION_SOURCES = ("vla",)   # M264: the sources that are the manipulation source by name (the mock policy, src/mpvi_pipeline.py). The scripted manipulation
-                                  # module is the "policy" source while its current segment is a manipulation segment (orchestrator status "module")
 SAG_LAYERS = {}                   # logging only: side -> the SagLayer of that side (read by the signal trace, see trace_values)
 PLAN_TRACE = {}                   # logging only: side -> {"label", "p", "R"}: the source's own step or waypoint label this tick and its planned pad pose
                                   # (None where there is none); the scripted module and the mock set it, the layer never reads it for control
@@ -79,7 +81,9 @@ class SagLayer:
         self.guard_count = 0          # logging only: how often the zero-time-step guard fired (a second command in the same tick)
         self.diag = None              # logging only: the reference (forward kinematics of the targets) of the last command: {"t", "fk_p", "fk_R"}
         self.reset_at = None          # logging only: the last reset: (t, cause)
-        self.manip_active = False     # M264: the manipulation source has the arm (its last command for this arm was a manipulation command)
+        self.q_last = None            # S5: the source's joint targets of the previous command of this arm (the freeze test compares with it)
+        self.still_ticks = 0          # S5: how many commands in a row have left the targets unchanged
+        self.frozen = False           # S5: the trim holds its value (the command stands still)
         self.q_cmd = None             # the solver's joint command (warm start), from the measured joints at the first command
         self.t_last = None            # the time of the last correction (a pause is not counted)
         self.open_t = None            # the time the open that is being watched started
@@ -103,11 +107,13 @@ class SagLayer:
             self.guard_count += 1
             return q_src.copy() if self.q_cmd is None else self.q_cmd.copy()
         self.t_last = t
+        self._track_still(q_src, t)
         p_ref, R_ref = self._pose(data.qpos, q_src)                                          # the reference: the hand pose the targets imply
         p_now, R_now = self.arm.pad_pose(data)                                               # the measured hand pose
         self.diag = {"t": t, "fk_p": p_ref.copy(), "fk_R": R_ref.copy()}                     # logging only
-        _sag_trim_step(self.C, PICK_PLACE_CFG, self.model, self.side, t, p_ref - p_now,
-                       Rotation.from_matrix(R_ref @ R_now.T).as_rotvec(), dt)
+        if not self.frozen:                                                                  # S5: a standing command holds the trim (C kept, not integrated)
+            _sag_trim_step(self.C, PICK_PLACE_CFG, self.model, self.side, t, p_ref - p_now,
+                           Rotation.from_matrix(R_ref @ R_now.T).as_rotvec(), dt)
         R_t = (Rotation.from_rotvec(self.C["r"]) * Rotation.from_matrix(R_ref)).as_matrix()
         if self.q_cmd is None:
             self.q_cmd = data.qpos[self.arm.qadr].copy()
@@ -121,18 +127,20 @@ class SagLayer:
         self.q_cmd = self.arm.q_cmd.copy()
         return self.q_cmd.copy()
 
-    def manipulation(self, is_manip, t):
-        """M264: whether this arm command is corrected. Only the manipulation source's commands are (David). The first manipulation command after
-        a command from any other source zeroes the trim (the takeover, as the old trim at a skill start); a command from another source ends the
-        takeover and passes through unchanged."""
-        if not is_manip:
-            self.manip_active = False
-            return False
-        if not self.manip_active:
-            self.C["p"], self.C["r"] = np.zeros(3), np.zeros(3)
-            self.log.append({"t": t, "kind": "takeover"})
-            self.manip_active = True
-        return True
+    def _track_still(self, q_src, t):
+        """S5 (Phase S, SF-109): counts the commands in a row that leave this arm's targets unchanged (every joint within freeze_tol_rad of the
+        previous command). The trim is frozen from the freeze_still_ticks-th such command, and resumes at the first changed command. Logs each
+        change of state ("freeze", "resume") in self.log. Reads the source's targets only; the trim itself is not touched here."""
+        tol = float(SAG_LAYER_CFG["freeze_tol_rad"])
+        if self.q_last is not None and float(np.max(np.abs(q_src - self.q_last))) <= tol:
+            self.still_ticks += 1
+        else:
+            self.still_ticks = 0
+        self.q_last = q_src.copy()
+        frozen = self.still_ticks >= int(SAG_LAYER_CFG["freeze_still_ticks"])
+        if frozen != self.frozen:
+            self.log.append({"t": t, "kind": "freeze" if frozen else "resume"})
+        self.frozen = frozen
 
     def release_open(self, t):
         """The open-catch helper released a caught open (M263): the only call that arms the watch. An ordinary gripper-open command does not call it."""
@@ -180,17 +188,13 @@ class SagLayer:
 
 
 def correct_command(layers, cmd, data, t, nominal_dt):
-    """M264: the sag layer for one command from the loop (the same for every source). An arms command's targets are corrected per arm only when the
-    command comes from the manipulation source (its "manip" tag, set by the control loop); other commands pass through unchanged and integrate
-    nothing. layers: side -> SagLayer. nominal_dt: the command's period (s)."""
+    """The sag layer for one command from the loop, the same for every source (S5, Phase S: the source-name gate of M264 is removed; the
+    per-arm freeze inside SagLayer.correct decides when the trim holds). Every arm target of an arms command is corrected; other commands
+    pass through unchanged. layers: side -> SagLayer. nominal_dt: the command's period (s)."""
     if cmd.get("mode") != "arms" or not cmd.get("arm_targets"):
         return cmd
-    is_manip = bool(cmd.get("manip"))
     out = {}
     for s, q in cmd["arm_targets"].items():
-        if layers[s].manipulation(is_manip, t):
-            out[s] = [float(v) for v in layers[s].correct(np.array(q, float), data, t, nominal_dt)]
-        else:
-            out[s] = [float(v) for v in q]
+        out[s] = [float(v) for v in layers[s].correct(np.array(q, float), data, t, nominal_dt)]
     return {**cmd, "arm_targets": out}
 

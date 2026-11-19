@@ -94,7 +94,7 @@ def main(argv=None):
     args = ap.parse_args(argv)
     root = str(Path(args.root).resolve())
     sys.path.insert(0, root)                       # before the working tree: src is imported from here
-    import safety_filter_speed_common as sc         # from scripts/ (the script's own folder); imports nothing from src by itself
+    import safety_filter_speed_util as sc         # from scripts/ (the script's own folder); imports nothing from src by itself
     import src
     if not str(Path(src.__file__).resolve()).startswith(root):
         raise RuntimeError(f"src was imported from {src.__file__}, not from {root}")

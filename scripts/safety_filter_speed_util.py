@@ -27,7 +27,9 @@ SIDES = ("left", "right")
 
 STREAMS = ("punch_original", "punch_reactive", "shadow_pp", "cat")
 
-GOLDEN_SET = [(s, "kong_style") for s in STREAMS] + [("punch_original", "layered"), ("cat", "layered")]
+# SF-108: the layered recordings (punch_original_layered, cat_layered) are no longer in the gate: the layered resolver is removed and
+# those recordings cannot be replayed. The files stay in the golden folder and in git history.
+GOLDEN_SET = [(s, "kong_style") for s in STREAMS]
 
 CLOSED_LOOP_SET = [("punch_original", "kong_style"), ("punch_reactive", "kong_style"), ("cat", "kong_style")]   # gate part B
 

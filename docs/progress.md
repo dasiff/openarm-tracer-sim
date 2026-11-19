@@ -976,4 +976,5 @@ RESULT 18 safety-filter tests (05:14 summary data/logs/safety18_summary.txt): al
 DONE: 7395f77 (GOLDEN_SET kong only; elbow script deleted). Golden link removed after the run.
 CURRENT: task done. Open for David (report 20261119_0514_final_layered_cleanup.md, section 5).
 REPORT docs/reports/20261119_0514_final_layered_cleanup.md. Nothing pushed.
+PUSH 2026-11-19 12:00: Phase R done (David's instruction). git push origin safety-filter (github.com/dasiff, HTTPS). Fast-forward from 7a33ec6, which was already on the remote. Pushed through e5ddcda (the last work commit); this note is the commit after it. Earlier Phase R commits (437c951 to 7a33ec6) were already on the remote.
 

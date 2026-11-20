@@ -1,9 +1,9 @@
-"""Sag trim and solver failures (Phase S fix, SF-116): the trim is not integrated on a tick where the solver failed.
+"""Sag trim and solver failures (Phase S fix, SF-116; leak of SF-118): the trim is not integrated on a tick where the solver failed, but the leak still runs.
 
 The arm solver is replaced by a scripted one that fails on chosen calls (the real solver succeeds in the other sag tests). Checks:
-  A. a failing tick leaves the trim at its last successful value and passes the source targets through; the first tick that succeeds
-     integrates exactly one tick from that held value;
-  B. both gates: a frozen arm (S5) whose solver succeeds does not integrate, and its solver is still called;
+  A. a failing tick adds no correction (the trim only leaks: last value times the decay) and passes the source targets through; the first
+     tick that succeeds leaks once more and integrates exactly one tick;
+  B. every tick calls the solver; a standing command whose solver succeeds integrates (no freeze, SF-118);
   C. logging: the first failure is logged at INFO with the exception text, the first recovery once, each streak end with its count,
      and a streak still running at episode end is logged with its count;
   D. per arm: a failing arm holds its trim while the other arm integrates normally.
@@ -30,7 +30,6 @@ from src.task_config import PICK_PLACE_CFG, SAG_LAYER_CFG, TASK_CFG  # noqa: E40
 HOME = np.asarray(TASK_CFG["home_q_left"], float)
 HOME_R = np.asarray(TASK_CFG["home_q_right"], float)
 NOMINAL = 1.0 / 150.0
-STILL_N = int(SAG_LAYER_CFG["freeze_still_ticks"])
 FAILS = []
 
 
@@ -50,7 +49,7 @@ def robot():
 
 
 def sweep(k, home=HOME):
-    """Targets that change on every command (S5: a command that stands still freezes the trim)."""
+    """Targets that change on every command (a sine sweep)."""
     return home + np.array([0.03 * np.sin(0.05 * k), 0.0, 0, 0, 0, 0, 0])
 
 
@@ -81,27 +80,28 @@ class Capture(logging.Handler):
 def case_a(model, data):
     layer = SagLayer(model, data, "left", HOME)
     st = scripted_solver(layer, fail_calls=set(range(60, 65)))
+    decay = float(np.exp(-NOMINAL / SAG_LAYER_CFG["sag_leak_tau_s"]))
     t = 0.0
     for k in range(60):
         layer.correct(sweep(k), data, t, NOMINAL)
         t += NOMINAL
     c0 = layer.C["p"].copy()
-    held_ok, passthrough = True, True
-    for k in range(60, 65):
+    leak_only, passthrough = True, True
+    for i, k in enumerate(range(60, 65)):
         q = sweep(k)
         out = layer.correct(q, data, t, NOMINAL)
-        held_ok = held_ok and np.array_equal(layer.C["p"], c0)
+        leak_only = leak_only and np.allclose(layer.C["p"], c0 * decay ** (i + 1), rtol=0, atol=1e-15)
         passthrough = passthrough and np.array_equal(out, q)
         t += NOMINAL
-    check("SF-116 (A1) failing ticks: the trim holds its last value from a successful solve", held_ok and st["failed"] == 5,
-          f"failures {st['failed']}, trim unchanged {held_ok}")
+    check("SF-118 (A1) failing ticks: no new correction; the trim is its last value times the leak, once per failing tick",
+          leak_only and st["failed"] == 5, f"failures {st['failed']}, trim = last value x decay^n {leak_only}")
     check("SF-116 (A2) failing ticks pass the source targets through unchanged", passthrough, f"pass-through {passthrough}")
     q = sweep(65)
     p_ref, _ = layer._pose(data.qpos, q)
     p_now, _ = layer.arm.pad_pose(data)
-    expected = sag_layer._clip_norm(c0 + PICK_PLACE_CFG["sag_gain_per_s"] * (p_ref - p_now) * NOMINAL, PICK_PLACE_CFG["sag_max_m"])
+    expected = sag_layer._clip_norm(c0 * decay ** 6 + PICK_PLACE_CFG["sag_gain_per_s"] * (p_ref - p_now) * NOMINAL, PICK_PLACE_CFG["sag_max_m"])
     layer.correct(q, data, t, NOMINAL)
-    check("SF-116 (A3) the first successful tick integrates exactly one tick from the held value",
+    check("SF-118 (A3) the first successful tick leaks once more and integrates one tick from the held value",
           np.allclose(layer.C["p"], expected, atol=1e-12), f"|C| {1000 * np.linalg.norm(layer.C['p']):.4f} mm, expected {1000 * np.linalg.norm(expected):.4f} mm")
 
 
@@ -113,17 +113,16 @@ def case_b(model, data):
         layer.correct(sweep(k), data, t, NOMINAL)
         t += NOMINAL
     q = sweep(60)
-    for _ in range(STILL_N + 1):
-        layer.correct(q, data, t, NOMINAL)
-        t += NOMINAL
-    c_frozen = layer.C["p"].copy()
     calls_before = st["calls"]
+    moved, prev = 0, layer.C["p"].copy()
     for _ in range(30):
         layer.correct(q, data, t, NOMINAL)
         t += NOMINAL
-    check("SF-116 (B1) both gates: a frozen arm whose solver succeeds does not integrate", layer.frozen and np.array_equal(layer.C["p"], c_frozen),
-          f"frozen {layer.frozen}, trim unchanged {np.array_equal(layer.C['p'], c_frozen)}")
-    check("SF-116 (B2) the frozen arm's solver is still called (only the trim is held)", st["calls"] - calls_before == 30, f"solver calls {st['calls'] - calls_before} of 30")
+        moved += int(not np.array_equal(layer.C["p"], prev))
+        prev = layer.C["p"].copy()
+    check("SF-118 (B1) a standing command whose solver succeeds still integrates (no freeze): the trim changes on every tick", moved == 30,
+          f"ticks with the trim changed {moved} of 30")
+    check("SF-116 (B2) every tick calls the solver, standing command or not", st["calls"] - calls_before == 30, f"solver calls {st['calls'] - calls_before} of 30")
 
 
 def case_c(model, data):

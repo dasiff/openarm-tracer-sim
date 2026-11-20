@@ -1,4 +1,4 @@
-"""Synthetic tests for the sag trim as a control-loop layer (M262): the same correction as the old in-script trim, the freeze during a held-mass
+"""Synthetic tests for the sag trim as a control-loop layer (M262): the same correction as the old in-script trim plus the leak of SF-118, the hold during a held-mass
 ramp, the hold during a helper pause, the setting OFF, and the gripper-open reset (the events the loop can see). The arm is the robot-only
 model at its home pose; nothing is stepped in time.
 
@@ -56,13 +56,13 @@ def source_targets(data, offset):
 
 
 def sweep(k):
-    """Targets that change on every command (a sine sweep). S5: a command that stands still freezes the trim, so the cases that check integration send these."""
+    """Targets that change on every command (a sine sweep), so the cases that check integration send these."""
     return source_targets(None, [0.03 * np.sin(0.05 * k), 0.0, 0, 0, 0, 0, 0])
 
 
 def case_a(model, data):
     """The layer's correction for a sequence of commands equals the old in-script trim for the same inputs (the same integration, the same gains
-    and limits, the same freeze)."""
+    and limits), with the SF-118 leak applied before each integration step."""
     layer = SagLayer(model, data, "left", HOME)
     recorded = []
     real = sag_layer._sag_trim_step
@@ -83,9 +83,11 @@ def case_a(model, data):
     old = old_trim_function()
     C_old = {"p": np.zeros(3), "r": np.zeros(3)}
     for t_, p_err, r_err, dt in recorded:
+        decay = float(np.exp(-dt / float(SAG_LAYER_CFG["sag_leak_tau_s"])))          # SF-118: the leak, before the integration step
+        C_old["p"], C_old["r"] = C_old["p"] * decay, C_old["r"] * decay
         old(C_old, PICK_PLACE_CFG, model, "left", t_, p_err, r_err, dt)
     ok = np.array_equal(layer.C["p"], C_old["p"]) and np.array_equal(layer.C["r"], C_old["r"]) and len(recorded) == 200
-    return check("(S1) the layer's correction equals the old in-script trim for the same input sequence (200 commands)", ok,
+    return check("(S1) the layer's correction equals the old in-script trim plus the leak, for the same input sequence (200 commands)", ok,
                  f"correction p {np.round(1000 * layer.C['p'], 4)} mm (old {np.round(1000 * C_old['p'], 4)}), identical: {ok}")
 
 
@@ -287,9 +289,6 @@ def case_c_periodic(model, data):
                  f"resets {0 if layer.reset_at is None else 1}; trim steps {steps} of {n_ticks} ticks; peak |C| {1000 * peak:.2f} mm, final {1000 * float(np.linalg.norm(layer.C['p'])):.2f} mm")
 
 
-SAG_STILL_N = int(SAG_LAYER_CFG["freeze_still_ticks"])
-
-
 def _arm_cmd(q, manip):
     """A command as the loop builds it: an arms command with the safety filter's manipulation tag (the sag trim no longer reads it, S5)."""
     return {"mode": "arms", "arm_targets": {"left": [float(v) for v in q]}, "gripper": {"left": 0.044}, "manip": manip, "period_steps": 3}
@@ -332,8 +331,8 @@ def _standing(layers, data, k0, n, q, manip=False):
 
 
 def case_s5_a(model, data):
-    """S5 (a): a standing command freezes the trim after freeze_still_ticks unchanged commands. From then on nothing is integrated, and the
-    trim value is kept (not zeroed): C does not move over 60 standing commands."""
+    """SF-118 (replaces the S5 freeze test): a standing command no longer freezes the trim. 60 standing commands after a moving run each run the
+    trim step, and the trim changes on each one (the leak, plus any error still there)."""
     layer, layers = _pair(model, data)
     k = _moving(layers, data, 0, 120)
     q = source_targets(data, [0.01, 0.0, 0.0, 0, 0, 0, 0])
@@ -344,42 +343,10 @@ def case_s5_a(model, data):
             correct_command(layers, _arm_cmd(q, False), data, (k + j) * NOMINAL, NOMINAL)
             cs.append(layer.C["p"].copy())
     _, steps = _count_steps(stand)
-    held = all(np.array_equal(c, cs[SAG_STILL_N - 1]) for c in cs[SAG_STILL_N - 1:])
-    ok = steps == SAG_STILL_N and layer.frozen and held and float(np.linalg.norm(cs[-1])) > 0.0
-    return check("S5 (a) a standing command freezes the trim after freeze_still_ticks commands: no integration after, C kept", ok,
-                 f"trim steps in 60 standing commands {steps} (expected {SAG_STILL_N}); frozen {layer.frozen}; C held {held}; |C| {1000 * float(np.linalg.norm(cs[-1])):.2f} mm")
-
-
-def case_s5_b(model, data):
-    """S5 (b): the trim resumes at the first changed command after a freeze, and integrates on every changed command after that."""
-    layer, layers = _pair(model, data)
-    k = _moving(layers, data, 0, 60)
-    q = source_targets(data, [0.01, 0.0, 0.0, 0, 0, 0, 0])
-    k = _standing(layers, data, k, SAG_STILL_N + 10, q)
-    frozen_then = layer.frozen
-    _, steps = _count_steps(lambda: _moving(layers, data, k, 20))
-    kinds = [e["kind"] for e in layer.log if e["kind"] in ("freeze", "resume")]
-    ok = frozen_then and not layer.frozen and steps == 20 and kinds[-2:] == ["freeze", "resume"]
-    return check("S5 (b) the trim resumes at the first changed command and integrates on each one after", ok,
-                 f"frozen while standing {frozen_then}; trim steps in 20 changed commands {steps}; log {kinds[-2:]}")
-
-
-def case_s5_c(model, data):
-    """S5 (c): a change below freeze_tol_rad (1e-10 rad) does not resume the trim; a change above it (1e-8 rad) does."""
-    layer, layers = _pair(model, data)
-    k = _moving(layers, data, 0, 60)
-    q = source_targets(data, [0.01, 0.0, 0.0, 0, 0, 0, 0])
-    k = _standing(layers, data, k, SAG_STILL_N + 5, q)
-    q_tiny = q.copy()
-    q_tiny[0] += 1e-10
-    k = _standing(layers, data, k, 1, q_tiny)
-    still = layer.frozen
-    q_small = q_tiny.copy()
-    q_small[0] += 1e-8
-    _standing(layers, data, k, 1, q_small)
-    ok = still and not layer.frozen
-    return check("S5 (c) a 1e-10 rad change keeps the trim frozen; a 1e-8 rad change resumes it", ok,
-                 f"frozen after the 1e-10 change {still}; resumed after the 1e-8 change {not layer.frozen}")
+    changed = all(not np.array_equal(cs[i], cs[i - 1]) for i in range(1, len(cs)))
+    ok = steps == 60 and changed and float(np.linalg.norm(cs[-1])) > 0.0
+    return check("SF-118 (a) a standing command does not freeze the trim: all 60 standing commands integrate and leak", ok,
+                 f"trim steps in 60 standing commands {steps} (expected 60); C changed on every one {changed}; |C| {1000 * float(np.linalg.norm(cs[-1])):.2f} mm")
 
 
 def case_s5_d(model, data):
@@ -400,19 +367,68 @@ def case_s5_d(model, data):
                  f"same output with either tag {same}; corrected {changed}; |C| {1000 * float(np.linalg.norm(la.C['p'])):.2f} mm")
 
 
-def case_s5_e(model, data):
-    """S5 (e): a frozen trim value is preserved, not zeroed, and it still acts through the command: 400 standing commands keep C exactly, and
-    the output of a standing command differs from the source's raw targets while C is not zero."""
-    layer, layers = _pair(model, data)
-    k = _moving(layers, data, 0, 120)
-    q = source_targets(data, [0.01, 0.0, 0.0, 0, 0, 0, 0])
-    k = _standing(layers, data, k, SAG_STILL_N + 2, q)
-    c_frozen = layer.C["p"].copy()
-    k = _standing(layers, data, k, 400, q)
-    out = np.array(correct_command(layers, _arm_cmd(q, False), data, k * NOMINAL, NOMINAL)["arm_targets"]["left"])
-    ok = np.array_equal(layer.C["p"], c_frozen) and float(np.linalg.norm(c_frozen)) > 0.0 and not np.allclose(out, q) and layer.frozen
-    return check("S5 (e) a frozen trim value is preserved over 400 standing commands and still acts through the command", ok,
-                 f"C unchanged {np.array_equal(layer.C['p'], c_frozen)}; |C| {1000 * float(np.linalg.norm(c_frozen)):.2f} mm; output corrected {not np.allclose(out, q)}")
+TAU = float(SAG_LAYER_CFG["sag_leak_tau_s"])
+GAIN = float(PICK_PLACE_CFG["sag_gain_per_s"])
+
+
+def _leak_trace(model, errors):
+    """The integrator alone (no solver, no arm), one tick per entry of errors: the leak, then the integration step, as SagLayer.correct runs
+    them. errors: the position error (m, 3) of each tick; the rotation error is zero. Returns the trim's position after each tick."""
+    hmr.reset(model)
+    C = {"p": np.zeros(3), "r": np.zeros(3)}
+    out, t = [], 0.0
+    for e in errors:
+        sag_layer._sag_leak(C, model, "left", t, NOMINAL)
+        sag_layer._sag_trim_step(C, PICK_PLACE_CFG, model, "left", t, np.asarray(e, float), np.zeros(3), NOMINAL)
+        out.append(C["p"].copy())
+        t += NOMINAL
+    return out
+
+
+def case_leak_constant(model, data):
+    """SF-118 (L1): a constant error of 1 mm for 100 ticks. The trim follows the leaky step in closed form, stays below its steady state, and
+    reaches it after 5 time constants. The steady state is gain x error x tau (15 mm for 1 mm). 100 ticks is 0.67 s, under a seventh of tau,
+    so the trim is still far from steady there."""
+    e = np.array([0.001, 0.0, 0.0])
+    d = float(np.exp(-NOMINAL / TAU))
+    inc = GAIN * 0.001 * NOMINAL                        # the step added on each tick (m)
+    c_ss = inc / (1.0 - d)                              # the steady state: step / (1 - decay per tick)
+    trace = _leak_trace(model, [e] * 100)
+    closed = inc * (1.0 - d ** 100) / (1.0 - d)
+    on_closed_form = abs(trace[-1][0] - closed) < 1e-12
+    no_overshoot = max(p[0] for p in trace) <= c_ss * (1 + 1e-9)
+    long_run = _leak_trace(model, [e] * int(round(5 * TAU / NOMINAL)))
+    converged = abs(long_run[-1][0] - c_ss) / c_ss < 0.01
+    formula = abs(c_ss - GAIN * 0.001 * TAU) / (GAIN * 0.001 * TAU) < 0.01
+    ok = on_closed_form and no_overshoot and converged and formula
+    return check("SF-118 (L1) constant error: the trim follows the leaky step, does not pass the steady state, and reaches it (gain x error x tau)", ok,
+                 f"after 100 ticks {1000 * trace[-1][0]:.3f} mm (closed form {1000 * closed:.3f}); steady state {1000 * c_ss:.3f} mm; "
+                 f"after 5 tau {1000 * long_run[-1][0]:.3f} mm; gain x error x tau {1000 * GAIN * 0.001 * TAU:.3f} mm")
+
+
+def case_leak_alternating(model, data):
+    """SF-118 (L2): an error of +1 mm and then -1 mm on alternate ticks for 200 ticks. The conflicting errors cancel: the trim stays within 0.1 mm
+    of zero (a constant 1 mm error would reach 15 mm)."""
+    errs = [np.array([0.001 if k % 2 == 0 else -0.001, 0.0, 0.0]) for k in range(200)]
+    trace = _leak_trace(model, errs)
+    peak = max(abs(p[0]) for p in trace)
+    ok = peak < 0.0001
+    return check("SF-118 (L2) alternating +1 mm and -1 mm errors: the trim stays near zero", ok, f"peak |C| {1000 * peak:.4f} mm (limit 0.1 mm)")
+
+
+def case_leak_decay(model, data):
+    """SF-118 (L3): a 1 mm error for 50 ticks, then zero error for 200 ticks. The trim falls toward zero with time constant tau: after the 200
+    zero-error ticks it is exp(-200 dt / tau) of its value at tick 50, and the time constant fitted to those two values is tau."""
+    errs = [np.array([0.001, 0.0, 0.0])] * 50 + [np.zeros(3)] * 200
+    trace = _leak_trace(model, errs)
+    c50, c250 = trace[49][0], trace[249][0]
+    ratio = c250 / c50
+    fitted = -200 * NOMINAL / np.log(ratio)
+    falling = all(trace[k + 1][0] < trace[k][0] for k in range(49, 249))
+    ok = c50 > 0.0 and abs(ratio - np.exp(-200 * NOMINAL / TAU)) < 1e-12 and abs(fitted - TAU) < 1e-9 and falling
+    return check("SF-118 (L3) error then no error: the trim decays toward zero with time constant sag_leak_tau_s", ok,
+                 f"trim at tick 50 {1000 * c50:.3f} mm, at tick 250 {1000 * c250:.3f} mm; ratio {ratio:.6f} (expected {np.exp(-200 * NOMINAL / TAU):.6f}); "
+                 f"fitted tau {fitted:.6f} s (config {TAU} s)")
 
 
 def case_s5_f(model, data):
@@ -426,7 +442,7 @@ def case_s5_f(model, data):
 
 def main():
     model, data = robot()
-    results = [case_a(model, data), case_a_open(model, data), case_b(model, data), case_c(model, data), case_c_periodic(model, data), case_d(model, data), case_e(model, data), case_f(model, data), case_g(model, data), case_h(model, data), case_i(model, data), case_s5_a(model, data), case_s5_b(model, data), case_s5_c(model, data), case_s5_d(model, data), case_s5_e(model, data), case_s5_f(model, data)]
+    results = [case_a(model, data), case_a_open(model, data), case_b(model, data), case_c(model, data), case_c_periodic(model, data), case_d(model, data), case_e(model, data), case_f(model, data), case_g(model, data), case_h(model, data), case_i(model, data), case_s5_a(model, data), case_s5_d(model, data), case_s5_f(model, data), case_leak_constant(model, data), case_leak_alternating(model, data), case_leak_decay(model, data)]
     print(f"{sum(results)} of {len(results)} passed")
     return 0 if all(results) else 1
 

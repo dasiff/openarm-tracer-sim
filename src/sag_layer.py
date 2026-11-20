@@ -14,10 +14,9 @@ What it does, per arm, for every arm command a source sends:
 With the setting off (SAG_LAYER_CFG["enabled"] False) the layer returns the source's targets unchanged.
 
 Frozen during a held-mass ramp: _sag_trim_step reads the held-mass record (hmr.ramp_running) and keeps C while a ramp runs (M238).
-Frozen while the arm's command stands still (Phase S, S5, row SF-109; replaces the M264 source-name gate): each arm
-counts the commands in a row that do not change its targets (every joint within SAG_LAYER_CFG freeze_tol_rad of the previous command). From
-freeze_still_ticks such commands the trim holds its value (no integration; C is kept, not zeroed, and still acts through the command); the
-first changed command resumes it. Derived from the command stream only: no per-source flag, no special case for the base.
+Leaky integrator (Phase S, SF-118; replaces the S5 per-arm freeze of SF-109): on every control tick, before the new correction is added, C is
+multiplied by exp(-dt / SAG_LAYER_CFG sag_leak_tau_s), so an old correction fades when the error no longer renews it. This covers an arm that
+stands still and an arm in transit alike. A failed solve (SF-116) adds no correction, but the leak still runs. No per-source flag, no special case for the base.
 Holds its value during a helper pause: a paused source sends no commands, so nothing is integrated; after the pause the first command
 integrates one nominal period only (the gap is not counted).
 Reset (M263, David): ONLY when the open-catch helper releases a caught open. The release arms the watch (release_open); when that release
@@ -58,8 +57,20 @@ def _clip_norm(v, limit):
     return v if n <= limit else v * (limit / n)
 
 
+def _sag_leak(C, model, side, t, dt):
+    """SF-118 leak: C is multiplied by exp(-dt / sag_leak_tau_s) (SAG_LAYER_CFG). It runs on every control tick, before the new correction is added,
+    and on a tick whose solve failed (SF-116), so a stale correction fades during a failure streak. Not while a held-mass ramp runs: C keeps its
+    value (M238), the same hold as the integration below."""
+    if hmr.ramp_running(model, side, t):
+        return
+    decay = float(np.exp(-dt / float(SAG_LAYER_CFG["sag_leak_tau_s"])))
+    C["p"] = C["p"] * decay
+    C["r"] = C["r"] * decay
+
+
 def _sag_trim_step(C, cfg, model, side, t, p_err, r_err, dt):
-    """One integral step of the sag correction C (position "p", rotation "r"): the one line that integrates it (M225, M226, M238).
+    """One integral step of the sag correction C (position "p", rotation "r"): the one line that integrates it (M225, M226, M238). The leak of
+    SF-118 runs before it (_sag_leak), in SagLayer.correct.
 
     p_err (m) and r_err (rad, a rotation vector) are the reference minus the measured pad pose. The correction does not integrate while a ramp of the held
     mass runs on this side, rate or target ramp (M238): it keeps its value, and it still acts through the command.
@@ -84,9 +95,6 @@ class SagLayer:
         self.guard_count = 0          # logging only: how often the zero-time-step guard fired (a second command in the same tick)
         self.diag = None              # logging only: the reference (forward kinematics of the targets) of the last command: {"t", "fk_p", "fk_R"}
         self.reset_at = None          # logging only: the last reset: (t, cause)
-        self.q_last = None            # S5: the source's joint targets of the previous command of this arm (the freeze test compares with it)
-        self.still_ticks = 0          # S5: how many commands in a row have left the targets unchanged
-        self.frozen = False           # S5: the trim holds its value (the command stands still)
         self.q_cmd = None             # the solver's joint command (warm start), from the measured joints at the first command
         self._reset_warm = False      # SF-117: set by a failed solve; the next call takes the warm start from the measured joints before it solves
         self.t_last = None            # the time of the last correction (a pause is not counted)
@@ -114,17 +122,15 @@ class SagLayer:
             self.guard_count += 1
             return q_src.copy() if self.q_cmd is None else self.q_cmd.copy()
         self.t_last = t
-        self._track_still(q_src, t)
         p_ref, R_ref = self._pose(data.qpos, q_src)                                          # the reference: the hand pose the targets imply
         p_now, R_now = self.arm.pad_pose(data)                                               # the measured hand pose
         self.diag = {"t": t, "fk_p": p_ref.copy(), "fk_R": R_ref.copy()}                     # logging only
         # SF-116 (Phase S fix): the trim is integrated on a trial copy, and the copy is kept only if the solver succeeds on this tick.
-        # On a solver failure the trim keeps its last value from a successful solve. Both gates must pass for the trim to change:
-        # not frozen (S5) and the solver succeeded (SF-116).
+        # On a solver failure the trim takes the leak only (SF-118), no new correction.
         trial = {"p": self.C["p"].copy(), "r": self.C["r"].copy()}
-        if not self.frozen:                                                                  # S5: a standing command holds the trim (C kept, not integrated)
-            _sag_trim_step(trial, PICK_PLACE_CFG, self.model, self.side, t, p_ref - p_now,
-                           Rotation.from_matrix(R_ref @ R_now.T).as_rotvec(), dt)
+        _sag_leak(trial, self.model, self.side, t, dt)                                       # SF-118: the leak, every tick, before the new correction
+        _sag_trim_step(trial, PICK_PLACE_CFG, self.model, self.side, t, p_ref - p_now,
+                       Rotation.from_matrix(R_ref @ R_now.T).as_rotvec(), dt)
         R_t = (Rotation.from_rotvec(trial["r"]) * Rotation.from_matrix(R_ref)).as_matrix()
         if self._reset_warm:                                                                 # SF-117: after a failed solve the warm start is taken from the measured joints again (it was frozen at the failing pose)
             self.q_cmd = data.qpos[self.arm.qadr].copy()
@@ -135,7 +141,8 @@ class SagLayer:
         self.arm.dt = dt
         try:
             self.arm.step(data, p_ref + trial["p"], R_t)                                     # the existing solver, one step toward the corrected pose
-        except Exception as e:                                                               # the solver found no solution: the source's targets pass, the trim is not updated (SF-116)
+        except Exception as e:                                                               # the solver found no solution: the source's targets pass, no new correction (SF-116), the leak still runs (SF-118)
+            _sag_leak(self.C, self.model, self.side, t, dt)
             self._solver_failed(t, e)
             self._reset_warm = True                                                          # SF-117: the next call starts from the measured joints
             return q_src.copy()
@@ -171,21 +178,6 @@ class SagLayer:
             _log.info("sag %s: episode ended at t=%.3f s inside a failure streak of %d consecutive solver failures.", self.side, t, self._fail_streak)
             self.log.append({"t": t, "kind": "episode_ended_in_streak", "streak": self._fail_streak})
             self._fail_streak = 0
-
-    def _track_still(self, q_src, t):
-        """S5 (Phase S, SF-109): counts the commands in a row that leave this arm's targets unchanged (every joint within freeze_tol_rad of the
-        previous command). The trim is frozen from the freeze_still_ticks-th such command, and resumes at the first changed command. Logs each
-        change of state ("freeze", "resume") in self.log. Reads the source's targets only; the trim itself is not touched here."""
-        tol = float(SAG_LAYER_CFG["freeze_tol_rad"])
-        if self.q_last is not None and float(np.max(np.abs(q_src - self.q_last))) <= tol:
-            self.still_ticks += 1
-        else:
-            self.still_ticks = 0
-        self.q_last = q_src.copy()
-        frozen = self.still_ticks >= int(SAG_LAYER_CFG["freeze_still_ticks"])
-        if frozen != self.frozen:
-            self.log.append({"t": t, "kind": "freeze" if frozen else "resume"})
-        self.frozen = frozen
 
     def release_open(self, t):
         """The open-catch helper released a caught open (M263): the only call that arms the watch. An ordinary gripper-open command does not call it."""
@@ -233,9 +225,9 @@ class SagLayer:
 
 
 def correct_command(layers, cmd, data, t, nominal_dt):
-    """The sag layer for one command from the loop, the same for every source (S5, Phase S: the source-name gate of M264 is removed; the
-    per-arm freeze inside SagLayer.correct decides when the trim holds). Every arm target of an arms command is corrected; other commands
-    pass through unchanged. layers: side -> SagLayer. nominal_dt: the command's period (s)."""
+    """The sag layer for one command from the loop, the same for every source (S5, Phase S: the source-name gate of M264 is removed; the leak
+    of SF-118 inside SagLayer.correct is the only per-tick change of the trim besides the integration). Every arm target of an arms command is
+    corrected; other commands pass through unchanged. layers: side -> SagLayer. nominal_dt: the command's period (s)."""
     if cmd.get("mode") != "arms" or not cmd.get("arm_targets"):
         return cmd
     out = {}

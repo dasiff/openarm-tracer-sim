@@ -768,13 +768,12 @@ SAG_LAYER_CFG = {
     # Plain on/off switch, no unit. True (default): the sag trim runs as a layer for every arm command of every source. False (experiment only):
     # the layer passes the source's joint targets through unchanged, so the arm gets no sag correction. [row M262]
     "enabled": True,
-    # Per-arm freeze (Phase S, S5, row SF-109; replaces the old source-name gate of M264). The trim of an arm stops accumulating while that
-    # arm's command stands still: a command "changed" when some joint differs from the arm's previous command by more than freeze_tol_rad.
-    # freeze_tol_rad: radians, the change threshold (1e-9 rad is float noise, the same test as the filter's "different" command, SF-111).
-    "freeze_tol_rad": 1e-9,
-    # freeze_still_ticks: count of commands in a row that do not change the arm, after which the trim freezes. 3 (about 20 ms at the 150 Hz
-    # control tick): one or two repeated targets between chunk updates do not freeze it, and the lag is well below a sag's time scale. [row SF-109]
-    "freeze_still_ticks": 3,
+    # Leaky integrator (Phase S, row SF-118; replaces the per-arm freeze of SF-109, which is removed). On every control tick the trim is multiplied
+    # by exp(-dt / sag_leak_tau_s) before the new correction is added, so an old correction fades when the error no longer renews it. The freeze
+    # and its two settings (freeze_tol_rad, freeze_still_ticks) are gone.
+    # sag_leak_tau_s: seconds, the time constant (with no new error the trim falls to 1/e of its value in this time). 5.0 is David's value from
+    # the SF-118 brief (2026-11-20). [row SF-118]
+    "sag_leak_tau_s": 5.0,
 }
 
 # ----------------------------------------------------------------------------------------------------------

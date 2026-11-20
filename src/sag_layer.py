@@ -88,6 +88,7 @@ class SagLayer:
         self.still_ticks = 0          # S5: how many commands in a row have left the targets unchanged
         self.frozen = False           # S5: the trim holds its value (the command stands still)
         self.q_cmd = None             # the solver's joint command (warm start), from the measured joints at the first command
+        self._reset_warm = False      # SF-117: set by a failed solve; the next call takes the warm start from the measured joints before it solves
         self.t_last = None            # the time of the last correction (a pause is not counted)
         self.open_t = None            # the time the open that is being watched started
         self.still = None             # the stall test's state of that open
@@ -125,6 +126,9 @@ class SagLayer:
             _sag_trim_step(trial, PICK_PLACE_CFG, self.model, self.side, t, p_ref - p_now,
                            Rotation.from_matrix(R_ref @ R_now.T).as_rotvec(), dt)
         R_t = (Rotation.from_rotvec(trial["r"]) * Rotation.from_matrix(R_ref)).as_matrix()
+        if self._reset_warm:                                                                 # SF-117: after a failed solve the warm start is taken from the measured joints again (it was frozen at the failing pose)
+            self.q_cmd = data.qpos[self.arm.qadr].copy()
+            self._reset_warm = False
         if self.q_cmd is None:
             self.q_cmd = data.qpos[self.arm.qadr].copy()
         self.arm.q_cmd = self.q_cmd
@@ -133,6 +137,7 @@ class SagLayer:
             self.arm.step(data, p_ref + trial["p"], R_t)                                     # the existing solver, one step toward the corrected pose
         except Exception as e:                                                               # the solver found no solution: the source's targets pass, the trim is not updated (SF-116)
             self._solver_failed(t, e)
+            self._reset_warm = True                                                          # SF-117: the next call starts from the measured joints
             return q_src.copy()
         self.C["p"], self.C["r"] = trial["p"], trial["r"]
         self._solver_ok(t)

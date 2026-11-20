@@ -213,3 +213,19 @@ What this shows:
 Not done: no investigation of why the solver fails; the stale launcher (`KeyError 'C_p'`) is unchanged; scratch edits (seed pin, trace read, INFO config) are not in the branch; nothing pushed.
 
 Recommended next steps (need David's decision): (1) run pre-S5 (7290d3c) with the same shim and seed to see whether the pick succeeds there; (2) decide whether S5's sag call on every arm command should stay, since the solver fails from the first tick on staging commands; (3) the solver failure cause is a separate task.
+
+## 14. Why the solver fails on every call, and the warm-start fix (SF-117, 2026-11-20)
+
+Diagnosis (scratch probes, no repo edits):
+- `MinkArm.step` builds the solver's configuration from `q_cmd`, the warm start, not from the measured joints. `SagLayer` sets `q_cmd` from the measured joints on its first `correct()` call and advances it only on success. On HEAD the first call came at t = 1.4 s (S5 removed the manipulation gate), when the arm was at zero.
+- At zero the QP is infeasible: the elbow (joint 4) is 10 deg outside its margin window, and the speed cap (0.5 rad/s, 1/150 s per tick) allows about 0.19 deg per tick. The first solve fails, `q_cmd` stays at zero, and every later call fails too.
+- The elbow passed its margin edge at t = 8.2 s on both arms, and the solver still failed on every call after that (left 11,826, right 3,456), so the stale warm start is the persistence.
+- Test: the same measured IN pose fails with warm start zero and succeeds with warm start IN; measured zero with warm start home succeeds.
+
+Fix (SF-117): after a failed solve, the next call takes `q_cmd` from the measured joints before it solves. The success path and the solver inputs are unchanged, and no gate on when the solver runs is added.
+
+Tests (commit on this branch):
+- `experiments/sag_warm_start_reset_test.py`: 7 of 7. A1 first call at zero fails; A2 with the fix the next call at the IN pose succeeds; A3 the warm start advances on that success; A4 without the reset the same call fails; B1 five failing calls at zero; B2 the first good-pose call succeeds and ends the streak; C1 consecutive successes advance `q_cmd` and never set the reset flag.
+- Existing sag tests: `sag_layer_test` 17 of 17; `sag_solver_failure_test` 10 of 10; `held_mass_ramp_test` 40 of 40; `open_catch_test` 12 of 12.
+
+Not done: the full held scenario with this fix (not run, per the brief). The success-path behaviour is unchanged, but the pick result with the fix is not yet measured.

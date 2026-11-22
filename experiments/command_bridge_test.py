@@ -25,7 +25,7 @@ os.environ.setdefault("MUJOCO_GL", "egl")
 
 import numpy as np  # noqa: E402
 
-from src.control_loop import run_loop  # noqa: E402
+from src.control_loop import BRIDGE_ACCEPTED_LOG, run_loop  # noqa: E402
 from experiments_loader import load, steps_per_frame, SPAWN  # noqa: E402
 
 ROUTES = {k: "script" for k in ("base", "pedestal", "arms.left", "arms.right", "gripper.left", "gripper.right")}
@@ -38,15 +38,20 @@ def check(name, ok, detail=""):
 
 
 def run(ticks, make_cmd, bridge=None):
-    """Runs the loop for `ticks` ticks with a script make_cmd(tick, rest) -> command or None; returns (applied joint-3 target per tick, the loop's result, the model, the last obs)."""
+    """Runs the loop for `ticks` ticks with a script make_cmd(tick, rest) -> command or None; returns (joint-3 command of the bridge per tick, the loop's
+    result, the model, the last obs). The bridge's own limited command is read from BRIDGE_ACCEPTED_LOG["limited_L"] (SF-119): the sources see their
+    own commanded targets now, not the bridge's, so the view can no longer show the bridge's limits."""
     model, data = load()
     spf = steps_per_frame(model)
-    seen = {"rest": None, "applied": [], "grip": [], "ped": []}
+    seen = {"rest": None, "applied": [], "view": [], "grip": [], "ped": []}
+    BRIDGE_ACCEPTED_LOG["limited_L"] = None
 
     def step(obs):
         if seen["rest"] is None:
             seen["rest"] = np.array(obs["applied"]["arm_targets"]["left"])
-        seen["applied"].append(obs["applied"]["arm_targets"]["left"][2])
+        bridge_cmd = BRIDGE_ACCEPTED_LOG.get("limited_L")
+        seen["applied"].append(float(seen["rest"][2]) if bridge_cmd is None else float(bridge_cmd[2]))
+        seen["view"].append(float(obs["applied"]["arm_targets"]["left"][2]))            # what the source sees: its own commanded target (SF-119)
         seen["grip"].append(obs["applied"]["gripper"]["left"])
         seen["ped"].append(obs["applied"]["pedestal"])
         return make_cmd(obs["tick"], seen["rest"])
@@ -63,9 +68,10 @@ def arm_cmd(q3):
 
 
 def main():
-    print("1. bridge OFF: a 0.6 rad step is applied at once", flush=True)
-    a, res, seen = run(120, lambda k, rest: {"mode": "arms", "arm_targets": {"left": [float(x) for x in (rest + np.where(np.arange(7) == 2, 0.6, 0.0))]}} if k >= 30 else None)
-    check("the applied target jumped by 0.6 rad", abs(a[-1] - a[0] - 0.6) < 1e-6 and res["bridge_log"] == [], f"{a[0]:.3f} -> {a[-1]:.3f}")
+    print("1. bridge OFF (passed explicitly: the default is on): a 0.6 rad step is applied at once", flush=True)
+    a, res, seen = run(120, lambda k, rest: {"mode": "arms", "arm_targets": {"left": [float(x) for x in (rest + np.where(np.arange(7) == 2, 0.6, 0.0))]}} if k >= 30 else None, {"enabled": False})
+    v = np.array(seen["view"])                                                          # bridge off: the source's view is the command applied at once
+    check("the target jumped by 0.6 rad", abs(v[-1] - v[0] - 0.6) < 1e-6 and res["bridge_log"] == [], f"{v[0]:.3f} -> {v[-1]:.3f}")
 
     print("2. bridge ON: a 0.2 rad step is accepted and limited to 0.01 rad per update", flush=True)
     a, res, seen = run(240, lambda k, rest: {"mode": "arms", "arm_targets": {"left": [float(x) for x in (rest + np.where(np.arange(7) == 2, 0.2, 0.0))]}} if k >= 30 else None, {"enabled": True})

@@ -30,7 +30,8 @@ the source's next command is due; a new command before that restarts the ramp fr
 delay (33 ms at 30 Hz, 6.7 ms at 150 Hz). "hold" keeps each target unchanged until the next one arrives. A source may have "hz" (a number, or a
 function returning the rate of the commands it is giving now); without it the source's period is one tick. A source that gives commands at less
 than the tick rate gives them only on its due ticks (see src/sequential_policy.py). The pedestal is not interpolated (it
-ramps itself at its own speed limit), and obs["applied"] always holds the final target.
+ramps itself at its own speed limit). obs["applied"]["arm_targets"] holds the arm targets the sources commanded, before the sag trim, the
+bridge and the safety filter (SF-119); the arms receive the corrected targets through the hold (the final targets).
 
 The command bridge (cfg["command_bridge"], src/task_config.COMMAND_BRIDGE_CFG, design plan section 1, row M193), on by default: the real arms' command limits on the 14 arm joints. The arm
 targets that sources give are not applied directly: the bridge keeps the latest target per arm and, at its own rate (50 Hz: every 3rd tick), (1) suspends commands while any arm joint's
@@ -112,8 +113,10 @@ from src.elbow_guard import ElbowGuard                        # M269: the elbow 
 # Populated during run, read by extraction script via module introspection
 SERVO_LOG = {"tick": -1, "tau_cmd": None, "tau_ff": None}
 
-# Bridge accepted targets per arm at the last bridge update, for diagnostic extraction (None until that arm has an accepted target)
-BRIDGE_ACCEPTED_LOG = {"tick": -1, "accepted_L": None, "accepted_R": None}
+# Bridge accepted targets per arm at the last bridge update, for diagnostic extraction (None until that arm has an accepted target).
+# "limited_L"/"limited_R" (SF-119, logging only): the bridge's own command per arm after its rate limit, i.e. what it sends on to the arm. It already
+# includes the sag trim, since the trim acts on the source's command before the bridge.
+BRIDGE_ACCEPTED_LOG = {"tick": -1, "accepted_L": None, "accepted_R": None, "limited_L": None, "limited_R": None}
 
 LOOP_CFG = {
     "source_hz": 150.0,            # command / viewer tick; the physics rate must be a whole multiple (5 steps at 750 Hz) [row M121 PENDING David: no decision recorded]
@@ -551,10 +554,15 @@ def run_loop(model, data, sources, cfg, viewer=None, logger=None):
 
     set_grip_force([ceiling, ceiling])
 
-    def applied():
-        """Reports the targets the loop is currently applying (the "applied" entry of the observation).
+    def hold_arm_now():
+        """The arm targets the loop holds now, after the sag trim and the bridge: {side: list of 7 radians}. The arms' own targets."""
+        return {s: [float(hold_qpos_targets[a]) for a in arm_act[s]] for s in sides}
 
-        Reads the base Twist, the gripper force limits, the hold targets from the enclosing function.
+    def applied():
+        """Reports what the sources see of the loop's targets (the "applied" entry of the observation).
+
+        The arm targets are the ones the sources commanded (SF-119), not the held ones, so a source never reads back the sag trim, the
+        bridge's limits or the safety filter's shaping. Reads the base Twist, the gripper force limits, the hold targets from the enclosing function.
 
         Returns:
             dict: With the keys
@@ -565,11 +573,11 @@ def run_loop(model, data, sources, cfg, viewer=None, logger=None):
                 "gripper": {side: finger travel target in metres}.
                 "mode": the active subsystem under exclusivity (a name or None).
         """
-        arm_now = {s: [float(hold_qpos_targets[a]) for a in arm_act[s]] for s in sides}
-        if sf_plugin is not None and sf_plugin.mode == "on" and getattr(sf_plugin, "braking", None) is not None and src_arm_targets:
-            # Phase C step 3: with the braking layer on, the sources see the targets they commanded (the layer shapes the way there, it does not
-            # change the target). Otherwise a source that checks "my last command was applied" (the staging source) never advances while the
-            # shaped output lags the target. Off, shadow and the layer-free runs keep the applied (post-filter) targets: byte-identical.
+        arm_now = hold_arm_now()
+        if src_arm_targets:
+            # SF-119 (cut the loop, David 2026-11-22): the sources see the arm targets they commanded, for every source. Before the first arms
+            # command there is nothing commanded yet, so the hold is shown. The arms get the corrected targets through the hold (apply_cmd).
+            # Phase C step 3 (braking layer) already showed the commanded targets; this makes it the rule for all modes.
             arm_now = {s: list(src_arm_targets.get(s, arm_now[s])) for s in sides}
         return {"twist": st["twist"], "gripper_force": dict(grip_force), "pedestal": float(hold_qpos_targets[ped_aid]),
                 "arm_targets": arm_now,
@@ -739,6 +747,7 @@ def run_loop(model, data, sources, cfg, viewer=None, logger=None):
         BRIDGE_ACCEPTED_LOG["tick"] = frame_
         BRIDGE_ACCEPTED_LOG["accepted_L"] = acc["left"].copy() if "left" in acc else None
         BRIDGE_ACCEPTED_LOG["accepted_R"] = acc["right"].copy() if "right" in acc else None
+        BRIDGE_ACCEPTED_LOG["limited_L"], BRIDGE_ACCEPTED_LOG["limited_R"] = cmd_q["left"].copy(), cmd_q["right"].copy()
         apply_cmd({"mode": "arms", "arm_targets": out, "period_steps": bridge_every * steps_per_frame})
 
     # --- Exclusivity and the hold rule ---
@@ -1162,9 +1171,13 @@ def run_loop(model, data, sources, cfg, viewer=None, logger=None):
         if not cfg["exclusive"] and any(c["mode"] == "idle" for c in cmds):
             stop_base()
         for cmd in to_apply:
+            if cmd.get("mode") == "arms" and cmd.get("arm_targets"):
+                src_arm_targets.update({s_: [float(v) for v in q_] for s_, q_ in cmd["arm_targets"].items()})   # SF-119: the sources' view (applied()) is what the source commanded here
             if sf_plugin is not None and cmd.get("mode") == "arms" and cmd.get("arm_targets"):   # row SF-59: the safety filter sits after the helpers (open catch, weighing) and before the sag trim
-                src_arm_targets.update({s_: [float(v) for v in q_] for s_, q_ in cmd["arm_targets"].items()})   # Phase C step 3
-                cmd = {**cmd, "arm_targets": sf_plugin.process(cmd["arm_targets"], {s_: hold_det[s_].holding for s_ in sides}, applied()["arm_targets"], t, bool(cmd.get("manip")), cmd.get("held_object"))}
+                # The filter's current targets (read at its first call only). With the braking layer on: the targets it was given, as before SF-119.
+                # Otherwise the held targets, as before SF-119 (applied() now shows the commanded ones, which the filter must not read).
+                filter_now = applied()["arm_targets"] if (sf_plugin.mode == "on" and getattr(sf_plugin, "braking", None) is not None) else hold_arm_now()
+                cmd = {**cmd, "arm_targets": sf_plugin.process(cmd["arm_targets"], {s_: hold_det[s_].holding for s_ in sides}, filter_now, t, bool(cmd.get("manip")), cmd.get("held_object"))}
                 if sf_plugin.limit_reached() and stop_req[0] is None:
                     stop_req[0] = "safety_filter_limit"
             cmd = sag_correct(cmd)                          # M262: the sag trim sits between the source and the bridge (every source; the same code)

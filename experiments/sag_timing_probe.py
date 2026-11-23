@@ -38,32 +38,32 @@ from src.task_config import MINK_CFG  # noqa: E402
 POS_TOL, ROT_TOL, MAX_ITERS = 1e-4, 1e-3, 10     # 0.1 mm, 0.001 rad, at most 10 iterations (David's Part 2 spec)
 
 
-def pass2(layer, data, q1, p_t, R_t, dt, cache):
-    """Scratch second pass: from q1 toward the pad pose (p_t, R_t). Returns (q, iterations, pos_err_m, rot_err_rad, seconds)."""
+def step2_prototype(layer, data, q1, C):
+    """SCRATCH prototype of SF-121 Step 2 (timed here before any build): the learned offset C as ONE linear joint change at Pass 1's joints q1,
+    dq = J^T (J J^T + damping I)^-1 e with e = [C p; C r] (the pad's world twist) and the arm Jacobian at the pad centre; command = q1 + dq
+    clamped to the hard joint limits. Works on the layer's scratch copy only (no change to the arm's state). Returns (command, clamped, seconds)."""
+    import mujoco as _mj
+    from src.task_config import MINK_CFG as _MC
+    from src.robot_helpers import arm_ids as _ids
     arm = layer.arm
     t0 = time.perf_counter()
-    if "config" not in cache:
-        cache["config"] = mink.Configuration(arm.model, q=data.qpos.copy())
-    config = cache["config"]
-    q = data.qpos.copy()
-    q[arm.qadr] = q1
-    config.update(q)
-    R_tcp = np.asarray(R_t, float) @ arm.R_pad_in_tcp.T
-    p_tcp = np.asarray(p_t, float) - R_tcp @ arm.pad_in_tcp
-    frame = mink.FrameTask(f"openarm_{layer.side}_hand_tcp", "body", position_cost=MINK_CFG["position_cost"], orientation_cost=MINK_CFG["orientation_cost"])
-    frame.set_target(mink.SE3.from_rotation_and_translation(mink.SO3.from_matrix(R_tcp), p_tcp))
-    it = 0
-    pos_err = rot_err = np.inf
-    while True:
-        e = frame.compute_error(config)                     # mink's body twist: translation (3), rotation (3)
-        pos_err, rot_err = float(np.linalg.norm(e[:3])), float(np.linalg.norm(e[3:]))
-        if (pos_err < POS_TOL and rot_err < ROT_TOL) or it >= MAX_ITERS:
-            break
-        v = mink.solve_ik(config, [frame, arm.posture], dt, MINK_CFG["solver"], damping=MINK_CFG["damping"], limits=arm.pose_limits,
-                          constraints=[arm.freeze])
-        config.integrate_inplace(v, dt)
-        it += 1
-    return config.q[arm.qadr].copy(), it, pos_err, rot_err, time.perf_counter() - t0
+    scratch = layer.scratch
+    scratch.qpos[:] = data.qpos
+    scratch.qpos[arm.qadr] = q1
+    _mj.mj_kinematics(layer.model, scratch)
+    _mj.mj_comPos(layer.model, scratch)
+    p_pad, _ = arm.pad_pose(scratch)
+    jacp = np.zeros((3, layer.model.nv))
+    jacr = np.zeros((3, layer.model.nv))
+    _mj.mj_jac(layer.model, scratch, jacp, jacr, p_pad, arm.tcp)
+    J = np.vstack([jacp[:, arm.vadr], jacr[:, arm.vadr]])
+    e = np.concatenate([np.asarray(C["p"], float), np.asarray(C["r"], float)])
+    dq = J.T @ np.linalg.solve(J @ J.T + float(_MC["damping"]) * np.eye(6), e)
+    q = q1 + dq
+    jnt = _ids(layer.model, layer.side)["jnt"]
+    lo, hi = layer.model.jnt_range[jnt, 0], layer.model.jnt_range[jnt, 1]
+    clipped = np.clip(q, lo, hi)
+    return clipped, bool(np.any(np.abs(clipped - q) > 1e-12)), time.perf_counter() - t0
 
 
 def main():
@@ -92,7 +92,6 @@ def main():
 
     mink_arm_mod.MinkArm.step = timed_step
     real_correct = sag_layer.SagLayer.correct
-    caches = {}
 
     def timed_correct(self, q_src, data, t, nominal_dt):
         solver_t["v"] = None
@@ -101,11 +100,9 @@ def main():
         correct_s = time.perf_counter() - t0
         s1 = solver_t["v"] if solver_t["v"] is not None else np.nan
         if self.arm.q_cmd is not None and self.diag is not None:
-            # the scratch pass 2: target = the pad pose of today's solver result, plus the learned offset now
-            p1, R1 = self._pose(data.qpos, q_out)
-            R_t = (Rotation.from_rotvec(self.C["r"]) * Rotation.from_matrix(R1)).as_matrix()
-            q2, it, pe, re_, s2 = pass2(self, data, q_out, p1 + self.C["p"], R_t, self.arm.dt, caches.setdefault(self.side, {}))
-            rec.append((float(t), correct_s, s1, s2, it, pe, re_, 0 if self.side == "left" else 1))
+            # Step 2 prototype on today's Pass 1 output and the learned offset now (timed; the layer's state is not changed)
+            _, clamped, s2 = step2_prototype(self, data, self.arm.q_cmd.copy(), self.C)
+            rec.append((float(t), correct_s, s1, s2, 1 if clamped else 0, 0.0, 0.0, 0 if self.side == "left" else 1))
         return q_out
 
     sag_layer.SagLayer.correct = timed_correct
@@ -131,22 +128,18 @@ def main():
 
     def save():
         R = np.array(rec, float) if rec else np.zeros((0, 8))
-        np.savez(out / f"{a.name}_timing.npz", t=R[:, 0], correct_s=R[:, 1], solver_s=R[:, 2], pass2_s=R[:, 3], iters=R[:, 4],
-                 pos_err_m=R[:, 5], rot_err_rad=R[:, 6], side=R[:, 7])
+        np.savez(out / f"{a.name}_timing.npz", t=R[:, 0], correct_s=R[:, 1], solver_s=R[:, 2], step2_s=R[:, 3], clamped=R[:, 4],
+                 side=R[:, 7])
         summ = {"calls": int(len(R))}
         if len(R):
-            for key, col in (("correct_ms", R[:, 1] * 1e3), ("solver_ms", R[:, 2] * 1e3), ("pass2_ms", R[:, 3] * 1e3)):
+            for key, col in (("correct_ms", R[:, 1] * 1e3), ("solver_ms", R[:, 2] * 1e3), ("step2_ms", R[:, 3] * 1e3)):
                 col = col[np.isfinite(col)]
                 if len(col):
                     summ[key] = {"mean": round(float(col.mean()), 4), "p50": round(float(np.percentile(col, 50)), 4),
                                  "p99": round(float(np.percentile(col, 99)), 4), "max": round(float(col.max()), 4)}
             both = (R[:, 1] + R[:, 3]) * 1e3
-            summ["pass1_plus_pass2_ms"] = {"mean": round(float(both.mean()), 4), "p99": round(float(np.percentile(both, 99)), 4),
+            summ["correct_plus_step2_ms"] = {"mean": round(float(both.mean()), 4), "p99": round(float(np.percentile(both, 99)), 4),
                                            "max": round(float(both.max()), 4)}
-            summ["pass2_iters"] = {"mean": round(float(R[:, 4].mean()), 3), "max": int(R[:, 4].max()),
-                                   "share_at_cap": round(float(np.mean(R[:, 4] >= MAX_ITERS)), 4)}
-            summ["pass2_final_pos_err_mm_max"] = round(float(np.max(R[:, 5]) * 1e3), 5)
-            summ["pass2_final_rot_err_rad_max"] = round(float(np.max(R[:, 6])), 6)
         with open(out / f"{a.name}_timing.json", "w") as f:
             json.dump(summ, f, indent=1)
         print(f"timing_probe: wrote {out / (a.name + '_timing.json')}: {json.dumps(summ)[:400]}", flush=True)

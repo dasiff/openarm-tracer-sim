@@ -39,6 +39,21 @@ MARGIN = float(MINK_CFG["joint_margin_rad"])
 CAP = float(MINK_CFG["max_joint_speed"]) / 150.0
 
 
+def _apply_start_offset(model, data, off):
+    """Scratch change (SF-121 Part 1 a): left joints 2 and 4 set `off` rad inside their margin bounds, qpos and actuator command, at the first tick."""
+    from src.task_config import MINK_CFG as _MC
+    jnt = arm_ids(model, "left")["jnt"]
+    qadr = arm_ids(model, "left")["qadr"]
+    targets = {1: -off, 3: float(model.jnt_range[jnt[3], 0] + _MC["joint_margin_rad"]) + off}
+    for j, q in targets.items():
+        data.qpos[qadr[j]] = q
+        for act in range(model.nu):
+            if model.actuator_trnid[act, 0] == jnt[j]:
+                data.ctrl[act] = q
+    mujoco.mj_forward(model, data)
+    print(f"start_offset: left joints 2 and 4 set to {[round(v, 4) for v in targets.values()]} at the first tick (scratch change)", flush=True)
+
+
 def main():
     argv = sys.argv[1:]
     if "--" not in argv:
@@ -50,9 +65,19 @@ def main():
     ap.add_argument("--out", required=True)
     ap.add_argument("--log-from", type=float, default=3.0)
     ap.add_argument("--stop-time", type=float, default=8.0)
+    ap.add_argument("--hotplate-x", type=float, default=None,
+                    help="scratch change: the task hotplate's x (TASK_CFG and demo_video's MOVED layout, which the held shim uses)")
+    ap.add_argument("--start-margin-offset", type=float, default=None,
+                    help="scratch change: joints 2 and 4 of the left arm start this many rad inside their margin bounds (after the start-up)")
     a = ap.parse_args(mine)
     out = Path(a.out)
     out.mkdir(parents=True, exist_ok=True)
+
+    if a.hotplate_x is not None:
+        from src.task_config import TASK_CFG as _TC
+        _TC["hotplate_xy"] = (a.hotplate_x, _TC["hotplate_xy"][1])
+        import demo_video as _dv
+        _dv.MOVED["hotplate_xy"] = (a.hotplate_x, _dv.MOVED["hotplate_xy"][1])
 
     calls = {"left": [], "right": []}
     real_correct = sag_layer.SagLayer.correct
@@ -76,6 +101,9 @@ def main():
 
         def tick(obs, loop):
             t = float(data.time)
+            if a.start_margin_offset is not None and not ctx.get("start_done"):
+                ctx["start_done"] = True
+                _apply_start_offset(model, data, a.start_margin_offset)
             if t >= a.stop_time:
                 save(model)
                 print(f"scene_probe: stopped at sim time {t:.3f} (stop-time {a.stop_time})", flush=True)
@@ -192,6 +220,8 @@ def main():
         np.savez(out / f"{a.name}_calls.npz", **arrs)
         print(f"scene_probe: wrote {out / (a.name + '_scene.csv')} ({len(state['geo'])} samples)", flush=True)
 
+    import atexit
+    atexit.register(lambda: save(None))           # a normal end of the script (e.g. the test's own timeout) also writes the outputs
     script = rest[0]
     sys.argv = [script] + rest[1:]
     sys.path.insert(0, str(Path(script).resolve().parent))

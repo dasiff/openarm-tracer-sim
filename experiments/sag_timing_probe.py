@@ -70,6 +70,7 @@ def main():
         sg = np.asarray(sag_t, float)
         np.savez(out / f"{a.name}_timing.npz", sag_s=sg, bridge_s=br)
         summ = {"sag_layer_call_ms": stats(sg), "bridge_call_ms": stats(br)}
+        summ["bridge_clamp_target_counts_per_joint"] = {side: [int(v) for v in arr] for side, arr in cl.BRIDGE_CLAMP["target"].items()}
         with open(out / f"{a.name}_timing.json", "w") as f:
             json.dump(summ, f, indent=1)
         print(f"timing_probe: wrote {out / (a.name + '_timing.json')}: {json.dumps(summ)[:600]}", flush=True)

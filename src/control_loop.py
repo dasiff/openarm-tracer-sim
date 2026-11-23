@@ -118,9 +118,9 @@ SERVO_LOG = {"tick": -1, "tau_cmd": None, "tau_ff": None}
 # "limited_L"/"limited_R" (SF-119, logging only): the bridge's own command per arm after its rate limit, i.e. what it sends on to the arm. It already
 # includes the sag trim, since the trim acts on the source's command before the bridge.
 BRIDGE_ACCEPTED_LOG = {"tick": -1, "accepted_L": None, "accepted_R": None, "limited_L": None, "limited_R": None}
-# SF-122 stage 1 (logging only): per arm and joint, how many times the bridge clamped a target into its joint buffer ("target": on take) or the
-# command into it ("command": on update). Reset at the start of each run_loop.
-BRIDGE_CLAMP = {"target": {"left": np.zeros(7, int), "right": np.zeros(7, int)}, "command": {"left": np.zeros(7, int), "right": np.zeros(7, int)}}
+# SF-122 stage 1 (logging only): per arm and joint, how many times the bridge clamped a source's target into its joint buffer (bridge_take). The
+# command is not clamped: it follows the target at the bridge's speed and step rules. Reset at the start of each run_loop.
+BRIDGE_CLAMP = {"target": {"left": np.zeros(7, int), "right": np.zeros(7, int)}}
 BRIDGE_TIME = []    # SF-122 timing (logging only): seconds spent in each bridge call (bridge_take per arms command, bridge_update per update)
 
 LOOP_CFG = {
@@ -741,13 +741,6 @@ def run_loop(model, data, sources, cfg, viewer=None, logger=None):
             else:
                 bridge["accepted"][s] = tgt.copy()
             cmd_q[s] = cmd_q[s] + np.clip(d_, -bridge_step, bridge_step)
-            cmd_c_, m_ = clamp_to_buffer(cmd_q[s], *bridge_buf[s])                       # SF-122 stage 1: the final command into the buffer
-            if m_.any():
-                BRIDGE_CLAMP["command"][s] += m_.astype(int)
-                k_ = int(np.argmax(m_))
-                edge_ = bridge_buf[s][0][k_] if cmd_q[s][k_] < bridge_buf[s][0][k_] else bridge_buf[s][1][k_]
-                bridge_note(frame_, s, k_ + 1, "clamped: command into the joint buffer", cmd_q[s][k_], edge_)
-                cmd_q[s] = cmd_c_
             out[s] = [float(v) for v in cmd_q[s]]
         acc = bridge["accepted"]
         BRIDGE_ACCEPTED_LOG["tick"] = frame_

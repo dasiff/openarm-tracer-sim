@@ -96,6 +96,7 @@ import numpy as np
 
 from src import robot_specs
 from src.bridge_override import force_to_target
+from src.bridge_clamp import buffer_limits, clamp_to_buffer      # SF-122 stage 1: the bridge's joint-buffer clamp
 from src.base_control import apply_base_velocity, base_yaw, find_base_dof, twist_to_world_velocity
 from src.cameras import CameraRig
 from src.commands import validate_command
@@ -117,6 +118,10 @@ SERVO_LOG = {"tick": -1, "tau_cmd": None, "tau_ff": None}
 # "limited_L"/"limited_R" (SF-119, logging only): the bridge's own command per arm after its rate limit, i.e. what it sends on to the arm. It already
 # includes the sag trim, since the trim acts on the source's command before the bridge.
 BRIDGE_ACCEPTED_LOG = {"tick": -1, "accepted_L": None, "accepted_R": None, "limited_L": None, "limited_R": None}
+# SF-122 stage 1 (logging only): per arm and joint, how many times the bridge clamped a target into its joint buffer ("target": on take) or the
+# command into it ("command": on update). Reset at the start of each run_loop.
+BRIDGE_CLAMP = {"target": {"left": np.zeros(7, int), "right": np.zeros(7, int)}, "command": {"left": np.zeros(7, int), "right": np.zeros(7, int)}}
+BRIDGE_TIME = []    # SF-122 timing (logging only): seconds spent in each bridge call (bridge_take per arms command, bridge_update per update)
 
 LOOP_CFG = {
     "source_hz": 150.0,            # command / viewer tick; the physics rate must be a whole multiple (5 steps at 750 Hz) [row M121 PENDING David: no decision recorded]
@@ -616,6 +621,11 @@ def run_loop(model, data, sources, cfg, viewer=None, logger=None):
     bridge = {"on": bool(bcfg["enabled"]) and cfg["replay"] is None, "cmd": None, "target": {}, "accepted": {}, "suspended": False, "log": [], "printed": 0}
     bridge_every = max(1, int(round(cfg["source_hz"] / bcfg["rate_hz"])))
     bridge_step = bcfg["max_joint_velocity_rad_s"] / bcfg["rate_hz"]                      # rad: the most the command moves per update
+    bridge_buf = {s: buffer_limits(limits["arm"][s][0], limits["arm"][s][1]) for s in sides}   # SF-122 stage 1: the joint buffer (hard limits moved in by the 10-degree margin)
+    for k_ in BRIDGE_CLAMP:
+        for s_ in sides:
+            BRIDGE_CLAMP[k_][s_] = np.zeros(7, int)
+    del BRIDGE_TIME[:]
     arm_qadr = {s: [int(model.jnt_qposadr[model.actuator_trnid[a, 0]]) for a in arm_act[s]] for s in sides}
     # --- M253: the open catch (one per hand, always on) and the chunk player ---
     fq_adr = {s: int(model.jnt_qposadr[model.joint(f"openarm_{s}_finger_joint1").id]) for s in sides}
@@ -673,21 +683,8 @@ def run_loop(model, data, sources, cfg, viewer=None, logger=None):
             apply_cmd({"mode": "arms", "arm_targets": out, "period_steps": steps_per_frame})
 
     def bridge_precheck(cmd, frame_):
-        """Takes an arms command's targets that lie outside the joint limits out of it (the whole arm targets are rejected and logged). Returns the command, or None if nothing is left.
-
-        Runs on the raw command, before validate_command clips out-of-range values.
-        """
-        if not bridge["on"] or not isinstance(cmd, dict) or cmd.get("mode") != "arms" or not isinstance(cmd.get("arm_targets"), dict):
-            return cmd
-        for s, q in cmd["arm_targets"].items():
-            lo, hi = limits["arm"][s]
-            q = np.asarray(q, float)
-            bad = np.nonzero((q < lo) | (q > hi))[0] if q.shape == lo.shape else []
-            if len(bad):
-                k = int(bad[0])
-                bridge_note(frame_, s, k + 1, "rejected: target outside the joint limits", q[k], lo[k] if q[k] < lo[k] else hi[k])
-                rest = {kk: v for kk, v in cmd.items() if kk != "arm_targets"}
-                return rest if any(kk in rest for kk in ("gripper", "gripper_force")) else None
+        """SF-122 stage 1: no rejection any more. An arms command's targets outside the joint limits are clamped into the joint buffer by
+        bridge_take (targets) and bridge_update (commands); validate_command clips them to the hard limits first, as before."""
         return cmd
 
     def sag_correct(cmd):
@@ -709,7 +706,9 @@ def run_loop(model, data, sources, cfg, viewer=None, logger=None):
         if not bridge["on"] or cmd["mode"] != "arms" or not cmd.get("arm_targets"):
             return cmd
         for s, q in cmd["arm_targets"].items():
-            bridge["target"][s] = np.array(q, float)
+            qc_, m_ = clamp_to_buffer(q, *bridge_buf[s])                                 # SF-122 stage 1: the buffer clamp (not a rejection)
+            BRIDGE_CLAMP["target"][s] += m_.astype(int)
+            bridge["target"][s] = qc_
         rest = {kk: v for kk, v in cmd.items() if kk != "arm_targets"}
         return rest if any(kk in rest for kk in ("gripper", "gripper_force")) else None
 
@@ -742,6 +741,13 @@ def run_loop(model, data, sources, cfg, viewer=None, logger=None):
             else:
                 bridge["accepted"][s] = tgt.copy()
             cmd_q[s] = cmd_q[s] + np.clip(d_, -bridge_step, bridge_step)
+            cmd_c_, m_ = clamp_to_buffer(cmd_q[s], *bridge_buf[s])                       # SF-122 stage 1: the final command into the buffer
+            if m_.any():
+                BRIDGE_CLAMP["command"][s] += m_.astype(int)
+                k_ = int(np.argmax(m_))
+                edge_ = bridge_buf[s][0][k_] if cmd_q[s][k_] < bridge_buf[s][0][k_] else bridge_buf[s][1][k_]
+                bridge_note(frame_, s, k_ + 1, "clamped: command into the joint buffer", cmd_q[s][k_], edge_)
+                cmd_q[s] = cmd_c_
             out[s] = [float(v) for v in cmd_q[s]]
         acc = bridge["accepted"]
         BRIDGE_ACCEPTED_LOG["tick"] = frame_
@@ -1181,12 +1187,16 @@ def run_loop(model, data, sources, cfg, viewer=None, logger=None):
                 if sf_plugin.limit_reached() and stop_req[0] is None:
                     stop_req[0] = "safety_filter_limit"
             cmd = sag_correct(cmd)                          # M262: the sag trim sits between the source and the bridge (every source; the same code)
+            _tb = time.perf_counter()
             cmd = bridge_take(cmd)
+            BRIDGE_TIME.append(time.perf_counter() - _tb)
             if cmd is not None:
                 apply_cmd(cmd)
         if sf_plugin is not None and sf_plugin.take_override():       # Part 2: braking had to exceed the bridge limits
             bridge_override(frame)
+        _tb = time.perf_counter()
         bridge_update(frame)
+        BRIDGE_TIME.append(time.perf_counter() - _tb)
 
         # Project forward velocity into world frame using robot yaw
         base_vx, base_vy, base_wz = twist_to_world_velocity(base_yaw(data), *st["twist"])

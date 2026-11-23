@@ -88,11 +88,13 @@ def main():
     check("the command did not move", abs(a[-1] - a[0]) < 1e-9, f"{a[0]:.3f} -> {a[-1]:.3f}")
     check("rejections logged with joint, value and limit", len(ev) > 0 and ev[0]["side"] == "left" and ev[0]["joint"] == 3 and abs(ev[0]["value"] - 0.6) < 1e-6 and ev[0]["limit"] == 0.25 and ev[0]["count"] > 10, str(ev[:1]))
 
-    print("4. bridge ON: a target outside the joint limits is rejected and logged", flush=True)
-    a, res, seen = run(150, lambda k, rest: {"mode": "arms", "arm_targets": {"left": [float(x) for x in np.where(np.arange(7) == 2, 10.0, rest)]}} if k >= 30 else None, {"enabled": True})
-    ev = [e for e in res["bridge_log"] if "joint limits" in e["kind"]]
-    check("the command did not move", abs(a[-1] - a[0]) < 1e-9, f"{a[0]:.3f} -> {a[-1]:.3f}")
-    check("logged with joint 3, value 10 and the limit", len(ev) > 0 and ev[0]["joint"] == 3 and ev[0]["value"] == 10.0 and abs(ev[0]["limit"]) < 10, str(ev[:1]))
+    print("4. bridge ON: a target outside the joint limits is clamped into the joint buffer and logged (SF-122 stage 1: no rejection)", flush=True)
+    a, res, seen = run(900, lambda k, rest: {"mode": "arms", "arm_targets": {"left": [float(x) for x in np.where(np.arange(7) == 2, 10.0, rest)]}} if k >= 30 else None, {"enabled": True})
+    ev = [e for e in res["bridge_log"] if "joint buffer" in e["kind"]]
+    buf_edge = 1.570796 - 0.1745329                    # joint 3: hard upper limit moved in by the 10-degree margin
+    check("the command moves toward the buffer edge (not rejected)", a[-1] - a[0] > 0.3 and abs(a[-1] - buf_edge) < 0.05, f"{a[0]:.3f} -> {a[-1]:.3f} (buffer edge {buf_edge:.3f})")
+    check("no 'rejected' entry for the out-of-range target", not any(e["kind"].startswith("rejected") for e in res["bridge_log"]), "")
+    check("clamp logged with joint 3 and the buffer edge", len(ev) > 0 and ev[0]["joint"] == 3 and abs(ev[0]["limit"] - buf_edge) < 1e-6, str(ev[:1]))
 
     print("5. bridge ON, tracking error limit 0.003 rad: suspension and resumption are logged, the target is still reached", flush=True)
     a, res, seen = run(420, lambda k, rest: {"mode": "arms", "arm_targets": {"left": [float(x) for x in (rest + np.where(np.arange(7) == 2, 0.2, 0.0))]}} if k >= 30 else None,

@@ -6,9 +6,11 @@ removed from there.
 
 What it does (SF-122 stage 2, David 2026-11-23, replaces the solver-based layer of M262 and SF-121): the layer no longer runs an IK solver.
 Per arm, every tick (for every arm command a source sends, before the command bridge):
-  1. Error: the reference joints of the last bridge update, REF(t-1), minus the motor lag they imply, expected = REF(t-1) - tau_j * refspeed_j
-     (tau_j = (kv_j + d_j) / kp_j, read from the model's actuator gains and joint damping at startup; refspeed from the last two references).
-     The pad error is the Jacobian at the measured joints times (expected - measured): position and rotation, the pad's world twist.
+  1. Error: the expected joints are a per-joint first-order motor filter of the reference (David 2026-11-24, replaces the reference-speed term):
+     expected_j(t) = expected_j(t-1) + (dt / tau_j) * (REF_j(t-1) - expected_j(t-1)), with tau_j = (kv_j + d_j) / kp_j (read from the model's
+     actuator gains and joint damping at startup) and dt the control tick. expected is set to the measured joints on the first tick and after
+     a tick where the bridge suspended the arm. The pad error is the Jacobian at the measured joints times (expected - measured): position and
+     rotation, the pad's world twist.
   2. The learned offset C is updated from that error with the existing integration (_sag_trim_step: gain, clip), after the leak (SF-118).
      No update while there is no REF(t-1) and REF(t-2), while the bridge had the arm suspended, or after a non-finite step.
   3. Command: C turned into a joint change dq by ONE damped linear step (the Jacobian at the measured joints, the solver's damping); the
@@ -149,9 +151,10 @@ class SagLayer:
         self.nonfinite_count = 0      # logging only: ticks on which step 3 was not finite (the source's targets were sent)
         self.clamp_count = 0          # logging only, kept for the trace
         self.last_error = None        # logging only: the pad error of the last tick that updated (6: position m, rotation rad), else None
-        self.last_expected = None     # logging only: expected joints (REF(t-1) - tau * refspeed) of the last tick that updated
+        self.last_expected = None     # logging only: expected joints (the motor filter's output) of the last tick that updated
         self.last_meas = None         # logging only: measured joints of the last tick (for the residual lag)
-        self.last_refspeed = None     # logging only: refspeed of the last tick that updated
+        self.expected = None          # the motor filter's expected joints (step 1); None until the first tick
+        self.init_expected = True     # re-initialise the filter to the measured joints on the next tick (first tick; after a suspended update)
 
     def _pose(self, other_qpos, q):
         """Measurement helper (not used for control): the pad pose of joint targets q with the other joints of the robot state, on a scratch copy."""
@@ -171,15 +174,6 @@ class SagLayer:
         mujoco.mj_jac(self.model, data, jacp, jacr, p_pad, self.arm.tcp)
         return np.vstack([jacp[:, self.arm.vadr], jacr[:, self.arm.vadr]])
 
-    def _ref_speed(self):
-        """The speed term (SF-122 stage 2 spec, David 2026-11-24): the change between the last two REFERENCES divided by the time between them,
-        refspeed = (REF(t-1) - REF(t-2)) / (t1 - t2), where REF = bridge output - dq. Not the raw bridge outputs (they contain the layer's own
-        dq, which would feed the correction back through this term), and not the source targets."""
-        (t1, r1), (t2, r2) = self.refs[-1], self.refs[-2]
-        if t1 <= t2:
-            return None
-        return (r1 - r2) / (t1 - t2)
-
     def correct(self, q_src, data, t, nominal_dt):
         """The command (7 joint targets) for the source's targets q_src (7), at time t. nominal_dt: the source's command period (s)."""
         if not SAG_LAYER_CFG["enabled"]:
@@ -193,7 +187,14 @@ class SagLayer:
         qadr = self.arm.qadr
         q_meas = np.asarray(data.qpos[qadr], float)
         J = self._jacobian(data)                                                             # the solver's-free Jacobian at the measured joints
-        # step 1 and 2: the error and the learned-offset update (the fade runs on every tick)
+        # step 1: the expected joints, a first-order motor filter of the reference (David 2026-11-24): expected_j(t) = expected_j(t-1) +
+        # (dt / tau_j) * (REF_j(t-1) - expected_j(t-1)). Set to the measured joints on the first tick and after a suspended update.
+        if self.expected is None or self.init_expected:
+            self.expected = q_meas.copy()
+            self.init_expected = False
+        elif self.refs:
+            self.expected = self.expected + (dt / self.tau) * (self.refs[-1][1] - self.expected)
+        # step 2: the error and the learned-offset update (the fade runs on every tick)
         trial = {"p": self.C["p"].copy(), "r": self.C["r"].copy()}
         _sag_leak(trial, self.model, self.side, t, dt)
         skip = None
@@ -203,20 +204,18 @@ class SagLayer:
             skip = "suspended"
         elif self.nonfinite_last:
             skip = "nonfinite"
-        if skip is None:
-            rs = self._ref_speed()
-            if rs is None:
-                skip = "no_reference"
+        if skip is None and not np.all(np.isfinite(self.expected)):
+            skip = "nonfinite"
+            self.init_expected = True
         self.last_meas = q_meas.copy()
         if skip is None:
-            expected = self.refs[-1][1] - self.tau * rs
-            e = J @ (expected - q_meas)                                                      # the pad twist: expected pad minus measured pad
+            e = J @ (self.expected - q_meas)                                                 # the pad twist: expected pad minus measured pad
             if not np.all(np.isfinite(e)):                                                   # a non-finite error is never integrated
                 skip = "nonfinite"
                 self.nonfinite_last = True
             else:
                 _sag_trim_step(trial, PICK_PLACE_CFG, self.model, self.side, t, e[:3], e[3:], dt)
-                self.last_error, self.last_expected, self.last_refspeed = e.copy(), expected.copy(), rs.copy()
+                self.last_error, self.last_expected = e.copy(), self.expected.copy()
         if skip is not None:
             self.skips[skip] += 1
         self.C["p"], self.C["r"] = trial["p"], trial["r"]
@@ -243,6 +242,8 @@ class SagLayer:
         self.refs.append((float(t), ref))
         del self.refs[:-2]
         self.suspended = bool(suspended)
+        if self.suspended:
+            self.init_expected = True                                                        # the filter restarts from the measured joints
 
     def release_open(self, t):
         """The open-catch helper released a caught open (M263): the only call that arms the watch. An ordinary gripper-open command does not call it."""

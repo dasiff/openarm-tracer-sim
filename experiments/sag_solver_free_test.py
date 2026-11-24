@@ -1,5 +1,6 @@
-"""Tests of the solver-free sag layer (SF-122 stage 2, David 2026-11-23): the learned offset from the error of the expected joints (REF(t-1) minus the
-motor lag tau_j * refspeed_j), the linear step from the offset to joints, the reference REF(t) = bridge output - dq(t), and the skip rules.
+"""Tests of the solver-free sag layer (SF-122 stage 2, David 2026-11-23, amended 2026-11-24): the learned offset from the error of the expected joints
+(a first-order motor filter of the reference, expected_j(t) = expected_j(t-1) + dt/tau_j * (REF_j(t-1) - expected_j(t-1))), the linear step from the
+offset to joints, the reference REF(t) = bridge output - dq(t), and the skip rules.
 
 Harness: the task scene (load_task, no cameras), the left arm at its home pose, a bridge emulator (targets clamped into the joint buffer, the
 command moves at most 0.01 rad per update, one update every third tick, the bridge's output is what the layer observes), and measured joints
@@ -40,6 +41,11 @@ def check(name, ok, detail=""):
     print(f"{'PASS' if ok else 'FAIL'}  {name}  {detail}", flush=True)
     if not ok:
         FAILS.append(name)
+
+
+def info(name, detail=""):
+    """An informational line: printed, never a pass or fail."""
+    print(f"INFO  {name}  {detail}", flush=True)
 
 
 class BridgeEmu:
@@ -103,8 +109,7 @@ def run(model, data, layer, qadr, emu, delta, src_of_k, n, k0=0, bridge=True, su
         mujoco.mj_forward(model, data)
         recs.append({"k": k, "t": t, "C_p": layer.C["p"].copy(), "C_r": layer.C["r"].copy(), "out": out, "meas": meas.copy(),
                      "err": None if layer.last_error is None else layer.last_error.copy(),
-                     "expected": None if layer.last_expected is None else layer.last_expected.copy(),
-                     "refspeed": None if layer.last_refspeed is None else layer.last_refspeed.copy()})
+                     "expected": None if layer.last_expected is None else layer.last_expected.copy()})
     return recs
 
 
@@ -122,8 +127,10 @@ def main():
         test_converges_to_droop()
         test_offset_held_still_under_a_step()
         test_constant_speed_ramp()
+        test_staircase_policy_like()
+        test_single_step_report()
         test_held_on_buffer_clamp()
-        test_speed_term_held_arm()
+        test_held_still_bridge_on()
         test_skip_rules()
     finally:
         SAG_LAYER_CFG["sag_leak_tau_s"] = leak_saved
@@ -174,7 +181,6 @@ def test_offset_held_still_under_a_step():
     step[0] += 0.1                                     # 0.1 rad on joint 1: ten times the bridge's per-update limit
     recs = run(model, data, layer, qadr, emu, delta, lambda k: HOME.copy() if k < 60 else step, 400, pad_droop=PAD)
     C_rest = recs[59]["C_p"].copy()                    # the offset at rest just before the step (the damped law settles off the preset first)
-    C0 = np.concatenate([layer.C["p"], layer.C["r"]])
     errs = [np.linalg.norm(r["err"][:3]) for r in recs[60:] if r["err"] is not None]
     max_err_mm = 1000 * max(errs) if errs else float("nan")
     drift_mm = 1000 * float(np.linalg.norm(recs[-1]["C_p"] - C_rest))
@@ -184,12 +190,11 @@ def test_offset_held_still_under_a_step():
           f"max position error after the step {max_err_mm:.3f} mm")
     check("step larger than the bridge speed limit: the offset does not change (within 0.1 mm of its value at rest before the step)", drift_mm <= 0.1,
           f"offset change after the step {drift_mm:.4f} mm (settling from the preset before the step: {settle_mm:.4f} mm)")
-    _ = C0
 
 
 def test_constant_speed_ramp():
-    """A constant-speed joint ramp (joint 1, 0.1 rad/s) with the correction on: the learned offset stays within 0.5 mm of its at-rest value (the
-    motor-lag subtraction works). Also reports the residual lag per joint: measured minus expected, on the ramp."""
+    """(2a, David 2026-11-24) A constant-speed joint ramp (joint 1, 0.1 rad/s) with the correction on: the learned offset stays within 0.5 mm of its
+    at-rest value (the motor filter's lag is removed correctly). Also reports the residual lag per joint: measured minus expected, on the ramp."""
     SAG_LAYER_CFG["sag_leak_tau_s"] = 1e9
     model, data, layer, qadr, emu, delta = rig(HOME)
     recs0 = run(model, data, layer, qadr, emu, delta, lambda k: HOME.copy(), 120)
@@ -203,6 +208,43 @@ def test_constant_speed_ramp():
     RESULTS["ramp"] = {"max_C_change_mm": round(dC, 4), "residual_mrad_mean": np.round(resid_mrad, 3).tolist()}
     check("constant-speed ramp: the offset stays within 0.5 mm of its at-rest value", dC <= 0.5, f"largest change {dC:.4f} mm")
     _ = recs0
+
+
+def test_staircase_policy_like():
+    """(2b, David 2026-11-24) A staircase reference like the policy's stream: a new 30 Hz target every 5 ticks (joints 1 and 2), with a fixed droop
+    in the hand (2 mm). The offset, converged at rest first, must stay within 0.5 mm of its rest value through the staircase (the fade is off)."""
+    SAG_LAYER_CFG["sag_leak_tau_s"] = 1e9
+    PAD = np.array([0.0, 0.0, 0.002, 0.0, 0.0, 0.0])
+    model, data, layer, qadr, emu, delta = rig(HOME)
+
+    def src(k):
+        if k < 1500:
+            return HOME.copy()
+        m = (k - 1500) // 5                            # one target per 5 ticks, i.e. 30 Hz
+        return HOME + np.array([0.04 * np.sin(0.3 * m), 0.03 * np.cos(0.2 * m), 0, 0, 0, 0, 0])
+
+    recs = run(model, data, layer, qadr, emu, delta, src, 2400, pad_droop=PAD)
+    C_rest = recs[1499]["C_p"].copy()
+    C_stream = np.array([r["C_p"] for r in recs[1500:]])
+    dev_mm = 1000 * float(np.max(np.linalg.norm(C_stream - C_rest, axis=1)))
+    R_rest = recs[1499]["C_r"].copy()
+    dev_r = 1000 * float(np.max(np.linalg.norm(np.array([r["C_r"] for r in recs[1500:]]) - R_rest, axis=1)))
+    RESULTS["staircase"] = {"max_C_p_dev_mm": round(dev_mm, 4), "max_C_r_dev_mrad": round(dev_r, 4), "C_rest_mm": np.round(1000 * C_rest, 3).tolist()}
+    check("staircase reference (30 Hz targets, each held for 5 ticks), fixed droop: the offset stays within 0.5 mm of its rest value",
+          dev_mm <= 0.5, f"largest position change {dev_mm:.4f} mm (rotation {dev_r:.3f} mrad, reported)")
+
+
+def test_single_step_report():
+    """(2c, David 2026-11-24) REPORT ONLY, not a pass criterion: a single 0.02 rad step on all seven joints at once. Reports the largest difference
+    between the filter's expected joint and the measured joint, per joint, after the step (joints 3 and 4 ring)."""
+    SAG_LAYER_CFG["sag_leak_tau_s"] = 1e9
+    model, data, layer, qadr, emu, delta = rig(HOME)
+    step = HOME + 0.02
+    recs = run(model, data, layer, qadr, emu, delta, lambda k: HOME.copy() if k < 300 else step.copy(), 600)
+    diffs = np.array([np.abs(r["expected"] - r["meas"]) for r in recs if r["expected"] is not None and r["k"] >= 300])
+    per_joint = 1000 * diffs.max(axis=0)
+    RESULTS["single_step_report_mrad"] = np.round(per_joint, 3).tolist()
+    info("single 0.02 rad step, all joints: largest |expected - measured| per joint (mrad, report only)", str(np.round(per_joint, 3).tolist()))
 
 
 def test_held_on_buffer_clamp():
@@ -219,55 +261,48 @@ def test_held_on_buffer_clamp():
           C_end <= 0.1 and C_r_end <= 1e-4, f"|C_p| {C_end:.4f} mm, |C_r| {C_r_end:.6f} rad; joint 4 output {recs[-1]['out'][3]:.4f} rad")
 
 
-def _sweep_src(k):
-    """A zero-mean joint sweep of the source's targets (joints 1 and 2), the command changing on every tick."""
-    return HOME + np.array([0.03 * np.sin(0.05 * k), 0.02 * np.cos(0.05 * k), 0.01, 0, 0, 0, 0])
-
-
-def test_speed_term_held_arm():
-    """SF-122 stage 2 speed term (David 2026-11-24): the arm is held still (its measured joints never move) while the command changes. (a) With the
-    bridge off the reference is the command minus dq, i.e. the source targets, so the speed term must equal the source's own speed exactly: no change
-    in dq may enter it. (b) With the bridge emulated (every third tick), the offset must not diverge through the speed term: it stays within 10 mm and
-    10 mrad, and does not grow between the first and the last 200 ticks."""
-    SAG_LAYER_CFG["sag_leak_tau_s"] = LEAK_DEFAULT
-    # (a) bridge off, arm held still
-    model, data, layer, qadr, emu, delta = rig(HOME)
-    layer.dq = np.zeros(7)
-    rs_err, dq_max, n_upd = 0.0, 0.0, 0
-    srcs = []
-    for k in range(600):
-        t = k * NOMINAL
-        srcs.append(_sweep_src(k))
-        cmd = layer.correct(srcs[-1], data, t, NOMINAL)
-        layer.observe(cmd, t, False)
-        dq_max = max(dq_max, float(np.max(np.abs(layer.dq))))
-        if k >= 2 and layer.last_refspeed is not None:
-            # the speed used at tick k is the change between the references REF(t-1) and REF(t-2); bridge off, REF(j) = the source's target at j
-            src_speed = (srcs[k - 1] - srcs[k - 2]) / NOMINAL
-            rs_err = max(rs_err, float(np.max(np.abs(layer.last_refspeed - src_speed))))
-            n_upd += 1
-    RESULTS["speed_term"] = {"bridge_off_refspeed_vs_source_max_err": rs_err, "updates": n_upd, "dq_max_rad": round(dq_max, 6)}
-    check("speed term, bridge off, arm held still: the refspeed equals the source's own speed (dq enters nothing; dq is not zero)",
-          n_upd > 500 and rs_err <= 1e-9 and dq_max > 1e-6, f"max |refspeed - source speed| {rs_err:.2e} rad/s over {n_upd} updates; max |dq| {dq_max:.5f} rad")
-    # (b) bridge emulated, arm held still
+def _held_bridge_on(src_fn, n=600):
+    """The arm held still (its measured joints never move), the bridge emulated (every third tick). Returns |C_p| (m) and |C_r| (rad) per tick."""
     model, data, layer, qadr, emu, delta = rig(HOME)
     cp, cr = [], []
-    for k in range(600):
+    for k in range(n):
         t = k * NOMINAL
-        cmd = layer.correct(_sweep_src(k), data, t, NOMINAL)
+        cmd = layer.correct(src_fn(k), data, t, NOMINAL)
         emu.take(cmd)
         if k % EVERY == 0:
             emu.update()
             layer.observe(emu.out, t, False)
         cp.append(float(np.linalg.norm(layer.C["p"])))
         cr.append(float(np.linalg.norm(layer.C["r"])))
-    cp, cr = np.array(cp), np.array(cr)
+    return np.array(cp), np.array(cr)
+
+
+def _zero_mean_src(k):
+    """(decision 1, David 2026-11-24) A zero-mean joint sweep (joints 1 and 2) of the source's targets: nothing the held arm cannot reach."""
+    return HOME + np.array([0.03 * np.sin(0.05 * k), 0.02 * np.cos(0.05 * k), 0, 0, 0, 0, 0])
+
+
+def _unreachable_src(k):
+    """The same sweep plus a constant +0.01 rad on joint 3: a target the held arm can never reach (informational only)."""
+    return HOME + np.array([0.03 * np.sin(0.05 * k), 0.02 * np.cos(0.05 * k), 0.01, 0, 0, 0, 0])
+
+
+def test_held_still_bridge_on():
+    """(decision 1, David 2026-11-24) The arm held still, the bridge on (emulated). PASS: the zero-mean sweep keeps the offset bounded (|C_p| <= 10 mm,
+    |C_r| <= 10 mrad, no growth late in the run). INFORMATIONAL: the sweep with a constant +0.01 rad on joint 3, which the held arm cannot reach: it
+    reports the offset reaching the clip (not a pass criterion)."""
+    SAG_LAYER_CFG["sag_leak_tau_s"] = LEAK_DEFAULT
+    cp, cr = _held_bridge_on(_zero_mean_src)
     max_p_mm, max_r_mrad = 1000 * cp.max(), 1000 * cr.max()
     grew = bool(cp[-200:].max() > 1.5 * cp[100:300].max() + 1e-4 or cr[-200:].max() > 1.5 * cr[100:300].max() + 1e-4)   # 0.1 mm / 0.1 mrad slack
-    RESULTS["speed_term"].update({"bridge_on_max_C_p_mm": round(max_p_mm, 4), "bridge_on_max_C_r_mrad": round(1000 * cr.max(), 4), "grew": bool(grew)})
-    check("speed term, bridge emulated, arm held still: the offset does not diverge (|C_p| <= 10 mm, |C_r| <= 10 mrad, no growth late in the run)",
-          max_p_mm <= 10.0 and 1000 * cr.max() <= 10.0 and not grew,
-          f"max |C_p| {max_p_mm:.3f} mm, max |C_r| {1000 * cr.max():.3f} mrad, growth late in the run {grew}")
+    RESULTS["held_zero_mean"] = {"max_C_p_mm": round(max_p_mm, 4), "max_C_r_mrad": round(max_r_mrad, 4), "growth_late": grew}
+    check("held still, bridge on, zero-mean sweep: the offset stays bounded (|C_p| <= 10 mm, |C_r| <= 10 mrad, no growth late in the run)",
+          max_p_mm <= 10.0 and max_r_mrad <= 10.0 and not grew,
+          f"max |C_p| {max_p_mm:.3f} mm, max |C_r| {max_r_mrad:.3f} mrad, growth late in the run {grew}")
+    cp_u, cr_u = _held_bridge_on(_unreachable_src)
+    RESULTS["held_unreachable"] = {"max_C_p_mm": round(1000 * cp_u.max(), 4), "max_C_r_mrad": round(1000 * cr_u.max(), 4)}
+    info("held still, bridge on, constant +0.01 rad on joint 3 (unreachable target): the offset reaches the clip (informational)",
+         f"max |C_p| {1000 * cp_u.max():.3f} mm, max |C_r| {1000 * cr_u.max():.3f} mrad")
 
 
 def test_skip_rules():

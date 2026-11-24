@@ -90,14 +90,22 @@ def main():
     rows = []
     qcmd_hist = []
 
+    gaps = []                                                       # (t, |pad of the source's raw target - pad of the accepted target|), m
+
     def hook(obs, loop):
         layer = sag_layer.SAG_LAYERS["left"]                        # the loop's own layer for the left arm
         pad, Rp = layer.arm.pad_pose(data)
         qc = src["state"]["q_cmd"]
-        if qc is not None:
-            ref, Rr = pose(qc)
+        # The hand error is measured against the reference the bridge ACCEPTED: REF = bridge output minus dq, i.e. the source's target after the
+        # bridge's step and clamp rules (SF-122 stage 2 check, 2026-11-24). Measuring against the raw source target was wrong: the bridge rejects a
+        # target that moves more than max_target_step_rad from its command, and then keeps the last accepted target, so the raw target can stay
+        # far from the arm for the whole stream. The raw-target gap is kept in the summary as its own number.
+        if layer.refs:
+            ref, Rr = pose(layer.refs[-1][1])
             herr = ref - pad
             rerr = Rotation.from_matrix(Rr @ Rp.T).as_rotvec()
+            if qc is not None:
+                gaps.append((float(obs["time"]), float(np.linalg.norm(pose(qc)[0] - ref))))
         else:
             ref, herr, rerr = np.full(3, np.nan), np.full(3, np.nan), np.full(3, np.nan)
         rows.append((float(obs["time"]), pad.copy(), layer.C["p"].copy(), layer.C["r"].copy(), ref.copy(), herr.copy(), rerr.copy()))
@@ -121,6 +129,10 @@ def main():
 
     summary = summarise(rows, counts, res, a, src)
     summary["max_commanded_joint_speed_rad_s"] = max_command_speed(qcmd_hist)
+    gv = np.array(gaps) if gaps else np.zeros((0, 2))
+    tail = gv[gv[:, 0] >= gv[-1, 0] - 2.0, 1] if len(gv) else np.array([np.nan])
+    summary["hand_error_reference"] = "pad vs the pad of REF (the bridge-accepted target: bridge output minus dq)"
+    summary["source_raw_target_minus_accepted_m"] = {"mean_last_2s": float(np.nanmean(tail)), "max": float(np.nanmax(gv[:, 1])) if len(gv) else float("nan")}
     summary["bridge_joint_speed_limit_rad_s"] = BRIDGE_JOINT_SPEED
     (out / f"{name}.json").write_text(json.dumps(summary, indent=2))
     print(json.dumps(summary, indent=2))

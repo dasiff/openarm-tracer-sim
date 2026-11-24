@@ -98,6 +98,16 @@ def _cc(layer, q, data, t, dt):
     return cmd
 
 
+def _cc_cmd(layers, cmd, data, t, dt):
+    """SF-123 harness (approved by David 2026-11-24): correct_command, then the bridge output fed back to each layer as the loop does (bridge off: the
+    command itself). Without the feed the layer has no reference and skips every tick (no_reference)."""
+    out = correct_command(layers, cmd, data, t, dt)
+    if out.get("mode") == "arms" and out.get("arm_targets"):
+        for s, L in layers.items():
+            L.observe(np.array(out["arm_targets"][s], float), t, False)
+    return out
+
+
 def case_b(model, data):
     """The correction does not integrate while a held-mass ramp runs; it resumes after the ramp."""
     layer = SagLayer(model, data, "left", HOME)
@@ -286,12 +296,13 @@ def case_c_periodic(model, data):
     def run():
         nonlocal t, peak
         for k in range(n_ticks):
-            layer.correct(sweep(k), data, t, NOMINAL)
+            _cc(layer, sweep(k), data, t, NOMINAL)
             layer.track_open(data, t)
             peak = max(peak, float(np.linalg.norm(layer.C["p"])))
             t += NOMINAL
     _, steps = _count_steps(run)
-    ok = layer.reset_at is None and not any(e["kind"] == "release_reset" for e in layer.log) and steps == n_ticks and peak > 0.0
+    # the first two ticks have no reference yet (the designed no_reference skip: REF(t-1) and REF(t-2) are needed), so n_ticks - 2 integrate
+    ok = layer.reset_at is None and not any(e["kind"] == "release_reset" for e in layer.log) and steps == n_ticks - 2 and peak > 0.0
     return check("(c) no periodic reset over 10 s with the gripper open (the trim keeps integrating)", ok,
                  f"resets {0 if layer.reset_at is None else 1}; trim steps {steps} of {n_ticks} ticks; peak |C| {1000 * peak:.2f} mm, final {1000 * float(np.linalg.norm(layer.C['p'])):.2f} mm")
 
@@ -326,14 +337,14 @@ def _moving(layers, data, k0, n, manip=False):
     """n commands from tick k0 that all change the targets (a sine sweep). Returns the next tick."""
     for k in range(k0, k0 + n):
         q = source_targets(data, [0.03 * np.sin(0.05 * k), 0.02 * np.cos(0.05 * k), 0.01, 0, 0, 0, 0])
-        correct_command(layers, _arm_cmd(q, manip), data, k * NOMINAL, NOMINAL)
+        _cc_cmd(layers, _arm_cmd(q, manip), data, k * NOMINAL, NOMINAL)
     return k0 + n
 
 
 def _standing(layers, data, k0, n, q, manip=False):
     """n commands from tick k0 with the same targets q (the command stands still). Returns the next tick."""
     for k in range(k0, k0 + n):
-        correct_command(layers, _arm_cmd(q, manip), data, k * NOMINAL, NOMINAL)
+        _cc_cmd(layers, _arm_cmd(q, manip), data, k * NOMINAL, NOMINAL)
     return k0 + n
 
 
@@ -347,7 +358,7 @@ def case_s5_a(model, data):
 
     def stand():
         for j in range(60):
-            correct_command(layers, _arm_cmd(q, False), data, (k + j) * NOMINAL, NOMINAL)
+            _cc_cmd(layers, _arm_cmd(q, False), data, (k + j) * NOMINAL, NOMINAL)
             cs.append(layer.C["p"].copy())
     _, steps = _count_steps(stand)
     changed = all(not np.array_equal(cs[i], cs[i - 1]) for i in range(1, len(cs)))
@@ -365,8 +376,8 @@ def case_s5_d(model, data):
     k = 0
     for j in range(120):
         q = source_targets(data, [0.03 * np.sin(0.05 * j), 0.02 * np.cos(0.05 * j), 0.01, 0, 0, 0, 0])
-        out_a = np.array(correct_command(lla, _arm_cmd(q, False), data, j * NOMINAL, NOMINAL)["arm_targets"]["left"])
-        out_b = np.array(correct_command(llb, _arm_cmd(q, True), data, j * NOMINAL, NOMINAL)["arm_targets"]["left"])
+        out_a = np.array(_cc_cmd(lla, _arm_cmd(q, False), data, j * NOMINAL, NOMINAL)["arm_targets"]["left"])
+        out_b = np.array(_cc_cmd(llb, _arm_cmd(q, True), data, j * NOMINAL, NOMINAL)["arm_targets"]["left"])
         same = same and np.array_equal(out_a, out_b)
         changed = changed or not np.allclose(out_a, q)
     ok = same and changed and float(np.linalg.norm(la.C["p"])) > 0.0

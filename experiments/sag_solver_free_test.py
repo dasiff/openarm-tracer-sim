@@ -31,6 +31,7 @@ NOMINAL = 1.0 / 150.0
 EVERY = 3                                    # the bridge updates every third tick (50 Hz)
 RATE = 0.5 / 50.0                            # 0.01 rad per update (0.5 rad/s)
 MARGIN = float(MINK_CFG["joint_margin_rad"])
+LEAK_DEFAULT = float(SAG_LAYER_CFG["sag_leak_tau_s"])   # the configured fade (SF-118), restored by the tests that need it
 FAILS = []
 RESULTS = {}
 
@@ -122,6 +123,7 @@ def main():
         test_offset_held_still_under_a_step()
         test_constant_speed_ramp()
         test_held_on_buffer_clamp()
+        test_speed_term_held_arm()
         test_skip_rules()
     finally:
         SAG_LAYER_CFG["sag_leak_tau_s"] = leak_saved
@@ -215,6 +217,57 @@ def test_held_on_buffer_clamp():
     RESULTS["clamp"] = {"C_p_mm": round(C_end, 5), "C_r_rad": round(C_r_end, 7), "out_joint4": round(float(recs[-1]["out"][3]), 5)}
     check("held on its buffer clamp: the offset does not wind up (position within 0.1 mm, rotation within 1e-4 rad)",
           C_end <= 0.1 and C_r_end <= 1e-4, f"|C_p| {C_end:.4f} mm, |C_r| {C_r_end:.6f} rad; joint 4 output {recs[-1]['out'][3]:.4f} rad")
+
+
+def _sweep_src(k):
+    """A zero-mean joint sweep of the source's targets (joints 1 and 2), the command changing on every tick."""
+    return HOME + np.array([0.03 * np.sin(0.05 * k), 0.02 * np.cos(0.05 * k), 0.01, 0, 0, 0, 0])
+
+
+def test_speed_term_held_arm():
+    """SF-122 stage 2 speed term (David 2026-11-24): the arm is held still (its measured joints never move) while the command changes. (a) With the
+    bridge off the reference is the command minus dq, i.e. the source targets, so the speed term must equal the source's own speed exactly: no change
+    in dq may enter it. (b) With the bridge emulated (every third tick), the offset must not diverge through the speed term: it stays within 10 mm and
+    10 mrad, and does not grow between the first and the last 200 ticks."""
+    SAG_LAYER_CFG["sag_leak_tau_s"] = LEAK_DEFAULT
+    # (a) bridge off, arm held still
+    model, data, layer, qadr, emu, delta = rig(HOME)
+    layer.dq = np.zeros(7)
+    rs_err, dq_max, n_upd = 0.0, 0.0, 0
+    srcs = []
+    for k in range(600):
+        t = k * NOMINAL
+        srcs.append(_sweep_src(k))
+        cmd = layer.correct(srcs[-1], data, t, NOMINAL)
+        layer.observe(cmd, t, False)
+        dq_max = max(dq_max, float(np.max(np.abs(layer.dq))))
+        if k >= 2 and layer.last_refspeed is not None:
+            # the speed used at tick k is the change between the references REF(t-1) and REF(t-2); bridge off, REF(j) = the source's target at j
+            src_speed = (srcs[k - 1] - srcs[k - 2]) / NOMINAL
+            rs_err = max(rs_err, float(np.max(np.abs(layer.last_refspeed - src_speed))))
+            n_upd += 1
+    RESULTS["speed_term"] = {"bridge_off_refspeed_vs_source_max_err": rs_err, "updates": n_upd, "dq_max_rad": round(dq_max, 6)}
+    check("speed term, bridge off, arm held still: the refspeed equals the source's own speed (dq enters nothing; dq is not zero)",
+          n_upd > 500 and rs_err <= 1e-9 and dq_max > 1e-6, f"max |refspeed - source speed| {rs_err:.2e} rad/s over {n_upd} updates; max |dq| {dq_max:.5f} rad")
+    # (b) bridge emulated, arm held still
+    model, data, layer, qadr, emu, delta = rig(HOME)
+    cp, cr = [], []
+    for k in range(600):
+        t = k * NOMINAL
+        cmd = layer.correct(_sweep_src(k), data, t, NOMINAL)
+        emu.take(cmd)
+        if k % EVERY == 0:
+            emu.update()
+            layer.observe(emu.out, t, False)
+        cp.append(float(np.linalg.norm(layer.C["p"])))
+        cr.append(float(np.linalg.norm(layer.C["r"])))
+    cp, cr = np.array(cp), np.array(cr)
+    max_p_mm, max_r_mrad = 1000 * cp.max(), 1000 * cr.max()
+    grew = bool(cp[-200:].max() > 1.5 * cp[100:300].max() + 1e-4 or cr[-200:].max() > 1.5 * cr[100:300].max() + 1e-4)   # 0.1 mm / 0.1 mrad slack
+    RESULTS["speed_term"].update({"bridge_on_max_C_p_mm": round(max_p_mm, 4), "bridge_on_max_C_r_mrad": round(1000 * cr.max(), 4), "grew": bool(grew)})
+    check("speed term, bridge emulated, arm held still: the offset does not diverge (|C_p| <= 10 mm, |C_r| <= 10 mrad, no growth late in the run)",
+          max_p_mm <= 10.0 and 1000 * cr.max() <= 10.0 and not grew,
+          f"max |C_p| {max_p_mm:.3f} mm, max |C_r| {1000 * cr.max():.3f} mrad, growth late in the run {grew}")
 
 
 def test_skip_rules():

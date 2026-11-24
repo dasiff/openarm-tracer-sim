@@ -1022,6 +1022,8 @@ def run_loop(model, data, sources, cfg, viewer=None, logger=None):
         ff_off = gff.torques(data) / gff.kp          # M185: one tau_ff / kp per tick from the measured pose (the real controller's gravity torque), held for the tick's steps
         # Log gravity feedforward offset for diagnostic extraction
         SERVO_LOG["tau_ff"] = ff_off.copy()
+        for s_ in sides:                             # David 2026-11-24, decision 3: the sag layer predicts with the offset the motors receive this tick
+            sag[s_].set_applied_offset(ff_off[sag[s_].off:sag[s_].off + 7])
         for k in range(steps_per_frame):
             data.ctrl[:] = ctrl_steps[k]
             gff.apply_offsets(data.ctrl, ff_off)

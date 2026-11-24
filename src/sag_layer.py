@@ -6,8 +6,9 @@ Where it sits: between whatever produces the arm targets (the scripted module, t
 
 What it does, per arm, every tick (for every arm command a source sends, before the command bridge):
   a. predicted_j: a first-order motor filter, the same tau_j as the motor (tau_j = (kv_j + d_j) / kp_j, read from the model), driven by the
-     joint command the actuator actually receives: the control minus the gravity offset tau_ff / kp. The control contains the source's targets
-     and the layer's own dq, so the filter follows the bridge output as the motor does.
+     joint command the actuator actually receives: the actuators' control minus the gravity offset tau_ff / kp that the CONTROL LOOP added on its
+     last tick (set_applied_offset; David 2026-11-24, decision 3: the loop's own offset, not a recomputed one). The control contains the source's
+     targets and the layer's own dq, so the filter follows the bridge output as the motor does.
   b. sag_measured_j(t) = predicted_j(t-1) - measured_j(t): the arm's shortfall relative to the command it was given. The layer's own dq
      cancels out of this difference.
   c. sag_est_j: a first-order low-pass of sag_measured_j with time constant T (SAG_LAYER_CFG measure_T_s, 2 s), unity gain.
@@ -19,10 +20,10 @@ What it does, per arm, every tick (for every arm command a source sends, before 
 The bridge stays the last step before the arm. The loop calls observe() with the bridge's suspension state every bridge update.
 With the setting off (SAG_LAYER_CFG["enabled"] False) the layer returns the source's targets unchanged.
 
-Reset (M263, kept): only when the open-catch helper releases a caught open. The release arms the watch (release_open); when that release completes
-(the fingers come to rest open, the same stall test as the open catch, and at least close_min_s after the release), the learned correction is
-zeroed (the estimate, which is the learned state of this rule; SF-127 records this mapping) and the held-mass freeze flag is cleared (track_open).
-An ordinary gripper-open command does not reset, and there is no periodic reset.
+Release (M263, David 2026-11-24, decision 2): when the open-catch helper releases a caught open, the release completes (the fingers come to rest open,
+the same stall test as the open catch, and at least close_min_s after the release) and the held-mass freeze flag is cleared (track_open). The
+estimate is NOT zeroed: it re-measures the sag with its 2 s smoothing, like any other load change. An ordinary gripper-open command does nothing,
+and there is no periodic reset.
 Known limit (SF-127): on the wrist (joints 5-7) the friction band is frictionloss / kp = 0.1 Nm / 10 Nm/rad = 10 mrad, so the measured sag
 on the wrist can sit at the band edge (+/-10 mrad) and does not carry the droop value there; the correction on the wrist is limited by it.
 """
@@ -30,7 +31,6 @@ on the wrist can sit at the band edge (+/-10 mrad) and does not carry the droop 
 import mujoco
 import numpy as np
 
-from src import gravity_ff
 from src import held_mass_ramp as hmr
 from src.gripper_geometry import gripper_frame
 from src.open_catch import stall_done
@@ -92,15 +92,14 @@ class SagLayer:
     targets q_src; observe(q_out, t, suspended) takes the bridge's output (or the command when the bridge is off) and the bridge's suspension
     state; release_open(t) and track_open(data, t) run the open-catch reset. One object per arm; shared by every source."""
 
-    def __init__(self, model, data, side, home_q=None, gravity_model=None):
+    def __init__(self, model, data, side, home_q=None):
         self.model, self.side = model, side
         self.arm = _PadGeometry(model, side)               # the pad geometry (home_q is not used: there is no solver)
         self.tau = motor_lag_times(model, side)            # s, per joint, from the model
         ids = arm_ids(model, side)
         self.acts = np.array([[i for i in range(model.nu) if model.actuator_trnid[i, 0] == j][0] for j in ids["jnt"]])
-        self.gff = gravity_ff.ArmGravityFeedforward.from_model(gravity_model if gravity_model is not None else model)
         self.off = 0 if side == "left" else 8              # the gravity term's actuator order: left arm 1-7, left gripper, right arm 1-7, right gripper
-        self.kp_arm = self.gff.kp[self.off:self.off + 7].copy()
+        self.applied_offset = None                         # tau_ff / kp of this arm's joints, as the LOOP applied it on the last tick (set by set_applied_offset)
         self.T = float(SAG_LAYER_CFG["measure_T_s"])       # s: the time constant of the average of the measured sag (SF-127)
         self.C = {"p": np.zeros(3), "r": np.zeros(3)}      # the hand-space equivalent of dq (J dq), logging and the signal trace
         SAG_TRACE[side] = self.C
@@ -121,7 +120,7 @@ class SagLayer:
         self.suspended = False                             # the bridge's suspension at the last observation
         self.nonfinite_last = False                        # the last tick's command was not finite
         self.last_cmd = None
-        self.skips = {"no_reference": 0, "suspended": 0, "nonfinite": 0, "held_ramp": 0}   # logging only: ticks on which the estimate was not updated, by reason
+        self.skips = {"no_reference": 0, "no_offset": 0, "suspended": 0, "nonfinite": 0, "held_ramp": 0}   # logging only: ticks on which the estimate was not updated, by reason
         self.nonfinite_count = 0                           # logging only: ticks on which the command was not finite (the source's targets were sent)
         self.clamp_count = 0                               # logging only, kept for the trace
         self.last_error = None                             # logging only: the measured sag of the last tick that updated (joints), else None
@@ -129,10 +128,15 @@ class SagLayer:
         self.last_meas = None                              # logging only: measured joints of the last tick
         self.expected = None                               # logging only: the predicted joints of the last tick (the motor filter's output)
 
+    def set_applied_offset(self, off):
+        """The gravity offset tau_ff / kp (7 joints of this arm) that the control loop added to the actuators' control on its last tick. The loop
+        calls this every tick (src/control_loop.py advance), so the prediction uses the offset the motors actually received, not a recomputed one
+        (David, 2026-11-24, decision 3)."""
+        self.applied_offset = np.asarray(off, float).copy()
+
     def _received(self, data):
-        """The joint command the actuators receive now, minus the gravity offset: control - tau_ff / kp (7)."""
-        tau = self.gff.torques(data)
-        return np.asarray(data.ctrl[self.acts], float) - tau[self.off:self.off + 7] / self.kp_arm
+        """The joint command the actuators received over the last interval: their control minus the gravity offset the loop applied (7)."""
+        return np.asarray(data.ctrl[self.acts], float) - self.applied_offset
 
     def _pose(self, other_qpos, q):
         """Measurement helper (not used for control): the pad pose of joint targets q with the other joints of the robot state, on a scratch copy."""
@@ -163,12 +167,15 @@ class SagLayer:
             return q_src.copy() if self.last_cmd is None else self.last_cmd.copy()
         self.t_last = t
         q_meas = np.asarray(data.qpos[self.arm.qadr], float)
-        u = self._received(data)                          # the command the actuators receive over the last interval (dq included)
         skip = None
-        if self.pred is None:
+        if self.applied_offset is None:
+            skip = "no_offset"                            # the loop has not reported its offset yet (no tick has run)
+            self.pred = q_meas.copy()
+        elif self.pred is None:
             skip = "no_reference"
             self.pred = q_meas.copy()                     # the filter starts at the measured joints
         else:
+            u = self._received(data)                      # the command the actuators received over the last interval, dq included, less the loop's offset
             if self.suspended:
                 skip = "suspended"
             elif self.nonfinite_last:
@@ -226,8 +233,9 @@ class SagLayer:
 
     def observe(self, q_out, t, suspended):
         """The bridge's output for this arm at time t (or the command itself when the bridge is off), and whether the bridge suspended the arm
-        at this update. The output is kept for logging only; the rule itself needs the suspension state."""
-        self.refs.append((float(t), np.asarray(q_out, float).copy()))
+        at this update. The stored reference is REF = output - dq (read by the logging and the hand-error metrics); the rule itself needs only the
+        suspension state."""
+        self.refs.append((float(t), np.asarray(q_out, float) - self.dq))   # REF(t) = output - dq(t): the accepted target, which the readers expect
         del self.refs[:-2]
         self.suspended = bool(suspended)
 
@@ -237,8 +245,9 @@ class SagLayer:
             self.open_t, self.still = t, None
 
     def track_open(self, data, t):
-        """The script's gripper-open completion, judged the same way (stall_done, close_min_s): on completion the learned correction is zeroed
-        and the freeze flag cleared (SF-127: the reset zeroes the estimate)."""
+        """The script's gripper-open completion, judged the same way (stall_done, close_min_s). On completion the held-mass freeze flag is cleared,
+        and the estimate is NOT zeroed (David, 2026-11-24, decision 2): it re-measures the sag with its 2 s smoothing, like any other load change.
+        The completion is still logged (reset_at), as an event marker only."""
         if self.open_t is None:
             return
         ids = arm_ids(self.model, self.side)                                                 # the finger joint of this side
@@ -247,10 +256,8 @@ class SagLayer:
         travel, speed = float(data.qpos[fq]), abs(float(data.qvel[fv]))
         done, self.still = stall_done(travel, speed, self.still, t, False, PICK_PLACE_CFG, TASK_OPEN)
         if done and t - self.open_t >= PICK_PLACE_CFG["close_min_s"]:
-            self.est = np.zeros(7)
-            self.C["p"], self.C["r"] = np.zeros(3), np.zeros(3)
             hmr.end_load_change(self.model, self.side)
-            self.log.append({"t": t, "kind": "release_reset"})
+            self.log.append({"t": t, "kind": "release_done"})
             self.reset_at = (t, "release_open_done")
             self.open_t = None
 

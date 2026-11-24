@@ -53,9 +53,19 @@ def sweep(k):
     return source_targets(None, [0.03 * np.sin(0.05 * k), 0.0, 0, 0, 0, 0, 0])
 
 
+_GFF = {}
+
+
 def _control(layer, data, cmd):
-    """The control the actuators receive, as the loop sends it: the command plus the gravity offset tau_ff / kp."""
-    data.ctrl[layer.acts] = np.asarray(cmd, float) + layer.gff.torques(data)[layer.off:layer.off + 7] / layer.kp_arm
+    """The control the actuators receive, as the loop sends it: the command plus the gravity offset tau_ff / kp of the loop's own feedforward
+    (this harness stands in for the loop). The layer is told the offset the loop applied this tick (decision 3)."""
+    if id(layer.model) not in _GFF:
+        from src import gravity_ff
+        _GFF[id(layer.model)] = gravity_ff.ArmGravityFeedforward.from_model(layer.model)
+    gff = _GFF[id(layer.model)]
+    off = gff.torques(data)[layer.off:layer.off + 7] / gff.kp[layer.off:layer.off + 7]
+    data.ctrl[layer.acts] = np.asarray(cmd, float) + off
+    layer.set_applied_offset(off)
 
 
 def _cc(layer, q, data, t, dt):
@@ -168,13 +178,14 @@ def case_e(model, data):
     layer.track_open(data, 0.5)                          # before close_min_s: no reset
     early = layer.est.copy()
     layer.track_open(data, 1.6)                          # stalled and past close_min_s: the reset
-    reset_ok = not np.any(layer.est) and rec["changing"] is False and layer.reset_at is not None and layer.reset_at[1] == "release_open_done"
+    done_ok = layer.reset_at is not None and layer.reset_at[1] == "release_open_done" and rec["changing"] is False
     kept = bool(np.array_equal(early, np.array([0.001, 0.002, 0.003, 0.0, 0.0, 0.0, 0.0])))
+    kept_after = bool(np.array_equal(layer.est, early))      # decision 2 (David 2026-11-24): the completion does NOT zero the estimate
     hmr.reset(model)
     data.qpos[fq] = 0.0
-    ok = kept and reset_ok
-    return check("(b) reset rule: the release arms the watch; nothing resets before close_min_s; the reset comes when the release completes", ok,
-                 f"kept before close_min_s {kept}; reset at completion {reset_ok}")
+    ok = kept and done_ok and kept_after
+    return check("(b) release: the watch is armed by the release; the estimate is kept before and after the release completes (no reset, decision 2)", ok,
+                 f"kept before close_min_s {kept}; release completes {done_ok}; estimate kept after completion {kept_after}")
 
 
 def case_g(model, data):
@@ -191,12 +202,12 @@ def case_g(model, data):
         t += NOMINAL
         layer.track_open(data, t)
     first = layer.reset_at is not None
-    layer.est = np.array([0.002, 0, 0, 0, 0, 0, 0])      # the estimate builds again after the reset
+    kept = bool(np.array_equal(layer.est, np.array([0.004, 0, 0, 0, 0, 0, 0])))   # decision 2: the estimate is kept through the completion
     for k in range(200):
         t += NOMINAL
         layer.track_open(data, t)                        # 200 ticks with the fingers open at rest, no release
-    ok = first and bool(np.array_equal(layer.est, np.array([0.002, 0, 0, 0, 0, 0, 0]))) and sum(1 for e in layer.log if e["kind"] == "release_reset") == 1
-    return check("(g) one release, one reset: no second reset without a new release", ok, f"estimate kept after the first reset: {ok}")
+    ok = first and kept and sum(1 for e in layer.log if e["kind"] == "release_done") == 1
+    return check("(g) one release, one completion: no second completion without a new release; estimate kept", ok, f"estimate kept {kept}")
 
 
 def case_h(model, data):

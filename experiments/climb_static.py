@@ -111,9 +111,14 @@ def cmd_static(argv):
         mujoco.mj_forward(phys, d)
 
     def ctrl_for(d, targets):
+        """Writes the control as the loop does (target plus the gravity offset tau_ff / kp of the nominal copy) and returns the offset per arm
+        (the loop passes it to the sag layer, set_applied_offset)."""
         tau = gff.torques(d)
+        applied = {}
         for s in sides:
-            d.ctrl[ACTS[s]] = targets[s] + tau[off[s]:off[s] + 7] / kpv[off[s]:off[s] + 7]
+            applied[s] = tau[off[s]:off[s] + 7] / kpv[off[s]:off[s] + 7]
+            d.ctrl[ACTS[s]] = targets[s] + applied[s]
+        return applied
 
     def pad_rel(d, target_left):
         # the left hand's pad pose of the target minus the pad pose of the settled measured joints (position m, rotation vector rad)
@@ -155,7 +160,7 @@ def cmd_static(argv):
     lines += ["## (b) correction on: learned offset against the droop of (a); the stop-time numbers; the per-joint breakdown at the end of each hold", ""]
     SAG_LAYER_CFG["enabled"] = True
     d = mujoco.MjData(phys)
-    layers = {s: SagLayer(phys, d, s, home[s], gravity_model=nom) for s in sides}
+    layers = {s: SagLayer(phys, d, s, home[s]) for s in sides}
     set_pose(d, poses[0][1])
     t = 0.0
     arm_jnt = np.asarray(arm_ids(phys, "left")["jnt"])
@@ -246,7 +251,9 @@ def _tick(phys, d, layers, targets, ctrl_for, steps, t):
         cmd = layers[s].correct(targets[s], d, t, NOMINAL)
         layers[s].observe(cmd, t, False)
         cmds[s] = np.asarray(cmd, float)
-    ctrl_for(d, cmds)
+    applied = ctrl_for(d, cmds)
+    for s in ("left", "right"):
+        layers[s].set_applied_offset(applied[s])          # the offset the motors receive this tick: the next tick's prediction uses it
     for _ in range(steps):
         mujoco.mj_step(phys, d)
 
@@ -293,7 +300,9 @@ def cmd_heldstill(argv):
         if k % 3 == 0:
             emu.update()
             layer.observe(emu.out, t, False)
-        data.ctrl[acts] = emu.out + gff.torques(data)[off:off + 7] / gff.kp[off:off + 7]
+        offset = gff.torques(data)[off:off + 7] / gff.kp[off:off + 7]
+        data.ctrl[acts] = emu.out + offset
+        layer.set_applied_offset(offset)                  # the loop's offset for this tick (decision 3)
         cp.append(float(np.linalg.norm(layer.C["p"])))
         cr.append(float(np.linalg.norm(layer.C["r"])))
     cp, cr = np.array(cp), np.array(cr)

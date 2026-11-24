@@ -77,10 +77,19 @@ def rig(q0=HOME, delta=None):
     return model, data, layer, qadr, emu, delta
 
 
+_GFF = {}
+
+
 def set_control(layer, data, out):
-    """The control the actuators receive, as the loop sends it: the bridge output plus the gravity offset tau_ff / kp (the measure rule reads it).
-    out: the bridge output (the bridge off: the command itself)."""
-    data.ctrl[layer.acts] = np.asarray(out, float) + layer.gff.torques(data)[layer.off:layer.off + 7] / layer.kp_arm
+    """The control the actuators receive, as the loop sends it: the bridge output plus the gravity offset tau_ff / kp of the loop's own feedforward
+    (this rig stands in for the loop). The layer is told the offset applied this tick (decision 3). out: the bridge output (bridge off: the command)."""
+    if id(layer.model) not in _GFF:
+        from src import gravity_ff
+        _GFF[id(layer.model)] = gravity_ff.ArmGravityFeedforward.from_model(layer.model)
+    gff = _GFF[id(layer.model)]
+    off = gff.torques(data)[layer.off:layer.off + 7] / gff.kp[layer.off:layer.off + 7]
+    data.ctrl[layer.acts] = np.asarray(out, float) + off
+    layer.set_applied_offset(off)
 
 
 def run(model, data, layer, qadr, emu, delta, src_of_k, n, k0=0, bridge=True, suspend_at=None, pad_droop=None):
@@ -120,7 +129,7 @@ def run(model, data, layer, qadr, emu, delta, src_of_k, n, k0=0, bridge=True, su
         lerr = J_now @ layer.last_error if layer.last_error is not None else None
         recs.append({"k": k, "t": t, "C_p": layer.C["p"].copy(), "C_r": layer.C["r"].copy(), "out": out, "meas": meas.copy(),
                      "perr": perr.copy(), "lerr": None if lerr is None else lerr.copy(),
-                     "estpad": float(np.linalg.norm((J_now @ layer.est)[:3])),
+                     "estpad": float(np.linalg.norm((J_now @ layer.est)[:3])), "est": layer.est.copy(), "J": J_now.copy(),
                      "expected": None if layer.expected is None else layer.expected.copy()})
     return recs
 
@@ -178,13 +187,15 @@ def test_offset_held_still_under_a_step():
     step[0] += 0.1                                     # 0.1 rad on joint 1: ten times the bridge's per-update limit
     recs = run(model, data, layer, qadr, emu, delta, lambda k: HOME.copy() if k < 60 else step, 400, pad_droop=PAD)
     C_rest = recs[59]["C_p"].copy()                    # the offset at rest just before the step (the damped law settles off the preset first)
-    errs = [np.linalg.norm(r["lerr"][:3]) for r in recs[60:] if r["lerr"] is not None]
-    max_err_mm = 1000 * max(errs) if errs else float("nan")
+    # David 2026-11-24: test the estimate the layer applies, not the instantaneous error; bound unchanged. The estimate is preset to the droop
+    # (2 mm of pad position), so the check reads how far the applied estimate moves from its value at rest, in pad space (J at each tick).
+    e_rest = recs[59]["est"]
+    max_err_mm = 1000 * max(float(np.linalg.norm((r["J"] @ (r["est"] - e_rest))[:3])) for r in recs[60:])
     drift_mm = 1000 * float(np.linalg.norm(recs[-1]["C_p"] - C_rest))
     settle_mm = 1000 * float(np.linalg.norm(C_rest - target[:3]))
     RESULTS["step"] = {"max_err_mm": round(max_err_mm, 4), "C_drift_mm": round(drift_mm, 4)}
-    check("step larger than the bridge speed limit: the error stays about zero (within 0.5 mm)", max_err_mm <= 0.5,
-          f"max position error after the step {max_err_mm:.3f} mm")
+    check("step larger than the bridge speed limit: the applied estimate does not move from its value at rest (pad position, within 0.5 mm)",
+          max_err_mm <= 0.5, f"largest pad-space change of the applied estimate after the step {max_err_mm:.3f} mm (its value at rest is the 2 mm droop)")
     check("step larger than the bridge speed limit: the offset does not change (within 0.1 mm of its value at rest before the step)", drift_mm <= 0.1,
           f"offset change after the step {drift_mm:.4f} mm (settling from the preset before the step: {settle_mm:.4f} mm)")
 
@@ -242,16 +253,32 @@ def test_single_step_report():
 
 
 def test_held_on_buffer_clamp():
-    """A joint held on its buffer clamp (joint 4 sent at 0 rad, below its buffer edge): the offset does not wind up (it stays bounded, near zero)."""
+    """A joint held on its buffer clamp (joint 4 sent at 0 rad, below its buffer edge). David 2026-11-24: test for WINDUP, not size. t0 is the first
+    tick on which the bridge output reaches the buffer edge (the start-up transient ends there). Window W = 3T (6 s) after t0: (A) after the window
+    the offset does not grow; (B) from the window on it is below the existing bound (0.1 mm position, 1e-4 rad rotation)."""
+    from src.task_config import SAG_LAYER_CFG as _S
     model, data, layer, qadr, emu, delta = rig(HOME)
     tgt = HOME.copy()
     tgt[3] = 0.0
-    recs = run(model, data, layer, qadr, emu, delta, lambda k: tgt.copy(), 900)
-    C_end = float(np.linalg.norm(recs[-1]["C_p"])) * 1000
-    C_r_end = float(np.linalg.norm(recs[-1]["C_r"]))
-    RESULTS["clamp"] = {"C_p_mm": round(C_end, 5), "C_r_rad": round(C_r_end, 7), "out_joint4": round(float(recs[-1]["out"][3]), 5)}
-    check("held on its buffer clamp: the offset does not wind up (position within 0.1 mm, rotation within 1e-4 rad)",
-          C_end <= 0.1 and C_r_end <= 1e-4, f"|C_p| {C_end:.4f} mm, |C_r| {C_r_end:.6f} rad; joint 4 output {recs[-1]['out'][3]:.4f} rad")
+    n = 2400                                            # 16 s: the window ends at about 6.4 s after t0, the rest shows the decay
+    recs = run(model, data, layer, qadr, emu, delta, lambda k: tgt.copy(), n)
+    edge = float(emu.lo[3])
+    out4 = np.array([r["out"][3] for r in recs])
+    reach = np.where(out4 <= edge + 1e-9)[0]               # the joint starts above its lower edge and is driven down onto it
+    k0 = int(reach[0]) if len(reach) else 0
+    W = int(round(3 * float(_S["measure_T_s"]) / NOMINAL))
+    kw = min(k0 + W, n - 1)
+    cp = np.array([np.linalg.norm(r["C_p"]) for r in recs])
+    cr = np.array([np.linalg.norm(r["C_r"]) for r in recs])
+    grows = float(cp[kw:].max() - cp[kw]) if kw < n else 0.0
+    below = bool(np.all(cp[kw:] <= 0.1e-3) and np.all(cr[kw:] <= 1e-4))
+    RESULTS["clamp"] = {"t_edge_s": round(k0 * NOMINAL, 3), "window_end_s": round(kw * NOMINAL, 3), "growth_after_window_um": round(1e6 * grows, 3),
+                        "max_C_p_after_window_mm": round(1e3 * float(cp[kw:].max()), 5), "max_C_r_after_window_mrad": round(1e3 * float(cr[kw:].max()), 5),
+                        "C_p_at_end_mm": round(1e3 * float(cp[-1]), 5)}
+    check("held on its buffer clamp: after the start-up transient the offset does not grow (within 1 um)", grows <= 1e-6,
+          f"growth after the window {1e6 * grows:.3f} um (window ends {kw * NOMINAL:.2f} s, edge reached at {k0 * NOMINAL:.2f} s)")
+    check("held on its buffer clamp: from 3T (6 s) after the transient the offset is below the existing bound (0.1 mm, 1e-4 rad)", below,
+          f"max |C_p| after the window {1e3 * cp[kw:].max():.4f} mm, max |C_r| {1e3 * cr[kw:].max():.4f} mrad; |C_p| at the end {1e3 * cp[-1]:.5f} mm")
 
 
 def _held_bridge_on(src_fn, n=600):
@@ -298,30 +325,38 @@ def test_held_still_bridge_on():
          f"max |C_p| {1000 * cp_u.max():.3f} mm, max |C_r| {1000 * cr_u.max():.3f} mrad")
 
 
+def _corr(layer, data, q, t):
+    """The layer's command, then the control set the way the loop sets it (the offset the motors receive, given to the layer)."""
+    cmd = layer.correct(q, data, t, NOMINAL)
+    set_control(layer, data, cmd)
+    return cmd
+
+
 def test_skip_rules():
-    """Skip rules of the measure rule (stage 2): no update of the estimate on the first tick (no prediction yet); none while the bridge is
-    suspended; a non-finite hand move sends the source's targets unchanged; no update on the tick after a non-finite step. (The integrator's
-    'two references' requirement is gone with the integrator: the measure rule updates from the second tick on.)"""
+    """Skip rules of the measure rule: no update of the estimate before the loop has reported its offset (the first tick); none while the bridge
+    is suspended; a non-finite hand move sends the source's targets unchanged; no update on the tick after a non-finite step."""
     model, data, layer, qadr, emu, delta = rig(HOME)
     layer.est = np.array([1e-3, 0, 0, 0, 0, 0, 0])      # the measure rule's state (the estimate), preset so a skipped update is visible
     C0 = layer.est.copy()
-    layer.correct(HOME.copy(), data, 0.0, NOMINAL)
-    check("no prediction yet: the first tick does not update the estimate", np.allclose(layer.est, C0, atol=1e-12, rtol=0) and layer.skips["no_reference"] >= 1,
-          f"skips {layer.skips}")
-    layer.observe(HOME.copy(), 1 * NOMINAL, True)
+    _corr(layer, data, HOME.copy(), 0.0)
+    check("first tick (no offset from the loop yet): the estimate is not updated", np.allclose(layer.est, C0, atol=1e-12, rtol=0)
+          and (layer.skips["no_offset"] + layer.skips["no_reference"]) >= 1, f"skips {layer.skips}")
+    layer.observe(HOME.copy(), 1 * NOMINAL, False)
+    _corr(layer, data, HOME.copy(), 1 * NOMINAL)
     C1 = layer.est.copy()
-    layer.correct(HOME.copy(), data, 1 * NOMINAL, NOMINAL)
+    layer.observe(HOME.copy(), 2 * NOMINAL, True)
+    _corr(layer, data, HOME.copy(), 2 * NOMINAL)
     check("the bridge suspended: no update on that tick", np.allclose(layer.est, C1, atol=1e-12, rtol=0) and layer.skips["suspended"] >= 1, f"skips {layer.skips}")
-    layer.observe(HOME.copy(), 2 * NOMINAL, False)
+    layer.observe(HOME.copy(), 3 * NOMINAL, False)
     real_j = layer._jacobian
     layer._jacobian = lambda data_: np.full((6, 7), np.nan)
-    cmd = layer.correct(HOME + 0.01, data, 2 * NOMINAL, NOMINAL)
+    cmd = layer.correct(HOME + 0.01, data, 3 * NOMINAL, NOMINAL)
     layer._jacobian = real_j
     check("non-finite hand move: the source's targets are sent unchanged", np.array_equal(cmd, HOME + 0.01) and layer.nonfinite_count >= 1,
           f"nonfinite count {layer.nonfinite_count}")
-    layer.observe(HOME.copy(), 3 * NOMINAL, False)
+    layer.observe(HOME.copy(), 4 * NOMINAL, False)
     C2 = layer.est.copy()
-    layer.correct(HOME.copy(), data, 3 * NOMINAL, NOMINAL)
+    _corr(layer, data, HOME.copy(), 4 * NOMINAL)
     check("the tick after a non-finite step: no update", np.allclose(layer.est, C2, atol=1e-12, rtol=0) and layer.skips["nonfinite"] >= 1, f"skips {layer.skips}")
 
 

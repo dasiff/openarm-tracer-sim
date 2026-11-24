@@ -199,6 +199,13 @@ class SagLayer:
         J = self._jacobian(data)
         dq_raw = self.est.copy()
         hand = J @ dq_raw
+        if not np.all(np.isfinite(hand)):                 # a non-finite hand move: the source's targets are sent unchanged (as for any non-finite command)
+            self.nonfinite_count += 1
+            self.nonfinite_last = True
+            self.dq = np.zeros(7)
+            self.C["p"], self.C["r"] = np.zeros(3), np.zeros(3)
+            self.last_cmd = q_src.copy()
+            return q_src.copy()
         pos_n = float(np.linalg.norm(hand[:3]))
         rot_n = float(np.linalg.norm(hand[3:]))
         scale = min(1.0, HAND_POS_CLIP_M / pos_n if pos_n > 0 else 1.0, HAND_ROT_CLIP_RAD / rot_n if rot_n > 0 else 1.0)

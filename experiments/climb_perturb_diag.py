@@ -195,7 +195,7 @@ def cmd_run(argv):
                 skip = key
         L["skip"].append(SKIPS.index(skip))
         L["applied"].append(int(skip == "none"))
-        L["err"].append(np.full(6, np.nan) if (self.last_error is None or skip != "none") else np.asarray(self.last_error, float).copy())
+        L["err"].append(np.full(7, np.nan) if (self.last_error is None or skip != "none") else np.asarray(self.last_error, float).copy())   # stage 2: the measured sag per joint (7)
         L["scale"].append(float(getattr(self, "clip_scale", 1.0)))
         return cmd
 

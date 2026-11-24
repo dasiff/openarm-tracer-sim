@@ -28,6 +28,13 @@ import numpy as np  # noqa: E402
 from src.control_loop import BRIDGE_ACCEPTED_LOG, BRIDGE_CLAMP, run_loop  # noqa: E402
 from src.task_config import SAG_LAYER_CFG  # noqa: E402
 from experiments_loader import load, steps_per_frame, SPAWN  # noqa: E402
+from src.bridge_clamp import buffer_margins  # noqa: E402
+from src.robot_helpers import arm_ids  # noqa: E402
+import mujoco  # noqa: E402
+_M = mujoco.MjModel.from_xml_path(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'models', 'robot', 'combined_robot.xml'))
+_JNT = np.asarray(arm_ids(_M, 'left')['jnt'])
+HARD_RANGE = np.column_stack([_M.jnt_range[_JNT, 0], _M.jnt_range[_JNT, 1]])     # rad, the hard joint limits (left arm, joints 1-7)
+BUFFER_MARGIN = buffer_margins(HARD_RANGE[:, 0], HARD_RANGE[:, 1])                # rad, the bridge's buffer margin per joint (the configured rule)
 
 ROUTES = {k: "script" for k in ("base", "pedestal", "arms.left", "arms.right", "gripper.left", "gripper.right")}
 RESULTS = []
@@ -92,7 +99,9 @@ def main():
     check("rejections logged with joint, value and limit", len(ev) > 0 and ev[0]["side"] == "left" and ev[0]["joint"] == 3 and abs(ev[0]["value"] - 0.6) < 1e-6 and ev[0]["limit"] == 0.25 and ev[0]["count"] > 10, str(ev[:1]))
 
     print("4. bridge ON: a target past the joint buffer edge (within the step limit) is clamped to the edge; the command reaches the edge and stops there", flush=True)
-    edge3 = 1.570796 - 0.1745329                       # joint 3: buffer upper edge (hard upper limit moved in by the 10-degree margin)
+    # joint 3: buffer upper edge = the hard upper limit moved in by its buffer margin (SF-125: min(5 % of the joint range, 10 degrees); the test
+    # used to hard-code the old fixed 10-degree margin, which the range rule replaced)
+    edge3 = float(HARD_RANGE[2, 1] - BUFFER_MARGIN[2])
 
     def approach(k, rest):
         """Closed-loop source: each target is at most 0.2 rad from the bridge's current command (so no step rejection). It first brings the command to
@@ -111,7 +120,7 @@ def main():
     check("no rejection (the step limit is not exceeded)", not any(e["kind"].startswith("rejected") for e in res["bridge_log"]), str([e["kind"] for e in res["bridge_log"]][:2]))
 
     print("4b. bridge ON: a joint starting 0.17 rad outside its buffer (joint 4 at rest, 0 rad) reaches the edge at the speed cap, never steps more than the cap, never moves further out", flush=True)
-    edge4 = 0.1745329                                  # joint 4: buffer lower edge (hard lower limit 0 rad moved in by the margin)
+    edge4 = float(HARD_RANGE[3, 0] + BUFFER_MARGIN[3])   # joint 4: buffer lower edge (hard lower limit moved in by its buffer margin, SF-125)
     a4, res4, _ = run(240, lambda k, rest: {"mode": "arms", "arm_targets": {"left": [float(x) for x in rest]}} if k >= 30 else None, {"enabled": True}, joint=3)
     reach = np.where(a4 >= edge4 - 1e-9)[0]
     t_reach = (reach[0] / 150.0) if len(reach) else None

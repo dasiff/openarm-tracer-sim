@@ -32,7 +32,6 @@ NOMINAL = 1.0 / 150.0
 EVERY = 3                                    # the bridge updates every third tick (50 Hz)
 RATE = 0.5 / 50.0                            # 0.01 rad per update (0.5 rad/s)
 MARGIN = float(MINK_CFG["joint_margin_rad"])
-LEAK_DEFAULT = float(SAG_LAYER_CFG["sag_leak_tau_s"])   # the configured fade (SF-118), restored by the tests that need it
 FAILS = []
 RESULTS = {}
 
@@ -78,6 +77,12 @@ def rig(q0=HOME, delta=None):
     return model, data, layer, qadr, emu, delta
 
 
+def set_control(layer, data, out):
+    """The control the actuators receive, as the loop sends it: the bridge output plus the gravity offset tau_ff / kp (the measure rule reads it).
+    out: the bridge output (the bridge off: the command itself)."""
+    data.ctrl[layer.acts] = np.asarray(out, float) + layer.gff.torques(data)[layer.off:layer.off + 7] / layer.kp_arm
+
+
 def run(model, data, layer, qadr, emu, delta, src_of_k, n, k0=0, bridge=True, suspend_at=None, pad_droop=None):
     """n ticks. Each tick: the layer's command for the source's targets; the bridge takes it, updates every third tick, and the layer observes the
     output; the measured joints lag the output by the model's motor lag (and the droop delta). Returns the per-tick records."""
@@ -97,6 +102,7 @@ def run(model, data, layer, qadr, emu, delta, src_of_k, n, k0=0, bridge=True, su
         else:
             layer.observe(cmd, t, False)
             out = np.asarray(cmd, float).copy()
+        set_control(layer, data, out)
         outs.append(out)
         v = (outs[-1] - outs[0]) / ((len(outs) - 1) * NOMINAL) if len(outs) > 1 else np.zeros(7)
         if pad_droop is not None:                       # a droop fixed in the hand: the joint offset that gives this pad offset at the current pose
@@ -107,9 +113,15 @@ def run(model, data, layer, qadr, emu, delta, src_of_k, n, k0=0, bridge=True, su
         meas = out - d_t - tau * v
         data.qpos[qadr] = meas
         mujoco.mj_forward(model, data)
+        # the pad error of the measured joints against the source's targets (position m, rotation rad, linearised with the pad Jacobian)
+        J_now = layer._jacobian(data)
+        perr = J_now @ (np.asarray(src_of_k(k), float) - meas)
+        # the layer's own error (the measured sag, pad space): predicted minus measured joints, through the pad Jacobian
+        lerr = J_now @ layer.last_error if layer.last_error is not None else None
         recs.append({"k": k, "t": t, "C_p": layer.C["p"].copy(), "C_r": layer.C["r"].copy(), "out": out, "meas": meas.copy(),
-                     "err": None if layer.last_error is None else layer.last_error.copy(),
-                     "expected": None if layer.last_expected is None else layer.last_expected.copy()})
+                     "perr": perr.copy(), "lerr": None if lerr is None else lerr.copy(),
+                     "estpad": float(np.linalg.norm((J_now @ layer.est)[:3])),
+                     "expected": None if layer.expected is None else layer.expected.copy()})
     return recs
 
 
@@ -122,18 +134,14 @@ def droop_twist(model, data, layer, qadr, delta):
 
 
 def main():
-    leak_saved = SAG_LAYER_CFG["sag_leak_tau_s"]
-    try:
-        test_converges_to_droop()
-        test_offset_held_still_under_a_step()
-        test_constant_speed_ramp()
-        test_staircase_policy_like()
-        test_single_step_report()
-        test_held_on_buffer_clamp()
-        test_held_still_bridge_on()
-        test_skip_rules()
-    finally:
-        SAG_LAYER_CFG["sag_leak_tau_s"] = leak_saved
+    test_converges_to_droop()
+    test_offset_held_still_under_a_step()
+    test_constant_speed_ramp()
+    test_staircase_policy_like()
+    test_single_step_report()
+    test_held_on_buffer_clamp()
+    test_held_still_bridge_on()
+    test_skip_rules()
     print(f"{len(FAILS)} failed of the checks above", flush=True)
     return 1 if FAILS else 0
 
@@ -142,12 +150,11 @@ def test_converges_to_droop():
     """A fixed droop (joint 4 sags 4 mrad), at rest: the learned offset converges to the droop (the pad-space droop J delta), not a multiple of
     it, and the error goes to about zero."""
     PAD = np.array([0.0, 0.0, 0.002, 0.0, 0.0, 0.0])   # a droop fixed in the hand: 2 mm, as a pad offset (position m, rotation rad)
-    SAG_LAYER_CFG["sag_leak_tau_s"] = 1e9            # the integrator alone; the 5 s fade is checked below
     model, data, layer, qadr, emu, delta = rig(HOME, None)
     target = PAD.copy()
     recs = run(model, data, layer, qadr, emu, delta, lambda k: HOME.copy(), 1500, pad_droop=PAD)
     C = np.concatenate([recs[-1]["C_p"], recs[-1]["C_r"]])
-    err = [r["err"] for r in recs if r["err"] is not None][-50:]
+    err = [r["perr"][:3] for r in recs][-50:]
     err_norm = float(np.max(np.linalg.norm(np.array(err), axis=1))) if err else float("nan")
     ratio = float(np.dot(C, target) / np.dot(target, target))
     r_nofade = ratio
@@ -156,32 +163,22 @@ def test_converges_to_droop():
           abs(ratio - 1.0) < 0.1 and np.linalg.norm(C - target) < 0.1 * np.linalg.norm(target),
           f"C/droop ratio {ratio:.3f} (1.000 = the droop)")
     check("from zero: the error goes to about zero (last 50 updates within 0.05 mm)", err_norm < 0.05e-3, f"max error {1000 * err_norm:.4f} mm")
-    # with the 5 s fade (SF-118) the fixed point is gain*tau/(1+gain*tau) of the droop: 3 * 5 / 16 = 15/16 (documented, not a pass/fail of the integrator)
-    SAG_LAYER_CFG["sag_leak_tau_s"] = 5.0
-    model, data, layer, qadr, emu, delta = rig(HOME, None)
-    recs = run(model, data, layer, qadr, emu, delta, lambda k: HOME.copy(), 1500, pad_droop=PAD)
-    C5 = np.concatenate([recs[-1]["C_p"], recs[-1]["C_r"]])
-    r5 = float(np.dot(C5, target) / np.dot(target, target))
-    fixed = 3.0 * 5.0 / (1.0 + 3.0 * 5.0)
-    predicted = fixed * r_nofade                       # the fade's factor times the integrator's own fixed point (the damping bias, r_nofade)
-    RESULTS["fade_fixed_point"] = {"ratio_with_5s_fade": round(r5, 4), "predicted": round(predicted, 4), "integrator_only_ratio": round(r_nofade, 4)}
-    check("with the 5 s fade: the offset settles at gain*tau/(1+gain*tau) (15/16) of the integrator's own fixed point", abs(r5 - predicted) < 0.01,
-          f"ratio {r5:.4f} (predicted {predicted:.4f})")
+    RESULTS["converge_ratio"] = round(r_nofade, 4)
 
 
 def test_offset_held_still_under_a_step():
     """Start at rest with the offset already equal to the droop; step the target by more than one tick's bridge speed limit: the error stays about
     zero and the offset does not change (the fade is switched off here)."""
-    SAG_LAYER_CFG["sag_leak_tau_s"] = 1e9
     PAD = np.array([0.0, 0.0, 0.002, 0.0, 0.0, 0.0])
     model, data, layer, qadr, emu, delta = rig(HOME, None)
     target = PAD.copy()
-    layer.C = {"p": target[:3].copy(), "r": target[3:].copy()}
+    J0 = layer._jacobian(data)
+    layer.est = np.linalg.pinv(J0) @ target            # the measure rule's state: the joint droop that the pad droop needs (the learned state is est)
     step = HOME.copy()
     step[0] += 0.1                                     # 0.1 rad on joint 1: ten times the bridge's per-update limit
     recs = run(model, data, layer, qadr, emu, delta, lambda k: HOME.copy() if k < 60 else step, 400, pad_droop=PAD)
     C_rest = recs[59]["C_p"].copy()                    # the offset at rest just before the step (the damped law settles off the preset first)
-    errs = [np.linalg.norm(r["err"][:3]) for r in recs[60:] if r["err"] is not None]
+    errs = [np.linalg.norm(r["lerr"][:3]) for r in recs[60:] if r["lerr"] is not None]
     max_err_mm = 1000 * max(errs) if errs else float("nan")
     drift_mm = 1000 * float(np.linalg.norm(recs[-1]["C_p"] - C_rest))
     settle_mm = 1000 * float(np.linalg.norm(C_rest - target[:3]))
@@ -195,7 +192,6 @@ def test_offset_held_still_under_a_step():
 def test_constant_speed_ramp():
     """(2a, David 2026-11-24) A constant-speed joint ramp (joint 1, 0.1 rad/s) with the correction on: the learned offset stays within 0.5 mm of its
     at-rest value (the motor filter's lag is removed correctly). Also reports the residual lag per joint: measured minus expected, on the ramp."""
-    SAG_LAYER_CFG["sag_leak_tau_s"] = 1e9
     model, data, layer, qadr, emu, delta = rig(HOME)
     recs0 = run(model, data, layer, qadr, emu, delta, lambda k: HOME.copy(), 120)
     C_rest = layer.C["p"].copy()
@@ -213,7 +209,6 @@ def test_constant_speed_ramp():
 def test_staircase_policy_like():
     """(2b, David 2026-11-24) A staircase reference like the policy's stream: a new 30 Hz target every 5 ticks (joints 1 and 2), with a fixed droop
     in the hand (2 mm). The offset, converged at rest first, must stay within 0.5 mm of its rest value through the staircase (the fade is off)."""
-    SAG_LAYER_CFG["sag_leak_tau_s"] = 1e9
     PAD = np.array([0.0, 0.0, 0.002, 0.0, 0.0, 0.0])
     model, data, layer, qadr, emu, delta = rig(HOME)
 
@@ -237,7 +232,6 @@ def test_staircase_policy_like():
 def test_single_step_report():
     """(2c, David 2026-11-24) REPORT ONLY, not a pass criterion: a single 0.02 rad step on all seven joints at once. Reports the largest difference
     between the filter's expected joint and the measured joint, per joint, after the step (joints 3 and 4 ring)."""
-    SAG_LAYER_CFG["sag_leak_tau_s"] = 1e9
     model, data, layer, qadr, emu, delta = rig(HOME)
     step = HOME + 0.02
     recs = run(model, data, layer, qadr, emu, delta, lambda k: HOME.copy() if k < 300 else step.copy(), 600)
@@ -249,7 +243,6 @@ def test_single_step_report():
 
 def test_held_on_buffer_clamp():
     """A joint held on its buffer clamp (joint 4 sent at 0 rad, below its buffer edge): the offset does not wind up (it stays bounded, near zero)."""
-    SAG_LAYER_CFG["sag_leak_tau_s"] = 1e9
     model, data, layer, qadr, emu, delta = rig(HOME)
     tgt = HOME.copy()
     tgt[3] = 0.0
@@ -272,6 +265,7 @@ def _held_bridge_on(src_fn, n=600):
         if k % EVERY == 0:
             emu.update()
             layer.observe(emu.out, t, False)
+        set_control(layer, data, emu.out)
         cp.append(float(np.linalg.norm(layer.C["p"])))
         cr.append(float(np.linalg.norm(layer.C["r"])))
     return np.array(cp), np.array(cr)
@@ -291,7 +285,6 @@ def test_held_still_bridge_on():
     """(decision 1, David 2026-11-24) The arm held still, the bridge on (emulated). PASS: the zero-mean sweep keeps the offset bounded (|C_p| <= 10 mm,
     |C_r| <= 10 mrad, no growth late in the run). INFORMATIONAL: the sweep with a constant +0.01 rad on joint 3, which the held arm cannot reach: it
     reports the offset reaching the clip (not a pass criterion)."""
-    SAG_LAYER_CFG["sag_leak_tau_s"] = LEAK_DEFAULT
     cp, cr = _held_bridge_on(_zero_mean_src)
     max_p_mm, max_r_mrad = 1000 * cp.max(), 1000 * cr.max()
     grew = bool(cp[-200:].max() > 1.5 * cp[100:300].max() + 1e-4 or cr[-200:].max() > 1.5 * cr[100:300].max() + 1e-4)   # 0.1 mm / 0.1 mrad slack
@@ -306,31 +299,30 @@ def test_held_still_bridge_on():
 
 
 def test_skip_rules():
-    """No update without REF(t-1) and REF(t-2); none while the bridge is suspended (the fade still runs); none after a non-finite step 3."""
-    SAG_LAYER_CFG["sag_leak_tau_s"] = 1e9
+    """Skip rules of the measure rule (stage 2): no update of the estimate on the first tick (no prediction yet); none while the bridge is
+    suspended; a non-finite hand move sends the source's targets unchanged; no update on the tick after a non-finite step. (The integrator's
+    'two references' requirement is gone with the integrator: the measure rule updates from the second tick on.)"""
     model, data, layer, qadr, emu, delta = rig(HOME)
-    layer.C = {"p": np.array([1e-3, 0, 0]), "r": np.zeros(3)}
-    C0 = layer.C["p"].copy()
+    layer.est = np.array([1e-3, 0, 0, 0, 0, 0, 0])      # the measure rule's state (the estimate), preset so a skipped update is visible
+    C0 = layer.est.copy()
     layer.correct(HOME.copy(), data, 0.0, NOMINAL)
-    check("no reference yet: the first tick does not update the offset", np.allclose(layer.C["p"], C0, atol=1e-9, rtol=0) and layer.skips["no_reference"] >= 1,
+    check("no prediction yet: the first tick does not update the estimate", np.allclose(layer.est, C0, atol=1e-12, rtol=0) and layer.skips["no_reference"] >= 1,
           f"skips {layer.skips}")
-    layer.observe(HOME.copy(), 1 * NOMINAL, False)
+    layer.observe(HOME.copy(), 1 * NOMINAL, True)
+    C1 = layer.est.copy()
     layer.correct(HOME.copy(), data, 1 * NOMINAL, NOMINAL)
-    check("one reference only: the second tick does not update the offset", np.allclose(layer.C["p"], C0, atol=1e-9, rtol=0), "")
-    layer.observe(HOME.copy(), 2 * NOMINAL, True)
-    layer.correct(HOME.copy(), data, 2 * NOMINAL, NOMINAL)
-    check("the bridge suspended: no update on that tick", np.allclose(layer.C["p"], C0, atol=1e-9, rtol=0) and layer.skips["suspended"] >= 1, f"skips {layer.skips}")
-    layer.observe(HOME.copy(), 3 * NOMINAL, False)
+    check("the bridge suspended: no update on that tick", np.allclose(layer.est, C1, atol=1e-12, rtol=0) and layer.skips["suspended"] >= 1, f"skips {layer.skips}")
+    layer.observe(HOME.copy(), 2 * NOMINAL, False)
     real_j = layer._jacobian
     layer._jacobian = lambda data_: np.full((6, 7), np.nan)
-    cmd = layer.correct(HOME + 0.01, data, 3 * NOMINAL, NOMINAL)
+    cmd = layer.correct(HOME + 0.01, data, 2 * NOMINAL, NOMINAL)
     layer._jacobian = real_j
-    check("non-finite step 3: the source's targets are sent unchanged", np.array_equal(cmd, HOME + 0.01) and layer.nonfinite_count >= 1,
+    check("non-finite hand move: the source's targets are sent unchanged", np.array_equal(cmd, HOME + 0.01) and layer.nonfinite_count >= 1,
           f"nonfinite count {layer.nonfinite_count}")
-    layer.observe(HOME.copy(), 4 * NOMINAL, False)
-    C1 = layer.C["p"].copy()
-    layer.correct(HOME.copy(), data, 4 * NOMINAL, NOMINAL)
-    check("the tick after a non-finite step: no update", np.allclose(layer.C["p"], C1, atol=1e-9, rtol=0) and layer.skips["nonfinite"] >= 1, f"skips {layer.skips}")
+    layer.observe(HOME.copy(), 3 * NOMINAL, False)
+    C2 = layer.est.copy()
+    layer.correct(HOME.copy(), data, 3 * NOMINAL, NOMINAL)
+    check("the tick after a non-finite step: no update", np.allclose(layer.est, C2, atol=1e-12, rtol=0) and layer.skips["nonfinite"] >= 1, f"skips {layer.skips}")
 
 
 if __name__ == "__main__":

@@ -768,12 +768,10 @@ SAG_LAYER_CFG = {
     # Plain on/off switch, no unit. True (default): the sag trim runs as a layer for every arm command of every source. False (experiment only):
     # the layer passes the source's joint targets through unchanged, so the arm gets no sag correction. [row M262]
     "enabled": True,
-    # Leaky integrator (Phase S, row SF-118; replaces the per-arm freeze of SF-109, which is removed). On every control tick the trim is multiplied
-    # by exp(-dt / sag_leak_tau_s) before the new correction is added, so an old correction fades when the error no longer renews it. The freeze
-    # and its two settings (freeze_tol_rad, freeze_still_ticks) are gone.
-    # sag_leak_tau_s: seconds, the time constant (with no new error the trim falls to 1/e of its value in this time). 5.0 is David's value from
-    # the SF-118 brief (2026-11-20). [row SF-118]
-    "sag_leak_tau_s": 5.0,
+    # Measure rule (staged rebuild stage 2, David 2026-11-24; row SF-127): each joint's correction is the average of the measured sag (predicted joints
+    # minus measured joints) through a first-order low-pass with this time constant. Seconds. 2.0 is David's choice (SF-127). The integrator and its
+    # 5 s leak (SF-118) are removed from production.
+    "measure_T_s": 2.0,
 }
 
 # ----------------------------------------------------------------------------------------------------------
@@ -847,13 +845,6 @@ SAFETY_FILTER_PLUGIN_CFG = {
     "max_ticks": None,              # filter calls [SF-64]: stop the run cleanly after this many filter calls (the recording is saved); None = no limit
 }
 
-# SF-123 test copy (David, 2026-11-24): which learning rule the sag layers use. "integrator" = the production layer (src/sag_layer.py, the default);
-# "measure" = the test copy that measures the sag directly and averages it (src/sag_measure.py). measure_T_s: the time constant T (s) of the
-# average of the measured sag (not chosen: David will choose it from the test tables; 0.5 s here is a placeholder for the smoke tests only).
-SAG_RULE_CFG = {
-    "rule": "integrator",
-    "measure_T_s": 0.5,
-}
 
 # SF-125 (David, 2026-11-24): the command bridge's joint buffer. mode "range" = the buffer of each joint is range_fraction of its own range on each
 # side, capped at cap_deg (the buffer then limits joint range inside the bridge only: the sources see the targets they sent). mode "fixed" = the

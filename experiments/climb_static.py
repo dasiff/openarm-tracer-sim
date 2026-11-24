@@ -67,13 +67,8 @@ def cmd_static(argv):
     ap = argparse.ArgumentParser()
     ap.add_argument("--out", required=True)
     ap.add_argument("--nominal-physics", action="store_true", help="control: no perturbation in the physics (the same gravity term)")
-    ap.add_argument("--rule", choices=["integrator", "measure"], default="integrator")
-    ap.add_argument("--T", type=float, default=0.5)
     a = ap.parse_args(argv)
-    from src.task_config import SAG_RULE_CFG
-    from src.sag_measure import make_sag_layer
-    SAG_RULE_CFG["rule"] = a.rule
-    SAG_RULE_CFG["measure_T_s"] = a.T
+    from src.sag_layer import SagLayer
     from experiments_loader import load
     from src import sag_layer, gravity_ff
     from src.robot_helpers import arm_ids
@@ -160,7 +155,7 @@ def cmd_static(argv):
     lines += ["## (b) correction on: learned offset against the droop of (a); the stop-time numbers; the per-joint breakdown at the end of each hold", ""]
     SAG_LAYER_CFG["enabled"] = True
     d = mujoco.MjData(phys)
-    layers = {s: make_sag_layer(phys, d, s, home[s], gravity_model=nom) for s in sides}
+    layers = {s: SagLayer(phys, d, s, home[s], gravity_model=nom) for s in sides}
     set_pose(d, poses[0][1])
     t = 0.0
     arm_jnt = np.asarray(arm_ids(phys, "left")["jnt"])
@@ -265,23 +260,19 @@ def cmd_heldstill(argv):
     offset (mm, mrad) and whether it grows late in the run."""
     ap = argparse.ArgumentParser()
     ap.add_argument("--out", required=True)
-    ap.add_argument("--rule", choices=["integrator", "measure"], default="integrator")
-    ap.add_argument("--T", type=float, default=0.5)
     ap.add_argument("--unreachable", action="store_true")
     a = ap.parse_args(argv)
     from experiments_loader import load
     from src import gravity_ff
     from src.robot_helpers import arm_ids
-    from src.task_config import SAG_RULE_CFG, SAG_LAYER_CFG, TASK_CFG, MINK_CFG
+    from src.task_config import SAG_LAYER_CFG, TASK_CFG, MINK_CFG
     from src.bridge_clamp import buffer_limits
-    from src.sag_measure import make_sag_layer
+    from src.sag_layer import SagLayer
     import sag_solver_free_test as T_
-    SAG_RULE_CFG["rule"] = a.rule
-    SAG_RULE_CFG["measure_T_s"] = a.T
     SAG_LAYER_CFG["enabled"] = True
     model, data = load()
     HOME = np.asarray(TASK_CFG["home_q_left"], float)
-    layer = make_sag_layer(model, data, "left", HOME)
+    layer = SagLayer(model, data, "left", HOME)
     ids = arm_ids(model, "left")
     qadr = np.asarray(ids["qadr"])
     jnt = np.asarray(ids["jnt"])
@@ -307,7 +298,7 @@ def cmd_heldstill(argv):
         cr.append(float(np.linalg.norm(layer.C["r"])))
     cp, cr = np.array(cp), np.array(cr)
     grew = bool(cp[-200:].max() > 1.5 * cp[100:300].max() + 1e-4 or cr[-200:].max() > 1.5 * cr[100:300].max() + 1e-4)
-    res = {"rule": a.rule, "T_s": a.T, "unreachable": a.unreachable, "max_C_p_mm": round(1e3 * cp.max(), 3), "max_C_r_mrad": round(1e3 * cr.max(), 3),
+    res = {"rule": "measure (production, stage 2)", "T_s": SAG_LAYER_CFG["measure_T_s"], "unreachable": a.unreachable, "max_C_p_mm": round(1e3 * cp.max(), 3), "max_C_r_mrad": round(1e3 * cr.max(), 3),
            "growth_late": grew, "final_C_p_mm": round(1e3 * cp[-1], 3)}
     Path(a.out + ".json").write_text(json.dumps(res, indent=1))
     print(json.dumps(res), flush=True)

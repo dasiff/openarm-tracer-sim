@@ -78,25 +78,19 @@ def cmd_run(argv):
     ap.add_argument("--out", required=True)
     ap.add_argument("--perturb", action="store_true")
     ap.add_argument("--correction", choices=["on", "off"], default="on")
-    ap.add_argument("--rule", choices=["integrator", "measure"], default=None, help="SF-123 test copy: the learning rule (default: the config)")
-    ap.add_argument("--T", type=float, default=None, help="SF-123 test copy: the time constant T (s) of the measured-sag average")
     ap.add_argument("--buffer", choices=["range", "fixed"], default=None, help="SF-125: the bridge buffer rule (default: the config)")
     a, rest = ap.parse_known_args(argv)
     if rest and rest[0] == "--":
         rest = rest[1:]
     import mujoco
     from src import sag_layer, gravity_ff
-    from src.task_config import SAG_LAYER_CFG, SAG_RULE_CFG
+    from src.task_config import SAG_LAYER_CFG
     from src.robot_helpers import arm_ids
     SAG_LAYER_CFG["enabled"] = a.correction == "on"
-    if a.rule is not None:
-        SAG_RULE_CFG["rule"] = a.rule
-    if a.T is not None:
-        SAG_RULE_CFG["measure_T_s"] = a.T
     if a.buffer is not None:
         from src.task_config import BRIDGE_BUFFER_CFG as _BB
         _BB["mode"] = a.buffer
-    rule_info = dict(SAG_RULE_CFG)
+    rule_info = {"rule": "measure (production, stage 2)", "measure_T_s": SAG_LAYER_CFG["measure_T_s"]}
     # SF-125 logging: the raw arm targets the sources sent (the first 60 arms commands, before any validation), and the bridge's clamp counts
     import src.commands as _cmds
     from src.task_config import BRIDGE_BUFFER_CFG
@@ -169,8 +163,6 @@ def cmd_run(argv):
     gravity_ff.ArmGravityFeedforward.torques = torques_wrapped
 
     real_correct = sag_layer.SagLayer.correct
-    from src import sag_measure
-    real_measure_correct = sag_measure.MeasureSagLayer.correct
     acts = {}
 
     def correct_wrapped(self, q_src, data, t, nominal_dt):
@@ -190,7 +182,7 @@ def cmd_run(argv):
         L["ref"].append(self.refs[-1][1].copy() if self.refs else np.full(7, np.nan))
         k = 0 if s == "left" else 8
         L["tau_ff"].append(np.array(state["tau"][k:k + 7], float) if state["tau"] is not None else np.full(7, np.nan))
-        real = real_measure_correct if isinstance(self, sag_measure.MeasureSagLayer) else real_correct
+        real = real_correct
         cmd = real(self, q_src, data, t, nominal_dt)
         L["cmd"].append(np.asarray(cmd, float).copy())
         L["dq"].append(np.asarray(self.dq, float).copy())
@@ -208,7 +200,6 @@ def cmd_run(argv):
         return cmd
 
     sag_layer.SagLayer.correct = correct_wrapped
-    sag_measure.MeasureSagLayer.correct = correct_wrapped
 
     def save():
         info["arms_commands_raw_first60"] = arms_log

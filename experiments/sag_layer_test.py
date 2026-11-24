@@ -103,8 +103,8 @@ def _cc_cmd(layers, cmd, data, t, dt):
     command itself). Without the feed the layer has no reference and skips every tick (no_reference)."""
     out = correct_command(layers, cmd, data, t, dt)
     if out.get("mode") == "arms" and out.get("arm_targets"):
-        for s, L in layers.items():
-            L.observe(np.array(out["arm_targets"][s], float), t, False)
+        for s, q in out["arm_targets"].items():            # only the arms the command carries (the loop feeds each arm's own output)
+            layers[s].observe(np.array(q, float), t, False)
     return out
 
 

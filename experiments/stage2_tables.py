@@ -127,13 +127,12 @@ def static_table(root):
 def held_table(root):
     lines = ["## Held run (seed 4294874296, --liquid 0.100), production layer", "", "| run | outcome | sag mean (ms) | sag p99 (ms) | bridge p99 (ms) |",
              "|---|---|---|---|---|"]
-    for name, log, tim in (("nominal", root / "final" / "held_nominal.log", root / "final" / "held_nominal" / "held_timing.json"),
-                           ("perturbed", root / "final" / "held_perturbed.log", None)):
+    for name, log, tim in (("nominal", root / "held_nominal" / "timing.log", root / "held_nominal" / "held_timing.json"),
+                           ("perturbed", root / "held_perturbed" / "trace.log", None)):
         out = "not run"
         if log.exists():
-            m = re.search(r"outcome (.*)", log.read_text())
+            m = re.search(r"outcome (.*)", log.read_text(errors="replace"))
             out = m.group(1).strip() if m else "no outcome line"
-        sg = br = "-"
         if tim and tim.exists():
             t = json.loads(tim.read_text())
             sg = f"{t['sag_layer_call_ms']['mean']:.3f} | {t['sag_layer_call_ms']['p99']:.3f} | {t['bridge_call_ms']['p99']:.3f}"

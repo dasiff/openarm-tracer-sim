@@ -11,6 +11,7 @@ through the five poses, the right arm stays at home.
 """
 
 import argparse
+import json
 import sys
 from pathlib import Path
 
@@ -66,7 +67,13 @@ def cmd_static(argv):
     ap = argparse.ArgumentParser()
     ap.add_argument("--out", required=True)
     ap.add_argument("--nominal-physics", action="store_true", help="control: no perturbation in the physics (the same gravity term)")
+    ap.add_argument("--rule", choices=["integrator", "measure"], default="integrator")
+    ap.add_argument("--T", type=float, default=0.5)
     a = ap.parse_args(argv)
+    from src.task_config import SAG_RULE_CFG
+    from src.sag_measure import make_sag_layer
+    SAG_RULE_CFG["rule"] = a.rule
+    SAG_RULE_CFG["measure_T_s"] = a.T
     from experiments_loader import load
     from src import sag_layer, gravity_ff
     from src.robot_helpers import arm_ids
@@ -148,7 +155,7 @@ def cmd_static(argv):
     lines += ["## (b) correction on: learned offset against the droop of (a), and the settling after each move", ""]
     SAG_LAYER_CFG["enabled"] = True
     d = mujoco.MjData(phys)
-    layers = {s: SagLayer(phys, d, s, home[s]) for s in sides}
+    layers = {s: make_sag_layer(phys, d, s, home[s], gravity_model=nom) for s in sides}
     set_pose(d, poses[0][1])
     t = 0.0
     seq = []
@@ -204,6 +211,63 @@ def _tick(phys, d, layers, targets, ctrl_for, steps, t):
     ctrl_for(d, cmds)
     for _ in range(steps):
         mujoco.mj_step(phys, d)
+
+
+
+
+def cmd_heldstill(argv):
+    """Held-still zero-mean control (SF-123 test copy): the arm is held still (its measured joints never move), the bridge emulated (the same
+    emulator as sag_solver_free_test), the control set to the bridge output plus the gravity offset, as the loop does. Zero-mean sweep (joints 1
+    and 2) is the bounded control; the unreachable variant adds a constant +0.01 rad on joint 3 (informational). Reports the largest hand-space
+    offset (mm, mrad) and whether it grows late in the run."""
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--out", required=True)
+    ap.add_argument("--rule", choices=["integrator", "measure"], default="integrator")
+    ap.add_argument("--T", type=float, default=0.5)
+    ap.add_argument("--unreachable", action="store_true")
+    a = ap.parse_args(argv)
+    from experiments_loader import load
+    from src import gravity_ff
+    from src.robot_helpers import arm_ids
+    from src.task_config import SAG_RULE_CFG, SAG_LAYER_CFG, TASK_CFG, MINK_CFG
+    from src.bridge_clamp import buffer_limits
+    from src.sag_measure import make_sag_layer
+    import sag_solver_free_test as T_
+    SAG_RULE_CFG["rule"] = a.rule
+    SAG_RULE_CFG["measure_T_s"] = a.T
+    SAG_LAYER_CFG["enabled"] = True
+    model, data = load()
+    HOME = np.asarray(TASK_CFG["home_q_left"], float)
+    layer = make_sag_layer(model, data, "left", HOME)
+    ids = arm_ids(model, "left")
+    qadr = np.asarray(ids["qadr"])
+    jnt = np.asarray(ids["jnt"])
+    data.qpos[qadr] = HOME
+    mujoco.mj_forward(model, data)
+    lo, hi = buffer_limits(model.jnt_range[jnt, 0], model.jnt_range[jnt, 1])
+    emu = T_.BridgeEmu(HOME, lo, hi)
+    gff = gravity_ff.ArmGravityFeedforward.from_model(model)
+    off = 0
+    acts = np.array([[i for i in range(model.nu) if model.actuator_trnid[i, 0] == j][0] for j in jnt])
+    NOM = 1.0 / 150.0
+    cp, cr = [], []
+    for k in range(600):
+        t = k * NOM
+        src = HOME + np.array([0.03 * np.sin(0.05 * k), 0.02 * np.cos(0.05 * k), 0.01 if a.unreachable else 0.0, 0, 0, 0, 0])
+        cmd = layer.correct(src, data, t, NOM)
+        emu.take(cmd)
+        if k % 3 == 0:
+            emu.update()
+            layer.observe(emu.out, t, False)
+        data.ctrl[acts] = emu.out + gff.torques(data)[off:off + 7] / gff.kp[off:off + 7]
+        cp.append(float(np.linalg.norm(layer.C["p"])))
+        cr.append(float(np.linalg.norm(layer.C["r"])))
+    cp, cr = np.array(cp), np.array(cr)
+    grew = bool(cp[-200:].max() > 1.5 * cp[100:300].max() + 1e-4 or cr[-200:].max() > 1.5 * cr[100:300].max() + 1e-4)
+    res = {"rule": a.rule, "T_s": a.T, "unreachable": a.unreachable, "max_C_p_mm": round(1e3 * cp.max(), 3), "max_C_r_mrad": round(1e3 * cr.max(), 3),
+           "growth_late": grew, "final_C_p_mm": round(1e3 * cp[-1], 3)}
+    Path(a.out + ".json").write_text(json.dumps(res, indent=1))
+    print(json.dumps(res), flush=True)
 
 
 if __name__ == "__main__":

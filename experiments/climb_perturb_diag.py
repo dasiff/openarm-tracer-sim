@@ -78,16 +78,24 @@ def cmd_run(argv):
     ap.add_argument("--out", required=True)
     ap.add_argument("--perturb", action="store_true")
     ap.add_argument("--correction", choices=["on", "off"], default="on")
+    ap.add_argument("--rule", choices=["integrator", "measure"], default=None, help="SF-123 test copy: the learning rule (default: the config)")
+    ap.add_argument("--T", type=float, default=None, help="SF-123 test copy: the time constant T (s) of the measured-sag average")
     a, rest = ap.parse_known_args(argv)
     if rest and rest[0] == "--":
         rest = rest[1:]
     import mujoco
     from src import sag_layer, gravity_ff
-    from src.task_config import SAG_LAYER_CFG
+    from src.task_config import SAG_LAYER_CFG, SAG_RULE_CFG
     from src.robot_helpers import arm_ids
     SAG_LAYER_CFG["enabled"] = a.correction == "on"
+    if a.rule is not None:
+        SAG_RULE_CFG["rule"] = a.rule
+    if a.T is not None:
+        SAG_RULE_CFG["measure_T_s"] = a.T
+    rule_info = dict(SAG_RULE_CFG)
     info = {"perturb": a.perturb, "correction": a.correction}
-    rec = {s: {k: [] for k in ("t", "src", "q", "v", "ctrl", "force", "ref", "cmd", "dq", "C_p", "C_r", "expected", "err", "applied", "skip", "tau_ff")} for s in SIDES}
+    info["rule"] = rule_info
+    rec = {s: {k: [] for k in ("t", "src", "q", "v", "ctrl", "force", "ref", "cmd", "dq", "C_p", "C_r", "expected", "err", "applied", "skip", "tau_ff", "scale")} for s in SIDES}
     SKIPS = ["none", "no_reference", "suspended", "nonfinite", "guard"]
     state = {"tau": None}
 
@@ -141,6 +149,8 @@ def cmd_run(argv):
     gravity_ff.ArmGravityFeedforward.torques = torques_wrapped
 
     real_correct = sag_layer.SagLayer.correct
+    from src import sag_measure
+    real_measure_correct = sag_measure.MeasureSagLayer.correct
     acts = {}
 
     def correct_wrapped(self, q_src, data, t, nominal_dt):
@@ -160,7 +170,8 @@ def cmd_run(argv):
         L["ref"].append(self.refs[-1][1].copy() if self.refs else np.full(7, np.nan))
         k = 0 if s == "left" else 8
         L["tau_ff"].append(np.array(state["tau"][k:k + 7], float) if state["tau"] is not None else np.full(7, np.nan))
-        cmd = real_correct(self, q_src, data, t, nominal_dt)
+        real = real_measure_correct if isinstance(self, sag_measure.MeasureSagLayer) else real_correct
+        cmd = real(self, q_src, data, t, nominal_dt)
         L["cmd"].append(np.asarray(cmd, float).copy())
         L["dq"].append(np.asarray(self.dq, float).copy())
         L["C_p"].append(self.C["p"].copy())
@@ -173,9 +184,11 @@ def cmd_run(argv):
         L["skip"].append(SKIPS.index(skip))
         L["applied"].append(int(skip == "none"))
         L["err"].append(np.full(6, np.nan) if (self.last_error is None or skip != "none") else np.asarray(self.last_error, float).copy())
+        L["scale"].append(float(getattr(self, "clip_scale", 1.0)))
         return cmd
 
     sag_layer.SagLayer.correct = correct_wrapped
+    sag_measure.MeasureSagLayer.correct = correct_wrapped
 
     def save():
         out = {"info": np.array(json.dumps(info, default=str))}
@@ -210,6 +223,9 @@ def main():
     elif mode == "static":
         from climb_static import cmd_static
         cmd_static(argv[1:])
+    elif mode == "heldstill":
+        from climb_static import cmd_heldstill
+        cmd_heldstill(argv[1:])
     else:
         raise SystemExit(__doc__)
 

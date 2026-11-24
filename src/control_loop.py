@@ -105,7 +105,8 @@ from src.task_config import COMMAND_BRIDGE_CFG
 from src.holding import HoldDetector                          # M253: the holding verdict, the same rule as the signal trace
 from src.open_catch import OpenCatch, SourceGate                # M253: catches an open while holding; gates the sources (always on)
 from src.weigh_helper import WeighHelper                         # M258: weighs each grasp once, pausing its source (always on)
-from src.sag_layer import SAG_TRACE, SagLayer, correct_command                    # M262: the sag trim, a layer between the source and the bridge (always on); S5 (Phase S): the trim's per-arm freeze decides, no source gate
+from src.sag_layer import SAG_TRACE, SagLayer, correct_command
+from src.sag_measure import make_sag_layer                                              # SF-123 test copy: the layer factory (production SagLayer unless SAG_RULE_CFG rule is "measure")                    # M262: the sag trim, a layer between the source and the bridge (always on); S5 (Phase S): the trim's per-arm freeze decides, no source gate
 from src.task_config import PICK_PLACE_CFG                       # M258: the weighing's values (liftoff_*, settle_*)
 from src.task_config import CHUNK_CFG
 from src.elbow_guard import ElbowGuard                        # M269: the elbow height guard, clamps the arm targets (ctrl_block)
@@ -642,7 +643,7 @@ def run_loop(model, data, sources, cfg, viewer=None, logger=None):
     open_catch_log = []                                        # entries {"tick", "side", "kind", ...} (caught, repeat_ignored, released, failed_hold, opened, ...)
     # --- M262: the sag trim, one layer per arm (always on). Its posture target is cfg["sag_home_q"] (side -> 7 radians), else the joints at the start ---
     sag_home = cfg.get("sag_home_q") or {}
-    sag = {s: SagLayer(model, data, s, sag_home[s] if s in sag_home else data.qpos[arm_qadr[s]].copy()) for s in sides}
+    sag = {s: make_sag_layer(model, data, s, sag_home[s] if s in sag_home else data.qpos[arm_qadr[s]].copy()) for s in sides}   # SF-123 test copy: the rule is chosen by SAG_RULE_CFG (default: the production SagLayer)
     elbow_guard = ElbowGuard(model, sides, arm_qadr, ped_qadr)     # M269: the elbow joint centre stays above ELBOW_GUARD_CFG["min_joint_z_m"]
     # --- M258: the weighing helper (one per hand, always on): the pad centre is the robot's own kinematics (the same point as the script's pad) ---
     def pad_point(s):

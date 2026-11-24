@@ -846,3 +846,11 @@ SAFETY_FILTER_PLUGIN_CFG = {
     "hold_stop_s": None,            # simulated seconds [SF-64]: stop the run cleanly when the filter has held the arm (status not PASS and the command sent unchanged) this long in a row; None = never (the cat demo uses 5)
     "max_ticks": None,              # filter calls [SF-64]: stop the run cleanly after this many filter calls (the recording is saved); None = no limit
 }
+
+# SF-123 test copy (David, 2026-11-24): which learning rule the sag layers use. "integrator" = the production layer (src/sag_layer.py, the default);
+# "measure" = the test copy that measures the sag directly and averages it (src/sag_measure.py). measure_T_s: the time constant T (s) of the
+# average of the measured sag (not chosen: David will choose it from the test tables; 0.5 s here is a placeholder for the smoke tests only).
+SAG_RULE_CFG = {
+    "rule": "integrator",
+    "measure_T_s": 0.5,
+}

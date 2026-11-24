@@ -140,8 +140,7 @@ class SagLayer:
         self.open_t = None            # the time the open that is being watched started
         self.still = None             # the stall test's state of that open
         self.log = []                 # entries {"t", "kind", ...}: a reset
-        self.refs = []                # the last two references [(t, REF joints)], REF(t-1) last; REF is the bridge output minus dq at that update
-        self.outs = []                # the last two bridge outputs [(t, output joints)], the newest last: the speed term uses their change (SF-123 decision 4)
+        self.refs = []                # the last two references [(t, REF joints)], REF(t-1) last; REF is the bridge output minus dq at that update (the speed term uses their change)
         self.dq = np.zeros(7)         # the joint change of the latest command (dq(t)), set by correct
         self.suspended = False        # the bridge's suspension at the last observation
         self.nonfinite_last = False   # the last tick's step 3 was not finite
@@ -173,12 +172,13 @@ class SagLayer:
         return np.vstack([jacp[:, self.arm.vadr], jacr[:, self.arm.vadr]])
 
     def _ref_speed(self):
-        """The speed term: the change between the last two bridge outputs divided by the time between them (SF-123 decision 4). The position
-        reference of the expected joints stays REF(t-1) = output - dq."""
-        (t1, o1), (t2, o2) = self.outs[-1], self.outs[-2]
+        """The speed term (SF-122 stage 2 spec, David 2026-11-24): the change between the last two REFERENCES divided by the time between them,
+        refspeed = (REF(t-1) - REF(t-2)) / (t1 - t2), where REF = bridge output - dq. Not the raw bridge outputs (they contain the layer's own
+        dq, which would feed the correction back through this term), and not the source targets."""
+        (t1, r1), (t2, r2) = self.refs[-1], self.refs[-2]
         if t1 <= t2:
             return None
-        return (o1 - o2) / (t1 - t2)
+        return (r1 - r2) / (t1 - t2)
 
     def correct(self, q_src, data, t, nominal_dt):
         """The command (7 joint targets) for the source's targets q_src (7), at time t. nominal_dt: the source's command period (s)."""
@@ -242,8 +242,6 @@ class SagLayer:
         ref = np.asarray(q_out, float) - self.dq
         self.refs.append((float(t), ref))
         del self.refs[:-2]
-        self.outs.append((float(t), np.asarray(q_out, float).copy()))
-        del self.outs[:-2]
         self.suspended = bool(suspended)
 
     def release_open(self, t):

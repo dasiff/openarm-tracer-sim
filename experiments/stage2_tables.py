@@ -76,7 +76,9 @@ def teleop_table(root):
         lines.append(f"- offset peak |C_p| {1000 * cp_norm.max():.2f} mm; ticks at the 40 mm clip {int(np.sum(cp_norm >= 0.04 * (1 - 1e-9)))}; "
                      f"peak |C_r| {1000 * cr_norm.max():.2f} mrad; ticks at the 100 mrad clip {int(np.sum(cr_norm >= 0.1 * (1 - 1e-9)))}")
         # pauses: the bridge-accepted reference (REF) unchanged for at least 1 s on consecutive logged ticks
-        changed = np.r_[True, np.any(np.abs(np.diff(ref, axis=0)) > 0, axis=1)]
+        # a tick with no bridge reference (NaN: no arm command has gone through the bridge yet) is not a pause: NaN compares as "unchanged" otherwise
+        finite = np.all(np.isfinite(ref), axis=1)
+        changed = np.r_[True, np.any(np.abs(np.diff(ref, axis=0)) > 0, axis=1)] | ~finite
         pauses = []
         i = 1
         while i < len(t):
@@ -84,7 +86,7 @@ def teleop_table(root):
                 j = i
                 while j < len(t) and not changed[j]:
                     j += 1
-                if t[min(j, len(t) - 1)] - t[i] >= 1.0:
+                if t[min(j, len(t) - 1)] - t[i] >= 1.0 and finite[i]:
                     pauses.append(i)
                 i = j
             else:

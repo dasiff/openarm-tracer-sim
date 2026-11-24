@@ -120,7 +120,7 @@ SERVO_LOG = {"tick": -1, "tau_cmd": None, "tau_ff": None}
 BRIDGE_ACCEPTED_LOG = {"tick": -1, "accepted_L": None, "accepted_R": None, "limited_L": None, "limited_R": None}
 # SF-122 stage 1 (logging only): per arm and joint, how many times the bridge clamped a source's target into its joint buffer (bridge_take). The
 # command is not clamped: it follows the target at the bridge's speed and step rules. Reset at the start of each run_loop.
-BRIDGE_CLAMP = {"target": {"left": np.zeros(7, int), "right": np.zeros(7, int)}}
+BRIDGE_CLAMP = {"target": {"left": np.zeros(7, int), "right": np.zeros(7, int)}, "updates": {"left": np.zeros(7, int), "right": np.zeros(7, int)}}   # "target": source commands clamped (per command); "updates": bridge updates that used a clamped target (per joint)
 BRIDGE_TIME = []    # SF-122 timing (logging only): seconds spent in each bridge call (bridge_take per arms command, bridge_update per update)
 
 LOOP_CFG = {
@@ -618,7 +618,8 @@ def run_loop(model, data, sources, cfg, viewer=None, logger=None):
 
     # --- The command bridge (row M193): the real arms' command limits between the sources and the arm targets ---
     bcfg = {**COMMAND_BRIDGE_CFG, **(cfg.get("command_bridge") or {})}
-    bridge = {"on": bool(bcfg["enabled"]) and cfg["replay"] is None, "cmd": None, "target": {}, "accepted": {}, "suspended": False, "log": [], "printed": 0}
+    bridge = {"on": bool(bcfg["enabled"]) and cfg["replay"] is None, "cmd": None, "target": {}, "accepted": {}, "suspended": False, "log": [], "printed": 0,
+              "pending_clamp": {s_: np.zeros(7, bool) for s_ in sides}}      # SF-122 stage 2: clamped joints since the last update (for the "updates" count)
     bridge_every = max(1, int(round(cfg["source_hz"] / bcfg["rate_hz"])))
     bridge_step = bcfg["max_joint_velocity_rad_s"] / bcfg["rate_hz"]                      # rad: the most the command moves per update
     bridge_buf = {s: buffer_limits(limits["arm"][s][0], limits["arm"][s][1]) for s in sides}   # SF-122 stage 1: the joint buffer (hard limits moved in by the 10-degree margin)
@@ -708,6 +709,7 @@ def run_loop(model, data, sources, cfg, viewer=None, logger=None):
         for s, q in cmd["arm_targets"].items():
             qc_, m_ = clamp_to_buffer(q, *bridge_buf[s])                                 # SF-122 stage 1: the buffer clamp (not a rejection)
             BRIDGE_CLAMP["target"][s] += m_.astype(int)
+            bridge["pending_clamp"][s] = bridge["pending_clamp"][s] | m_
             bridge["target"][s] = qc_
         rest = {kk: v for kk, v in cmd.items() if kk != "arm_targets"}
         return rest if any(kk in rest for kk in ("gripper", "gripper_force")) else None
@@ -746,6 +748,8 @@ def run_loop(model, data, sources, cfg, viewer=None, logger=None):
             out[s] = [float(v) for v in cmd_q[s]]
         for s_ in sides:                                                                     # SF-122 stage 2: the bridge's output of this update goes to the sag layer (REF = output - dq)
             sag[s_].observe(cmd_q[s_], data.time, False)
+            BRIDGE_CLAMP["updates"][s_] += bridge["pending_clamp"][s_].astype(int)           # the joints whose target was clamped since the last update
+            bridge["pending_clamp"][s_] = np.zeros(7, bool)
         acc = bridge["accepted"]
         BRIDGE_ACCEPTED_LOG["tick"] = frame_
         BRIDGE_ACCEPTED_LOG["accepted_L"] = acc["left"].copy() if "left" in acc else None

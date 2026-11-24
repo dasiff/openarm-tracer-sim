@@ -25,6 +25,7 @@ os.environ.setdefault("MUJOCO_GL", "egl")
 import numpy as np  # noqa: E402
 
 from src import sag_layer  # noqa: E402
+from src.task_config import COMMAND_BRIDGE_CFG, PICK_PLACE_CFG  # noqa: E402
 
 
 def stats(x):
@@ -51,11 +52,19 @@ def main():
 
     sag_t = []
     real_correct = sag_layer.SagLayer.correct
+    clip = {}   # SF-123 logging: per side, the peak offset (|C_p| in mm, |C_r| in mrad) and the ticks at the clip limit (sag_max_m, sag_max_rad)
 
     def timed_correct(self, q_src, data, t, nominal_dt):
         t0 = time.perf_counter()
         r = real_correct(self, q_src, data, t, nominal_dt)
         sag_t.append(time.perf_counter() - t0)
+        pn, rn = float(np.linalg.norm(self.C["p"])), float(np.linalg.norm(self.C["r"]))
+        c = clip.setdefault(self.side, {"peak_p_mm": 0.0, "peak_r_mrad": 0.0, "ticks_at_p_clip": 0, "ticks_at_r_clip": 0, "ticks": 0})
+        c["ticks"] += 1
+        c["peak_p_mm"] = round(max(c["peak_p_mm"], 1e3 * pn), 4)
+        c["peak_r_mrad"] = round(max(c["peak_r_mrad"], 1e3 * rn), 4)
+        c["ticks_at_p_clip"] += int(pn >= PICK_PLACE_CFG["sag_max_m"] * (1 - 1e-9))
+        c["ticks_at_r_clip"] += int(rn >= PICK_PLACE_CFG["sag_max_rad"] * (1 - 1e-9))
         return r
 
     sag_layer.SagLayer.correct = timed_correct
@@ -71,6 +80,11 @@ def main():
         np.savez(out / f"{a.name}_timing.npz", sag_s=sg, bridge_s=br)
         summ = {"sag_layer_call_ms": stats(sg), "bridge_call_ms": stats(br)}
         summ["bridge_clamp_target_counts_per_joint"] = {side: [int(v) for v in arr] for side, arr in cl.BRIDGE_CLAMP["target"].items()}
+        upd = {side: [int(v) for v in arr] for side, arr in cl.BRIDGE_CLAMP["updates"].items()}
+        bridge_dt = 1.0 / COMMAND_BRIDGE_CFG["rate_hz"]
+        summ["bridge_clamp_update_counts_per_joint"] = upd
+        summ["bridge_clamp_seconds_per_joint"] = {side: [round(v * bridge_dt, 3) for v in arr] for side, arr in upd.items()}
+        summ["sag_offset_and_clip_per_side"] = clip
         from src import sag_layer as _sl  # SF-122 stage 2: the learned offset at the end (both arms), and the skip counts of the solver-free layer
         summ["learned_offset_at_end"] = {side: {"p_mm": [round(1e3 * float(v), 4) for v in L.C["p"]], "r_mrad": [round(1e3 * float(v), 4) for v in L.C["r"]]}
                                          for side, L in _sl.SAG_LAYERS.items() if hasattr(L, "C")}

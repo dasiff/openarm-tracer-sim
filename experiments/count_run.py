@@ -24,10 +24,15 @@ def _dump():
     if not out:
         return
     import src.control_loop as cl
+    from src.task_config import COMMAND_BRIDGE_CFG
     counts = {side: [int(v) for v in arr] for side, arr in cl.BRIDGE_CLAMP["target"].items()}
+    upd = {side: [int(v) for v in arr] for side, arr in cl.BRIDGE_CLAMP["updates"].items()}
+    bridge_dt = 1.0 / COMMAND_BRIDGE_CFG["rate_hz"]
     with open(out, "w") as f:
-        json.dump({"bridge_clamp_target_counts_per_joint": counts, "total": {s: sum(v) for s, v in counts.items()}}, f, indent=1)
-    print(f"count_run: wrote {out}: {counts}", flush=True)
+        json.dump({"bridge_clamp_target_counts_per_joint": counts, "total": {s: sum(v) for s, v in counts.items()},
+                   "bridge_clamp_update_counts_per_joint": upd,
+                   "bridge_clamp_seconds_per_joint": {side: [round(v * bridge_dt, 3) for v in arr] for side, arr in upd.items()}}, f, indent=1)
+    print(f"count_run: wrote {out}: targets {counts}; updates {upd}", flush=True)
 
 
 def main():

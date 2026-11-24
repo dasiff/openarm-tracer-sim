@@ -60,7 +60,7 @@ def sweep(k):
     return source_targets(None, [0.03 * np.sin(0.05 * k), 0.0, 0, 0, 0, 0, 0])
 
 
-def case_a(model, data):
+def case_a_retired(model, data):  # RETIRED (SF-123, David 2026-11-24): compared the layer with the old in-script trim, whose error is gone
     """The layer's correction for a sequence of commands equals the old in-script trim for the same inputs (the same integration, the same gains
     and limits), with the SF-118 leak applied before each integration step."""
     layer = SagLayer(model, data, "left", HOME)
@@ -91,6 +91,13 @@ def case_a(model, data):
                  f"correction p {np.round(1000 * layer.C['p'], 4)} mm (old {np.round(1000 * C_old['p'], 4)}), identical: {ok}")
 
 
+def _cc(layer, q, data, t, dt):
+    """SF-122 stage 2 harness: the layer's command, and the bridge output fed back as the layer sees it (bridge off: the command itself)."""
+    cmd = layer.correct(q, data, t, dt)
+    layer.observe(cmd, t, False)
+    return cmd
+
+
 def case_b(model, data):
     """The correction does not integrate while a held-mass ramp runs; it resumes after the ramp."""
     layer = SagLayer(model, data, "left", HOME)
@@ -99,12 +106,12 @@ def case_b(model, data):
     before = layer.C["p"].copy()
     t = 0.0
     for k in range(60):
-        layer.correct(sweep(k), data, t, NOMINAL)
+        _cc(layer, sweep(k), data, t, NOMINAL)
         t += NOMINAL
     frozen = np.array_equal(layer.C["p"], before)
     hmr.stop_rate(model, "left", t)
     for k in range(60):
-        layer.correct(sweep(k), data, t, NOMINAL)
+        _cc(layer, sweep(k), data, t, NOMINAL)
         t += NOMINAL
     resumed = not np.array_equal(layer.C["p"], before)
     hmr.reset(model)
@@ -118,7 +125,7 @@ def case_c(model, data):
     layer = SagLayer(model, data, "left", HOME)
     t = 0.0
     for k in range(30):
-        layer.correct(sweep(k), data, t, NOMINAL)
+        _cc(layer, sweep(k), data, t, NOMINAL)
         t += NOMINAL
     held = layer.C["p"].copy()
     t += 5.0                                             # the pause: five simulated seconds with no commands
@@ -131,7 +138,7 @@ def case_c(model, data):
 
     sag_layer._sag_trim_step = spy
     try:
-        layer.correct(sweep(30), data, t, NOMINAL)
+        _cc(layer, sweep(30), data, t, NOMINAL)
     finally:
         sag_layer._sag_trim_step = real
     ok = np.array_equal(held, held) and seen_dt == [NOMINAL] and abs(layer.C["p"] - held).max() < 0.01
@@ -442,7 +449,7 @@ def case_s5_f(model, data):
 
 def main():
     model, data = robot()
-    results = [case_a(model, data), case_a_open(model, data), case_b(model, data), case_c(model, data), case_c_periodic(model, data), case_d(model, data), case_e(model, data), case_f(model, data), case_g(model, data), case_h(model, data), case_i(model, data), case_s5_a(model, data), case_s5_d(model, data), case_s5_f(model, data), case_leak_constant(model, data), case_leak_alternating(model, data), case_leak_decay(model, data)]
+    results = [case_a_open(model, data), case_b(model, data), case_c(model, data), case_c_periodic(model, data), case_d(model, data), case_e(model, data), case_f(model, data), case_g(model, data), case_h(model, data), case_i(model, data), case_s5_a(model, data), case_s5_d(model, data), case_s5_f(model, data), case_leak_constant(model, data), case_leak_alternating(model, data), case_leak_decay(model, data)]
     print(f"{sum(results)} of {len(results)} passed")
     return 0 if all(results) else 1
 

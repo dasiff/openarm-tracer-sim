@@ -26,6 +26,7 @@ os.environ.setdefault("MUJOCO_GL", "egl")
 import numpy as np  # noqa: E402
 
 from src.control_loop import BRIDGE_ACCEPTED_LOG, BRIDGE_CLAMP, run_loop  # noqa: E402
+from src.task_config import SAG_LAYER_CFG  # noqa: E402
 from experiments_loader import load, steps_per_frame, SPAWN  # noqa: E402
 
 ROUTES = {k: "script" for k in ("base", "pedestal", "arms.left", "arms.right", "gripper.left", "gripper.right")}
@@ -68,6 +69,8 @@ def arm_cmd(q3):
 
 
 def main():
+    # SF-123 (David 2026-11-24): this test checks the bridge alone, so the sag layer is off here (the layer's own tests cover it)
+    SAG_LAYER_CFG["enabled"] = False
     print("1. bridge OFF (passed explicitly: the default is on): a 0.6 rad step is applied at once", flush=True)
     a, res, seen = run(120, lambda k, rest: {"mode": "arms", "arm_targets": {"left": [float(x) for x in (rest + np.where(np.arange(7) == 2, 0.6, 0.0))]}} if k >= 30 else None, {"enabled": False})
     v = np.array(seen["view"])                                                          # bridge off: the source's view is the command applied at once

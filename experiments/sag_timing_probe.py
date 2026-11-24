@@ -71,6 +71,10 @@ def main():
         np.savez(out / f"{a.name}_timing.npz", sag_s=sg, bridge_s=br)
         summ = {"sag_layer_call_ms": stats(sg), "bridge_call_ms": stats(br)}
         summ["bridge_clamp_target_counts_per_joint"] = {side: [int(v) for v in arr] for side, arr in cl.BRIDGE_CLAMP["target"].items()}
+        from src import sag_layer as _sl  # SF-122 stage 2: the learned offset at the end (both arms), and the skip counts of the solver-free layer
+        summ["learned_offset_at_end"] = {side: {"p_mm": [round(1e3 * float(v), 4) for v in L.C["p"]], "r_mrad": [round(1e3 * float(v), 4) for v in L.C["r"]]}
+                                         for side, L in _sl.SAG_LAYERS.items() if hasattr(L, "C")}
+        summ["sag_skips"] = {side: dict(L.skips) for side, L in _sl.SAG_LAYERS.items() if hasattr(L, "skips")}
         with open(out / f"{a.name}_timing.json", "w") as f:
             json.dump(summ, f, indent=1)
         print(f"timing_probe: wrote {out / (a.name + '_timing.json')}: {json.dumps(summ)[:600]}", flush=True)

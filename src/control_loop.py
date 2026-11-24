@@ -726,6 +726,8 @@ def run_loop(model, data, sources, cfg, viewer=None, logger=None):
                 bridge["suspended"] = True
                 k = int(np.argmax(np.abs(err[worst[1]])))
                 bridge_note(frame_, worst[1], k + 1, "suspended: tracking error", err[worst[1]][k], bcfg["max_tracking_error_rad"])
+            for s_ in sides:                                                                 # SF-122 stage 2: the sag layer learns the held output and that the arm is suspended
+                sag[s_].observe(cmd_q[s_], data.time, True)
             return
         if bridge["suspended"]:
             bridge["suspended"] = False
@@ -742,6 +744,8 @@ def run_loop(model, data, sources, cfg, viewer=None, logger=None):
                 bridge["accepted"][s] = tgt.copy()
             cmd_q[s] = cmd_q[s] + np.clip(d_, -bridge_step, bridge_step)
             out[s] = [float(v) for v in cmd_q[s]]
+        for s_ in sides:                                                                     # SF-122 stage 2: the bridge's output of this update goes to the sag layer (REF = output - dq)
+            sag[s_].observe(cmd_q[s_], data.time, False)
         acc = bridge["accepted"]
         BRIDGE_ACCEPTED_LOG["tick"] = frame_
         BRIDGE_ACCEPTED_LOG["accepted_L"] = acc["left"].copy() if "left" in acc else None
@@ -1183,6 +1187,9 @@ def run_loop(model, data, sources, cfg, viewer=None, logger=None):
             _tb = time.perf_counter()
             cmd = bridge_take(cmd)
             BRIDGE_TIME.append(time.perf_counter() - _tb)
+            if cmd is not None and not bridge["on"] and cmd.get("mode") == "arms" and cmd.get("arm_targets"):
+                for s_, q_ in cmd["arm_targets"].items():                                  # SF-122 stage 2: bridge off, the command is the output (REF = source target)
+                    sag[s_].observe(np.array(q_, float), data.time, False)
             if cmd is not None:
                 apply_cmd(cmd)
         if sf_plugin is not None and sf_plugin.take_override():       # Part 2: braking had to exceed the bridge limits

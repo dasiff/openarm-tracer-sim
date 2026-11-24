@@ -62,6 +62,10 @@ def main():
 
     # solver success and failure counts of the left layer (wrapped in this process only)
     counts = {"ok": 0, "fail": 0}
+    # SF-122 stage 2: the sag layer has no solver; the hooks exist only in the solver-based layer, so the counts stay at zero without them
+    if not hasattr(sag_layer.SagLayer, "_solver_ok"):
+        sag_layer.SagLayer._solver_ok = lambda self, t: None
+        sag_layer.SagLayer._solver_failed = lambda self, t, e: None
     orig_ok, orig_fail = sag_layer.SagLayer._solver_ok, sag_layer.SagLayer._solver_failed
 
     def count_ok(self, t):

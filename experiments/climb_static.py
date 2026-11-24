@@ -136,6 +136,7 @@ def cmd_static(argv):
     lines += ["## (a) correction off: settled droop per pose (left arm; droop = target minus settled, pad)", ""]
     lines += ["| pose | position droop (mm): x, y, z, norm | rotation droop (mrad) | joint droop (mrad), joints 1-7 |", "|---|---|---|---|"]
     droop_a = []
+    droop_joint = []
     for name, qleft in poses:
         d = mujoco.MjData(phys)
         set_pose(d, qleft)
@@ -148,54 +149,96 @@ def cmd_static(argv):
         dp, dr = pad_rel(d, qleft)
         dj = (qleft - d.qpos[qadr["left"]]) * 1e3
         droop_a.append((dp, dr))
+        droop_joint.append(qleft - d.qpos[qadr["left"]].copy())
         lines.append(f"| {name} | {1e3 * dp[0]:+.2f}, {1e3 * dp[1]:+.2f}, {1e3 * dp[2]:+.2f}, {1e3 * np.linalg.norm(dp):.2f} | {1e3 * np.linalg.norm(dr):.2f} | {np.round(dj, 1).tolist()} |")
     lines.append("")
 
-    # ---- (b) correction on, poses in turn
-    lines += ["## (b) correction on: learned offset against the droop of (a), and the settling after each move", ""]
+    # ---- (b) correction on, poses in turn. Per pose: the offset and the hand error at the moment motion stops (end of the ramp), the hand error 1 s
+    # after the stop, the end-of-hold per-joint breakdown (SF-125 decisions 3 and 4).
+    from src.bridge_clamp import buffer_margins
+    from src.task_config import MINK_CFG
+    lines += ["## (b) correction on: learned offset against the droop of (a); the stop-time numbers; the per-joint breakdown at the end of each hold", ""]
     SAG_LAYER_CFG["enabled"] = True
     d = mujoco.MjData(phys)
     layers = {s: make_sag_layer(phys, d, s, home[s], gravity_model=nom) for s in sides}
     set_pose(d, poses[0][1])
     t = 0.0
+    arm_jnt = np.asarray(arm_ids(phys, "left")["jnt"])
+    fr_band = np.array([float(phys.dof_frictionloss[phys.jnt_dofadr[j]]) for j in arm_jnt]) / kpv[:7]
+    hard_lo = phys.jnt_range[arm_jnt, 0]
+    hard_hi = phys.jnt_range[arm_jnt, 1]
+    m_fixed = np.full(7, float(MINK_CFG["joint_margin_rad"]))
+    m_range = buffer_margins(hard_lo, hard_hi)
+
+    def snap(dd, L, qleft):
+        q = dd.qpos[qadr["left"]].copy()
+        droop = qleft - q
+        dq = np.asarray(L.dq, float).copy()
+        sagm = getattr(L, "last_sag", None)
+        exp_ = L.last_expected
+        sag = np.asarray(sagm, float).copy() if sagm is not None else (np.asarray(exp_, float) - q if exp_ is not None else np.full(7, np.nan))
+        est = np.asarray(L.est, float).copy() if hasattr(L, "est") else dq.copy()
+        J = L._jacobian(dd)
+        hand = lambda v: 1e3 * np.linalg.norm(J[:3, :] * np.asarray(v, float)[None, :], axis=0)
+        return {"droop": droop, "sag": sag, "est": est, "dq": dq, "hand_droop": hand(droop), "hand_sag": hand(sag), "hand_dq": hand(dq),
+                "clamp_fixed": (qleft < hard_lo + m_fixed) | (qleft > hard_hi - m_fixed), "clamp_range": (qleft < hard_lo + m_range) | (qleft > hard_hi - m_range),
+                "C_hand_mm": 1e3 * float(np.linalg.norm(J[:3, :] @ dq)), "C_hand_mrad": 1e3 * float(np.linalg.norm(J[3:, :] @ dq))}
+
+    n_ramp = int(round(RAMP_S / NOMINAL))
+    n_hold = int(round(HOLD_S / NOMINAL))
+    n_1s = int(round(1.0 / NOMINAL))
     seq = []
+    clip_ticks = 0
+    peak_cp = 0.0
     for i, (name, qleft) in enumerate(poses):
         start = poses[i - 1][1] if i > 0 else poses[0][1]
-        n_ramp = int(round(RAMP_S / NOMINAL))
-        n_hold = int(round(HOLD_S / NOMINAL))
-        rec_cp = []
+        cp = []
         if i > 0:
             for k in range(n_ramp):
                 frac = (k + 1) / n_ramp
                 tgt = {"left": start + frac * (qleft - start), "right": home["right"].copy()}
                 _tick(phys, d, layers, tgt, ctrl_for, steps, t)
-                rec_cp.append(np.linalg.norm(layers["left"].C["p"]))
+                cp.append(np.linalg.norm(layers["left"].C["p"]))
                 t += NOMINAL
         ramp_end = t
+        stop = snap(d, layers["left"], qleft)
         tgt = {"left": qleft.copy(), "right": home["right"].copy()}
+        hand_1s = None
         for k in range(n_hold):
             _tick(phys, d, layers, tgt, ctrl_for, steps, t)
-            rec_cp.append(np.linalg.norm(layers["left"].C["p"]))
+            cp.append(np.linalg.norm(layers["left"].C["p"]))
+            if k == n_1s - 1:
+                hp, _ = pad_rel(d, qleft)
+                hand_1s = 1e3 * float(np.linalg.norm(hp))
             t += NOMINAL
-        cp = np.array(rec_cp)
-        n_end = int(round(0.5 / NOMINAL))
-        c_end = cp[-n_end:].mean()
-        seq.append((name, ramp_end, c_end, cp, i))
-    for name, ramp_end, c_end, cp, i in seq:
-        droop_p = 1e3 * np.linalg.norm(droop_a[i][0])
-        # settle: first tick after the ramp where |C_p| is within 0.1 mm of its end value and stays there
-        tail = cp[-int(round(0.5 / NOMINAL)):]
-        n_ramp = int(round(RAMP_S / NOMINAL)) if i > 0 else 0
-        after = cp[n_ramp:]
-        within = np.abs(after * 1e3 - c_end * 1e3) < 0.1
-        settle = None
-        for k in range(len(within)):
-            if within[k:].all():
-                settle = k * NOMINAL
-                break
-        lines.append(f"- {name}: |C_p| at the end of the hold {1e3 * c_end:.2f} mm (droop of (a) {droop_p:.2f} mm); settled within 0.1 mm after the move in "
-                     f"{'%.2f s' % settle if settle is not None else 'not within the hold'}")
+        end = snap(d, layers["left"], qleft)
+        cp = np.array(cp)
+        clip_ticks += int(np.sum(np.asarray(cp) >= 0.04 * (1 - 1e-9)))
+        peak_cp = max(peak_cp, 1e3 * float(cp.max()))
+        seq.append({"name": name, "i": i, "stop": stop, "end": end, "hand_1s": hand_1s, "cp": cp, "qleft": qleft})
+    for r in seq:
+        i = r["i"]
+        droop_pos = 1e3 * np.linalg.norm(droop_a[i][0])
+        c_end = r["cp"][-int(round(0.5 / NOMINAL)):].mean()
+        stop_off = r["stop"]["C_hand_mm"]
+        lines.append(f"- {r['name']}: at the stop, the offset's hand move |J dq| {stop_off:.2f} mm against the at-rest droop of (a) {droop_pos:.2f} mm "
+                     f"(distance {abs(stop_off - droop_pos):.2f} mm); hand error 1 s after the stop {r['hand_1s']:.2f} mm; "
+                     f"|C_p| at the end of the hold {1e3 * c_end:.2f} mm")
     lines.append("")
+    lines.append(f"Peak |C_p| over the five holds: {peak_cp:.2f} mm; ticks with |C_p| at the 40 mm clip: {clip_ticks}.")
+    lines.append("")
+    for r in seq:
+        i = r["i"]
+        e = r["end"]
+        lines.append(f"### per joint at the end of the hold: {r['name']} (left arm)")
+        lines.append("")
+        lines.append("| joint | droop (a) (mrad) | measured sag (mrad) | estimate (mrad) | dq applied (mrad) | friction band frictionloss/kp (mrad) | target on buffer clamp (fixed 10 deg / range) | residual hand miss (mm): target minus settled, correction on, end of hold | sag (mm) | dq (mm) |")
+        lines.append("|---|---|---|---|---|---|---|---|---|---|")
+        for j in range(7):
+            lines.append(f"| {j + 1} | {1e3 * droop_joint[i][j]:+.2f} | {1e3 * e['sag'][j]:+.2f} | {1e3 * e['est'][j]:+.2f} | {1e3 * e['dq'][j]:+.2f} | "
+                         f"{1e3 * fr_band[j]:.2f} | {'yes' if e['clamp_fixed'][j] else 'no'} / {'yes' if e['clamp_range'][j] else 'no'} | "
+                         f"{e['hand_droop'][j]:.2f} | {e['hand_sag'][j]:.2f} | {e['hand_dq'][j]:.2f} |")
+        lines.append("")
     Path(a.out + ".md").write_text("\n".join(lines) + "\n")
     print("\n".join(lines))
 

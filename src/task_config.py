@@ -854,3 +854,13 @@ SAG_RULE_CFG = {
     "rule": "integrator",
     "measure_T_s": 0.5,
 }
+
+# SF-125 (David, 2026-11-24): the command bridge's joint buffer. mode "range" = the buffer of each joint is range_fraction of its own range on each
+# side, capped at cap_deg (the buffer then limits joint range inside the bridge only: the sources see the targets they sent). mode "fixed" = the
+# old 10-degree margin (MINK_CFG joint_margin_rad) on every joint, kept for the comparison runs. range_fraction and cap_deg are David's values
+# (the decision-log row SF-125).
+BRIDGE_BUFFER_CFG = {
+    "mode": "range",
+    "range_fraction": 0.05,
+    "cap_deg": 10.0,
+}

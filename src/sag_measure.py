@@ -43,6 +43,7 @@ class MeasureSagLayer(SagLayer):
         self.pred = None                                  # predicted_j (7): the filter of the received command
         self.est = np.zeros(7)                            # sag_est_j (7): the low-passed measured sag
         self.clip_scale = 1.0                             # logging: the scale the hand-space clip applied this tick (1 = none)
+        self.last_sag = None                              # logging: the measured sag of the last tick (joints)
         self.nonfinite_last = False
         self.suspended = False
         self.last_expected = None
@@ -74,6 +75,7 @@ class MeasureSagLayer(SagLayer):
             elif self.nonfinite_last:
                 skip = "nonfinite"
             sag_m = self.pred - q_meas                    # b: predicted(t-1) - measured(t)
+            self.last_sag = sag_m.copy()                  # logging: the measured sag of this tick
             if skip is None and not np.all(np.isfinite(sag_m)):
                 skip = "nonfinite"
             if skip is None:

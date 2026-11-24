@@ -80,6 +80,7 @@ def cmd_run(argv):
     ap.add_argument("--correction", choices=["on", "off"], default="on")
     ap.add_argument("--rule", choices=["integrator", "measure"], default=None, help="SF-123 test copy: the learning rule (default: the config)")
     ap.add_argument("--T", type=float, default=None, help="SF-123 test copy: the time constant T (s) of the measured-sag average")
+    ap.add_argument("--buffer", choices=["range", "fixed"], default=None, help="SF-125: the bridge buffer rule (default: the config)")
     a, rest = ap.parse_known_args(argv)
     if rest and rest[0] == "--":
         rest = rest[1:]
@@ -92,9 +93,28 @@ def cmd_run(argv):
         SAG_RULE_CFG["rule"] = a.rule
     if a.T is not None:
         SAG_RULE_CFG["measure_T_s"] = a.T
+    if a.buffer is not None:
+        from src.task_config import BRIDGE_BUFFER_CFG as _BB
+        _BB["mode"] = a.buffer
     rule_info = dict(SAG_RULE_CFG)
+    # SF-125 logging: the raw arm targets the sources sent (the first 60 arms commands, before any validation), and the bridge's clamp counts
+    import src.commands as _cmds
+    from src.task_config import BRIDGE_BUFFER_CFG
+    arms_log = []
+    orig_validate = _cmds.validate_command
+
+    def validate_logged(cmd, limits=None):
+        if isinstance(cmd, dict) and cmd.get("mode") == "arms" and cmd.get("arm_targets") and len(arms_log) < 60:
+            arms_log.append({"raw": {sd: [float(v) for v in q] for sd, q in cmd["arm_targets"].items()}, "arm_limits_passed": bool(limits and "arm" in limits)})
+        return orig_validate(cmd, limits)
+
+    _cmds.validate_command = validate_logged
+    if "src.control_loop" in sys.modules:
+        sys.modules["src.control_loop"].validate_command = validate_logged
+    buffer_info = dict(BRIDGE_BUFFER_CFG)
     info = {"perturb": a.perturb, "correction": a.correction}
     info["rule"] = rule_info
+    info["bridge_buffer"] = buffer_info
     rec = {s: {k: [] for k in ("t", "src", "q", "v", "ctrl", "force", "ref", "cmd", "dq", "C_p", "C_r", "expected", "err", "applied", "skip", "tau_ff", "scale")} for s in SIDES}
     SKIPS = ["none", "no_reference", "suspended", "nonfinite", "guard"]
     state = {"tau": None}
@@ -191,6 +211,12 @@ def cmd_run(argv):
     sag_measure.MeasureSagLayer.correct = correct_wrapped
 
     def save():
+        info["arms_commands_raw_first60"] = arms_log
+        import src.control_loop as _cl
+        bc = _cl.BRIDGE_CLAMP
+        info["bridge_clamp_target_counts"] = {sd: [int(v) for v in arr] for sd, arr in bc["target"].items()}
+        info["bridge_clamp_update_counts"] = {sd: [int(v) for v in arr] for sd, arr in bc["updates"].items()}
+        info["bridge_clamp_seconds"] = {sd: [round(float(v) * 0.02, 3) for v in arr] for sd, arr in bc["updates"].items()}
         out = {"info": np.array(json.dumps(info, default=str))}
         for s in SIDES:
             for key, v in rec[s].items():

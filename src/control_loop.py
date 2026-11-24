@@ -403,6 +403,9 @@ def run_loop(model, data, sources, cfg, viewer=None, logger=None):
     ped_qadr = int(model.jnt_qposadr[model.actuator_trnid[ped_aid, 0]])
     limits = {"gripper_force_ceiling": float(robot_specs.ARM_ACTUATOR_SPECS["fingers"]["force_limit"]), "arm": {s: (np.array([jr(a)[0] for a in arm_act[s]]), np.array([jr(a)[1] for a in arm_act[s]])) for s in sides},
               "gripper": tuple(jr(fing_act["left"][0])), "pedestal": (float(ped_lo), float(ped_hi))}
+    # SF-125 (David 2026-11-24): the arm targets are not clipped to the hard joint limits here. The sources must see exactly the targets they sent
+    # (applied()), and joint range is limited in one place, the command bridge's buffer clamp (bridge_take). Other limits (pedestal, gripper) as before.
+    limits_src = {k: v for k, v in limits.items() if k != "arm"}
 
     base_body_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, "base_link")
     if base_body_id < 0:
@@ -1154,7 +1157,7 @@ def run_loop(model, data, sources, cfg, viewer=None, logger=None):
                 cmd = bridge_precheck(cmd, frame)
                 if cmd is None:
                     continue
-                clean, notes = validate_command(cmd, limits)
+                clean, notes = validate_command(cmd, limits_src)           # SF-125: no arm clip here; the bridge's buffer clamp limits joint range
                 for n in notes:
                     if (name, n) not in msgs_seen:
                         msgs_seen.add((name, n))

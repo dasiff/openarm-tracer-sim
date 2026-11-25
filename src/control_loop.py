@@ -95,6 +95,7 @@ import time
 import mujoco
 import numpy as np
 
+from src import held_mass_ramp as hmr
 from src import robot_specs
 from src.bridge_override import force_to_target
 from src.bridge_clamp import buffer_limits, clamp_to_buffer      # SF-122 stage 1: the bridge's joint-buffer clamp
@@ -396,7 +397,7 @@ def run_loop(model, data, sources, cfg, viewer=None, logger=None):
     vadr = lambda a: int(model.jnt_dofadr[model.actuator_trnid[a, 0]])
     arm_vadr = {s: [vadr(a) for a in arm_act[s]] for s in sides}
     fing_vadr = [vadr(a) for s in sides for a in fing_act[s]]
-    from src.gravity_ff import ArmGravityFeedforward, clear_held_mass, held_mass, held_pad_z_per_kg, set_held_mass
+    from src.gravity_ff import ArmGravityFeedforward, clear_held_mass, held_mass, held_pad_z_per_kg
     gff = ArmGravityFeedforward(model, arm_act, fing_act, sides)          # M185: the arm's gravity torque as a feedforward on the targets
     clear_held_mass(model)                                                # M196: no held-object compensation left over from an earlier run
     ped_aid = aid(robot_specs.PEDESTAL_SPECS["actuator_name"])
@@ -1079,7 +1080,7 @@ def run_loop(model, data, sources, cfg, viewer=None, logger=None):
                 set_grip_force(replay["gripforce"][frame])
             if replay.get("heldmass") is not None:                          # M196: the held-object compensation of the recorded tick (older recordings: none)
                 for k, s_ in enumerate(sides):
-                    set_held_mass(model, s_, float(replay["heldmass"][frame][k]))
+                    hmr.set_replay_mass(model, s_, float(replay["heldmass"][frame][k]))
             advance(*replay["basevel"][frame], np.broadcast_to(blk, (steps_per_frame, model.nu)) if blk.ndim == 1 else blk)
             replay["on_tick_end"](frame, data)
             frame += 1

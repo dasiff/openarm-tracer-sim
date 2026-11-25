@@ -36,6 +36,7 @@ import numpy as np
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from src import gravity_ff                                           # noqa: E402
+from src import held_mass_ramp                                      # noqa: E402
 from src.replay import build_model, replay_run                       # noqa: E402
 from src.run_record import load_recording                             # noqa: E402
 
@@ -91,10 +92,10 @@ def main(rec_dir, out_csv):
         row = {"tick": j, "t_sim": f"{d.time:.6f}", "phase": label_at(j)}
         # feedforward at this pose, with and without the held mass (the held mass of tick j from the recording)
         for s, idx in (("left", 0), ("right", 1)):
-            gravity_ff.set_held_mass(model, s, float(rec["heldmass"][j][idx]) or None)
+            held_mass_ramp.set_replay_mass(model, s, float(rec["heldmass"][j][idx]) or None)
         tau_total = ff.torques(d).copy()
         for s in ("left", "right"):
-            gravity_ff.set_held_mass(model, s, None)
+            held_mass_ramp.set_replay_mass(model, s, None)
         tau_grav = ff.torques(d).copy()
         ids = list(ff.ids)
         tot = dict(zip(ids, tau_total))

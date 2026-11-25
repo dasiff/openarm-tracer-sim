@@ -21,6 +21,7 @@ from src.rate_limit import min_jerk
 from src.task_config import PICK_PLACE_CFG
 
 RAMP = {}                                                   # {id(model): {side: flat dict}}
+REPLAY = {}                                                 # {id(model): {side: kg}}: the mass recorded for the tick a replay is running (src/replay.py); empty in live runs
 
 
 def _record(model, side):
@@ -28,9 +29,25 @@ def _record(model, side):
     return RAMP.get(id(model), {}).get(side)
 
 
+def set_replay_mass(model, side, mass_kg):
+    """Replay only: the mass (kg) recorded for the tick being replayed, which mass_at returns for this side until it is set again (None removes it).
+    The recorded value goes through the same read (mass_at) a live run uses, so the gravity term is the same in both."""
+    d = REPLAY.setdefault(id(model), {})
+    if mass_kg is None:
+        d.pop(side, None)
+    else:
+        d[side] = float(mass_kg)
+
+
 def mass_at(model, side, t):
-    """Reads the mass (kg) of one side at simulation time t (s); 0.0 when no ramp has been set. Also stores it as the record's `now`."""
+    """Reads the mass (kg) of one side at simulation time t (s); 0.0 when no ramp has been set. Also stores it as the record's `now`.
+    In a replay the mass recorded for the tick is returned (set_replay_mass)."""
+    fed = REPLAY.get(id(model), {}).get(side)
     rec = _record(model, side)
+    if fed is not None:
+        if rec is not None:
+            rec["now"] = float(fed)
+        return float(fed)
     if rec is None:
         return 0.0
     if rec.get("rate") is not None:
@@ -124,3 +141,4 @@ def end_load_change(model, side):
 def reset(model):
     """Ends every ramp of the model and clears every freeze (the run-start reset, M217, M226)."""
     RAMP.pop(id(model), None)
+    REPLAY.pop(id(model), None)

@@ -1,8 +1,8 @@
-# Release freeze scope (M322) and the lift-off weighing under the arm mass error (2026-11-25)
+# Release freeze scope (M342) and the lift-off weighing under the arm mass error (2026-11-25)
 
 Branch `safety-filter`. One MuJoCo process at a time. Runs in `data/logs/replay_check_20261125/` (`m226s_*`, git-ignored). Nothing pushed. `docs/progress.md` not touched.
 
-Commit: `e92c3f2` (`src/sag_layer.py`, `src/control_loop.py`, decision row M322 in `docs/mpvi_decisions.md`, SF-138 in `docs/design_plan.md`). Analysis only for part 2: no source change.
+Commit: `e92c3f2` (`src/sag_layer.py`, `src/control_loop.py`, decision row M342 in `docs/mpvi_decisions.md`, SF-138 in `docs/design_plan.md`). Analysis only for part 2: no source change.
 
 Written for: David (decision 1 check and decision 2 weighing analysis).
 

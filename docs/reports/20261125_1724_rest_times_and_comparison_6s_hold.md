@@ -160,7 +160,7 @@ In all three cases and in the normal-physics reference, the largest position err
 
 ## Decision rows annotated (2026-11-25)
 
-Note added to each row that quotes an affected perturbed held result: `design_plan.md` SF-124, SF-127, SF-131 and SF-138; `mpvi_decisions.md` M322. Each note says the perturbed held results cited there came from the harness without beaker compensation, and points to `docs/reports/20261125_1659_harness_fix_and_consistent_comparison.md`, which lists them.
+Note added to each row that quotes an affected perturbed held result: `design_plan.md` SF-124, SF-127, SF-131 and SF-138; `mpvi_decisions.md` M342. Each note says the perturbed held results cited there came from the harness without beaker compensation, and points to `docs/reports/20261125_1659_harness_fix_and_consistent_comparison.md`, which lists them.
 
 ## Next steps (not done)
 

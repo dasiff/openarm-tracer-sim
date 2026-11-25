@@ -171,7 +171,7 @@ class Lidar:
         directions[:, 1] = np.sin(angles)
         hit_geom = np.full(n, -1, dtype=np.int32)
         hit_dist = np.full(n, -1.0)
-        mujoco.mj_multiRay(self.model, data, origin, directions.ravel(), None, 1, -1, hit_geom, hit_dist, n,
+        mujoco.mj_multiRay(self.model, data, origin, directions.ravel(), None, True, -1, hit_geom, hit_dist, None, n,
                            self.specs["max_range_m"])
         hit = hit_geom >= 0
         robot_hit = hit & self.robot_geom[np.maximum(hit_geom, 0)]

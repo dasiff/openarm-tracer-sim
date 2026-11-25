@@ -3,8 +3,8 @@
     MUJOCO_GL=egl python experiments/lidar_slice_picture.py [--out PATH]
 
 Three panels: the staging stance, the staging approach spot (0.2063 m behind it), and a pose in the middle of the room.
-The grey areas are what crosses the scan plane, found from the compiled model's geometry by ray parity (a point is solid when an
-odd number of non-robot surfaces lie between it and the room's edge). The bench top is drawn only as a dashed outline, labelled
+The grey areas are what crosses the scan plane: each non-robot primitive geom of the compiled model is tested exactly at the plane's
+height (boxes, cylinders, capsules and spheres; a mesh would be listed as not drawable). The bench top is drawn only as a dashed outline, labelled
 "bench top, above scan plane". Blue dots are the range returns; grey dots are "too close"; orange lines and dots are beams that
 are self-blocked (they stop at the robot's own part, shown as the orange end). The robot's chassis is drawn as its bounding box.
 """
@@ -34,24 +34,53 @@ GRID_M = 0.03  # m: the spacing of the grid on which the slice is computed
 EDGE_X = -6.5  # m: a start point outside the room's walls (the walls are at x = -6)
 
 
+GEOM_SPHERE, GEOM_CAPSULE, GEOM_CYLINDER, GEOM_BOX = 2, 3, 5, 6  # MuJoCo geom type codes for the primitives the scene uses
+SIGNS = np.array([[a, b, c] for a in (-1.0, 1.0) for b in (-1.0, 1.0) for c in (-1.0, 1.0)])
+
+
+def inside_primitive(kind, size, local):
+    """True for the points (rows of local, in the geom's own frame) that lie inside a primitive geom of this kind and size."""
+    if kind == GEOM_BOX:
+        return np.all(np.abs(local) <= size, axis=1)
+    if kind == GEOM_SPHERE:
+        return np.linalg.norm(local, axis=1) <= size[0]
+    if kind == GEOM_CYLINDER:
+        return (np.hypot(local[:, 0], local[:, 1]) <= size[0]) & (np.abs(local[:, 2]) <= size[1])
+    zc = np.clip(local[:, 2], -size[1], size[1])  # capsule: a segment of half length size[1] along z, with radius size[0]
+    return np.linalg.norm(local - np.stack([np.zeros_like(zc), np.zeros_like(zc), zc], axis=1), axis=1) <= size[0]
+
+
 def solid_mask(model, data, robot, z, xs, ys):
-    """Boolean grid (ys rows, xs columns): True where the plane at height z is inside a non-robot solid (ray parity along +x)."""
+    """What crosses the plane at height z, on the grid (rows ys, columns xs): True where a non-robot primitive geom contains the point.
+
+    Each primitive is tested exactly (boxes, cylinders, capsules, spheres); a geom that does not reach the plane is skipped.
+    Returns (mask, names of geoms the picture cannot handle, mesh geoms that reach the plane).
+    """
     out = np.zeros((len(ys), len(xs)), dtype=bool)
-    geomid = np.zeros(1, dtype=np.int32)
-    vec = np.array([1.0, 0.0, 0.0])
-    for j, py in enumerate(ys):
-        for i, px in enumerate(xs):
-            origin = np.array([EDGE_X, py, z])
-            count = 0
-            for _ in range(80):
-                dist = mujoco.mj_ray(model, data, origin, vec, None, 1, -1, geomid)
-                if dist < 0 or origin[0] + dist >= px:
-                    break
-                if not robot[geomid[0]]:
-                    count += 1
-                origin = origin + vec * (dist + 1e-5)
-            out[j, i] = count % 2 == 1
-    return out
+    unsupported = []
+    for g in range(model.ngeom):
+        if robot[g] or model.geom_type[g] == 0:  # the robot is drawn by its pose; a plane (the floor) never crosses a height above it
+            continue
+        centre = data.geom_xpos[g]
+        rot = data.geom_xmat[g].reshape(3, 3)
+        corners = centre + (model.geom_aabb[g, :3] + SIGNS * model.geom_aabb[g, 3:]) @ rot.T
+        if not (corners[:, 2].min() <= z <= corners[:, 2].max()):
+            continue
+        kind = int(model.geom_type[g])
+        if kind not in (GEOM_BOX, GEOM_SPHERE, GEOM_CYLINDER, GEOM_CAPSULE):
+            unsupported.append(model.geom(g).name or f"geom {g}")
+            continue
+        i0 = int(np.searchsorted(xs, corners[:, 0].min(), side="left"))
+        i1 = int(np.searchsorted(xs, corners[:, 0].max(), side="right"))
+        j0 = int(np.searchsorted(ys, corners[:, 1].min(), side="left"))
+        j1 = int(np.searchsorted(ys, corners[:, 1].max(), side="right"))
+        if i1 <= i0 or j1 <= j0:
+            continue
+        gx, gy = np.meshgrid(xs[i0:i1], ys[j0:j1])
+        points = np.stack([gx.ravel(), gy.ravel(), np.full(gx.size, z)], axis=1) - centre
+        inside = inside_primitive(kind, model.geom_size[g], points @ rot)  # the geom's own frame: rot.T applied to each point
+        out[j0:j1, i0:i1] |= inside.reshape(gx.shape)
+    return out, unsupported
 
 
 def footprint_box(model, data, body_name):
@@ -122,7 +151,9 @@ def main():
     print(f"scan plane height above the floor: {plane_z:.4f} m (deck top {lidar.deck_top_z:.4f} m above the base origin, "
           f"base origin {base_z:.4f} m above the floor)", flush=True)
     print(f"computing the slice on {len(xs)} x {len(ys)} points ...", flush=True)
-    mask = solid_mask(m, d, robot, plane_z, xs, ys)
+    mask, unsupported = solid_mask(m, d, robot, plane_z, xs, ys)
+    if unsupported:
+        print("geoms the picture cannot draw (not primitives): " + ", ".join(unsupported), flush=True)
     extent = (xs[0], xs[-1], ys[0], ys[-1])
     bench_geom = m.geom("bench_top").id  # the bench top's outline, from the compiled model (the top is above the scan plane)
     bench_centre, bench_half = d.geom_xpos[bench_geom], m.geom_size[bench_geom]

@@ -209,6 +209,19 @@ EAGLE_MOUNT = {
     "pitch_deg": 50.0,                 # degrees below the horizontal [row M166 PENDING David: placeholder from the search]
 }
 
+# The simulated lidar (navigation stage 1; design plan 13.1). David confirmed on 2026-11-25 that the robot has a lidar (row M336); its model, mount, 2D or 3D,
+# range and rate are still to come from the hardware team. Every value below is a PLACEHOLDER (PROVISIONAL, row M328) until then. The beams are cast in Python
+# by src/lidar.py: nothing here is added to the robot model or the scene. The mount is the front centre of the base deck, facing forward along the base heading;
+# its position is read from the compiled model (src/lidar.py deck_mount), not typed in.
+LIDAR_SPECS = {
+    "beam_count": 360,                 # beams in one horizontal scan, one every 1 degree, all the way round (360 degrees). A count, no unit. Placeholder. [row M328]
+    "min_range_m": 0.15,               # m: a return nearer than this is "too close" and gives no range. Placeholder for the unit's minimum range. [row M328]
+    "max_range_m": 12.0,               # m: nothing returned within this distance is "no return". Placeholder for the unit's maximum range. [row M328]
+    "range_noise_sd_m": 0.02,          # m: standard deviation of the Gaussian noise added to each real range (2 cm). 0.0 turns the noise off (tests only). Placeholder. [row M328]
+    "scan_every_ticks": 15,            # command ticks between two scans: 15 ticks at the 150 Hz command tick (src/control_loop.py source_hz) gives 10 scans per second. Placeholder rate. [row M328]
+    "mount_height_above_deck_m": 0.05, # m: the scan plane is this far above the top of the base deck (the top of the chassis mesh, read from the model). Placeholder. [row M328]
+}
+
 # All camera poses are PLACEHOLDERS until mounting info arrives.
 # - The eagle cam is confirmed robot mounted, fixed (no neck); its mount is EAGLE_MOUNT (placeholder).
 # - pos / look_at / up are in the parent body's frame.

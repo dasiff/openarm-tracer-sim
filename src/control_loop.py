@@ -701,6 +701,8 @@ def run_loop(model, data, sources, cfg, viewer=None, logger=None):
     def sag_correct(cmd):
         """M262, S5 (Phase S): the sag trim layer for one command (src/sag_layer.py correct_command): every arm target; each arm's trim holds while its command stands still."""
         nominal = cmd.get("period_steps", steps_per_frame) * model.opt.timestep
+        for s_ in sides:                                   # M226 (David 2026-11-25): the release freeze follows the open-catch helper's own state (src/open_catch.py), not the ramp to zero
+            sag[s_].open_hold = catch[s_].state in ("ramp", "opening")
         return correct_command(sag, cmd, data, t, nominal)
 
     MANIPULATION_SOURCES = ("vla",)   # the safety filter's manipulation flag (the cmd "manip" tag): the sources named here (M264). The sag trim no longer reads it (S5)

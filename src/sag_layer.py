@@ -104,6 +104,7 @@ class SagLayer:
         self.C = {"p": np.zeros(3), "r": np.zeros(3)}      # the hand-space equivalent of dq (J dq), logging and the signal trace
         SAG_TRACE[side] = self.C
         SAG_LAYERS[side] = self
+        self.open_hold = False                             # M226 (David 2026-11-25): the open-catch helper holds this arm's open (state ramp or opening); set by the loop before each correction (src/control_loop.py sag_correct)
         self.pred = None                                   # predicted_j (7): the motor filter of the received command; None until the first tick
         self.est = np.zeros(7)                             # sag_est_j (7): the low-passed measured sag (the learned state)
         self.dq = np.zeros(7)                              # the joint change of the latest command (dq(t)), set by correct
@@ -120,7 +121,7 @@ class SagLayer:
         self.suspended = False                             # the bridge's suspension at the last observation
         self.nonfinite_last = False                        # the last tick's command was not finite
         self.last_cmd = None
-        self.skips = {"no_reference": 0, "no_offset": 0, "suspended": 0, "nonfinite": 0, "held_ramp": 0}   # logging only: ticks on which the estimate was not updated, by reason
+        self.skips = {"no_reference": 0, "no_offset": 0, "suspended": 0, "nonfinite": 0, "held_ramp": 0, "open_hold": 0}   # logging only: ticks on which the estimate was not updated, by reason
         self.nonfinite_count = 0                           # logging only: ticks on which the command was not finite (the source's targets were sent)
         self.clamp_count = 0                               # logging only, kept for the trace
         self.last_error = None                             # logging only: the measured sag of the last tick that updated (joints), else None
@@ -182,6 +183,8 @@ class SagLayer:
                 skip = "nonfinite"
             elif hmr.ramp_running(self.model, self.side, t):
                 skip = "held_ramp"                        # M238: the estimate keeps its value while a held-mass ramp runs
+            elif self.open_hold:
+                skip = "open_hold"                        # M226 (c), scope set by David 2026-11-25: while the open-catch helper holds an open (its ramp-out, then the opening) the estimate keeps its value
             sag_m = self.pred - q_meas                    # b: predicted(t-1) - measured(t)
             self.last_sag = sag_m.copy()
             if skip is None and not np.all(np.isfinite(sag_m)):

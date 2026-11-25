@@ -1,5 +1,7 @@
 # Perturbed-harness fix (held-object link), earlier results from the defective runs, and the consistent comparison (2026-11-25)
 
+**Erratum (2026-11-25, see `20261125_1724_rest_times_and_comparison_6s_hold.md`):** this report says 34 runs, a 30 s stream and a 3 s hold. There were 33 runs. The loop starts at sim time 1.4 s, so the hold actually ran 4.55 s (30.0 to 34.55 s), and the stream 28.6 s including the setup move. The 6.15 s rerun and its table are in the newer report.
+
 Branch `safety-filter`. One MuJoCo process at a time; every run in its own folder under `data/logs/` (git-ignored). Nothing pushed. No production code changed (`src/` untouched in this round). `docs/progress.md` not touched.
 
 Written for: David (lab notebook: the consistent comparison of the three sag cases, and the corrected perturbed held run).

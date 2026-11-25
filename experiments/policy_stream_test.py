@@ -42,6 +42,7 @@ from policy_stream_source import make_policy_stream_source  # noqa: E402
 
 ROUTES = {k: "policy" for k in ("base", "pedestal", "arms.left", "arms.right", "gripper.left", "gripper.right")}
 TICK_HZ = 150.0
+LOOP_T0 = 1.4          # s: sim time of the loop's first tick (checked in the summary as loop_t0_s)
 POS_CLIP = PICK_PLACE_CFG["sag_max_m"]      # the trim limits of the layer (PICK_PLACE_CFG sag_max_m, sag_max_rad)
 ROT_CLIP = PICK_PLACE_CFG["sag_max_rad"]
 
@@ -126,6 +127,7 @@ def main():
 
         src["step"] = _step_with_hold
     rows = []
+    jrows = []
     qcmd_hist = []
 
     gaps = []                                                       # (t, |pad of the source's raw target - pad of the accepted target|), m
@@ -147,10 +149,16 @@ def main():
         else:
             ref, herr, rerr = np.full(3, np.nan), np.full(3, np.nan), np.full(3, np.nan)
         rows.append((float(obs["time"]), pad.copy(), layer.C["p"].copy(), layer.C["r"].copy(), ref.copy(), herr.copy(), rerr.copy()))
+        # joint-level log (2026-11-25, for the rest-time analysis): the reference joints (bridge output minus dq), the measured joints and velocities
+        ref_j = np.asarray(layer.refs[-1][1], float) if layer.refs else np.full(7, np.nan)
+        jrows.append([float(obs["time"])] + [float(x) for x in ref_j] + [float(x) for x in data.qpos[arm["qadr"]]] + [float(x) for x in data.qvel[arm["vadr"]]])
         qcmd_hist.append(None if qc is None else np.array(qc, float))
 
+    # The run ends at sim time seconds + hold_s. The loop's first tick is at sim time LOOP_T0 (the spawn settle), so the frame count is taken from it.
+    # Without a hold the count is unchanged (seconds * TICK_HZ, as in the Stage 3 runs).
+    frames = int(round(a.seconds * TICK_HZ)) if a.hold_s == 0 else int(round((a.seconds + a.hold_s - LOOP_T0) * TICK_HZ))
     cfg = {"source_hz": 1.0 / model.opt.timestep / spf, "spawn_pos": SPAWN, "cameras": False, "routes": ROUTES,
-           "bench_frames": int(round((a.seconds + a.hold_s) * TICK_HZ)), "on_tick": hook}
+           "bench_frames": frames, "on_tick": hook}
     if a.bridge == "off":
         cfg["command_bridge"] = {"enabled": False}
     res = run_loop(model, data, {"policy": src}, cfg, viewer=None)
@@ -178,9 +186,15 @@ def main():
     summary["hold_s"] = a.hold_s
     summary["hold_from_t"] = src["state"].get("hold_from_t")
     summary["perturbation"] = perturb_info
+    with open(out / f"{name}_joints.csv", "w", newline="") as f:
+        w = csv.writer(f)
+        w.writerow(["t"] + [f"ref{k}" for k in range(7)] + [f"q{k}" for k in range(7)] + [f"v{k}" for k in range(7)])
+        for r_ in jrows:
+            w.writerow([f"{x:.9f}" for x in r_])
+    summary["loop_t0_s"] = float(jrows[0][0]) if jrows else None
     (out / f"{name}.json").write_text(json.dumps(summary, indent=2))
     print(json.dumps(summary, indent=2))
-    return 0 if res.get("stopped_by") is None and len(rows) >= int(0.95 * (a.seconds + a.hold_s) * TICK_HZ) else 1
+    return 0 if res.get("stopped_by") is None and len(rows) >= int(0.95 * frames) else 1
 
 
 BRIDGE_JOINT_SPEED = 0.5   # rad/s, COMMAND_BRIDGE_CFG max_joint_velocity_rad_s (the bridge's per-joint limit on what reaches the arm)

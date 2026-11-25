@@ -494,6 +494,7 @@ def run_loop(model, data, sources, cfg, viewer=None, logger=None):
         return steps_per_frame if not hz else max(steps_per_frame, int(round(physics_hz / hz)))
 
     replay = cfg["replay"]
+    tick_dump = cfg.get("tick_dump")   # diagnostic only (data/logs/replay_check_20261125/diag_dump.py): called after each tick's physics with read-only references; None in every normal run
     recorder = None
     if replay is not None:
         replay["on_start"](model, data)
@@ -1082,6 +1083,8 @@ def run_loop(model, data, sources, cfg, viewer=None, logger=None):
                 for k, s_ in enumerate(sides):
                     hmr.set_replay_mass(model, s_, float(replay["heldmass"][frame][k]))
             advance(*replay["basevel"][frame], np.broadcast_to(blk, (steps_per_frame, model.nu)) if blk.ndim == 1 else blk)
+            if tick_dump is not None:
+                tick_dump(frame, {"model": model, "data": data, "sag": None, "bridge": None, "gate": None, "hold_det": None, "sag_held": None, "gff": gff, "replay": True})
             replay["on_tick_end"](frame, data)
             frame += 1
             continue
@@ -1245,9 +1248,13 @@ def run_loop(model, data, sources, cfg, viewer=None, logger=None):
         SERVO_LOG["tau_cmd"] = block[0].copy() if block.ndim > 1 else block.copy()
         set_grip_force([grip_force[s] for s in sides])
         if recorder is not None:
-            recorder.tick(frame, block, (base_vx, base_vy, base_wz), [grip_force[s] for s in sides], [held_mass(model, s) for s in sides])
+            recorder.tick(frame, block, (base_vx, base_vy, base_wz), [grip_force[s] for s in sides])
             recorder.label(frame, status.split("  (")[0] if isinstance(status, str) else status)
         advance(base_vx, base_vy, base_wz, block)
+        if recorder is not None:
+            recorder.set_held_last([held_mass(model, s) for s in sides])   # the held mass this tick's physics used (read after the physics; see RunRecorder.set_held_last)
+        if tick_dump is not None:
+            tick_dump(frame, {"model": model, "data": data, "sag": sag, "bridge": bridge, "gate": gate, "hold_det": hold_det, "sag_held": sag_held, "gff": gff, "replay": False})
         if recorder is not None:
             recorder.end_tick(frame, data)
         tm["phys"] += pc() - t_p0

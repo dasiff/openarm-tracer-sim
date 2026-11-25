@@ -43,33 +43,7 @@ MARGIN = None  # set from MINK_CFG at use
 NOMINAL_MODEL = {"model": None}      # the unperturbed copy the gravity feedforward uses (set in the run mode when --perturb)
 
 
-def perturb_model(model, log):
-    """Changes the physics model in place: forearm (body carrying joint 5, i.e. the link after joint 4) mass +15 % and centre of mass 10 mm
-    along the link away from the elbow; upper arm (body carrying joint 3, the link after joint 2) mass +10 %. Inertia tensors are not changed."""
-    import mujoco
-    for s in SIDES:
-        j4 = model.joint(f"openarm_{s}_joint4").id
-        j5 = model.joint(f"openarm_{s}_joint5").id
-        j6 = model.joint(f"openarm_{s}_joint6").id
-        j2 = model.joint(f"openarm_{s}_joint2").id
-        j3 = model.joint(f"openarm_{s}_joint3").id
-        fore = int(model.jnt_bodyid[j5])
-        upper = int(model.jnt_bodyid[j3])
-        names = {"forearm": model.body(fore).name, "upper_arm": model.body(upper).name}
-        d = mujoco.MjData(model)
-        mujoco.mj_forward(model, d)
-        elbow = np.asarray(d.xanchor[j4], float)
-        wrist = np.asarray(d.xanchor[j6], float)
-        u = (wrist - elbow) / np.linalg.norm(wrist - elbow)
-        R = d.xmat[fore].reshape(3, 3)
-        before = {"forearm_mass": float(model.body_mass[fore]), "upper_mass": float(model.body_mass[upper]),
-                  "forearm_ipos": model.body_ipos[fore].tolist()}
-        model.body_mass[fore] *= 1.15
-        model.body_mass[upper] *= 1.10
-        model.body_ipos[fore] = model.body_ipos[fore] + 0.010 * (R.T @ u)
-        after = {"forearm_mass": float(model.body_mass[fore]), "upper_mass": float(model.body_mass[upper]),
-                 "forearm_ipos": model.body_ipos[fore].tolist()}
-        log[s] = {"bodies": names, "before": before, "after": after, "elbow_world": elbow.tolist(), "wrist_world": wrist.tolist()}
+from perturb_error import perturb_model, link_held_mass  # noqa: E402  (the deliberate error; the held-object link, 2026-11-25 fix)
 
 
 # ---------------------------------------------------------------- run mode
@@ -150,6 +124,8 @@ def cmd_run(argv):
                                                "forearm_mass_physics": float(model.body_mass[int(model.body(fore[s]).id)])}
                                             for s in fore}
             info["gravity_model_is_separate_copy"] = nom is not model
+            if nom is not model:
+                link_held_mass(nom, model)                         # the copy reads the physics model's held-mass record (2026-11-25 fix)
 
         gravity_ff.ArmGravityFeedforward.__init__ = init_nominal
 

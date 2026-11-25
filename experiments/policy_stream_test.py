@@ -54,11 +54,18 @@ def main():
     ap.add_argument("--seconds", type=float, default=30.0)
     ap.add_argument("--bridge", default="on", choices=["on", "off"], help="the command bridge (the loop default is on)")
     ap.add_argument("--out", default=str(PROJECT_ROOT / "data" / "logs" / "policy_stream"))
+    ap.add_argument("--perturb", default="off", choices=["on", "off"], help="the deliberate model error (forearm +15 %%, upper arm +10 %%, forearm centre 10 mm; experiments/perturb_error.py); the gravity term keeps the unperturbed model")
+    ap.add_argument("--hold-s", type=float, default=0.0, help="after the stream (--seconds), the final target is held for this many seconds (the hold is part of the run)")
+    ap.add_argument("--rule", default="measure", choices=["measure", "nudge"], help="measure: the production rule (default); nudge: TEST ONLY, the rule of commit 8e45fac (experiments/sag_nudge_rule.py)")
     a = ap.parse_args()
     SAG_LAYER_CFG["enabled"] = a.correction == "on"
     out = Path(a.out)
     out.mkdir(parents=True, exist_ok=True)
     name = f"{a.variant}_s{a.seed}_{a.correction}" + ("" if a.bridge == "on" else "_nobridge")
+    name += ("" if a.perturb == "off" else "_perturb") + ("" if a.rule == "measure" else "_" + a.rule) + ("" if a.hold_s == 0 else f"_hold{a.hold_s:g}")
+    if a.rule == "nudge":
+        import sag_nudge_rule                                       # TEST ONLY (2026-11-25): the rule of 8e45fac, in this process only
+        sag_layer.SagLayer.correct = sag_nudge_rule.correct
 
     # solver success and failure counts of the left layer (wrapped in this process only)
     counts = {"ok": 0, "fail": 0}
@@ -80,13 +87,44 @@ def main():
 
     sag_layer.SagLayer._solver_ok, sag_layer.SagLayer._solver_failed = count_ok, count_fail
 
-    model, data = load()
+    perturb_info = {}
+    if a.perturb == "on":
+        # the deliberate model error: the physics model is perturbed; the gravity term keeps an unperturbed copy, and that copy reads the physics
+        # model's held-mass record (the 2026-11-25 harness fix, experiments/perturb_error.py)
+        import mujoco as _mj
+        from perturb_error import perturb_model, link_held_mass
+        from src import gravity_ff
+        nominal, _ = load()
+        model, data = load()
+        perturb_model(model, perturb_info)
+        _mj.mj_forward(model, data)
+        _orig_init = gravity_ff.ArmGravityFeedforward.__init__
+
+        def _init_nominal(self, mdl, arm_act, fing_act, sides=("left", "right")):
+            _orig_init(self, nominal, arm_act, fing_act, sides)
+            link_held_mass(nominal, mdl)
+
+        gravity_ff.ArmGravityFeedforward.__init__ = _init_nominal
+    else:
+        model, data = load()
     spf = steps_per_frame(model)
     arm = arm_ids(model, "left")
     probe = sag_layer.SagLayer(model, mujoco.MjData(model), "left", np.asarray(TASK_CFG["home_q_left"], float))
     pose = lambda q: probe._pose(data.qpos, q)                      # (hand position, rotation) of joint targets q
 
     src = make_policy_stream_source(model, data, lambda q: pose(q)[0], a.variant, a.seed, arm)
+    if a.hold_s > 0:
+        _inner_step = src["step"]
+
+        def _step_with_hold(obs):
+            # the stream's final target, repeated after --seconds (the hold is appended to every stream, A included)
+            if obs["time"] >= a.seconds and src["state"]["q_cmd"] is not None:
+                src["state"]["hold_from_t"] = src["state"].get("hold_from_t", float(obs["time"]))
+                q = np.array(src["state"]["q_cmd"], float)
+                return {"mode": "arms", "arm_targets": {"left": [float(x) for x in q]}}
+            return _inner_step(obs)
+
+        src["step"] = _step_with_hold
     rows = []
     qcmd_hist = []
 
@@ -112,7 +150,7 @@ def main():
         qcmd_hist.append(None if qc is None else np.array(qc, float))
 
     cfg = {"source_hz": 1.0 / model.opt.timestep / spf, "spawn_pos": SPAWN, "cameras": False, "routes": ROUTES,
-           "bench_frames": int(round(a.seconds * TICK_HZ)), "on_tick": hook}
+           "bench_frames": int(round((a.seconds + a.hold_s) * TICK_HZ)), "on_tick": hook}
     if a.bridge == "off":
         cfg["command_bridge"] = {"enabled": False}
     res = run_loop(model, data, {"policy": src}, cfg, viewer=None)
@@ -134,9 +172,15 @@ def main():
     summary["hand_error_reference"] = "pad vs the pad of REF (the bridge-accepted target: bridge output minus dq)"
     summary["source_raw_target_minus_accepted_m"] = {"mean_last_2s": float(np.nanmean(tail)), "max": float(np.nanmax(gv[:, 1])) if len(gv) else float("nan")}
     summary["bridge_joint_speed_limit_rad_s"] = BRIDGE_JOINT_SPEED
+    summary["perturb"] = a.perturb
+    summary["rule"] = a.rule
+    summary["stream_s"] = a.seconds
+    summary["hold_s"] = a.hold_s
+    summary["hold_from_t"] = src["state"].get("hold_from_t")
+    summary["perturbation"] = perturb_info
     (out / f"{name}.json").write_text(json.dumps(summary, indent=2))
     print(json.dumps(summary, indent=2))
-    return 0 if res.get("stopped_by") is None and len(rows) >= int(0.95 * a.seconds * TICK_HZ) else 1
+    return 0 if res.get("stopped_by") is None and len(rows) >= int(0.95 * (a.seconds + a.hold_s) * TICK_HZ) else 1
 
 
 BRIDGE_JOINT_SPEED = 0.5   # rad/s, COMMAND_BRIDGE_CFG max_joint_velocity_rad_s (the bridge's per-joint limit on what reaches the arm)

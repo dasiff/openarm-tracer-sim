@@ -92,11 +92,18 @@ def main():
     upd = np.nonzero(steps > 1e-12)[0]
     check("updates come only every 3rd tick (50 Hz)", len(upd) > 5 and len(set(np.diff(upd))) == 1 and int(np.diff(upd)[0]) == 3, f"gaps {sorted(set(np.diff(upd).tolist()))}")
 
-    print("3. bridge ON: a 0.6 rad step is rejected as a whole and logged", flush=True)
-    a, res, seen = run(150, lambda k, rest: {"mode": "arms", "arm_targets": {"left": [float(x) for x in (rest + np.where(np.arange(7) == 2, 0.6, 0.0))]}} if k >= 30 else None, {"enabled": True})
-    ev = [e for e in res["bridge_log"] if "step too large" in e["kind"]]
-    check("the command did not move", abs(a[-1] - a[0]) < 1e-9, f"{a[0]:.3f} -> {a[-1]:.3f}")
-    check("rejections logged with joint, value and limit", len(ev) > 0 and ev[0]["side"] == "left" and ev[0]["joint"] == 3 and abs(ev[0]["value"] - 0.6) < 1e-6 and ev[0]["limit"] == 0.25 and ev[0]["count"] > 10, str(ev[:1]))
+    print("3. bridge ON: a 0.6 rad step is NOT rejected (stage 3, David d0bc 2026-11-24): the one uniform shrink moves it at 0.01 rad per update and the target is reached", flush=True)
+    a, res, seen = run(330, lambda k, rest: {"mode": "arms", "arm_targets": {"left": [float(x) for x in (rest + np.where(np.arange(7) == 2, 0.6, 0.0))]}} if k >= 30 else None, {"enabled": True})
+    rej = [e for e in res["bridge_log"] if "step too large" in e["kind"]]
+    sh = res.get("bridge_shrink", [])
+    steps3 = np.abs(np.diff(a))
+    check("the command moves toward the target (not rejected): it reaches the 0.6 rad step", abs(a[-1] - a[0] - 0.6) < 1e-6, f"{a[0]:.3f} -> {a[-1]:.3f}")
+    check("no rejection is logged (the rejection rule is gone)", len(rej) == 0, f"{len(rej)} rejections")
+    check("no step above 0.01 rad per update (the speed limit now comes from the shrink)", steps3.max() <= 0.01 + 1e-9, f"largest {steps3.max():.5f}")
+    # the factor at each update is 0.01 / (the largest move then); the last full-speed update (move 0.01 rad) is not shrunk, so 59 updates are shrunk
+    check("59 shrunk updates (the remaining move falls from 0.6 to 0.01 rad), each with factor 0.01 / its move, rule speed, arm left, joint 3",
+          len(sh) == 59 and all(e["rule"] == "speed" and e["arm"] == "left" and e["joint"] == 3 and abs(e["factor"] - 0.01 / e["peak_move_rad"]) < 1e-9 for e in sh),
+          f"{len(sh)} shrunk updates; first {sh[:1]}")
 
     print("4. bridge ON: a target past the joint buffer edge (within the step limit) is clamped to the edge; the command reaches the edge and stops there", flush=True)
     # joint 3: buffer upper edge = the hard upper limit moved in by its buffer margin (SF-125: min(5 % of the joint range, 10 degrees); the test

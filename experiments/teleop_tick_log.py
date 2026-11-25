@@ -83,6 +83,7 @@ def main(argv):
         cfg = {**cfg, "on_tick": on_tick}
         res = orig_run_loop(model, data, sources, cfg, viewer=viewer, logger=logger)
         holder["bridge_log"] = res.get("bridge_log", []) if isinstance(res, dict) else []
+        holder["bridge_shrink"] = res.get("bridge_shrink", []) if isinstance(res, dict) else []      # stage 3: the shrunk updates
         return res
 
     cl.run_loop = run_loop_logged
@@ -90,6 +91,7 @@ def main(argv):
     def save():
         out = {k: np.array(v) for k, v in rec.items() if len(v)}
         out["bridge_log"] = np.array(json.dumps(holder.get("bridge_log", []), default=str))
+        out["bridge_shrink"] = np.array(json.dumps(holder.get("bridge_shrink", []), default=str))
         info = {"correction": a.correction, "ticks": len(rec["t"])}
         out["info"] = np.array(json.dumps(info))
         np.savez(a.out, **out)

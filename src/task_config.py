@@ -464,8 +464,8 @@ PICK_PLACE_CFG = {
 COMMAND_BRIDGE_CFG = {
     "enabled": True,                       # True: the arm targets of every source go through the bridge; False: they go straight to the arm targets as before. Default on from David's request, 2026-10-29 [row M193]
     "rate_hz": 50.0,                       # Hz: how often the bridge takes a command (every 3rd tick of the 150 Hz loop); between two updates the loop's "interpolate" target mode ramps the arm targets, as the real controller's interpolation does [row M193]
-    "max_joint_velocity_rad_s": 0.5,       # rad/s: the bridge moves the command at most this fast toward the target, i.e. at most 0.5 / 50 = 0.01 rad per update [row M193]
-    "max_target_step_rad": 0.25,           # rad: a target more than this from the current command (on any joint) is rejected as a whole and ignored; so is a target outside a joint's limits [row M193]
+    "max_joint_velocity_rad_s": 0.5,       # rad/s: the speed limit of the bridge's one uniform shrink: a move is scaled so that no joint moves more than 0.5 / 50 = 0.01 rad per update (stage 3, David d0bc 2026-11-24; the shrink replaces the per-joint clip) [row M193]
+    "max_target_step_rad": 0.25,           # rad: the step-size limit of the uniform shrink: a move is scaled so that no joint's move is more than this (stage 3; replaces the rejection of a target more than this away) [row M193]
     "max_tracking_error_rad": 0.25,        # rad: while any arm joint's command is more than this from its measured position, the bridge stops forwarding commands (the command stays where it is) until the arm catches up [row M193]
 }
 

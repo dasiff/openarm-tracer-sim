@@ -35,11 +35,12 @@ bridge and the safety filter (SF-119); the arms receive the corrected targets th
 
 The command bridge (cfg["command_bridge"], src/task_config.COMMAND_BRIDGE_CFG, design plan section 1, row M193), on by default: the real arms' command limits on the 14 arm joints. The arm
 targets that sources give are not applied directly: the bridge keeps the latest target per arm and, at its own rate (50 Hz: every 3rd tick), (1) suspends commands while any arm joint's
-command is more than max_tracking_error_rad from its measured position (the command stays where it is until the arm has caught up), (2) rejects a target as a whole if it is more
-than max_target_step_rad from the current command on any joint (the previous accepted target stays), (3) moves the command at most max_joint_velocity_rad_s / rate_hz toward the accepted
-target and applies it, ramped over the 3 ticks by the "interpolate" target mode. A command whose arm targets are outside the joint limits is rejected as a whole before that. Grippers and
-the pedestal are not touched. Every rejection and every suspension (and its end) is logged: {tick, time, status, kind, side, joint, value, limit, count} in the returned "bridge_log" (an event that repeats the previous one is merged into it and counted)
-and printed (the first 20 lines; a summary line at the end counts them all).
+command is more than max_tracking_error_rad from its measured position (the command stays where it is until the arm has caught up), (2) clamps each target into its joint buffer (SF-125),
+then (3) moves the command toward the accepted target by ONE uniform shrink (stage 3, David d0bc 2026-11-24, src/bridge_shrink.py): the factor is the smaller of max_target_step_rad / peak and
+max_joint_velocity_rad_s / rate_hz / peak, peak being the largest per-joint move of either arm at this update, applied to every joint's move on both arms. No target is rejected and no joint is
+clipped on its own; a move inside the limits passes unchanged. The command is then ramped over the 3 ticks by the "interpolate" target mode. Grippers and the pedestal are not touched.
+Every suspension (and its end) is logged in the returned "bridge_log" ({tick, time, status, kind, side, joint, value, limit, count}; an event that repeats the previous one is merged into it and counted);
+every shrunk update is logged in the returned "bridge_shrink" ({tick, time, factor, rule (speed or step), arm, joint, peak_move_rad}).
 
 Controller mode (cfg["mode"], cfg["auto_source"]): "teleop" is the router exactly as configured (keyboard, webcam teleop, a policy on some
 fields: what the manual / teleop / policy launcher modes have always been). With cfg["auto_source"] naming a task-policy source there is
@@ -103,6 +104,7 @@ from src.commands import validate_command
 from src.run_record import RunRecorder
 from src.task_config import COMMAND_BRIDGE_CFG
 from src.holding import HoldDetector                          # M253: the holding verdict, the same rule as the signal trace
+from src.bridge_shrink import apply_shrink, shrink_factor     # stage 3 (David d0bc 2026-11-24): the bridge's one uniform shrink
 from src.open_catch import OpenCatch, SourceGate                # M253: catches an open while holding; gates the sources (always on)
 from src.weigh_helper import WeighHelper                         # M258: weighs each grasp once, pausing its source (always on)
 from src.sag_layer import SAG_TRACE, SagLayer, correct_command
@@ -120,7 +122,8 @@ SERVO_LOG = {"tick": -1, "tau_cmd": None, "tau_ff": None}
 BRIDGE_ACCEPTED_LOG = {"tick": -1, "accepted_L": None, "accepted_R": None, "limited_L": None, "limited_R": None}
 # SF-122 stage 1 (logging only): per arm and joint, how many times the bridge clamped a source's target into its joint buffer (bridge_take). The
 # command is not clamped: it follows the target at the bridge's speed and step rules. Reset at the start of each run_loop.
-BRIDGE_CLAMP = {"target": {"left": np.zeros(7, int), "right": np.zeros(7, int)}, "updates": {"left": np.zeros(7, int), "right": np.zeros(7, int)}}   # "target": source commands clamped (per command); "updates": bridge updates that used a clamped target (per joint)
+BRIDGE_CLAMP = {"target": {"left": np.zeros(7, int), "right": np.zeros(7, int)}, "updates": {"left": np.zeros(7, int), "right": np.zeros(7, int)}}
+BRIDGE_SHRINK = {"updates": 0, "min_factor": 1.0, "rule": {"speed": 0, "step": 0}, "arm": {"left": 0, "right": 0}}   # stage 3: the shrink counts of the run (updates shrunk, smallest factor, binding rule, arm)   # "target": source commands clamped (per command); "updates": bridge updates that used a clamped target (per joint)
 BRIDGE_TIME = []    # SF-122 timing (logging only): seconds spent in each bridge call (bridge_take per arms command, bridge_update per update)
 
 LOOP_CFG = {
@@ -621,7 +624,7 @@ def run_loop(model, data, sources, cfg, viewer=None, logger=None):
 
     # --- The command bridge (row M193): the real arms' command limits between the sources and the arm targets ---
     bcfg = {**COMMAND_BRIDGE_CFG, **(cfg.get("command_bridge") or {})}
-    bridge = {"on": bool(bcfg["enabled"]) and cfg["replay"] is None, "cmd": None, "target": {}, "accepted": {}, "suspended": False, "log": [], "printed": 0,
+    bridge = {"on": bool(bcfg["enabled"]) and cfg["replay"] is None, "cmd": None, "target": {}, "accepted": {}, "suspended": False, "log": [], "printed": 0, "shrink_log": [],
               "pending_clamp": {s_: np.zeros(7, bool) for s_ in sides}}      # SF-122 stage 2: clamped joints since the last update (for the "updates" count)
     bridge_every = max(1, int(round(cfg["source_hz"] / bcfg["rate_hz"])))
     sag_held = {}                        # answer 1: side -> the arm's last source target (the sag layer runs on it every tick)
@@ -630,6 +633,7 @@ def run_loop(model, data, sources, cfg, viewer=None, logger=None):
     for k_ in BRIDGE_CLAMP:
         for s_ in sides:
             BRIDGE_CLAMP[k_][s_] = np.zeros(7, int)
+    BRIDGE_SHRINK.update({"updates": 0, "min_factor": 1.0, "rule": {"speed": 0, "step": 0}, "arm": {"left": 0, "right": 0}})
     del BRIDGE_TIME[:]
     arm_qadr = {s: [int(model.jnt_qposadr[model.actuator_trnid[a, 0]]) for a in arm_act[s]] for s in sides}
     # --- M253: the open catch (one per hand, always on) and the chunk player ---
@@ -738,17 +742,21 @@ def run_loop(model, data, sources, cfg, viewer=None, logger=None):
         if bridge["suspended"]:
             bridge["suspended"] = False
             bridge_note(frame_, worst[1], int(np.argmax(np.abs(err[worst[1]]))) + 1, "resumed: tracking error recovered", worst[0], bcfg["max_tracking_error_rad"])
+        # stage 3 (David d0bc 2026-11-24): ONE uniform shrink for both arms. Each rule's factor (its limit over the largest per-joint move of either
+        # arm), the smallest applied to every joint's move; no rejection, no per-joint clip. Within the limits the factor is 1 and the target is reached.
+        moves = {s: (np.zeros(7) if bridge["target"].get(s) is None else bridge["target"][s] - cmd_q[s]) for s in sides}
+        f, rule_, arm_, joint_, peak_ = shrink_factor(moves, bcfg["max_target_step_rad"], bridge_step)
+        if f < 1.0:
+            BRIDGE_SHRINK["updates"] += 1
+            BRIDGE_SHRINK["min_factor"] = min(BRIDGE_SHRINK["min_factor"], f)
+            BRIDGE_SHRINK["rule"][rule_] += 1
+            BRIDGE_SHRINK["arm"][arm_] += 1
+            bridge["shrink_log"].append({"tick": frame_, "time": float(data.time), "factor": float(f), "rule": rule_, "arm": arm_, "joint": joint_,
+                                         "peak_move_rad": float(peak_)})
         out = {}
         for s, tgt in bridge["target"].items():
-            d_ = tgt - cmd_q[s]
-            if float(np.max(np.abs(d_))) > bcfg["max_target_step_rad"]:
-                k = int(np.argmax(np.abs(d_)))
-                bridge_note(frame_, s, k + 1, "rejected: target step too large", d_[k], bcfg["max_target_step_rad"])
-                tgt = bridge["accepted"].get(s, cmd_q[s])                                      # the previous accepted target stays
-                d_ = tgt - cmd_q[s]
-            else:
-                bridge["accepted"][s] = tgt.copy()
-            cmd_q[s] = cmd_q[s] + np.clip(d_, -bridge_step, bridge_step)
+            cmd_q[s] = apply_shrink(cmd_q[s], tgt, f)
+            bridge["accepted"][s] = np.array(tgt, float).copy()
             out[s] = [float(v) for v in cmd_q[s]]
         for s_ in sides:                                                                     # SF-122 stage 2: the bridge's output of this update goes to the sag layer (REF = output - dq)
             sag[s_].observe(cmd_q[s_], data.time, False)
@@ -1346,4 +1354,4 @@ def run_loop(model, data, sources, cfg, viewer=None, logger=None):
         for e in bridge["log"]:
             kinds[e["kind"]] = kinds.get(e["kind"], 0) + e["count"]
         print(f"[bridge] {len(bridge['log'])} log entries, {sum(kinds.values())} events: {kinds}")
-    return {"frames": frame, "open_catch_log": open_catch_log, "sag_log": {s: sag[s].log for s in sides}, "weigh_log": {s: weigh[s].log for s in sides}, "hold_log": ex["log"], "routes": routes, "stopped_by": stop_req[0], "mode_log": ctl["log"], "bridge_log": bridge["log"]}
+    return {"frames": frame, "open_catch_log": open_catch_log, "sag_log": {s: sag[s].log for s in sides}, "weigh_log": {s: weigh[s].log for s in sides}, "hold_log": ex["log"], "routes": routes, "stopped_by": stop_req[0], "mode_log": ctl["log"], "bridge_log": bridge["log"], "bridge_shrink": bridge["shrink_log"]}

@@ -31,3 +31,17 @@ E8. Appendix C.3:
 
 E9. Section 5, limitations:
 "We attribute regression in task success to excessive motion planner intervention in scenarios where the VLA exhibits superior performance, such as maneuvering through narrow doorways while carrying objects."
+
+E10. Page 4, Section 3 (problem setup):
+"We assume access to a map of the environment a priori; a reasonable assumption in household settings, where robust semantic mapping and localization methods are well established [24, 25] but do not assume knowledge of task object locations."
+
+E11. Page 5, Navigation:
+"Classical motion planning generally assumes access to an obstacle/traversability map with labeled rooms and accurate robot localization; this is a reasonable assumption in household settings, where robust semantic mapping and localization methods are by now well established [24, 25]. Finding the target object itself (e.g., a fridge) is handled at runtime: the orchestrator's knowledge base is queried first; if the object location is unknown, then open-vocabulary detection with GroundingDINO [29] and frontier-based exploration [30] are applied to search for the object (Appx. C.3)."
+
+E12. Page 8, Limitations:
+"First, our framework assumes access to a traversability map with labeled room boundaries, which restricts deployment to environments mapped in advance. Online semantic mapping [25] or vision-language navigation [33] could lift this assumption."
+
+E13. Page 16, Appendix C.2:
+"The orchestrator maintains a knowledge base that stores the locations of rooms, areas, and large fixtures, as well as object locations discovered during execution."
+
+(Added 2026-11-25; the passages E10 to E13 were given by David with their page and section. The reference numbers in square brackets, such as [24, 25] and [29], are the paper's own bibliography, which is not in this repository.)

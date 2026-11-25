@@ -135,7 +135,9 @@ def case_incremental():
     log = run(make)
     worst = view_gap(log)
     check("B1 the routine's view equals the targets it commanded at each call", worst < 1e-12, f"largest difference {worst:.2e} rad")
-    check("B2 the correction ran on every arm command", STUB["calls"] == len(log["sent"]) and len(log["sent"]) > 0,
+    # David 2026-11-25, answer 1: the correction runs every control tick on the arm's held target, so it runs more often than the commands arrive
+    check("B2 the correction ran on every arm command, and on the ticks in between (the arm's held target, answer 1)",
+          STUB["calls"] > len(log["sent"]) and len(log["sent"]) > 0,
           f"{STUB['calls']} corrections for {len(log['sent'])} arm commands")
     start = float(log["view"][0][1])                         # joint 2 at the first call (before any step)
     final = float(log["sent"][-1][1])

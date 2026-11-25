@@ -624,6 +624,7 @@ def run_loop(model, data, sources, cfg, viewer=None, logger=None):
     bridge = {"on": bool(bcfg["enabled"]) and cfg["replay"] is None, "cmd": None, "target": {}, "accepted": {}, "suspended": False, "log": [], "printed": 0,
               "pending_clamp": {s_: np.zeros(7, bool) for s_ in sides}}      # SF-122 stage 2: clamped joints since the last update (for the "updates" count)
     bridge_every = max(1, int(round(cfg["source_hz"] / bcfg["rate_hz"])))
+    sag_held = {}                        # answer 1: side -> the arm's last source target (the sag layer runs on it every tick)
     bridge_step = bcfg["max_joint_velocity_rad_s"] / bcfg["rate_hz"]                      # rad: the most the command moves per update
     bridge_buf = {s: buffer_limits(limits["arm"][s][0], limits["arm"][s][1]) for s in sides}   # SF-122 stage 1: the joint buffer (hard limits moved in by the 10-degree margin)
     for k_ in BRIDGE_CLAMP:
@@ -1180,6 +1181,7 @@ def run_loop(model, data, sources, cfg, viewer=None, logger=None):
                 ctl["ramp"] = False
         measure_still()
         to_apply = exclusive_select(cmds, t) if cfg["exclusive"] else [c for c in cmds if c["mode"] != "idle"]
+        arms_now = False                                    # stage 2 follow-up (David 2026-11-25, answer 1): did a new arm command arrive this tick?
         if not cfg["exclusive"] and any(c["mode"] == "idle" for c in cmds):
             stop_base()
         for cmd in to_apply:
@@ -1192,6 +1194,9 @@ def run_loop(model, data, sources, cfg, viewer=None, logger=None):
                 cmd = {**cmd, "arm_targets": sf_plugin.process(cmd["arm_targets"], {s_: hold_det[s_].holding for s_ in sides}, filter_now, t, bool(cmd.get("manip")), cmd.get("held_object"))}
                 if sf_plugin.limit_reached() and stop_req[0] is None:
                     stop_req[0] = "safety_filter_limit"
+            if cmd.get("mode") == "arms" and cmd.get("arm_targets"):
+                arms_now = True
+                sag_held.update({s_: np.asarray(q_, float).copy() for s_, q_ in cmd["arm_targets"].items()})   # the arm's held source target (answer 1)
             cmd = sag_correct(cmd)                          # M262: the sag trim sits between the source and the bridge (every source; the same code)
             _tb = time.perf_counter()
             cmd = bridge_take(cmd)
@@ -1201,6 +1206,17 @@ def run_loop(model, data, sources, cfg, viewer=None, logger=None):
                     sag[s_].observe(np.array(q_, float), data.time, False)
             if cmd is not None:
                 apply_cmd(cmd)
+        if not arms_now and sag_held:
+            # answer 1 (David 2026-11-25): the sag layer runs every control tick, on the arm's held source target, whether or not a new arm command
+            # arrived. The correction (dq) of the held target is sent to the bridge each tick; the skip rules are unchanged.
+            hcmd = {"mode": "arms", "arm_targets": {s_: [float(v) for v in q_] for s_, q_ in sag_held.items()}, "period_steps": steps_per_frame}
+            hcmd = sag_correct(hcmd)
+            hcmd = bridge_take(hcmd)
+            if hcmd is not None and not bridge["on"] and hcmd.get("mode") == "arms" and hcmd.get("arm_targets"):
+                for s_, q_ in hcmd["arm_targets"].items():
+                    sag[s_].observe(np.array(q_, float), data.time, False)
+            if hcmd is not None:
+                apply_cmd(hcmd)
         if sf_plugin is not None and sf_plugin.take_override():       # Part 2: braking had to exceed the bridge limits
             bridge_override(frame)
         _tb = time.perf_counter()

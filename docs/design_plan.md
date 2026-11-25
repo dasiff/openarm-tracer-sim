@@ -515,11 +515,13 @@ Not replaced, on purpose: the demo generator and the reachability map use true o
   - The hotplate is not part of the map. It is found during the run and kept in the world model.
   - The start pose is not assumed known (on the real robot it could be inaccurate). The robot finds its own position by self-orientation (M331).
   - No SLAM during tasks. The map is made once beforehand (M337): from the scene model in sim; on the real robot by one mapping drive with slam_toolbox. During tasks the robot only localizes against that fixed map.
-- **Lidar [DECIDED, M328; all values PROVISIONAL until the hardware team gives the real unit]:**
+- **Lidar [DECIDED, M328; BUILT 2026-11-25, stage 1 of 7, in commits 64d015f, 5e42f93 and a623ac4; tests `experiments/lidar_test.py` 16 of 16 pass; report docs/reports/20261125_2250_navigation_stage1_lidar.md; all values PROVISIONAL until the hardware team gives the real unit]:**
   - Assumed: a standard 2D spinning lidar. One horizontal plane, 360 degrees, 1 degree beam spacing (360 beams), 10 Hz (one scan every 15 control ticks), range 0.15 to 12 m, range noise about 2 cm standard deviation.
   - Mount: front centre of the base deck, scan plane just above the deck. With the open bench it sees bench legs, walls and cabinets, not the bench top.
-  - Beams blocked by the robot's own body (pedestal column, battery pack) are reported as self-blocked and dropped, not treated as walls (MuJoCo ray casting excludes the robot's own bodies).
+  - Beams blocked by the robot's own body (pedestal column, battery pack) are reported as self-blocked and dropped, not treated as walls (the ray cast does NOT exclude the robot's own bodies: the first hit is checked, and a robot hit is flagged SELF_BLOCKED and dropped; built, M341).
   - Lidar confirmed by David on 2026-11-25 (M336). Open (hardware team, §11): the real lidar model, mount, 2D or 3D, range and rate; until then the values above stay PROVISIONAL.
+  - Known simplification, built (M341): the scan is taken all at once, from one instant (no smear while the robot moves).
+  - Navigation only, built (M341): the scan exists only in `navigation_observation()`. It is never in the policy observation, the recorded training data (images and joint states) or anything the VLA sees.
 - **Odometry error [DECIDED, M329; values PROVISIONAL]:**
   - The sim drives the base by setting its velocity, and the wheel meshes have no traction. So odometry is synthesized from the true base motion each tick, with injected error.
   - Three levels, an experiment setting:

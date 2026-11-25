@@ -23,7 +23,17 @@ REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO))
 
 LOOP = {"off": None, "t": None}      # the gravity offset (tau/kp, all actuators) the loop computed at the start of its last tick
-REC = {k: [] for k in ("t", "q_src", "q_meas", "ctrl_now", "tau_now", "loop_off", "pred_pre", "pred", "est", "last_sag", "dq", "cmd", "skip", "scale")}
+REC = {k: [] for k in ("side", "t", "q_src", "q_meas", "ctrl_now", "tau_now", "loop_off", "pred_pre", "pred", "est", "last_sag", "dq", "cmd", "skip", "scale")}
+
+
+_GFF = {}
+
+
+def _gff_for(model):
+    from src import gravity_ff
+    if id(model) not in _GFF:
+        _GFF[id(model)] = gravity_ff.ArmGravityFeedforward.from_model(model)
+    return _GFF[id(model)]
 
 
 def main(argv):
@@ -64,11 +74,13 @@ def main(argv):
         off = self.off
         acts = self.acts
         pre_pred = None if self.pred is None else np.asarray(self.pred, float).copy()
-        tau_now = np.asarray(orig_torques(self.gff, data), float)[off:off + 7] / self.kp_arm
+        gff_own = _gff_for(self.model)                       # the trace's own gravity term (the layer no longer has one: decision 3)
+        tau_now = np.asarray(orig_torques(gff_own, data), float)[off:off + 7] / gff_own.kp[off:off + 7]
         loop_off = None if LOOP["off"] is None else LOOP["off"][off:off + 7]
         ctrl_now = np.asarray(data.ctrl[acts], float).copy()
         q_meas = np.asarray(data.qpos[self.arm.qadr], float).copy()
         cmd = orig_correct(self, q_src, data, t, nominal_dt)
+        REC["side"].append(self.side)
         REC["t"].append(float(t))
         REC["q_src"].append(np.asarray(q_src, float).copy())
         REC["q_meas"].append(q_meas)

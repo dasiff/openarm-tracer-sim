@@ -39,7 +39,8 @@ def main(argv):
     from src.task_config import SAG_LAYER_CFG
 
     SAG_LAYER_CFG["enabled"] = a.correction == "on"
-    rec = {"t": [], "q": [], "ref": [], "C_p": [], "C_r": [], "dq": [], "est": [], "err_m": [], "err_rot": [], "susp": [], "skips": []}
+    rec = {"t": [], "q": [], "ref": [], "C_p": [], "C_r": [], "dq": [], "est": [], "err_m": [], "err_rot": [], "susp": [], "skips": [],
+           "pred": [], "sag": [], "applied": [], "ctrl": [], "clamp_updates": [], "src": []}
     holder = {}
     orig_run_loop = cl.run_loop
 
@@ -60,6 +61,12 @@ def main(argv):
                 rec["dq"].append(np.asarray(layer.dq, float).copy())
                 rec["est"].append(np.asarray(layer.est, float).copy())
                 rec["susp"].append(int(bool(layer.suspended)))
+                rec["pred"].append(np.full(7, np.nan) if layer.pred is None else np.asarray(layer.pred, float).copy())
+                rec["sag"].append(np.full(7, np.nan) if getattr(layer, "last_sag", None) is None else np.asarray(layer.last_sag, float).copy())
+                rec["applied"].append(np.full(7, np.nan) if layer.applied_offset is None else np.asarray(layer.applied_offset, float).copy())
+                rec["ctrl"].append(np.asarray(data.ctrl[layer.acts], float).copy())
+                rec["clamp_updates"].append(np.asarray(cl.BRIDGE_CLAMP["updates"]["left"], float).copy())
+                rec["src"].append(np.asarray(layer.last_cmd if layer.last_cmd is not None else np.full(7, np.nan), float).copy())
                 rec["skips"].append(json.dumps(layer.skips))
                 if layer.refs:
                     pad, Rp = layer.arm.pad_pose(data)
@@ -74,12 +81,15 @@ def main(argv):
             return None
 
         cfg = {**cfg, "on_tick": on_tick}
-        return orig_run_loop(model, data, sources, cfg, viewer=viewer, logger=logger)
+        res = orig_run_loop(model, data, sources, cfg, viewer=viewer, logger=logger)
+        holder["bridge_log"] = res.get("bridge_log", []) if isinstance(res, dict) else []
+        return res
 
     cl.run_loop = run_loop_logged
 
     def save():
         out = {k: np.array(v) for k, v in rec.items() if len(v)}
+        out["bridge_log"] = np.array(json.dumps(holder.get("bridge_log", []), default=str))
         info = {"correction": a.correction, "ticks": len(rec["t"])}
         out["info"] = np.array(json.dumps(info))
         np.savez(a.out, **out)

@@ -109,7 +109,7 @@ def cmd_run(argv):
     info = {"perturb": a.perturb, "correction": a.correction}
     info["rule"] = rule_info
     info["bridge_buffer"] = buffer_info
-    rec = {s: {k: [] for k in ("t", "src", "q", "v", "ctrl", "force", "ref", "cmd", "dq", "C_p", "C_r", "expected", "err", "applied", "skip", "tau_ff", "scale")} for s in SIDES}
+    rec = {s: {k: [] for k in ("t", "src", "q", "v", "ctrl", "force", "ref", "cmd", "dq", "C_p", "C_r", "expected", "err", "applied", "skip", "tau_ff", "scale", "est", "sag")} for s in SIDES}
     SKIPS = ["none", "no_reference", "suspended", "nonfinite", "guard"]
     state = {"tau": None}
 
@@ -197,6 +197,8 @@ def cmd_run(argv):
         L["applied"].append(int(skip == "none"))
         L["err"].append(np.full(7, np.nan) if (self.last_error is None or skip != "none") else np.asarray(self.last_error, float).copy())   # stage 2: the measured sag per joint (7)
         L["scale"].append(float(getattr(self, "clip_scale", 1.0)))
+        L["est"].append(np.asarray(self.est, float).copy())                                  # stage 2 analysis: the estimate the layer applies
+        L["sag"].append(np.full(7, np.nan) if getattr(self, "last_sag", None) is None else np.asarray(self.last_sag, float).copy())
         return cmd
 
     sag_layer.SagLayer.correct = correct_wrapped

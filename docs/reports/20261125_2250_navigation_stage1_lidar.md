@@ -61,7 +61,7 @@ The pedestal top and the torso are above the plane, so raising the pedestal does
 
 ## Picture
 
-docs/reports/20261125_lidar_scan_slice.png. Three panels at the scan plane height: the staging stance, the staging approach spot (0.2063 m behind it), and the middle of the room (0.0, -2.2) m, heading 0. Grey is what crosses the plane, computed from each primitive geom of the compiled model. The bench top is a dashed outline labelled "bench top, above scan plane". Self-blocked beams are orange. The picture shows the bin, the cart legs, the storage cabinet, the back counter, the fume hood, the bench legs and the walls.
+docs/reports/20261125_lidar_scan_slice.png. Three panels at the scan plane height: the staging stance, the staging approach spot (0.2063 m behind it), and the middle of the room (0.0, -2.2) m, heading 0. Grey is what crosses the plane, computed from each primitive geom of the compiled model. The bench top is a dashed outline labelled "bench top, above scan plane". Self-blocked beams are orange. The picture shows the waste bin, the rolling cart legs, the back counter, the fume hood, the bench legs and the walls. (The storage cabinet, at x about -4.4 m, is outside all three panels; it is in the scene and in the ray tests.)
 
 Two bugs found while making it, both fixed in a623ac4: (1) a first version used ray parity; where two cabinet doors touch, and where a grid row lies on a face, the count was wrong and drew false lines across the room. The slice now tests each primitive exactly. (2) The `mj_multiRay` argument list (above).
 

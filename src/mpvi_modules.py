@@ -155,6 +155,17 @@ def joints_duration(q0, home_q, cfg):
     return max(cfg["min_move_s"], float(np.max(np.abs(home_q - q0))) / 0.3)
 
 
+def place_back_waypoints(down, a, cfg):
+    """The LIFT and BACK waypoints after the release (Phase H fix 1, SF-87). LIFT goes straight up from the release point (down) by
+    cfg["back_lift_m"]; BACK retreats from there along the approach direction a (its xy, cfg["retreat_m"]) at the lifted height. The palm never
+    goes below the release height during BACK: the retreat is level above it. Returns (lift, back) as arrays."""
+    lift = np.asarray(down, float).copy()
+    lift[2] += float(cfg["back_lift_m"])
+    back = lift.copy()
+    back[:2] -= np.asarray(a, float)[:2] * float(cfg["retreat_m"])
+    return lift, back
+
+
 def make_scripted_manipulation(model, data, world, side, home_q, task_cfg=TASK_CFG, cfg=PICK_PLACE_CFG, mink_cfg=MINK_CFG, force=None, carry_ref="hotplate"):
     """Builds the manipulation module: the pick and place primitives of one arm.
 
@@ -268,11 +279,11 @@ def make_scripted_manipulation(model, data, world, side, home_q, task_cfg=TASK_C
         a = place_approach_xy(a, th)                         # so does the approach direction (the back-off goes out along it); the same function recovery uses (M279)
         over = np.array([hp[0] + off[0], hp[1] + off[1], p[2]])
         down = np.array([hp[0] + off[0], hp[1] + off[1], hp[2] + off[2] + cfg["setdown_gap_m"]])
-        back = down.copy()
-        back[:2] -= a[:2] * cfg["retreat_m"]
+        lift, back = place_back_waypoints(down, a, cfg)      # Phase H fix 1 (SF-87): lift straight up first, then retreat level above the release
         hp_pose, hR = home_pad_pose()
         return [move("OVER", over, cfg["speed_m_s"], R), move("DOWN", down, cfg["slow_speed_m_s"], R), {"kind": "open", "name": "OPEN"},
-                move("BACK", back, cfg["slow_speed_m_s"], R), move("HOME", hp_pose, cfg["speed_m_s"], hR), {"kind": "joints", "name": "HOME"}]
+                move("LIFT", lift, cfg["slow_speed_m_s"], R), move("BACK", back, cfg["slow_speed_m_s"], R), move("HOME", hp_pose, cfg["speed_m_s"], hR),
+                {"kind": "joints", "name": "HOME"}]
 
     def start(segment):
         """Plans the segment's primitive from the world as it is now."""
@@ -356,7 +367,10 @@ def make_scripted_manipulation(model, data, world, side, home_q, task_cfg=TASK_C
     def command(grip=None):
         """The arms command: the joint command, and the gripper's (kept every tick: a plain travel would reset the force limit)."""
         g = S["grip"] if grip is None else grip
-        return {"mode": "arms", "arm_targets": {side: [float(v) for v in arm.q_cmd]}, "gripper": {side: g}}
+        cmd = {"mode": "arms", "arm_targets": {side: [float(v) for v in arm.q_cmd]}, "gripper": {side: g}}
+        if isinstance(g, dict) and S["ctx"].get("obj") is not None:      # Phase C step 7: a grasp names the object it grips (the filter's identity; the holding verdict is the grasp signal)
+            cmd["held_object"] = {side: str(S["ctx"]["obj"])}
+        return cmd
 
     def settled(t, dwell):
         """True once the arm's joints have been slower than the settle speed for `dwell` seconds (the shared test, M258)."""

@@ -25,8 +25,16 @@ os.environ.setdefault("MUJOCO_GL", "egl")
 
 import numpy as np  # noqa: E402
 
-from src.control_loop import run_loop  # noqa: E402
+from src.control_loop import BRIDGE_ACCEPTED_LOG, BRIDGE_CLAMP, run_loop  # noqa: E402
+from src.task_config import SAG_LAYER_CFG  # noqa: E402
 from experiments_loader import load, steps_per_frame, SPAWN  # noqa: E402
+from src.bridge_clamp import buffer_margins  # noqa: E402
+from src.robot_helpers import arm_ids  # noqa: E402
+import mujoco  # noqa: E402
+_M = mujoco.MjModel.from_xml_path(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'models', 'robot', 'combined_robot.xml'))
+_JNT = np.asarray(arm_ids(_M, 'left')['jnt'])
+HARD_RANGE = np.column_stack([_M.jnt_range[_JNT, 0], _M.jnt_range[_JNT, 1]])     # rad, the hard joint limits (left arm, joints 1-7)
+BUFFER_MARGIN = buffer_margins(HARD_RANGE[:, 0], HARD_RANGE[:, 1])                # rad, the bridge's buffer margin per joint (the configured rule)
 
 ROUTES = {k: "script" for k in ("base", "pedestal", "arms.left", "arms.right", "gripper.left", "gripper.right")}
 RESULTS = []
@@ -37,16 +45,21 @@ def check(name, ok, detail=""):
     print(f"  {'PASS' if ok else 'FAIL'}  {name}" + (f"   ({detail})" if detail else ""), flush=True)
 
 
-def run(ticks, make_cmd, bridge=None):
-    """Runs the loop for `ticks` ticks with a script make_cmd(tick, rest) -> command or None; returns (applied joint-3 target per tick, the loop's result, the model, the last obs)."""
+def run(ticks, make_cmd, bridge=None, joint=2):
+    """Runs the loop for `ticks` ticks with a script make_cmd(tick, rest) -> command or None; returns (joint-3 command of the bridge per tick, the loop's
+    result, the model, the last obs). The bridge's own limited command is read from BRIDGE_ACCEPTED_LOG["limited_L"] (SF-119): the sources see their
+    own commanded targets now, not the bridge's, so the view can no longer show the bridge's limits."""
     model, data = load()
     spf = steps_per_frame(model)
-    seen = {"rest": None, "applied": [], "grip": [], "ped": []}
+    seen = {"rest": None, "applied": [], "view": [], "grip": [], "ped": []}
+    BRIDGE_ACCEPTED_LOG["limited_L"] = None
 
     def step(obs):
         if seen["rest"] is None:
             seen["rest"] = np.array(obs["applied"]["arm_targets"]["left"])
-        seen["applied"].append(obs["applied"]["arm_targets"]["left"][2])
+        bridge_cmd = BRIDGE_ACCEPTED_LOG.get("limited_L")
+        seen["applied"].append(float(seen["rest"][joint]) if bridge_cmd is None else float(bridge_cmd[joint]))
+        seen["view"].append(float(obs["applied"]["arm_targets"]["left"][joint]))        # what the source sees: its own commanded target (SF-119)
         seen["grip"].append(obs["applied"]["gripper"]["left"])
         seen["ped"].append(obs["applied"]["pedestal"])
         return make_cmd(obs["tick"], seen["rest"])
@@ -63,9 +76,12 @@ def arm_cmd(q3):
 
 
 def main():
-    print("1. bridge OFF: a 0.6 rad step is applied at once", flush=True)
-    a, res, seen = run(120, lambda k, rest: {"mode": "arms", "arm_targets": {"left": [float(x) for x in (rest + np.where(np.arange(7) == 2, 0.6, 0.0))]}} if k >= 30 else None)
-    check("the applied target jumped by 0.6 rad", abs(a[-1] - a[0] - 0.6) < 1e-6 and res["bridge_log"] == [], f"{a[0]:.3f} -> {a[-1]:.3f}")
+    # SF-123 (David 2026-11-24): this test checks the bridge alone, so the sag layer is off here (the layer's own tests cover it)
+    SAG_LAYER_CFG["enabled"] = False
+    print("1. bridge OFF (passed explicitly: the default is on): a 0.6 rad step is applied at once", flush=True)
+    a, res, seen = run(120, lambda k, rest: {"mode": "arms", "arm_targets": {"left": [float(x) for x in (rest + np.where(np.arange(7) == 2, 0.6, 0.0))]}} if k >= 30 else None, {"enabled": False})
+    v = np.array(seen["view"])                                                          # bridge off: the source's view is the command applied at once
+    check("the target jumped by 0.6 rad", abs(v[-1] - v[0] - 0.6) < 1e-6 and res["bridge_log"] == [], f"{v[0]:.3f} -> {v[-1]:.3f}")
 
     print("2. bridge ON: a 0.2 rad step is accepted and limited to 0.01 rad per update", flush=True)
     a, res, seen = run(240, lambda k, rest: {"mode": "arms", "arm_targets": {"left": [float(x) for x in (rest + np.where(np.arange(7) == 2, 0.2, 0.0))]}} if k >= 30 else None, {"enabled": True})
@@ -76,17 +92,52 @@ def main():
     upd = np.nonzero(steps > 1e-12)[0]
     check("updates come only every 3rd tick (50 Hz)", len(upd) > 5 and len(set(np.diff(upd))) == 1 and int(np.diff(upd)[0]) == 3, f"gaps {sorted(set(np.diff(upd).tolist()))}")
 
-    print("3. bridge ON: a 0.6 rad step is rejected as a whole and logged", flush=True)
-    a, res, seen = run(150, lambda k, rest: {"mode": "arms", "arm_targets": {"left": [float(x) for x in (rest + np.where(np.arange(7) == 2, 0.6, 0.0))]}} if k >= 30 else None, {"enabled": True})
-    ev = [e for e in res["bridge_log"] if "step too large" in e["kind"]]
-    check("the command did not move", abs(a[-1] - a[0]) < 1e-9, f"{a[0]:.3f} -> {a[-1]:.3f}")
-    check("rejections logged with joint, value and limit", len(ev) > 0 and ev[0]["side"] == "left" and ev[0]["joint"] == 3 and abs(ev[0]["value"] - 0.6) < 1e-6 and ev[0]["limit"] == 0.25 and ev[0]["count"] > 10, str(ev[:1]))
+    print("3. bridge ON: a 0.6 rad step is NOT rejected (stage 3, David d0bc 2026-11-24): the one uniform shrink moves it at 0.01 rad per update and the target is reached", flush=True)
+    a, res, seen = run(330, lambda k, rest: {"mode": "arms", "arm_targets": {"left": [float(x) for x in (rest + np.where(np.arange(7) == 2, 0.6, 0.0))]}} if k >= 30 else None, {"enabled": True})
+    rej = [e for e in res["bridge_log"] if "step too large" in e["kind"]]
+    sh = res.get("bridge_shrink", [])
+    steps3 = np.abs(np.diff(a))
+    check("the command moves toward the target (not rejected): it reaches the 0.6 rad step", abs(a[-1] - a[0] - 0.6) < 1e-6, f"{a[0]:.3f} -> {a[-1]:.3f}")
+    check("no rejection is logged (the rejection rule is gone)", len(rej) == 0, f"{len(rej)} rejections")
+    check("no step above 0.01 rad per update (the speed limit now comes from the shrink)", steps3.max() <= 0.01 + 1e-9, f"largest {steps3.max():.5f}")
+    # the factor at each update is 0.01 / (the largest move then); the last full-speed update (move 0.01 rad) is not shrunk, so 59 updates are shrunk
+    check("59 shrunk updates (the remaining move falls from 0.6 to 0.01 rad), each with factor 0.01 / its move, rule speed, arm left, joint 3",
+          len(sh) == 59 and all(e["rule"] == "speed" and e["arm"] == "left" and e["joint"] == 3 and abs(e["factor"] - 0.01 / e["peak_move_rad"]) < 1e-9 for e in sh),
+          f"{len(sh)} shrunk updates; first {sh[:1]}")
 
-    print("4. bridge ON: a target outside the joint limits is rejected and logged", flush=True)
-    a, res, seen = run(150, lambda k, rest: {"mode": "arms", "arm_targets": {"left": [float(x) for x in np.where(np.arange(7) == 2, 10.0, rest)]}} if k >= 30 else None, {"enabled": True})
-    ev = [e for e in res["bridge_log"] if "joint limits" in e["kind"]]
-    check("the command did not move", abs(a[-1] - a[0]) < 1e-9, f"{a[0]:.3f} -> {a[-1]:.3f}")
-    check("logged with joint 3, value 10 and the limit", len(ev) > 0 and ev[0]["joint"] == 3 and ev[0]["value"] == 10.0 and abs(ev[0]["limit"]) < 10, str(ev[:1]))
+    print("4. bridge ON: a target past the joint buffer edge (within the step limit) is clamped to the edge; the command reaches the edge and stops there", flush=True)
+    # joint 3: buffer upper edge = the hard upper limit moved in by its buffer margin (SF-125: min(5 % of the joint range, 10 degrees); the test
+    # used to hard-code the old fixed 10-degree margin, which the range rule replaced)
+    edge3 = float(HARD_RANGE[2, 1] - BUFFER_MARGIN[2])
+
+    def approach(k, rest):
+        """Closed-loop source: each target is at most 0.2 rad from the bridge's current command (so no step rejection). It first brings the command to
+        0.01 rad inside the edge, then sends a target 0.05 rad past the edge."""
+        cur = BRIDGE_ACCEPTED_LOG["limited_L"][2] if BRIDGE_ACCEPTED_LOG.get("limited_L") is not None else float(rest[2])
+        want = edge3 - 0.01 if cur < edge3 - 0.01 - 1e-9 else edge3 + 0.05
+        tgt = cur + float(np.clip(want - cur, -0.2, 0.2))
+        q = np.array(rest, float)
+        q[2] = tgt
+        return {"mode": "arms", "arm_targets": {"left": [float(x) for x in q]}} if k >= 30 else None
+
+    a, res, seen = run(800, approach, {"enabled": True})
+    inside_ok = bool(np.all(a <= edge3 + 1e-9))
+    check("the command reaches the buffer edge and never goes past it", abs(a[-1] - edge3) < 1e-6 and inside_ok, f"final {a[-1]:.6f}, edge {edge3:.6f}, largest {a.max():.6f}")
+    check("the clamped target is counted (joint 3, left)", int(BRIDGE_CLAMP["target"]["left"][2]) > 0, f"count {int(BRIDGE_CLAMP['target']['left'][2])}")
+    check("no rejection (the step limit is not exceeded)", not any(e["kind"].startswith("rejected") for e in res["bridge_log"]), str([e["kind"] for e in res["bridge_log"]][:2]))
+
+    print("4b. bridge ON: a joint starting 0.17 rad outside its buffer (joint 4 at rest, 0 rad) reaches the edge at the speed cap, never steps more than the cap, never moves further out", flush=True)
+    edge4 = float(HARD_RANGE[3, 0] + BUFFER_MARGIN[3])   # joint 4: buffer lower edge (hard lower limit moved in by its buffer margin, SF-125)
+    a4, res4, _ = run(240, lambda k, rest: {"mode": "arms", "arm_targets": {"left": [float(x) for x in rest]}} if k >= 30 else None, {"enabled": True}, joint=3)
+    reach = np.where(a4 >= edge4 - 1e-9)[0]
+    t_reach = (reach[0] / 150.0) if len(reach) else None
+    up_steps = np.diff(a4)
+    check("it reaches the buffer edge", len(reach) > 0 and abs(a4[-1] - edge4) < 1e-6, f"final {a4[-1]:.6f} (edge {edge4:.6f})")
+    check("it reaches the edge in about 0.35 s (at most 0.45 s after the first update)", t_reach is not None and t_reach <= 0.45 + 30 / 150.0,
+          f"reached at {t_reach if t_reach is None else round(t_reach, 3)} s")
+    check("no step larger than the speed cap (0.01 rad per update)", float(np.max(np.abs(up_steps))) <= 0.01 + 1e-9, f"largest step {float(np.max(np.abs(up_steps))):.5f}")
+    check("it never moves further out (non-decreasing, never below its start)", bool(np.all(up_steps >= -1e-12)) and a4.min() >= a4[0] - 1e-12,
+          f"start {a4[0]:.4f}, min {a4.min():.4f}")
 
     print("5. bridge ON, tracking error limit 0.003 rad: suspension and resumption are logged, the target is still reached", flush=True)
     a, res, seen = run(420, lambda k, rest: {"mode": "arms", "arm_targets": {"left": [float(x) for x in (rest + np.where(np.arange(7) == 2, 0.2, 0.0))]}} if k >= 30 else None,

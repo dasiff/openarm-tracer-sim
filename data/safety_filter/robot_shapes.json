@@ -4722,14 +4722,16 @@
       },
       "stage2": {
         "file": "never_close_dc.json",
-        "sha256": "2b89cf041df3076c49d6ad5821037eb1777b75106dceb66bf517756326cac1e5"
+        "sha256": "1c781912298f8937db3731125575521179b62a873422ade8df9b5f71a02cd150"
       }
     },
     "counts": {
       "stage1": 147,
       "stage2": 219,
+      "removed": 0,
       "total": 366
     },
+    "removed": [],
     "pairs": [
       {
         "a": "left_link1_1",

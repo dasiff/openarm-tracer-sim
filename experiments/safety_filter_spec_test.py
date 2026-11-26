@@ -1,5 +1,7 @@
-"""Safety filter Stage 2: the resolver against the spec (gap rule numbers, pass-through, hand slide, elbow swing,
-step shortening, forced holds, arm against arm, round limit, determinism) and the Stage 1 tests as subprocesses.
+"""Safety filter Stage 2: the resolver (kong_style, the only resolver) against the spec: gap rule numbers, pass-through, the accuracy
+of a hand-hand push, forced holds, arm against arm, round limit, determinism, and the
+Stage 1 tests as subprocesses. The layered resolver's rules (hand slide: into-motion removed and surface motion kept within 2 mm;
+elbow swing) were removed with that resolver (SF-108), so their checks went with it.
 Written from the spec, not from the resolver code. Fixtures: experiments/safety_filter_resolver_fixtures.py. No physics.
 
 Run: source .venv/bin/activate; python experiments/safety_filter_spec_test.py   (exit 0 = pass)
@@ -19,8 +21,6 @@ sys.path.insert(0, str(ROOT / "experiments"))
 
 import safety_filter_resolver_fixtures as fx  # noqa: E402
 from src.safety_filter import config as cfg  # noqa: E402
-cfg.RESOLVER["mode"] = "layered"            # these tests are about the layered resolver (SF-40); kong_style is tested in safety_filter_kong_style_test.py
-cfg.RESOLVER["elbow_swing_hand_target"] = "raw"  # the old behaviour these tests were written for (SF-49)
 from src.safety_filter import gap_rule  # noqa: E402
 from src.safety_filter.shapes import RobotState  # noqa: E402
 
@@ -100,6 +100,26 @@ def set_module(name, value):
     return apply
 
 
+def set_in(d, **changes):
+    """Apply: change some entries of a config dict; returns the restore function."""
+    def apply(res):
+        saved = {k: d[k] for k in changes}
+        d.update(changes)
+        return lambda: d.update(saved)
+    return apply
+
+
+def compose(*applies):
+    """Apply several settings; the restore functions run in reverse order."""
+    def apply(res):
+        restores = [a(res) for a in applies]
+        def restore():
+            for r in reversed(restores):
+                r()
+        return restore
+    return apply
+
+
 def set_resolver(**changes):
     """Apply: change some cfg.RESOLVER values; returns the restore function."""
     def apply(res):
@@ -164,8 +184,8 @@ def sec_gap_rule():
         cfg.GAP_RULE["mode"] = saved
 
 
-def sec_hand_slide():
-    print("3. hand slide (hand against hand)")
+def sec_hand_hand_push():
+    print("3. hand against hand: the accuracy of the push")
     res = fx.new_resolver()
     last, raw = hand_hand_scenario(res)
     g_last = fx.hand_hand_gap(last)[0]
@@ -174,80 +194,14 @@ def sec_hand_slide():
           abs(g_last - 0.015) <= 0.001 and abs(g_raw - 0.007) <= 0.001 and g_raw < 0.010,
           f"(last {g_last * 1000:.2f} mm, raw {g_raw * 1000:.2f} mm)")
     out, st = res.step(raw, last, RobotState())
-    check("status is HAND_SLIDE", st.status == "HAND_SLIDE", f"(status {st.status})")
+    check("the push is not held (status KONG_PUSH)", st.status == "KONG_PUSH", f"(status {st.status} {st.hold_reason})")
 
     raw_rot = hand(res, raw, "left")[1]
-    e_target = rot_angle(st.hand_targets["left"][1], raw_rot)
-    check("hand orientation target equals the commanded (raw) orientation within 1e-6 rad",
-          e_target <= 1e-6, f"(error {e_target:.1e} rad)")
     e_real = rot_angle(hand(res, out, "left")[1], raw_rot)
     check("realized hand orientation (forward kinematics of the output) within cfg.RESOLVER accuracy_deg (0.5 deg) of the commanded one",
           np.degrees(e_real) <= cfg.RESOLVER["accuracy_deg"], f"(error {np.degrees(e_real):.4f} deg, limit {cfg.RESOLVER['accuracy_deg']} deg)")
-
-    p_last = hand(res, last, "left")[0]
-    p_out = hand(res, out, "left")[0]
-    p_raw = hand(res, raw, "left")[0]
-    n = p_last - hand(res, last, "right")[0]
-    n = n / np.linalg.norm(n)   # unit vector from the right hand to the left hand (the line between the hands)
-    closing = -float(np.dot(p_out - p_last, n))      # m, positive = toward the other hand
-    closing_raw = -float(np.dot(p_raw - p_last, n))
-    check("motion into the obstacle is removed: the output closes on the other hand by at most 1 mm",
-          closing <= 0.001, f"(output {closing * 1000:.3f} mm, raw command {closing_raw * 1000:.2f} mm)")
-
-    def tangential(v):
-        return v - np.dot(v, n) * n
-    surf = float(np.linalg.norm(tangential(p_out - p_last) - tangential(p_raw - p_last)))
-    check("motion along the surface is kept within 2 mm (spec scenario)", surf <= 0.002, f"(difference {surf * 1000:.3f} mm)")
-
     check("the other arm is untouched: its output equals its command and its last command",
           np.array_equal(out[1], raw[1]) and np.array_equal(out[1], last[1]))
-
-    # same push with 10 mm of motion along the surface (z) added to the command
-    p_home, r_home = hand(res, fx.HOME, "left")
-    raw_t = fx.ik(res, fx.HOME, "left", np.array([p_home[0], 0.026, p_home[2] + 0.010]), r_home)
-    out_t, st_t = fx.new_resolver().step(raw_t, last, RobotState())
-    surf_t = float(np.linalg.norm(
-        tangential(hand(res, out_t, "left")[0] - p_last) - tangential(hand(res, raw_t, "left")[0] - p_last)))
-    check("motion along the surface is kept within 2 mm (command with 10 mm along the surface)",
-          st_t.status == "HAND_SLIDE" and surf_t <= 0.002,
-          f"(status {st_t.status}, difference {surf_t * 1000:.3f} mm)")
-
-
-def sec_elbow_and_shortening(ticks):
-    print("4. elbow swing and 5. step shortening (head-on stream, mirrored arms)")
-    res = fx.new_resolver()
-    el = next((t for t in ticks if t["st"].status == "ELBOW_SWING"), None)
-    check("the head-on stream has an ELBOW_SWING tick", el is not None,
-          f"(first at y {el['y']:.3f} m)" if el is not None else "")
-    if el is not None:
-        for i, side in enumerate(("left", "right")):
-            if np.array_equal(el["out"][i], el["last"][i]):
-                continue
-            p_o, R_o = hand(res, el["out"], side)
-            p_r, R_r = hand(res, el["raw"], side)
-            pos_err = float(np.linalg.norm(p_o - p_r))
-            rot_err = float(np.degrees(rot_angle(R_o, R_r)))
-            check(f"elbow swing at y {el['y']:.3f} m ({side} arm): hand within 2 mm and 0.5 deg of the raw commanded pose",
-                  pos_err <= 0.002 and rot_err <= 0.5, f"(position {pos_err * 1000:.4f} mm, orientation {rot_err:.4f} deg)")
-
-    st_tick = next((t for t in ticks if t["st"].status == "STEP_SHORTENED"), None)
-    check("the head-on stream has a STEP_SHORTENED tick", st_tick is not None,
-          f"(first at y {st_tick['y']:.3f} m)" if st_tick is not None else "")
-    if st_tick is not None:
-        for i, side in enumerate(("left", "right")):
-            d = st_tick["raw"][i] - st_tick["last"][i]
-            e = st_tick["out"][i] - st_tick["last"][i]
-            if not np.any(d):
-                continue
-            f = float(np.dot(e, d) / np.dot(d, d))
-            resid = float(np.linalg.norm(e - f * d))
-            k = f * 4096
-            check(f"step shortening ({side}): the shortened step lies on the raw step (joint space)",
-                  resid <= 1e-9, f"(residual {resid:.1e})")
-            check(f"step shortening ({side}): the fraction is on the 1/4096 grid and strictly between 0 and 1",
-                  abs(k - round(k)) <= 1e-6 and 0.0 < f < 1.0, f"(fraction {round(k)}/4096 = {f:.6f})")
-    note("step shortening: that the chosen fraction is the LARGEST passing one cannot be checked from outside the "
-         "resolver (its search is internal); only the grid and the straight step are checked")
 
 
 def sec_forced_holds():
@@ -255,7 +209,10 @@ def sec_forced_holds():
     hold_case("BRANCH_GUARD", "BRANCH_GUARD", set_module("BRANCH_GUARD_RAD", 1e-6))
     hold_case("JOINT_LIMITS", "JOINT_LIMITS", joint_limits)
     hold_case("ACCURACY", "ACCURACY", set_resolver(accuracy_pos_m=0.0))
-    hold_case("SHAPE_RECHECK", "SHAPE_RECHECK", set_resolver(stop_m=-1.0, shorten_after_failed_push=False))
+    # stop_m -1 makes every active pair short; the braking shrink keeps the candidate pairs to the old cutoffs (as in
+    # safety_filter_kong_style_test.py), so the shape re-check is the reason and not shortening to zero
+    hold_case("SHAPE_RECHECK", "SHAPE_RECHECK", compose(set_resolver(stop_m=-1.0),
+                                                       set_in(cfg.BRAKING, hand_speed_cap_m_s=0.01, accel_limit_m_s2=0.05)))
 
 
 def sec_arms():
@@ -322,7 +279,7 @@ def sec_determinism(targets, ticks):
     last, raw = hand_hand_scenario(fx.new_resolver())
     out1, st1 = fx.new_resolver().step(raw, last, RobotState())
     out2, st2 = fx.new_resolver().step(raw, last, RobotState())
-    check("hand slide scenario: two fresh resolvers give identical outputs and status",
+    check("hand-hand scenario: two fresh resolvers give identical outputs and status",
           np.array_equal(out1, out2) and st1.status == st2.status, f"(status {st1.status})")
 
 
@@ -341,10 +298,9 @@ def main():
     snapshot = (copy.deepcopy(cfg.GAP_RULE), copy.deepcopy(cfg.RESOLVER), cfg.BRANCH_GUARD_RAD)
     sec_pass_through()
     sec_gap_rule()
-    sec_hand_slide()
+    sec_hand_hand_push()
     targets = head_on_targets(fx.new_resolver())
     ticks = run_stream(fx.new_resolver(), targets)
-    sec_elbow_and_shortening(ticks)
     sec_forced_holds()
     sec_arms()
     sec_rounds(targets, ticks)

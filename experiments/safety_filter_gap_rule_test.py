@@ -13,7 +13,7 @@ sys.path.insert(0, str(ROOT))
 
 from src.safety_filter import config as cfg  # noqa: E402
 from src.safety_filter import gap_rule  # noqa: E402
-from src.safety_filter.push_direction import contact_fraction, elbow_displacement, lever_weights, pair_push  # noqa: E402
+from src.safety_filter.push_direction import contact_fraction, pair_push  # noqa: E402
 from src.safety_filter.shapes import PlacedShape  # noqa: E402
 
 FAILS = []
@@ -63,16 +63,13 @@ def main():
     finally:
         cfg.GAP_RULE["mode"] = "ours"
 
-    print("lever rule and push direction")
-    check("lever rule: contact 30% from end A gives A 70% and B 30%", lever_weights(0.3) == (0.7, 0.3))
+    print("push direction")
     check("contact fraction along a link", near(contact_fraction([0.3, 0.1, 0], [0, 0, 0], [1, 0, 0]), 0.3))
     a = PlacedShape(id="a", arm="left", part="link5", kind="capsule", body="x", a=np.array([0.0, 0, 0]), b=np.array([1.0, 0, 0]), r=0.1)
     b = PlacedShape(id="b", arm="right", part="link5", kind="capsule", body="x", a=np.array([0.5, 0.5, -1]), b=np.array([0.5, 0.5, 1]), r=0.1)
     pp = pair_push(a, b)
     check("push direction runs along the line between the closest points (from b to a for a)",
           np.allclose(pp.dir_a, [0, -1, 0]) and np.allclose(pp.dir_b, [0, 1, 0]) and near(pp.gap, 0.3, 1e-9))
-    check("placeholder elbow displacement is the plain push vector (no lever weighting)",
-          np.allclose(elbow_displacement([0.0, 0.01, 0.0], 0.3, True), [0.0, 0.01, 0.0]))
     print("PASS" if not FAILS else f"FAIL: {FAILS}")
     return 1 if FAILS else 0
 

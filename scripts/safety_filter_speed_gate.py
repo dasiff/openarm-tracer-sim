@@ -32,7 +32,7 @@ from pathlib import Path
 import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-import safety_filter_speed_common as sc  # noqa: E402
+import safety_filter_speed_util as sc  # noqa: E402
 
 ROOT = sc.ROOT
 GATE_DIR = ROOT / "data" / "safety_filter" / "speed_gate"

@@ -4,15 +4,15 @@ points per arm (shoulder, elbow, wrist, hand reference point) by its capsule's c
 are converted to joint angles at once (Kong's solver, then exactly one Jacobian step on our own model), so the next pair is measured
 on the exact pose the earlier pushes left.
 
-What is new here is only the order of the work. Everything else is the layered resolver's: the link categories (link_rules), the shared
+What is new here is only the order of the work. Everything else is shared with the resolver (resolver.py): the link categories (link_rules), the shared
 layer's shapes and gaps, the gap rule (gap_rule: how MUCH each pair must move), the push direction (push_direction.pair_push), the
 closing-arm rule (decided once per tick from the raw command against the last filtered command), step shortening, the four checks,
 hold-still and the status record.
 
-Per tick (resolver.Resolver.step calls step() below when RESOLVER["mode"] is "kong_style"):
+Per tick (resolver.Resolver.step calls step() below; kong_style is the only resolver):
  1. Pass-through: no pair needs a push or a speed limit -> the raw array itself comes back (status PASS).
  2. Jump-through guard: the straight joint-space path last -> raw is sampled; if a sample has a pair below tunnel_guard_min_gap_m
-    the step is shortened (the layered resolver's step shortening, with this pass test); the result is the raw command from here on.
+    the step is shortened (the step shortening of resolver.py, with this pass test); the result is the raw command from here on.
  3. Sweeps (up to RESOLVER["rounds"], stop when no pair has a shortfall of stop_m or more). Each sweep lists the pairs at or above
     stop_m, orders them (RESOLVER["pair_order"]: deepest shortfall first, ties by name), and for each pair in that order measures it
     again at the current pose: under stop_m -> skipped (an earlier push fixed it); otherwise pushed and converted at once (_push_pair).
@@ -84,7 +84,7 @@ def restore_lengths(S, E, W, lengths, hand_offset):
 def solve_arm(res, state, side, S, E, W, hand_rot):
     """Joint angles (7,) of one arm for the restored points: Kong's solver (collision avoidance off) gets the shoulder-to-elbow and
     elbow-to-wrist directions and the commanded hand orientation (SF-32; it reads directions only, so the lengths are ours).
-    Raises RuntimeError("NO_SOLVER..." / "SOLVER_FAILED...") as the layered resolver's converter does. This is the only place
+    Raises RuntimeError("NO_SOLVER..." / "SOLVER_FAILED...") as ArmKinematics.convert_directions does (arm_conversion.py). This is the only place
     kong_style calls the solver; a stub can replace it in tests."""
     u = (E - S) / np.linalg.norm(E - S)
     l = (W - E) / np.linalg.norm(W - E)

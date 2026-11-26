@@ -33,7 +33,10 @@ MARGINS = {
     "hand_hand_m": 0.01,        # m, PROVISIONAL [M288]: palm, fingers or held object of one arm vs the same of the other arm
     "robot_robot_m": 0.03,      # m, PROVISIONAL [M288]: every other robot vs robot pair (arm parts of one arm vs the other arm, held vs robot body)
     "arm_world_m": 0.01,        # m, PROVISIONAL [M288]: arm parts (not fingers) vs world objects; must stay below the palm-to-beaker gap at a normal grasp
+    "held_world_margin_m": 0.01,  # m, PLACEHOLDER — tuned by test [Part 2 braking brief]: a held object vs every world object that is not an allowed-contact surface; the hand stops at the midpoint of this margin
 }
+# A held object against an allowed-contact surface (OBJECT_CATALOG "allowed_contact", e.g. the hotplate) has zero margin and the surface's approach ceiling (BRAKING["approach_ceiling_m_s"]).
+HELD_SURFACE_MARGIN_M = 0.0     # m [Part 2 braking brief]: it may touch such a surface, slowly
 # A never-touch world object (WorldObject.never_touch, SF-65, David 2026-11-13): checked against every arm part INCLUDING fingers and held objects, with this margin
 # instead of arm_world_m. Kept out of MARGINS so every existing loop over MARGINS stays as before.
 NEVER_TOUCH_MARGIN_M = 0.05     # m [SF-65]: 5 cm; David's value for the cat demo
@@ -41,13 +44,25 @@ NEVER_TOUCH_MARGIN_M = 0.05     # m [SF-65]: 5 cm; David's value for the cat dem
 PUSH_START_BEYOND_M = 0.01      # m, PROVISIONAL [M288]
 PUSH_STOP_BEYOND_M = 0.02       # m, PROVISIONAL [M288]
 
+# Work surfaces (OBJECT_CATALOG "work_surface", the bench top): the push-stop beyond the margin is this instead of PUSH_STOP_BEYOND_M, so a hand may
+# come closer to the bench (the grasp pose 2.3 cm off it). Phase D fix 1 (David).
+PUSH_STOP_BEYOND_M_WORK = 0.005  # m, PLACEHOLDER — tuned by test [Phase D fix 1, David]: stop target on a work surface = margin + this (1.5 cm at the 1 cm margin)
+
 # Torso exemption by REAL geometry (SF-19): an arm shape is exempt from the torso only if its link's real geometry is
 # within 1 mm of the real torso mesh at home (it touches the torso by construction). Parts listed here (provisional; see the report).
 TORSO_EXEMPT_PARTS = ("shoulder_mount",)
 
-# Held objects (M289, SF-4): match radius beyond an object's own radius, and the fallback capsule.
-HELD_MATCH_EXTRA_M = 0.01       # m, PROVISIONAL [M289]: the nearest graspable object within its radius + 1 cm of the finger pad midpoint
-HELD_FALLBACK_HEIGHT_M = 0.08   # m, PROVISIONAL [M289]: height of the fallback capsule when no object matches (default height; open)
+# Held objects (M289, SF-4; Phase S S2, SF-112): the pad match. A graspable object is a candidate when its shape is within HELD_MATCH_EXTRA_M of the space between
+# the finger pads (overlapping, within this tolerance), ahead of the palm, and the nearest to the palm wins. No match and no name: the object is unidentified (SF-113).
+HELD_MATCH_EXTRA_M = 0.01       # m, PROVISIONAL [M289, SF-112]: the pad match's overlap tolerance: an object whose shape is within 1 cm of the space between the finger pads is a candidate
+HELD_WIDTH_TOL_M = 0.02        # m, PROVISIONAL [SF-112]: the pad match's width check: an object wider or narrower than the finger gap by more than this is logged as a warning; the match stands
+
+# Object identification (Phase S, S4, SF-110): the detector that names a held object when neither the task plan's name nor the pad match does
+# (src/safety_filter/object_detector.py). The filter calls only the interface; the implementation is chosen here.
+OBJECT_DETECTOR = {
+    "implementation": "sim",    # text [SF-110]: which ObjectDetector runs (object_detector.DETECTORS): "sim" = the ground-truth stand-in until perception exists
+    "sim_radius_m": 0.02,       # m, PROVISIONAL [SF-110]: the sim stand-in names the nearest non-fixture object only if its shape is within this gap of the finger pads
+}
 
 # Broad phase (M291): padding added to the arm's key-point box: the largest capsule radius plus the
 # activation distance plus the world margin, and at least the release distance.
@@ -74,19 +89,13 @@ RESOLVER = {
     "closing_eps_m": 1.0e-9,     # m, PROVISIONAL [SF-30]: an arm is closing when moving only that arm to its raw command makes the pair's gap smaller by more than this
     "shorten_halvings": 12,      # count, PROVISIONAL [SF-34]: halvings of the step fraction in the step shortening search (resolution 1/4096)
     "shorten_min_fraction": 0.001,  # fraction, PROVISIONAL [SF-34]: if the largest passing fraction is below this the result is hold-still (reason SHORTEN_ZERO)
-    "shorten_after_failed_push": True,  # on/off [SF-34]: if the shape re-check still fails after the rounds of an elbow swing or hand slide, try step shortening once before holding still (M293: "if that does not clear it, shorten the step")
-    "swing_unmovable_m": 0.002,  # m, PROVISIONAL [SF-32]: a contact point closer than this to the straight line from shoulder to wrist cannot be moved by an elbow swing; it is handled by step shortening
-    "swing_straight_m": 0.002,   # m, PROVISIONAL [SF-32]: an elbow closer than this to the shoulder-wrist line (arm straight) cannot swing; step shortening instead
     "branch_guard_joints": (0, 1, 2, 3, 4, 5, 6),  # joint indices (0 = joint 1) [SF-35]: the branch guard looks at these joints; the plan names none, so all seven (decision needed)
     "accuracy_pos_m": 0.002,     # m, PROVISIONAL [SF-35, SF-2]: hand position after a push must be within this of its target
     "accuracy_deg": 0.5,         # deg, PROVISIONAL [SF-35, SF-2]: hand orientation after a push must be within this of its target
     "shortening_accuracy_target": "raw",  # text [SF-36]: "raw" = after step shortening the hand must be within the accuracy of the RAW commanded pose (the task text; fails whenever shortening slows the hand by more than 2 mm); "skip" = no accuracy check after shortening
     "jacobian_damping": 1.0e-4,  # damping of the one Jacobian step (Levenberg-Marquardt term, unit rad^2/m^2 mixed; PROVISIONAL) [SF-32]: keeps the single step finite near singular arm poses
     "solver_current_reset": True,   # on/off [SF-32]: the converter is reset to the working pose before each call, so one call never depends on the last one (determinism)
-    "elbow_displacement_mode": "plain",  # text [SF-32]: "plain" = the elbow is displaced by the full push vector of the contact (no lever weighting) -- PLACEHOLDER, the plan does not define the lever rule for a fixed shoulder or wrist end
     # ---- Stage 2b (SF-40 to SF-50) ----
-    "mode": "kong_style",        # text [SF-40, SF-41]: which resolver runs: "kong_style" = one combined push of the shoulder/elbow/wrist/hand points, then link length restore, then conversion (default, David's decision); "layered" = the separate tools (elbow swing, hand slide, step shortening); "cbf" = not built, raises NotImplementedError
-    "elbow_swing_hand_target": "slid",  # text [SF-49]: layered resolver only: "slid" = after a hand slide in the same tick every later elbow swing (and the accuracy check) aims at the slid hand position; "raw" = the old behaviour (aims at the raw commanded hand pose)
     "min_lever_fraction": 0.2,   # fraction [SF-44]: kong_style: an upper arm contact closer than this share of the way from the shoulder to the elbow is not pushed (the elbow would have to move 1/fraction times the push); step shortening is used for it instead
     "lever_weight_elbow": 1.0,   # weight, no unit [SF-43]: kong_style forearm contact: how willing the elbow is to move compared with the wrist (wE in the split formula); 1.0 = equal
     "lever_weight_wrist": 1.0,   # weight, no unit [SF-43]: kong_style forearm contact: how willing the wrist is to move compared with the elbow (wW in the split formula); 1.0 = equal
@@ -107,16 +116,22 @@ RESOLVER = {
 # centre_above_bottom_m: the shape centre relative to the entry's position (its bottom centre).
 OBJECT_CATALOG = {
     "beaker": {
-        # A round object is a CAPSULE (M287, SF-8): radius 0.035 m, segment half length 0.05 m along the beaker axis.
-        # The capsule contains the cylinder exactly (its end caps reach 3.5 cm past the rim, which is conservative).
-        "shape": "capsule", "radius_m": 0.035, "half_height_m": 0.05,
-        "centre_above_bottom_m": 0.05, "graspable": True, "round": True,
-        "source": "models/objects/beaker.xml geom task_beaker_glass: cylinder radius 0.035, half height 0.05 at z 0.05; catalog shape capsule (M287)",
+        # Phase D fix 4 (David): the beaker's collision shape is its TRUE cylinder: a flat-ended solid, radius 0.035 m, height 0.10 m (half height
+        # 0.05 m). Its bottom is flat, so a flat contact is exact (Phase C used a capsule inside it: a 3.5 cm error at the bottom rim).
+        "shape": "cylinder", "radius_m": 0.035, "half_height_m": 0.05,
+        "centre_above_bottom_m": 0.05, "graspable": True, "round": True, "allowed_contact": False,
+        "source": "models/objects/beaker.xml geom task_beaker_glass: cylinder radius 0.035, half height 0.05 at z 0.05 (shape cylinder, Phase D fix 4)",
     },
     "hotplate": {
         "shape": "box", "half_m": (0.09, 0.09, 0.03),
-        "centre_above_bottom_m": 0.03, "graspable": False, "round": False,
+        "centre_above_bottom_m": 0.03, "graspable": False, "round": False, "allowed_contact": True, "entry_at_top": True,   # the world model keeps the hotplate (a fixture entry) at the centre of its top face (site hotplate_top), not at its bottom   # a held object may touch it (zero margin, approach ceiling)
         "source": "models/objects/hotplate.xml geom task_hotplate_base: box half sizes 0.09 0.09 0.03 at z 0.03",
+    },
+    "bench_top": {
+        # Phase D fix 1 (David): the bench top is a work surface (hands come closer to it: PUSH_STOP_BEYOND_M_WORK). It is a lab-map fixture,
+        # not a world-model object: data/safety_filter/lab_map.json fixture name bench_top takes the flag from here (LabMapSource). The size is the lab map's.
+        "shape": "box", "half_m": (2.2, 0.8, 0.06), "work_surface": True, "graspable": False, "round": False, "allowed_contact": False,
+        "source": "data/safety_filter/lab_map.json fixture bench_top (scene body bench, geom bench_top): box half sizes 2.2 0.8 0.06",
     },
 }
 
@@ -127,11 +142,19 @@ SLEEP = {
     "enabled": True,                # on/off [SF-72]: predictive sleep
     # the joint speed bound is NOT a setting here: the caller passes it to Resolver(joint_speed_rad_s=...), read from the command bridge limit (src/task_config.py COMMAND_BRIDGE_CFG max_joint_velocity_rad_s); without it the sleep is off [SF-72]. A command step faster than that x dt x (1 + safety_buffer) wakes the pairs of that arm for that tick.
     "safety_buffer": 0.20,          # fraction [SF-72]: extra on the speed bound for the capsule fitting error and the looseness of the lever arms (David's value)
+    "drift_budget_m": 0.005,        # m (sum of the base, pedestal and finger changes), PLACEHOLDER — tuned by test [Part 2]: slow drift of the base, pedestal and fingers is added up since a pair was scheduled; a pair wakes when the total passes this, and its sleep length leaves this much room
     "state_change_m": 2.0e-4,       # m [SF-72]: if the base position and orientation (as numbers), the pedestal and the finger travel together change by more than this since the tick before, every pair wakes for that tick (they are not part of the speed bound)
     "command_step_slack_rad": 1.0e-12,   # rad [SF-72]: added to the largest command step allowed by the speed bound, so rounding never turns an exactly-at-the-bound step into a "fast" one
     "same_pose_atol_rad": 1.0e-9,   # rad [SF-72]: the last command counts as "the pose the filter returned the tick before" when every joint is within this
     "min_cost_m": 1.0e-12,          # m [SF-72]: floor of a pair's approach per tick in the sleep length formula (a pair whose two parts cannot move gets the longest sleep, not a division by zero)
     "stats_cap_ticks": 2000,        # ticks [SF-72]: the sleep length histogram (for the profile) stops counting at this many ticks
+}
+
+# Compiled distance functions (Braking Phase F fix 4, SF-81, David's decision: compile). True: geometry.capsule_capsule, capsule_box,
+# cylinder_capsule and cylinder_box run as numba code (src/safety_filter/geometry_jit.py). False: the Python reference (geometry._py_*).
+# The two agree to 1e-6 m (experiments/safety_filter_jit_test.py). The compiled code compiles on its first call in each process.
+GEOMETRY = {
+    "compiled": True,               # switch [SF-81]: True = numba (about the speed of C for these loops); False = the Python reference, for before/after timing
 }
 
 # Array form of a tick (Stage 5 speed, SF-69 to SF-71; src/safety_filter/tick.py, tick_arrays.py). Sizes and the tolerances of the bounds
@@ -144,6 +167,12 @@ ARRAY_FORM = {
     "cb_high_per_m": 1.5e-4,        # per m of capsule length [SF-71]: the exact capsule-box gap is at most the batched value plus this x length
     "bound_slack_m": 1.0e-9,        # m [SF-71]: added to every bound comparison so that rounding can never turn "cannot decide" into "decided"
 }
+
+# Never-close pairs taken off the merged list (Braking Phase F fix 3, SF-80, David's decision). tools/build_never_close.py leaves them out of
+# never_close_pairs, so the filter checks them again (rebuild the list with that tool after any change here; it writes a new stamp).
+# The sweep and DC files keep the record of the claim. Both are torso pairs of the left first arm link (shape ids as in robot_shapes.json).
+NEVER_CLOSE_REMOVED = ()            # Phase G fix 1 (David): empty. Both torso pairs (left link 1 joint 3 and joint 2 vs torso) are back on the never-close
+                                    # list; the removal of SF-80 is withdrawn (the margin is too large for them; per-pair margins are a separate task).
 
 # Never-close pairs by divide and conquer (Part B, SF-75 to SF-79; tools/never_close_dc.py, offline only: the filter itself reads none of these).
 # The proof and its assumptions are in docs/safety_filter_never_close_soundness.md; change that file with any change here that touches the method.
@@ -165,3 +194,97 @@ NEVER_CLOSE_DC = {
     "verify_leaves": 2000,          # count [SF-76]: certificate check: settled boxes per declared pair re-checked with the filter's own scalar functions (the lowest-bound boxes first, the rest at random)
     "verify_poses_per_leaf": 8,     # count [SF-76]: random poses inside each such box whose filter gap must be at least the box's lower bound
 }
+
+
+# ---- Braking layer (Part 2, David's braking brief; src/safety_filter/braking.py). ----
+# The four tunables. All values are placeholders until tuned by test.
+BRAKING = {
+    "hand_speed_cap_m_s": 0.20,     # m/s, PLACEHOLDER — tuned by test: hand-level speed limit at the tool point; separate from the bridge's per-joint 0.5 rad/s cap; enforced every tick by scaling back the joint commands
+    "accel_limit_m_s2": 0.50,       # m/s^2, PLACEHOLDER — tuned by test: the one limit for braking and for speeding up, measured at the tool point
+    "jerk_limit_m_s3": 2.00,        # m/s^3, PLACEHOLDER — tuned by test: how fast the acceleration may change (per tick: jerk x dt); makes the speed curve S-shaped both ways
+    "src_diff_tol_rad": 1e-9,       # rad [SF-111, Phase S S3]: a source command is "different" from the last different one when some joint moves more than this; a repeat within it is not a new command (no reversal read from float noise)
+    "adaptive_wake": True,          # switch [SF-82, SF-83, SF-94, Phase F fix 5/6, Phase J fix 3]: True (default, David): the activation of a pair is its wake (stopping distance) plus its stop gap (HOLD: plus its margin), never wider than the static cutoff. False: every pair within the static cutoff (the Phase E behaviour). True: the look-ahead checks a pair only inside the current stopping distance (the wake radius; HOLD adds the margin). With True the fast-palm stop (braking_d) lands at 14.0 mm instead of 14.5 to 17.5 mm.
+    "held_world_margin_m": 0.01,    # m [SF-90, Phase I fix 2, David: 1 cm PLACEHOLDER]: after the gripper opens, the released object is excluded from the arm's look-ahead until every hand shape is this far from it; then it is a normal obstacle
+    "approach_ceiling_m_s": {"hotplate": 0.05},  # m/s per allowed-contact surface name (the object id); PLACEHOLDER — tuned by test; a surface not listed gets hand_speed_cap_m_s
+    # ---- settings the brief leaves implicit: simplest reading, named so they can change (listed as decisions) ----
+    "tick_hz": 150.0,               # Hz: the filter tick = the control loop's source_hz (src/control_loop.py cfg); the jerk limit is counted per tick of this rate
+    "bridge_reach_m": None,         # m: lever arm that turns the bridge's joint speed cap into a tool speed. None = DERIVED at startup from the arm model (sum of the link lengths from joint 1 to the tool point, larger arm); a number overrides it (tests)
+    "tool_offset_local_m": (0.0, 0.0, 0.0),  # m in the link 7 frame: tool point = link 7 origin + this (PLACEHOLDER: the tool point is the link 7 origin until David names another)
+    "speed_source": "state",        # text [Phase C step 5, David]: which series the ramp starts from: "state" = the measured joints (the default: no false look-ahead failures from pulsed commands); "sent" = the commands the filter sent (kept behind this flag for comparison)
+    "shape_free_motion": True,      # on/off [Phase C step 3, David]: every command goes through the S-curve (the step toward the source's target is limited to the ramp's speed; the target itself is not changed). False = Phase B behaviour: motion under the cap passes untouched
+    "lookahead_speed": "closing",   # text: the speed the look-ahead brakes for: "closing" = the part of the hand speed that closes on the obstacle (the rate the gap shrinks at the wanted command, at most the hand speed); "full" = the whole hand speed (the first, cautious reading: it stops a hand that only moves along a surface)
+    "emergency_overshoot_ticks": 2,  # ticks of travel: the look-ahead has failed (override the bridge, log an error) when the stopping distance exceeds the room by more than this many ticks at the hand speed cap
+    "emergency_speed_multiplier": 1.5,  # ratio [Phase D fix 3, David]: the last resort: when the MEASURED hand speed is above hand_speed_cap_m_s x this (0.30 m/s at the 0.20 cap), the arm is held at the pose it had when the overspeed started (no S-curve), the loop overrides the bridge, and an error is logged
+    "stop_speed_m_s": 0.002,          # m/s: below this (after a tick below it) the hand counts as at rest and its command is passed as it is: micro-motion is not shaped
+    "closing_eps_m": 1e-6,          # m: the gap must shrink by more than this between last and new command to count as closing
+}
+
+
+def approach_ceiling(surface, tun=None):
+    """The approach speed ceiling of an allowed-contact surface (m/s): its entry in BRAKING["approach_ceiling_m_s"], else the hand speed cap."""
+    t = BRAKING if tun is None else tun
+    return float(t["approach_ceiling_m_s"].get(surface, t["hand_speed_cap_m_s"]))
+
+
+_REACH_CACHE = {}
+
+
+def arm_reach_m(tun=None):
+    """The reach of an arm from the robot model, computed once per process: the sum of the link lengths from the first joint's anchor to
+    the last joint's anchor (distances between consecutive arm joint anchors; fixed, pose independent) plus the distance from the last
+    anchor to the tool point (link 7 origin + the tool offset); the larger of the two arms. Used as the lever arm of the bridge cap."""
+    t = BRAKING if tun is None else tun
+    off = tuple(float(x) for x in t["tool_offset_local_m"])
+    if off not in _REACH_CACHE:
+        import mujoco
+        import numpy as np
+        from src.safety_filter.robot_model import load_robot_only_model
+        m = load_robot_only_model()
+        d = mujoco.MjData(m)
+        mujoco.mj_kinematics(m, d)
+        best = 0.0
+        for side in ("left", "right"):
+            jids = [mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_JOINT, f"openarm_{side}_joint{k}") for k in range(1, 8)]
+            anc = d.xanchor[jids]
+            links = float(np.linalg.norm(np.diff(anc, axis=0), axis=1).sum())
+            b = mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_BODY, f"openarm_{side}_link7")
+            R7 = d.xmat[b].reshape(3, 3)
+            tool = d.xpos[b] + R7 @ np.asarray(off)
+            best = max(best, links + float(np.linalg.norm(tool - anc[-1])))
+        _REACH_CACHE[off] = best
+    return _REACH_CACHE[off]
+
+
+def derive(tun=None, bridge=None):
+    """The derived constants of the braking layer, computed from the tunables, the tick rate, the arm model and the bridge limits (not
+    hard-coded):
+      tick_dt_s, tick_cushion_m (= hand speed cap x tick), bridge_reach_m (from the arm model unless overridden), effective_accel_limit
+      (= min(accel limit, what the bridge can deliver per tick)), worst_stop_dist_m (stopping distance from the hand speed cap with the
+      acceleration at its limit: the fixed wake radius for pruning and the smallest activation cutoff of the look-ahead), arm_lag_rad (the
+      bridge's tracking error limit: how far the measured arm may be from the command).
+    bridge: COMMAND_BRIDGE_CFG-like dict; None reads src/task_config.py."""
+    from src.safety_filter.braking_math import stopping_distance
+    t = BRAKING if tun is None else tun
+    if bridge is None:
+        from src import task_config as tc
+        bridge = tc.COMMAND_BRIDGE_CFG
+    dt = 1.0 / float(t["tick_hz"])
+    cap, a, j = float(t["hand_speed_cap_m_s"]), float(t["accel_limit_m_s2"]), float(t["jerk_limit_m_s3"])
+    reach = t["bridge_reach_m"] if t["bridge_reach_m"] is not None else arm_reach_m(t)
+    bridge_tool_speed = float(bridge["max_joint_velocity_rad_s"]) * float(reach)   # m/s the bridge's joint cap allows at the tool, at most
+    a_eff = min(a, bridge_tool_speed / dt)            # the bridge can change the tool speed by at most its own tool speed cap in one tick
+    cushion = cap * dt
+    return {"tick_dt_s": dt, "tick_cushion_m": cushion, "effective_accel_limit": a_eff, "bridge_reach_m": float(reach),
+            "bridge_tool_speed_m_s": bridge_tool_speed, "arm_lag_rad": float(bridge["max_tracking_error_rad"]),
+            "worst_stop_dist_m": stopping_distance(cap, a_eff, a_eff, j, cushion)}
+
+
+def derived():
+    """derive() for the current tunables (cheap: the arm reach is computed once)."""
+    return derive()
+
+
+def __getattr__(name):                 # BRAKING_DERIVED is computed on first use (it needs the arm model), not at import
+    if name == "BRAKING_DERIVED":
+        return derive()
+    raise AttributeError(name)

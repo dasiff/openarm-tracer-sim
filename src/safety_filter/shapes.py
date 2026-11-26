@@ -75,7 +75,10 @@ class PlacedShape:
     rot: np.ndarray = None
     half: np.ndarray = None
     geoms: tuple = ()
+    allowed_contact: bool = False  # Part 2: set on a world shape made from an allowed-contact object (e.g. the hotplate): a held object may touch it
     never_touch: bool = False  # SF-65: set on a world shape made from a never-touch object
+    work_surface: bool = False  # Phase D fix 1: set on a world shape made from a work surface (the bench top): its push-stop is PUSH_STOP_BEYOND_M_WORK
+    support: str = ""  # S1 (SF-113): a held unidentified box: the id of the work surface it rests on, exempt from it
     segment: str = ""  # the resolver's segment (SF-20): upper_arm (links 1-3: contacts move the elbow only), forearm (links 4-6), hand (link 7, palm, fingers), shoulder, body
 
     def aabb(self):
@@ -83,6 +86,10 @@ class PlacedShape:
         if self.kind == "capsule":
             lo = np.minimum(self.a, self.b) - self.r
             hi = np.maximum(self.a, self.b) + self.r
+        elif self.kind == "cylinder":                 # Phase D fix 4: exact box of a solid cylinder (axis e = rot[:, 2])
+            e = self.rot[:, 2]
+            ext = self.r * np.sqrt(np.maximum(1.0 - e * e, 0.0)) + self.half[2] * np.abs(e)
+            lo, hi = self.centre - ext, self.centre + ext
         else:
             ext = np.abs(self.rot) @ self.half
             lo, hi = self.centre - ext, self.centre + ext
@@ -156,6 +163,29 @@ class RobotShapes:
         if j < 0:
             raise ValueError(f"robot model has no joint {name}")
         return j
+
+    def set_arms(self, q, state: RobotState):
+        """set_state(with_arms(state, q)) with the two arms given as a (2, 7) array (Phase K fix 3, SF-98): the same numbers (base, pedestal and
+        fingers from the state), without building a state object and its tuples on every call (about 30 calls per tick)."""
+        m, d = self.model, self.data
+        q_buf = self._qbuf
+        q_buf[:] = m.qpos0
+        q_buf[self._adr_base:self._adr_base + 3] = state.base_xyz
+        q_buf[self._adr_base + 3:self._adr_base + 7] = state.base_quat
+        q_buf[self._adr_ped] = state.pedestal_m
+        arms = np.asarray(q, dtype=float)
+        if arms.shape != (2, ARM_JOINTS) or not np.isfinite(arms).all():
+            raise ValueError(f"expected two arms of {ARM_JOINTS} finite joint angles")
+        q_buf[self._adr_arm["left"]] = arms[0]
+        q_buf[self._adr_fing["left"]] = state.finger_left
+        q_buf[self._adr_arm["right"]] = arms[1]
+        q_buf[self._adr_fing["right"]] = state.finger_right
+        if self._kin_done and np.array_equal(q_buf, self._kin_q) and np.array_equal(d.qpos, q_buf):
+            return
+        d.qpos[:] = q_buf
+        mujoco.mj_kinematics(m, d)
+        self._kin_q[:] = q_buf
+        self._kin_done = True
 
     def set_state(self, state: RobotState):
         """Puts the joint state into the data and runs the kinematics (no dynamics, no stepping). When the joint state is the

@@ -318,6 +318,12 @@ class RunRecorder:
         self.ctrl.append(np.array(ctrl, dtype=np.float64))
         self.basevel.append(np.array(basevel, dtype=np.float64))
 
+    def set_held_last(self, heldmass):
+        """Sets the measured held mass (kg, left and right) of the tick just recorded by tick(): the mass the tick's gravity term used. The loop
+        calls it after the tick's physics, because a ramp can change inside a tick, and the value read before the physics is not the one used
+        (found 2026-11-25: the replay's held mass then differed by one tick's ramp step from tick 8060 on in the gripper_force run)."""
+        self.heldmass[-1] = np.array(heldmass, dtype=np.float64)
+
     def label(self, frame, text):
         """Records a text label for the replay (the loop passes the status text, which holds the task phase).
 

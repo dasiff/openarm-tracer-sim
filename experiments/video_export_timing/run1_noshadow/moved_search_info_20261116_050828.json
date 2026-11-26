@@ -1,0 +1,103 @@
+{
+ "run": "data/demo_record/rerun_moved_20261113_001429",
+ "search_video": "experiments/video_export_timing/run1_noshadow/moved_search_20261116_050828.mp4",
+ "search_frames": 685,
+ "search_duration_s": 22.822222222222223,
+ "search_end_s": 627.725,
+ "other_candidates": [
+  4,
+  7,
+  18,
+  36
+ ],
+ "accepted": 15,
+ "settings": {
+  "n_other_candidates": 4,
+  "other_candidate_s": 2.0,
+  "other_step_s": 1.2,
+  "key_pose_s": 0.8,
+  "dryrun_speed": 3.0,
+  "green_hold_s": 2.0,
+  "fade_s": 1.0,
+  "ghost_checked_rgba": [
+   0.35,
+   0.65,
+   1.0,
+   0.35
+  ],
+  "ghost_failed_rgba": [
+   1.0,
+   0.15,
+   0.15,
+   0.35
+  ],
+  "ghost_accepted_rgba": [
+   0.2,
+   0.85,
+   0.3,
+   0.35
+  ],
+  "key_poses": [
+   [
+    "pick approach",
+    "pick",
+    "over",
+    0
+   ],
+   [
+    "grasp",
+    "pick",
+    "grasp",
+    0
+   ],
+   [
+    "lift",
+    "pick",
+    "lift",
+    0
+   ],
+   [
+    "place approach",
+    "place",
+    "carry",
+    0
+   ],
+   [
+    "place down",
+    "place",
+    "setdown",
+    -1
+   ],
+   [
+    "retreat",
+    "place",
+    "back",
+    0
+   ]
+  ],
+  "fps": 30,
+  "size": [
+   1920,
+   1080
+  ],
+  "clock_text_scale": 2.2,
+  "shadows": false,
+  "overview_camera": {
+   "lookat": [
+    0.95,
+    2.0,
+    0.8
+   ],
+   "distance": 3.6,
+   "azimuth": 25.0,
+   "elevation": -38.0
+  }
+ },
+ "search_render_wall_s": 178.00055599212646,
+ "full_video": "experiments/video_export_timing/run1_noshadow/moved_full_20261116_050828.mp4",
+ "real_frames": 2862,
+ "real_ticks": 14313,
+ "real_replay_bit_identical": null,
+ "real_mismatch": null,
+ "clock_at_real_start_s": 629.125
+}

@@ -420,6 +420,7 @@ PICK_PLACE_CFG = {
     "clearance_m": 0.20,                   # pad centre height above the surface the target sits on for the 'over' waypoints (design plan 3.3); if unreachable: ~0.12, recorded [row M089]
     "carry_gap_m": 0.04,                   # the held beaker's bottom passes this far above the hotplate top [row M112 PENDING David: no decision recorded]
     "setdown_gap_m": 0.002,                # the beaker's bottom is this far above the plate when the gripper opens [row M112 PENDING David: no decision recorded]
+    "back_lift_m": 0.10,                   # m [SF-87, Phase H fix 1, David's decision: lift first]: after the release the pad goes straight up this far (the wrist clears the hotplate and bench) before the level retreat of BACK; the BACK run of Phase G dipped the wrist into the hotplate. 0.10 m is PROVISIONAL (David, 2026-11-25: kept; revisit with place timing; the LIFT adds at least about 2.5 s per place at the slow speed, not measured)
     "speed_m_s": 0.12, "slow_speed_m_s": 0.04,       # pad centre speed in transit, and for the descent, the move in and the set-down [row M112 PENDING David: no decision recorded]
     "turn_rad_s": 0.5,                     # orientation speed limit of a waypoint move [row M112 PENDING David: no decision recorded]
     "joint_limited_duration": True,        # a waypoint move lasts at least min_jerk_peak_factor * (the arc length of its farthest-travelling joint along a dry-run IK of the path) / MINK_CFG["max_joint_speed"], so the reference never outruns the joints; False = the old distance / speed time only [row M194]
@@ -463,8 +464,8 @@ PICK_PLACE_CFG = {
 COMMAND_BRIDGE_CFG = {
     "enabled": True,                       # True: the arm targets of every source go through the bridge; False: they go straight to the arm targets as before. Default on from David's request, 2026-10-29 [row M193]
     "rate_hz": 50.0,                       # Hz: how often the bridge takes a command (every 3rd tick of the 150 Hz loop); between two updates the loop's "interpolate" target mode ramps the arm targets, as the real controller's interpolation does [row M193]
-    "max_joint_velocity_rad_s": 0.5,       # rad/s: the bridge moves the command at most this fast toward the target, i.e. at most 0.5 / 50 = 0.01 rad per update [row M193]
-    "max_target_step_rad": 0.25,           # rad: a target more than this from the current command (on any joint) is rejected as a whole and ignored; so is a target outside a joint's limits [row M193]
+    "max_joint_velocity_rad_s": 0.5,       # rad/s: the speed limit of the bridge's one uniform shrink: a move is scaled so that no joint moves more than 0.5 / 50 = 0.01 rad per update (stage 3, David d0bc 2026-11-24; the shrink replaces the per-joint clip) [row M193]
+    "max_target_step_rad": 0.25,           # rad: the step-size limit of the uniform shrink: a move is scaled so that no joint's move is more than this (stage 3; replaces the rejection of a target more than this away) [row M193]
     "max_tracking_error_rad": 0.25,        # rad: while any arm joint's command is more than this from its measured position, the bridge stops forwarding commands (the command stays where it is) until the arm catches up [row M193]
 }
 
@@ -767,6 +768,10 @@ SAG_LAYER_CFG = {
     # Plain on/off switch, no unit. True (default): the sag trim runs as a layer for every arm command of every source. False (experiment only):
     # the layer passes the source's joint targets through unchanged, so the arm gets no sag correction. [row M262]
     "enabled": True,
+    # Measure rule (staged rebuild stage 2, David 2026-11-24; row SF-127): each joint's correction is the average of the measured sag (predicted joints
+    # minus measured joints) through a first-order low-pass with this time constant. Seconds. 2.0 is David's choice (SF-127). The integrator and its
+    # 5 s leak (SF-118) are removed from production.
+    "measure_T_s": 2.0,
 }
 
 # ----------------------------------------------------------------------------------------------------------
@@ -835,11 +840,22 @@ SEARCH_DISPLAY_CFG = {
 # The safety filter plug-in (src/safety_filter_plugin.py; design plan section 16, Stage 4 build; decision rows SF-59 to SF-64). Plain words for every value.
 SAFETY_FILTER_PLUGIN_CFG = {
     "mode": "off",                  # text [SF-59]: "off" = the filter is not imported, not called, nothing recorded (the control loop behaves exactly as without it, default); "shadow" = the filter runs and is recorded but the robot still gets the RAW command; "on" = the robot gets the filtered command. Runner flag --safety-filter
-    "hold_policy": "repeat_last_safe",  # text [SF-61]: what is sent when the filter finds no safe pose: "repeat_last_safe" = the last command actually sent again. A smooth stop is not built (next week); the slot takes any function(last_sent, status, history) -> command
+    "hold_policy": "braking",  # text [SF-61, Part 2]: "braking" (default since Part 2) = a HOLD, or an error inside the filter, is a smooth stop along the braking S-curve (src/safety_filter/braking.py); "repeat_last_safe" = the old behaviour. Old text:  what is sent when the filter finds no safe pose: "repeat_last_safe" = the last command actually sent again. A smooth stop is not built (next week); the slot takes any function(last_sent, status, history) -> command
     "history_len": 300,             # ticks [SF-61]: how many recent ticks (raw, sent, status) the hold policy gets as history: 2 seconds at 150 Hz, enough for a slow-down policy to see the speed
     "out_dir": "data/safety_filter/plugin_runs",  # folder [SF-63]: where the recording <run name>.npz goes (git-ignored)
     "flush_every": 3000,            # ticks [SF-63]: the recording file is rewritten (temporary file, then rename) this often, so a crash loses at most this many ticks
     "max_minutes": None,            # wall-clock minutes [SF-64]: stop the run cleanly after this long (the recording is saved); None = no limit
     "hold_stop_s": None,            # simulated seconds [SF-64]: stop the run cleanly when the filter has held the arm (status not PASS and the command sent unchanged) this long in a row; None = never (the cat demo uses 5)
     "max_ticks": None,              # filter calls [SF-64]: stop the run cleanly after this many filter calls (the recording is saved); None = no limit
+}
+
+
+# SF-125 (David, 2026-11-24): the command bridge's joint buffer. mode "range" = the buffer of each joint is range_fraction of its own range on each
+# side, capped at cap_deg (the buffer then limits joint range inside the bridge only: the sources see the targets they sent). mode "fixed" = the
+# old 10-degree margin (MINK_CFG joint_margin_rad) on every joint, kept for the comparison runs. range_fraction and cap_deg are David's values
+# (the decision-log row SF-125).
+BRIDGE_BUFFER_CFG = {
+    "mode": "range",
+    "range_fraction": 0.05,
+    "cap_deg": 10.0,
 }

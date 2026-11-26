@@ -1,0 +1,101 @@
+{
+ "run": "data/demo_record/rerun_moved_20261113_001429",
+ "full_video": "experiments/video_export_timing/final1/moved_full_20261116_131848.mp4",
+ "workers": 2,
+ "search_frames": 685,
+ "real_frames": 2862,
+ "search_end_s": 627.725,
+ "other_candidates": [
+  4,
+  7,
+  18,
+  36
+ ],
+ "accepted": 15,
+ "settings": {
+  "n_other_candidates": 4,
+  "other_candidate_s": 2.0,
+  "other_step_s": 1.2,
+  "key_pose_s": 0.8,
+  "dryrun_speed": 3.0,
+  "green_hold_s": 2.0,
+  "fade_s": 1.0,
+  "ghost_checked_rgba": [
+   0.35,
+   0.65,
+   1.0,
+   0.35
+  ],
+  "ghost_failed_rgba": [
+   1.0,
+   0.15,
+   0.15,
+   0.35
+  ],
+  "ghost_accepted_rgba": [
+   0.2,
+   0.85,
+   0.3,
+   0.35
+  ],
+  "key_poses": [
+   [
+    "pick approach",
+    "pick",
+    "over",
+    0
+   ],
+   [
+    "grasp",
+    "pick",
+    "grasp",
+    0
+   ],
+   [
+    "lift",
+    "pick",
+    "lift",
+    0
+   ],
+   [
+    "place approach",
+    "place",
+    "carry",
+    0
+   ],
+   [
+    "place down",
+    "place",
+    "setdown",
+    -1
+   ],
+   [
+    "retreat",
+    "place",
+    "back",
+    0
+   ]
+  ],
+  "fps": 30,
+  "size": [
+   1920,
+   1080
+  ],
+  "clock_text_scale": 2.2,
+  "shadows": false,
+  "workers": 2,
+  "tile_reuse_tol": 0.0001,
+  "tile_every": 2,
+  "overview_camera": {
+   "lookat": [
+    0.95,
+    2.0,
+    0.8
+   ],
+   "distance": 3.6,
+   "azimuth": 25.0,
+   "elevation": -38.0
+  }
+ },
+ "render_wall_s": 368.80304503440857
+}

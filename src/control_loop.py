@@ -30,15 +30,17 @@ the source's next command is due; a new command before that restarts the ramp fr
 delay (33 ms at 30 Hz, 6.7 ms at 150 Hz). "hold" keeps each target unchanged until the next one arrives. A source may have "hz" (a number, or a
 function returning the rate of the commands it is giving now); without it the source's period is one tick. A source that gives commands at less
 than the tick rate gives them only on its due ticks (see src/sequential_policy.py). The pedestal is not interpolated (it
-ramps itself at its own speed limit), and obs["applied"] always holds the final target.
+ramps itself at its own speed limit). obs["applied"]["arm_targets"] holds the arm targets the sources commanded, before the sag trim, the
+bridge and the safety filter (SF-119); the arms receive the corrected targets through the hold (the final targets).
 
 The command bridge (cfg["command_bridge"], src/task_config.COMMAND_BRIDGE_CFG, design plan section 1, row M193), on by default: the real arms' command limits on the 14 arm joints. The arm
 targets that sources give are not applied directly: the bridge keeps the latest target per arm and, at its own rate (50 Hz: every 3rd tick), (1) suspends commands while any arm joint's
-command is more than max_tracking_error_rad from its measured position (the command stays where it is until the arm has caught up), (2) rejects a target as a whole if it is more
-than max_target_step_rad from the current command on any joint (the previous accepted target stays), (3) moves the command at most max_joint_velocity_rad_s / rate_hz toward the accepted
-target and applies it, ramped over the 3 ticks by the "interpolate" target mode. A command whose arm targets are outside the joint limits is rejected as a whole before that. Grippers and
-the pedestal are not touched. Every rejection and every suspension (and its end) is logged: {tick, time, status, kind, side, joint, value, limit, count} in the returned "bridge_log" (an event that repeats the previous one is merged into it and counted)
-and printed (the first 20 lines; a summary line at the end counts them all).
+command is more than max_tracking_error_rad from its measured position (the command stays where it is until the arm has caught up), (2) clamps each target into its joint buffer (SF-125),
+then (3) moves the command toward the accepted target by ONE uniform shrink (stage 3, David d0bc 2026-11-24, src/bridge_shrink.py): the factor is the smaller of max_target_step_rad / peak and
+max_joint_velocity_rad_s / rate_hz / peak, peak being the largest per-joint move of either arm at this update, applied to every joint's move on both arms. No target is rejected and no joint is
+clipped on its own; a move inside the limits passes unchanged. The command is then ramped over the 3 ticks by the "interpolate" target mode. Grippers and the pedestal are not touched.
+Every suspension (and its end) is logged in the returned "bridge_log" ({tick, time, status, kind, side, joint, value, limit, count}; an event that repeats the previous one is merged into it and counted);
+every shrunk update is logged in the returned "bridge_shrink" ({tick, time, factor, rule (speed or step), arm, joint, peak_move_rad}).
 
 Controller mode (cfg["mode"], cfg["auto_source"]): "teleop" is the router exactly as configured (keyboard, webcam teleop, a policy on some
 fields: what the manual / teleop / policy launcher modes have always been). With cfg["auto_source"] naming a task-policy source there is
@@ -93,16 +95,20 @@ import time
 import mujoco
 import numpy as np
 
+from src import held_mass_ramp as hmr
 from src import robot_specs
+from src.bridge_override import force_to_target
+from src.bridge_clamp import buffer_limits, clamp_to_buffer      # SF-122 stage 1: the bridge's joint-buffer clamp
 from src.base_control import apply_base_velocity, base_yaw, find_base_dof, twist_to_world_velocity
 from src.cameras import CameraRig
 from src.commands import validate_command
 from src.run_record import RunRecorder
 from src.task_config import COMMAND_BRIDGE_CFG
 from src.holding import HoldDetector                          # M253: the holding verdict, the same rule as the signal trace
+from src.bridge_shrink import apply_shrink, shrink_factor     # stage 3 (David d0bc 2026-11-24): the bridge's one uniform shrink
 from src.open_catch import OpenCatch, SourceGate                # M253: catches an open while holding; gates the sources (always on)
 from src.weigh_helper import WeighHelper                         # M258: weighs each grasp once, pausing its source (always on)
-from src.sag_layer import MANIPULATION_SOURCES, SAG_TRACE, SagLayer, correct_command                    # M262: the sag trim, a layer between the source and the bridge (always on); M264: it acts on the manipulation source only
+from src.sag_layer import SAG_TRACE, SagLayer, correct_command
 from src.task_config import PICK_PLACE_CFG                       # M258: the weighing's values (liftoff_*, settle_*)
 from src.task_config import CHUNK_CFG
 from src.elbow_guard import ElbowGuard                        # M269: the elbow height guard, clamps the arm targets (ctrl_block)
@@ -111,8 +117,15 @@ from src.elbow_guard import ElbowGuard                        # M269: the elbow 
 # Populated during run, read by extraction script via module introspection
 SERVO_LOG = {"tick": -1, "tau_cmd": None, "tau_ff": None}
 
-# Bridge accepted targets per arm at the last bridge update, for diagnostic extraction (None until that arm has an accepted target)
-BRIDGE_ACCEPTED_LOG = {"tick": -1, "accepted_L": None, "accepted_R": None}
+# Bridge accepted targets per arm at the last bridge update, for diagnostic extraction (None until that arm has an accepted target).
+# "limited_L"/"limited_R" (SF-119, logging only): the bridge's own command per arm after its rate limit, i.e. what it sends on to the arm. It already
+# includes the sag trim, since the trim acts on the source's command before the bridge.
+BRIDGE_ACCEPTED_LOG = {"tick": -1, "accepted_L": None, "accepted_R": None, "limited_L": None, "limited_R": None}
+# SF-122 stage 1 (logging only): per arm and joint, how many times the bridge clamped a source's target into its joint buffer (bridge_take). The
+# command is not clamped: it follows the target at the bridge's speed and step rules. Reset at the start of each run_loop.
+BRIDGE_CLAMP = {"target": {"left": np.zeros(7, int), "right": np.zeros(7, int)}, "updates": {"left": np.zeros(7, int), "right": np.zeros(7, int)}}
+BRIDGE_SHRINK = {"updates": 0, "min_factor": 1.0, "rule": {"speed": 0, "step": 0}, "arm": {"left": 0, "right": 0}}   # stage 3: the shrink counts of the run (updates shrunk, smallest factor, binding rule, arm)   # "target": source commands clamped (per command); "updates": bridge updates that used a clamped target (per joint)
+BRIDGE_TIME = []    # SF-122 timing (logging only): seconds spent in each bridge call (bridge_take per arms command, bridge_update per update)
 
 LOOP_CFG = {
     "source_hz": 150.0,            # command / viewer tick; the physics rate must be a whole multiple (5 steps at 750 Hz) [row M121 PENDING David: no decision recorded]
@@ -235,6 +248,7 @@ def _filter_by_route(cmd, name, routes):
         return cmd if owns(mode) else None
     at = {sd: q for sd, q in cmd.get("arm_targets", {}).items() if owns(f"arms.{sd}")}
     gr = {sd: g for sd, g in cmd.get("gripper", {}).items() if owns(f"gripper.{sd}")}
+    ho = {sd: n for sd, n in cmd.get("held_object", {}).items() if owns(f"gripper.{sd}")}     # Phase C step 7: the grasp's object name goes with the gripper
     if not at and not gr:
         return None
     out = {"mode": "arms"}
@@ -242,6 +256,8 @@ def _filter_by_route(cmd, name, routes):
         out["arm_targets"] = at
     if gr:
         out["gripper"] = gr
+    if ho:
+        out["held_object"] = ho
     return out
 
 
@@ -381,7 +397,7 @@ def run_loop(model, data, sources, cfg, viewer=None, logger=None):
     vadr = lambda a: int(model.jnt_dofadr[model.actuator_trnid[a, 0]])
     arm_vadr = {s: [vadr(a) for a in arm_act[s]] for s in sides}
     fing_vadr = [vadr(a) for s in sides for a in fing_act[s]]
-    from src.gravity_ff import ArmGravityFeedforward, clear_held_mass, held_mass, held_pad_z_per_kg, set_held_mass
+    from src.gravity_ff import ArmGravityFeedforward, clear_held_mass, held_mass, held_pad_z_per_kg
     gff = ArmGravityFeedforward(model, arm_act, fing_act, sides)          # M185: the arm's gravity torque as a feedforward on the targets
     clear_held_mass(model)                                                # M196: no held-object compensation left over from an earlier run
     ped_aid = aid(robot_specs.PEDESTAL_SPECS["actuator_name"])
@@ -390,6 +406,9 @@ def run_loop(model, data, sources, cfg, viewer=None, logger=None):
     ped_qadr = int(model.jnt_qposadr[model.actuator_trnid[ped_aid, 0]])
     limits = {"gripper_force_ceiling": float(robot_specs.ARM_ACTUATOR_SPECS["fingers"]["force_limit"]), "arm": {s: (np.array([jr(a)[0] for a in arm_act[s]]), np.array([jr(a)[1] for a in arm_act[s]])) for s in sides},
               "gripper": tuple(jr(fing_act["left"][0])), "pedestal": (float(ped_lo), float(ped_hi))}
+    # SF-125 (David 2026-11-24): the arm targets are not clipped to the hard joint limits here. The sources must see exactly the targets they sent
+    # (applied()), and joint range is limited in one place, the command bridge's buffer clamp (bridge_take). Other limits (pedestal, gripper) as before.
+    limits_src = {k: v for k, v in limits.items() if k != "arm"}
 
     base_body_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, "base_link")
     if base_body_id < 0:
@@ -475,6 +494,7 @@ def run_loop(model, data, sources, cfg, viewer=None, logger=None):
         return steps_per_frame if not hz else max(steps_per_frame, int(round(physics_hz / hz)))
 
     replay = cfg["replay"]
+    tick_dump = cfg.get("tick_dump")   # diagnostic only (data/logs/replay_check_20261125/diag_dump.py): called after each tick's physics with read-only references; None in every normal run
     recorder = None
     if replay is not None:
         replay["on_start"](model, data)
@@ -547,10 +567,15 @@ def run_loop(model, data, sources, cfg, viewer=None, logger=None):
 
     set_grip_force([ceiling, ceiling])
 
-    def applied():
-        """Reports the targets the loop is currently applying (the "applied" entry of the observation).
+    def hold_arm_now():
+        """The arm targets the loop holds now, after the sag trim and the bridge: {side: list of 7 radians}. The arms' own targets."""
+        return {s: [float(hold_qpos_targets[a]) for a in arm_act[s]] for s in sides}
 
-        Reads the base Twist, the gripper force limits, the hold targets from the enclosing function.
+    def applied():
+        """Reports what the sources see of the loop's targets (the "applied" entry of the observation).
+
+        The arm targets are the ones the sources commanded (SF-119), not the held ones, so a source never reads back the sag trim, the
+        bridge's limits or the safety filter's shaping. Reads the base Twist, the gripper force limits, the hold targets from the enclosing function.
 
         Returns:
             dict: With the keys
@@ -561,8 +586,14 @@ def run_loop(model, data, sources, cfg, viewer=None, logger=None):
                 "gripper": {side: finger travel target in metres}.
                 "mode": the active subsystem under exclusivity (a name or None).
         """
+        arm_now = hold_arm_now()
+        if src_arm_targets:
+            # SF-119 (cut the loop, David 2026-11-22): the sources see the arm targets they commanded, for every source. Before the first arms
+            # command there is nothing commanded yet, so the hold is shown. The arms get the corrected targets through the hold (apply_cmd).
+            # Phase C step 3 (braking layer) already showed the commanded targets; this makes it the rule for all modes.
+            arm_now = {s: list(src_arm_targets.get(s, arm_now[s])) for s in sides}
         return {"twist": st["twist"], "gripper_force": dict(grip_force), "pedestal": float(hold_qpos_targets[ped_aid]),
-                "arm_targets": {s: [float(hold_qpos_targets[a]) for a in arm_act[s]] for s in sides},
+                "arm_targets": arm_now,
                 "gripper": {s: float(hold_qpos_targets[fing_act[s][0]]) for s in sides}, "mode": ex["active"]}
 
     def apply_cmd(cmd):
@@ -595,15 +626,24 @@ def run_loop(model, data, sources, cfg, viewer=None, logger=None):
 
     # --- The command bridge (row M193): the real arms' command limits between the sources and the arm targets ---
     bcfg = {**COMMAND_BRIDGE_CFG, **(cfg.get("command_bridge") or {})}
-    bridge = {"on": bool(bcfg["enabled"]) and cfg["replay"] is None, "cmd": None, "target": {}, "accepted": {}, "suspended": False, "log": [], "printed": 0}
+    bridge = {"on": bool(bcfg["enabled"]) and cfg["replay"] is None, "cmd": None, "target": {}, "accepted": {}, "suspended": False, "log": [], "printed": 0, "shrink_log": [],
+              "pending_clamp": {s_: np.zeros(7, bool) for s_ in sides}}      # SF-122 stage 2: clamped joints since the last update (for the "updates" count)
     bridge_every = max(1, int(round(cfg["source_hz"] / bcfg["rate_hz"])))
+    sag_held = {}                        # answer 1: side -> the arm's last source target (the sag layer runs on it every tick)
     bridge_step = bcfg["max_joint_velocity_rad_s"] / bcfg["rate_hz"]                      # rad: the most the command moves per update
+    bridge_buf = {s: buffer_limits(limits["arm"][s][0], limits["arm"][s][1]) for s in sides}   # SF-122 stage 1: the joint buffer (hard limits moved in by the 10-degree margin)
+    for k_ in BRIDGE_CLAMP:
+        for s_ in sides:
+            BRIDGE_CLAMP[k_][s_] = np.zeros(7, int)
+    BRIDGE_SHRINK.update({"updates": 0, "min_factor": 1.0, "rule": {"speed": 0, "step": 0}, "arm": {"left": 0, "right": 0}})
+    del BRIDGE_TIME[:]
     arm_qadr = {s: [int(model.jnt_qposadr[model.actuator_trnid[a, 0]]) for a in arm_act[s]] for s in sides}
     # --- M253: the open catch (one per hand, always on) and the chunk player ---
     fq_adr = {s: int(model.jnt_qposadr[model.joint(f"openarm_{s}_finger_joint1").id]) for s in sides}
     fv_adr = {s: int(model.jnt_dofadr[model.joint(f"openarm_{s}_finger_joint1").id]) for s in sides}
     hold_det = {s: HoldDetector() for s in sides}
     sf_plugin = None
+    src_arm_targets = {}                 # Phase C step 3: the arm targets the sources commanded, before the safety filter's shaping (see applied())
     if cfg["safety_filter_mode"] != "off" and cfg["replay"] is None:     # row SF-59: off imports nothing; a replay feeds recorded inputs and is never filtered
         from src.safety_filter_plugin import make_sim_plugin
         sf_plugin = make_sim_plugin(model, data, cfg, {"fing_qadr": fq_adr, "ped_qadr": ped_qadr})
@@ -612,7 +652,7 @@ def run_loop(model, data, sources, cfg, viewer=None, logger=None):
     open_catch_log = []                                        # entries {"tick", "side", "kind", ...} (caught, repeat_ignored, released, failed_hold, opened, ...)
     # --- M262: the sag trim, one layer per arm (always on). Its posture target is cfg["sag_home_q"] (side -> 7 radians), else the joints at the start ---
     sag_home = cfg.get("sag_home_q") or {}
-    sag = {s: SagLayer(model, data, s, sag_home[s] if s in sag_home else data.qpos[arm_qadr[s]].copy()) for s in sides}
+    sag = {s: SagLayer(model, data, s, sag_home[s] if s in sag_home else data.qpos[arm_qadr[s]].copy()) for s in sides}   # stage 2: the measure rule (T = 2 s, SF-127) is the production layer
     elbow_guard = ElbowGuard(model, sides, arm_qadr, ped_qadr)     # M269: the elbow joint centre stays above ELBOW_GUARD_CFG["min_joint_z_m"]
     # --- M258: the weighing helper (one per hand, always on): the pad centre is the robot's own kinematics (the same point as the script's pad) ---
     def pad_point(s):
@@ -643,28 +683,29 @@ def run_loop(model, data, sources, cfg, viewer=None, logger=None):
             bridge["printed"] += 1
             print(f"[bridge] t={rec_['time']:.2f} s ({status}): {kind}: {side} joint {joint}, value {value:+.3f}, limit {limit:+.3f}")
 
-    def bridge_precheck(cmd, frame_):
-        """Takes an arms command's targets that lie outside the joint limits out of it (the whole arm targets are rejected and logged). Returns the command, or None if nothing is left.
+    def bridge_override(frame_):
+        """Part 2 (src/bridge_override.py): braking must exceed the bridge limits, so the bridge's command jumps to the latest target now and an
+        ERROR is logged. The error means the look-ahead did not catch the obstacle early enough: a bug to investigate."""
+        out, errors = force_to_target(bridge, bridge_step, bcfg["max_target_step_rad"])
+        for line in errors:
+            bridge_note(frame_, line.split(":")[0], 0, "ERROR override: braking exceeded the bridge limits", 1.0, 0.0)
+            print(f"[bridge] ERROR t={data.time:.2f} s: {line}")
+        if out:
+            apply_cmd({"mode": "arms", "arm_targets": out, "period_steps": steps_per_frame})
 
-        Runs on the raw command, before validate_command clips out-of-range values.
-        """
-        if not bridge["on"] or not isinstance(cmd, dict) or cmd.get("mode") != "arms" or not isinstance(cmd.get("arm_targets"), dict):
-            return cmd
-        for s, q in cmd["arm_targets"].items():
-            lo, hi = limits["arm"][s]
-            q = np.asarray(q, float)
-            bad = np.nonzero((q < lo) | (q > hi))[0] if q.shape == lo.shape else []
-            if len(bad):
-                k = int(bad[0])
-                bridge_note(frame_, s, k + 1, "rejected: target outside the joint limits", q[k], lo[k] if q[k] < lo[k] else hi[k])
-                rest = {kk: v for kk, v in cmd.items() if kk != "arm_targets"}
-                return rest if any(kk in rest for kk in ("gripper", "gripper_force")) else None
+    def bridge_precheck(cmd, frame_):
+        """SF-122 stage 1: no rejection any more. An arms command's targets outside the joint limits are clamped into the joint buffer by
+        bridge_take (targets) and bridge_update (commands); validate_command clips them to the hard limits first, as before."""
         return cmd
 
     def sag_correct(cmd):
-        """M262/M264: the sag trim layer for one command (src/sag_layer.py correct_command): corrected only when it is the manipulation source's."""
+        """M262, S5 (Phase S): the sag trim layer for one command (src/sag_layer.py correct_command): every arm target; each arm's trim holds while its command stands still."""
         nominal = cmd.get("period_steps", steps_per_frame) * model.opt.timestep
+        for s_ in sides:                                   # M226 (David 2026-11-25): the release freeze follows the open-catch helper's own state (src/open_catch.py), not the ramp to zero
+            sag[s_].open_hold = catch[s_].state in ("ramp", "opening")
         return correct_command(sag, cmd, data, t, nominal)
+
+    MANIPULATION_SOURCES = ("vla",)   # the safety filter's manipulation flag (the cmd "manip" tag): the sources named here (M264). The sag trim no longer reads it (S5)
 
     def is_manipulation(name):
         """M264: whether a source is the manipulation source now: a source named in MANIPULATION_SOURCES, or the auto source (the scripted policy)
@@ -678,7 +719,10 @@ def run_loop(model, data, sources, cfg, viewer=None, logger=None):
         if not bridge["on"] or cmd["mode"] != "arms" or not cmd.get("arm_targets"):
             return cmd
         for s, q in cmd["arm_targets"].items():
-            bridge["target"][s] = np.array(q, float)
+            qc_, m_ = clamp_to_buffer(q, *bridge_buf[s])                                 # SF-122 stage 1: the buffer clamp (not a rejection)
+            BRIDGE_CLAMP["target"][s] += m_.astype(int)
+            bridge["pending_clamp"][s] = bridge["pending_clamp"][s] | m_
+            bridge["target"][s] = qc_
         rest = {kk: v for kk, v in cmd.items() if kk != "arm_targets"}
         return rest if any(kk in rest for kk in ("gripper", "gripper_force")) else None
 
@@ -696,26 +740,37 @@ def run_loop(model, data, sources, cfg, viewer=None, logger=None):
                 bridge["suspended"] = True
                 k = int(np.argmax(np.abs(err[worst[1]])))
                 bridge_note(frame_, worst[1], k + 1, "suspended: tracking error", err[worst[1]][k], bcfg["max_tracking_error_rad"])
+            for s_ in sides:                                                                 # SF-122 stage 2: the sag layer learns the held output and that the arm is suspended
+                sag[s_].observe(cmd_q[s_], data.time, True)
             return
         if bridge["suspended"]:
             bridge["suspended"] = False
             bridge_note(frame_, worst[1], int(np.argmax(np.abs(err[worst[1]]))) + 1, "resumed: tracking error recovered", worst[0], bcfg["max_tracking_error_rad"])
+        # stage 3 (David d0bc 2026-11-24): ONE uniform shrink for both arms. Each rule's factor (its limit over the largest per-joint move of either
+        # arm), the smallest applied to every joint's move; no rejection, no per-joint clip. Within the limits the factor is 1 and the target is reached.
+        moves = {s: (np.zeros(7) if bridge["target"].get(s) is None else bridge["target"][s] - cmd_q[s]) for s in sides}
+        f, rule_, arm_, joint_, peak_ = shrink_factor(moves, bcfg["max_target_step_rad"], bridge_step)
+        if f < 1.0:
+            BRIDGE_SHRINK["updates"] += 1
+            BRIDGE_SHRINK["min_factor"] = min(BRIDGE_SHRINK["min_factor"], f)
+            BRIDGE_SHRINK["rule"][rule_] += 1
+            BRIDGE_SHRINK["arm"][arm_] += 1
+            bridge["shrink_log"].append({"tick": frame_, "time": float(data.time), "factor": float(f), "rule": rule_, "arm": arm_, "joint": joint_,
+                                         "peak_move_rad": float(peak_)})
         out = {}
         for s, tgt in bridge["target"].items():
-            d_ = tgt - cmd_q[s]
-            if float(np.max(np.abs(d_))) > bcfg["max_target_step_rad"]:
-                k = int(np.argmax(np.abs(d_)))
-                bridge_note(frame_, s, k + 1, "rejected: target step too large", d_[k], bcfg["max_target_step_rad"])
-                tgt = bridge["accepted"].get(s, cmd_q[s])                                      # the previous accepted target stays
-                d_ = tgt - cmd_q[s]
-            else:
-                bridge["accepted"][s] = tgt.copy()
-            cmd_q[s] = cmd_q[s] + np.clip(d_, -bridge_step, bridge_step)
+            cmd_q[s] = apply_shrink(cmd_q[s], tgt, f)
+            bridge["accepted"][s] = np.array(tgt, float).copy()
             out[s] = [float(v) for v in cmd_q[s]]
+        for s_ in sides:                                                                     # SF-122 stage 2: the bridge's output of this update goes to the sag layer (REF = output - dq)
+            sag[s_].observe(cmd_q[s_], data.time, False)
+            BRIDGE_CLAMP["updates"][s_] += bridge["pending_clamp"][s_].astype(int)           # the joints whose target was clamped since the last update
+            bridge["pending_clamp"][s_] = np.zeros(7, bool)
         acc = bridge["accepted"]
         BRIDGE_ACCEPTED_LOG["tick"] = frame_
         BRIDGE_ACCEPTED_LOG["accepted_L"] = acc["left"].copy() if "left" in acc else None
         BRIDGE_ACCEPTED_LOG["accepted_R"] = acc["right"].copy() if "right" in acc else None
+        BRIDGE_ACCEPTED_LOG["limited_L"], BRIDGE_ACCEPTED_LOG["limited_R"] = cmd_q["left"].copy(), cmd_q["right"].copy()
         apply_cmd({"mode": "arms", "arm_targets": out, "period_steps": bridge_every * steps_per_frame})
 
     # --- Exclusivity and the hold rule ---
@@ -980,6 +1035,8 @@ def run_loop(model, data, sources, cfg, viewer=None, logger=None):
         ff_off = gff.torques(data) / gff.kp          # M185: one tau_ff / kp per tick from the measured pose (the real controller's gravity torque), held for the tick's steps
         # Log gravity feedforward offset for diagnostic extraction
         SERVO_LOG["tau_ff"] = ff_off.copy()
+        for s_ in sides:                             # David 2026-11-24, decision 3: the sag layer predicts with the offset the motors receive this tick
+            sag[s_].set_applied_offset(ff_off[sag[s_].off:sag[s_].off + 7])
         for k in range(steps_per_frame):
             data.ctrl[:] = ctrl_steps[k]
             gff.apply_offsets(data.ctrl, ff_off)
@@ -1026,8 +1083,10 @@ def run_loop(model, data, sources, cfg, viewer=None, logger=None):
                 set_grip_force(replay["gripforce"][frame])
             if replay.get("heldmass") is not None:                          # M196: the held-object compensation of the recorded tick (older recordings: none)
                 for k, s_ in enumerate(sides):
-                    set_held_mass(model, s_, float(replay["heldmass"][frame][k]))
+                    hmr.set_replay_mass(model, s_, float(replay["heldmass"][frame][k]))
             advance(*replay["basevel"][frame], np.broadcast_to(blk, (steps_per_frame, model.nu)) if blk.ndim == 1 else blk)
+            if tick_dump is not None:
+                tick_dump(frame, {"model": model, "data": data, "sag": None, "bridge": None, "gate": None, "hold_det": None, "sag_held": None, "gff": gff, "replay": True})
             replay["on_tick_end"](frame, data)
             frame += 1
             continue
@@ -1114,14 +1173,14 @@ def run_loop(model, data, sources, cfg, viewer=None, logger=None):
                 cmd = bridge_precheck(cmd, frame)
                 if cmd is None:
                     continue
-                clean, notes = validate_command(cmd, limits)
+                clean, notes = validate_command(cmd, limits_src)           # SF-125: no arm clip here; the bridge's buffer clamp limits joint range
                 for n in notes:
                     if (name, n) not in msgs_seen:
                         msgs_seen.add((name, n))
                         print(f"[{name}] {n}")
                 if clean is not None:
                     clean["period_steps"] = command_steps(src)
-                    clean["manip"] = is_manipulation(name)            # M264: the sag layer acts on the manipulation source's arm commands only
+                    clean["manip"] = is_manipulation(name)            # the safety filter's manipulation flag (the sag trim no longer reads it, S5)
                     cmds.append(clean)
         gate.hold_steps(catch, hold_det, data, t, frame,
                         lambda s_, v_, f_: (sag[s_].release_open(t), apply_cmd({"mode": "arms", "gripper": {s_: v_}, "gripper_force": {s_: release_cap(f_)}})),   # M253/M255: the release carries the caught command's own force cap; M263: it arms the sag reset (the only arming)
@@ -1136,18 +1195,47 @@ def run_loop(model, data, sources, cfg, viewer=None, logger=None):
                 ctl["ramp"] = False
         measure_still()
         to_apply = exclusive_select(cmds, t) if cfg["exclusive"] else [c for c in cmds if c["mode"] != "idle"]
+        arms_now = False                                    # stage 2 follow-up (David 2026-11-25, answer 1): did a new arm command arrive this tick?
         if not cfg["exclusive"] and any(c["mode"] == "idle" for c in cmds):
             stop_base()
         for cmd in to_apply:
+            if cmd.get("mode") == "arms" and cmd.get("arm_targets"):
+                src_arm_targets.update({s_: [float(v) for v in q_] for s_, q_ in cmd["arm_targets"].items()})   # SF-119: the sources' view (applied()) is what the source commanded here
             if sf_plugin is not None and cmd.get("mode") == "arms" and cmd.get("arm_targets"):   # row SF-59: the safety filter sits after the helpers (open catch, weighing) and before the sag trim
-                cmd = {**cmd, "arm_targets": sf_plugin.process(cmd["arm_targets"], {s_: hold_det[s_].holding for s_ in sides}, applied()["arm_targets"], t, bool(cmd.get("manip")))}
+                # The filter's current targets (read at its first call only). With the braking layer on: the targets it was given, as before SF-119.
+                # Otherwise the held targets, as before SF-119 (applied() now shows the commanded ones, which the filter must not read).
+                filter_now = applied()["arm_targets"] if (sf_plugin.mode == "on" and getattr(sf_plugin, "braking", None) is not None) else hold_arm_now()
+                cmd = {**cmd, "arm_targets": sf_plugin.process(cmd["arm_targets"], {s_: hold_det[s_].holding for s_ in sides}, filter_now, t, bool(cmd.get("manip")), cmd.get("held_object"))}
                 if sf_plugin.limit_reached() and stop_req[0] is None:
                     stop_req[0] = "safety_filter_limit"
+            if cmd.get("mode") == "arms" and cmd.get("arm_targets"):
+                arms_now = True
+                sag_held.update({s_: np.asarray(q_, float).copy() for s_, q_ in cmd["arm_targets"].items()})   # the arm's held source target (answer 1)
             cmd = sag_correct(cmd)                          # M262: the sag trim sits between the source and the bridge (every source; the same code)
+            _tb = time.perf_counter()
             cmd = bridge_take(cmd)
+            BRIDGE_TIME.append(time.perf_counter() - _tb)
+            if cmd is not None and not bridge["on"] and cmd.get("mode") == "arms" and cmd.get("arm_targets"):
+                for s_, q_ in cmd["arm_targets"].items():                                  # SF-122 stage 2: bridge off, the command is the output (REF = source target)
+                    sag[s_].observe(np.array(q_, float), data.time, False)
             if cmd is not None:
                 apply_cmd(cmd)
+        if not arms_now and sag_held:
+            # answer 1 (David 2026-11-25): the sag layer runs every control tick, on the arm's held source target, whether or not a new arm command
+            # arrived. The correction (dq) of the held target is sent to the bridge each tick; the skip rules are unchanged.
+            hcmd = {"mode": "arms", "arm_targets": {s_: [float(v) for v in q_] for s_, q_ in sag_held.items()}, "period_steps": steps_per_frame}
+            hcmd = sag_correct(hcmd)
+            hcmd = bridge_take(hcmd)
+            if hcmd is not None and not bridge["on"] and hcmd.get("mode") == "arms" and hcmd.get("arm_targets"):
+                for s_, q_ in hcmd["arm_targets"].items():
+                    sag[s_].observe(np.array(q_, float), data.time, False)
+            if hcmd is not None:
+                apply_cmd(hcmd)
+        if sf_plugin is not None and sf_plugin.take_override():       # Part 2: braking had to exceed the bridge limits
+            bridge_override(frame)
+        _tb = time.perf_counter()
         bridge_update(frame)
+        BRIDGE_TIME.append(time.perf_counter() - _tb)
 
         # Project forward velocity into world frame using robot yaw
         base_vx, base_vy, base_wz = twist_to_world_velocity(base_yaw(data), *st["twist"])
@@ -1162,9 +1250,13 @@ def run_loop(model, data, sources, cfg, viewer=None, logger=None):
         SERVO_LOG["tau_cmd"] = block[0].copy() if block.ndim > 1 else block.copy()
         set_grip_force([grip_force[s] for s in sides])
         if recorder is not None:
-            recorder.tick(frame, block, (base_vx, base_vy, base_wz), [grip_force[s] for s in sides], [held_mass(model, s) for s in sides])
+            recorder.tick(frame, block, (base_vx, base_vy, base_wz), [grip_force[s] for s in sides])
             recorder.label(frame, status.split("  (")[0] if isinstance(status, str) else status)
         advance(base_vx, base_vy, base_wz, block)
+        if recorder is not None:
+            recorder.set_held_last([held_mass(model, s) for s in sides])   # the held mass this tick's physics used (read after the physics; see RunRecorder.set_held_last)
+        if tick_dump is not None:
+            tick_dump(frame, {"model": model, "data": data, "sag": sag, "bridge": bridge, "gate": gate, "hold_det": hold_det, "sag_held": sag_held, "gff": gff, "replay": False})
         if recorder is not None:
             recorder.end_tick(frame, data)
         tm["phys"] += pc() - t_p0
@@ -1272,4 +1364,4 @@ def run_loop(model, data, sources, cfg, viewer=None, logger=None):
         for e in bridge["log"]:
             kinds[e["kind"]] = kinds.get(e["kind"], 0) + e["count"]
         print(f"[bridge] {len(bridge['log'])} log entries, {sum(kinds.values())} events: {kinds}")
-    return {"frames": frame, "open_catch_log": open_catch_log, "sag_log": {s: sag[s].log for s in sides}, "weigh_log": {s: weigh[s].log for s in sides}, "hold_log": ex["log"], "routes": routes, "stopped_by": stop_req[0], "mode_log": ctl["log"], "bridge_log": bridge["log"]}
+    return {"frames": frame, "open_catch_log": open_catch_log, "sag_log": {s: sag[s].log for s in sides}, "weigh_log": {s: weigh[s].log for s in sides}, "hold_log": ex["log"], "routes": routes, "stopped_by": stop_req[0], "mode_log": ctl["log"], "bridge_log": bridge["log"], "bridge_shrink": bridge["shrink_log"]}

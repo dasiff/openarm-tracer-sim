@@ -1,0 +1,257 @@
+{
+ "run": "data/demo_record/rerun_moved_20261113_001429",
+ "full_video": "experiments/video_export_timing/timed_lp1/moved_full_20261116_121635.mp4",
+ "search_frames": 90,
+ "search_wall_s": 27.151845008003875,
+ "real_frames": 180,
+ "real_ticks": 900,
+ "real_wall_s": 46.47852071499801,
+ "concat_wall_s": 0.07781154400436208,
+ "wall_s": 73.77020452999568,
+ "timed_sum_s": 73.36430876619124,
+ "stages": {
+  "setup:SearchRun (timeline from the logs)": {
+   "total_s": 0.03595797800517175,
+   "calls": 1
+  },
+  "setup:load_recording": {
+   "total_s": 0.025920657004462555,
+   "calls": 1
+  },
+  "search:np.ascontiguousarray": {
+   "total_s": 0.02619362113182433,
+   "calls": 92
+  },
+  "search:build_model": {
+   "total_s": 3.6350885379797546,
+   "calls": 1
+  },
+  "search:GL context": {
+   "total_s": 1.158290677005425,
+   "calls": 1
+  },
+  "search:writer start (ffmpeg process)": {
+   "total_s": 0.00618995500553865,
+   "calls": 1
+  },
+  "search:timeline.state_at": {
+   "total_s": 0.01459572602470871,
+   "calls": 90
+  },
+  "search:rig/mjv_updateScene": {
+   "total_s": 0.020729870957438834,
+   "calls": 270
+  },
+  "search:rig/mjr_render": {
+   "total_s": 1.1493943559762556,
+   "calls": 270
+  },
+  "search:rig/mjr_readPixels": {
+   "total_s": 9.345541759117623,
+   "calls": 270
+  },
+  "search:rig/np.flipud": {
+   "total_s": 0.009757191975950263,
+   "calls": 270
+  },
+  "search:follow/rig.render (own: 3 cameras' buffers)": {
+   "total_s": 0.09578102998784743,
+   "calls": 90
+  },
+  "search:follow/update_follow_camera": {
+   "total_s": 0.0096128880395554,
+   "calls": 90
+  },
+  "search:follow/mjv_updateScene": {
+   "total_s": 0.0059641617990564555,
+   "calls": 90
+  },
+  "search:ghost/mj_kinematics": {
+   "total_s": 0.0030148879304761067,
+   "calls": 90
+  },
+  "search:follow/ghost.set_pose (own)": {
+   "total_s": 0.004245706120855175,
+   "calls": 90
+  },
+  "search:ghost/mjv_addGeoms": {
+   "total_s": 0.002609612012747675,
+   "calls": 90
+  },
+  "search:follow/ghost.draw (own)": {
+   "total_s": 0.16515499401430134,
+   "calls": 90
+  },
+  "search:follow/mjr_render": {
+   "total_s": 2.454378615046153,
+   "calls": 180
+  },
+  "search:follow/mjr_readPixels": {
+   "total_s": 7.085359755044919,
+   "calls": 90
+  },
+  "search:follow/np.flipud": {
+   "total_s": 0.002220144946477376,
+   "calls": 90
+  },
+  "search:follow/np.ascontiguousarray": {
+   "total_s": 0.1129662220046157,
+   "calls": 90
+  },
+  "search:follow/settle_renderer": {
+   "total_s": 0.0148972269234946,
+   "calls": 90
+  },
+  "search:follow/text_bitmap": {
+   "total_s": 0.06514716004312504,
+   "calls": 90
+  },
+  "search:follow/inset_tile": {
+   "total_s": 0.8848625368555076,
+   "calls": 270
+  },
+  "search:follow/clock_bitmap": {
+   "total_s": 0.03219612791144755,
+   "calls": 90
+  },
+  "search:composite.render (own: numpy copies)": {
+   "total_s": 0.2027287873061141,
+   "calls": 90
+  },
+  "search:cv2.cvtColor RGB->BGR": {
+   "total_s": 0.09553585993126035,
+   "calls": 90
+  },
+  "search:pipe write to ffmpeg (incl. tobytes)": {
+   "total_s": 0.007273245922988281,
+   "calls": 90
+  },
+  "search:writer.release (encoder drains)": {
+   "total_s": 0.39487670599191915,
+   "calls": 1
+  },
+  "real:load_recording": {
+   "total_s": 0.029046684998320416,
+   "calls": 1
+  },
+  "real:np.ascontiguousarray": {
+   "total_s": 0.028996718174312264,
+   "calls": 445
+  },
+  "real:build_model": {
+   "total_s": 2.0097947799949907,
+   "calls": 1
+  },
+  "real:GL context": {
+   "total_s": 1.3339204539952334,
+   "calls": 1
+  },
+  "real:writer start (ffmpeg process)": {
+   "total_s": 0.0018251730070915073,
+   "calls": 1
+  },
+  "real:loop/mj_kinematics": {
+   "total_s": 0.05154762137681246,
+   "calls": 1956
+  },
+  "real:loop/mj_step": {
+   "total_s": 3.8018334427615628,
+   "calls": 5550
+  },
+  "real:rig/mjv_updateScene": {
+   "total_s": 0.03283275199646596,
+   "calls": 540
+  },
+  "real:rig/mjr_render": {
+   "total_s": 2.1594131878227927,
+   "calls": 540
+  },
+  "real:rig/mjr_readPixels": {
+   "total_s": 20.181836612944608,
+   "calls": 540
+  },
+  "real:rig/np.flipud": {
+   "total_s": 0.017564392008353025,
+   "calls": 540
+  },
+  "real:follow/rig.render (own: 3 cameras' buffers)": {
+   "total_s": 0.16988652120926417,
+   "calls": 180
+  },
+  "real:follow/update_follow_camera": {
+   "total_s": 0.01935652999964077,
+   "calls": 180
+  },
+  "real:follow/mjv_updateScene": {
+   "total_s": 0.013540966028813273,
+   "calls": 180
+  },
+  "real:follow/mjr_render": {
+   "total_s": 0.8844764021341689,
+   "calls": 360
+  },
+  "real:follow/mjr_readPixels": {
+   "total_s": 10.385946780937957,
+   "calls": 180
+  },
+  "real:follow/np.flipud": {
+   "total_s": 0.004417101081344299,
+   "calls": 180
+  },
+  "real:follow/np.ascontiguousarray": {
+   "total_s": 0.2326406900974689,
+   "calls": 180
+  },
+  "real:follow/settle_renderer": {
+   "total_s": 0.03270819774479605,
+   "calls": 180
+  },
+  "real:follow/hud_bitmap": {
+   "total_s": 0.19379617790400516,
+   "calls": 180
+  },
+  "real:follow/inset_tile": {
+   "total_s": 1.8459245471312897,
+   "calls": 540
+  },
+  "real:follow/clock_bitmap": {
+   "total_s": 0.08631140197394416,
+   "calls": 180
+  },
+  "real:loop/composite.render (own: numpy copies)": {
+   "total_s": 0.41413572896271944,
+   "calls": 180
+  },
+  "real:loop/cv2.cvtColor RGB->BGR": {
+   "total_s": 0.21091670007444918,
+   "calls": 180
+  },
+  "real:loop/np.ascontiguousarray": {
+   "total_s": 0.00035475096956361085,
+   "calls": 180
+  },
+  "real:loop/pipe write to ffmpeg (incl. tobytes)": {
+   "total_s": 0.014915176056092605,
+   "calls": 180
+  },
+  "real:run_loop (own: control replay, loop overhead)": {
+   "total_s": 1.6864741727913497,
+   "calls": 1
+  },
+  "real:writer.release (encoder drains)": {
+   "total_s": 0.3757496739999624,
+   "calls": 1
+  },
+  "concat:ffmpeg concat": {
+   "total_s": 0.07765942999685649,
+   "calls": 1
+  }
+ },
+ "cut": {
+  "search_frames": 90,
+  "real_max_ticks": 900
+ },
+ "no_shadows": false,
+ "no_reflection": false,
+ "offsamples": null
+}

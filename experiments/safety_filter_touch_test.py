@@ -50,7 +50,7 @@ def table():
     cases = [
         ("arm-world: left link 7 vs bench", cap("l7", "left", "link7"), box("bench", "world", "world"), "arm-world", cfg.MARGINS["arm_world_m"]),
         ("finger vs world: exempt", cap("lf", "left", "finger"), box("bench", "world", "world"), None, None),
-        ("held object vs world: exempt", cap("lh", "left", "held"), box("bench", "world", "world"), None, None),
+        ("held object vs world (Part 2): checked with held_world_margin_m", cap("lh", "left", "held"), box("bench", "world", "world"), "held-world", cfg.MARGINS["held_world_margin_m"]),
         ("same arm: link 7 vs own palm: exempt", cap("l7", "left", "link7"), cap("lp", "left", "palm"), None, None),
         ("held vs own hand: exempt (SF-4)", cap("lh", "left", "held"), cap("lp", "left", "palm"), None, None),
         ("torso vs the left upper arm (link 1): checked (real gap 64 mm, not by construction)", cap("t", "common", "torso"), cap("left_link1", "left", "link1"), "robot-robot", cfg.MARGINS["robot_robot_m"]),
@@ -70,8 +70,9 @@ def table():
             check(name, isinstance(r, Exempt), f"-> exempt ({getattr(r, 'reason', '')})")
         else:
             ok = isinstance(r, Rule) and r.kind == kind and abs(r.margin - margin) < 1e-12
-            ok = ok and abs(r.activation - (margin + cfg.PUSH_START_BEYOND_M)) < 1e-12
-            ok = ok and abs(r.release - (margin + cfg.PUSH_STOP_BEYOND_M)) < 1e-12
+            wake = cfg.derived()["worst_stop_dist_m"]       # Part 2: every cutoff is max(its old value, the worst stopping distance)
+            ok = ok and abs(r.activation - max(margin + cfg.PUSH_START_BEYOND_M, wake)) < 1e-12
+            ok = ok and abs(r.release - max(margin + cfg.PUSH_STOP_BEYOND_M, wake)) < 1e-12
             check(name, ok, f"-> {getattr(r, 'kind', r)} margin {getattr(r, 'margin', 0) * 100:.0f} cm")
 
 
@@ -94,7 +95,7 @@ def held_and_broad():
     ids = [o.id for o in world.objects()]
     check("attach: the held beaker left the world (the far one stays)", ids == ["beaker_far"], f"-> {ids}")
     held0 = ht.placed("left", pos, rot)
-    check("attach: held shape exists and is a capsule (the beaker is a capsule, SF-8)", held0 is not None and held0.kind == "capsule")
+    check("attach: held shape exists and is a cylinder (the beaker is a cylinder, Phase D fix 4)", held0 is not None and held0.kind == "cylinder")
 
     # move the arm: the held shape must keep its offset in the hand frame
     st2 = RobotState(pedestal_m=0.15, q_left=(0.3, -0.2, 0.1, 0.9, 0.2, 0.1, 0.0), q_right=st.q_right,
@@ -117,21 +118,12 @@ def held_and_broad():
     check("release: the beaker returns to the world", ev == "release" and back is not None, f"-> {ev}")
     check("release: at the pose the hand left it", back is not None and np.allclose(back.centre, centre_before, atol=1e-9))
 
-    # fallback: nothing graspable at the pads: a capsule from the finger gap, with a warning
+    # no fallback (Part 2): nothing graspable at the pads and no name = empty gripper, no held shape
     world2 = WorldView(_Src([catalog_object("beaker", pad + np.array([0.5, 0, 0]) - np.array([0, 0, 0.05]))]))
     ht2 = HeldTracker(world2)
-    with warnings.catch_warnings(record=True) as w:
-        warnings.simplefilter("always")
-        ev = ht2.update("left", True, placed, pos, rot)
-    check("fallback: no object at the pads gives the fallback event", ev == "fallback", f"-> {ev}")
-    check("fallback: a warning is logged", any("fallback" in str(x.message) for x in w))
-    fb = ht2.placed("left", pos, rot)
-    check("fallback: the held shape is a capsule of the default height",
-          fb is not None and fb.kind == "capsule" and abs(np.linalg.norm(fb.b - fb.a) - cfg.HELD_FALLBACK_HEIGHT_M) < 1e-9)
-    check("fallback: radius from the finger gap (half the gap)", fb is not None and fb.r > 0.005)
-    ev = ht2.update("left", False, placed, pos, rot)
-    check("fallback release: nothing returns to the world", ev == "release" and world2.find("beaker") is not None
-          and sum(1 for o in world2.objects() if o.id == "beaker") == 1)
+    ev = ht2.update("left", True, placed, pos, rot)
+    check("no match, no name: the unidentified generic box is held (SF-113), no finger-gap capsule", ev == "attach" and ht2.identity_of("left") == "unidentified" and ht2.placed("left", pos, rot).kind == "box", f"-> {ev}")
+    check("no fallback in config", not hasattr(cfg, "HELD_FALLBACK_HEIGHT_M"))
 
     # broad phase: near objects are candidates; far ones are not; pairs being pushed stay until released
     far = catalog_object("beaker", np.array([3.0, 0.0, 0.0]))
@@ -160,7 +152,7 @@ def catalog_and_config():
     size = [float(x) for x in g.get("size").split()]
     pos = [float(x) for x in g.get("pos").split()]
     cat = cfg.OBJECT_CATALOG["beaker"]
-    check("catalog: the beaker is a capsule (round, M287, SF-8)", cat["shape"] == "capsule" and cat["round"] is True)
+    check("catalog: the beaker is a cylinder (round, Phase D fix 4)", cat["shape"] == "cylinder" and cat["round"] is True)
     check("catalog: beaker radius matches models/objects/beaker.xml", abs(cat["radius_m"] - size[0]) < 1e-12, f"({size[0]})")
     check("catalog: beaker half height matches", abs(cat["half_height_m"] - size[1]) < 1e-12, f"({size[1]})")
     check("catalog: beaker centre above its bottom matches", abs(cat["centre_above_bottom_m"] - pos[2]) < 1e-12, f"({pos[2]})")
@@ -224,7 +216,9 @@ def never_close_list():
     rs = RobotShapes(m, SHAPES)
     nc = rs.doc.get("never_close")
     check("never_close block present, stamped with the robot fingerprint", bool(nc) and nc["fingerprint"] == rs.doc["fingerprint"])
-    pairs = nc["pairs"]
+    from src.safety_filter import config as cfg
+    removed = {frozenset(p) for p in cfg.NEVER_CLOSE_REMOVED}      # SF-80: the sweep record keeps these pairs; the list the filter uses does not
+    pairs = [p for p in nc["pairs"] if frozenset((p["a"], p["b"])) not in removed]
     check("never_close lists at least one pair", len(pairs) > 0, f"({len(pairs)} pairs, {nc['swept']} swept, {nc['not_swept']} not swept)")
     ok_rule = all(p["min_gap_m"] - p["bound_m"] >= p["margin_m"] + 0.01 - 1e-12 for p in pairs)
     check("every listed pair: min real gap - step-size bound >= margin + 1 cm", ok_rule)

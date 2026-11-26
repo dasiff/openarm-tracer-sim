@@ -4,8 +4,7 @@ Covers: the lever split of a forearm contact and the upper arm push (pure; the m
 the lever input forced to tau 0.1); the hand displacement; link length restore (pure, and in a real sweep); the hand
 orientation after conversion; arm against arm (only the closing arm moves; both closing: equal shares); a hand against a world
 box (only the arm takes the push); pass-through; the rounds limit and the stop; determinism; the gap rule switch near the
-margin; the four checks forced to fail; the layered resolver with elbow_swing_hand_target "raw" (old results); mode "cbf"
-not built.
+margin; the four checks forced to fail. kong_style is the only resolver (the layered one was removed, SF-108).
 Written from the spec and the kong_style docstrings, not from its code. Fixtures: experiments/safety_filter_resolver_fixtures.py.
 
 Run: source .venv/bin/activate; python experiments/safety_filter_kong_style_test.py   (exit 0 = pass)
@@ -56,17 +55,6 @@ class patched:
 
     def __exit__(self, *exc):
         self.d.update(self.old)
-
-
-def in_mode(mode):
-    """Runs a section with cfg.RESOLVER["mode"] set to mode (restored afterwards)."""
-    def wrap(fn):
-        def run():
-            with patched(cfg.RESOLVER, mode=mode):
-                fn()
-        run.__name__ = fn.__name__
-        return run
-    return wrap
 
 
 def tick(res, last, raw, world=(), extra=()):
@@ -192,7 +180,6 @@ def sec_hand_displacement():
 
 
 # ---------------------------------------------------------------- 3. link length restore
-@in_mode("kong_style")
 def sec_length_restore():
     print("3. link length restore")
     rng = np.random.default_rng(7)
@@ -225,7 +212,6 @@ def sec_length_restore():
 
 
 # ---------------------------------------------------------------- 4. upper arm contact and the minimum lever fraction
-@in_mode("kong_style")
 def sec_upper_arm():
     print("4. upper arm contact and the minimum lever fraction")
     res = new_resolver()
@@ -258,7 +244,6 @@ def sec_upper_arm():
 
 
 # ---------------------------------------------------------------- 5. hand push: orientation after conversion
-@in_mode("kong_style")
 def sec_hand_push():
     print("5. hand push: orientation after conversion")
     res = new_resolver()
@@ -273,7 +258,6 @@ def sec_hand_push():
 
 
 # ---------------------------------------------------------------- 6. arm against arm
-@in_mode("kong_style")
 def sec_arm_against_arm():
     print("6. arm against arm")
     res = new_resolver()
@@ -313,7 +297,6 @@ def sec_arm_against_arm():
 
 
 # ---------------------------------------------------------------- 7. world contact
-@in_mode("kong_style")
 def sec_world_contact():
     print("7. hand against a world object")
     res = new_resolver()
@@ -337,14 +320,13 @@ def sec_world_contact():
 
 
 # ---------------------------------------------------------------- 8. pass-through
-@in_mode("kong_style")
 def sec_pass_through():
     print("8. pass-through")
     res = new_resolver()
     out, st = res.step(HOME, HOME, BASE)
     check("nothing near: the raw array object itself comes back, status PASS, 0 rounds", out is HOME and st.status == "PASS" and st.rounds == 0)
     far_raw = HOME.copy()
-    far_raw[0, 0] += 0.01
+    far_raw[1, 0] += 0.01       # right arm: at HOME the left link 1 joint 3 is 2.9 mm from the torso (checked since Phase F fix 3), so a left move is not far
     out, st = new_resolver().step(far_raw, HOME.copy(), BASE)
     check("a small move far from everything: the identical array object, status PASS", out is far_raw and st.status == "PASS")
     raw_in = left_hand_at_y(res, 0.026)
@@ -353,7 +335,6 @@ def sec_pass_through():
 
 
 # ---------------------------------------------------------------- 9. rounds, stop, determinism
-@in_mode("kong_style")
 def sec_rounds_and_determinism():
     print("9. rounds, stop and determinism")
     stream = head_on_stream(new_resolver())
@@ -378,7 +359,6 @@ def sec_rounds_and_determinism():
 
 
 # ---------------------------------------------------------------- 10. gap rule mode near the margin
-@in_mode("kong_style")
 def sec_gap_rule_switch():
     print("10. gap rule mode near the margin")
     res = new_resolver()
@@ -399,11 +379,14 @@ def sec_gap_rule_switch():
 
 
 # ---------------------------------------------------------------- 11. the four checks forced to fail
-@in_mode("kong_style")
 def sec_forced_checks():
     print("11. each check forced to fail gives hold-still with its reason")
     last, raw = left_closing(new_resolver())
     forced = {}
+    # these forced failures set stop_m = -1, which makes EVERY candidate pair need action; Part 2 widens the candidate set to the worst stopping
+    # distance, so the stopping distance is shrunk here and the old cutoffs apply (what this section tests is the hold reasons, not the cutoffs)
+    _shrink = patched(cfg.BRAKING, hand_speed_cap_m_s=0.01, accel_limit_m_s2=0.05)
+    _shrink.__enter__()
     with patched(cfg.__dict__, BRANCH_GUARD_RAD=1e-9):
         forced["BRANCH_GUARD"] = new_resolver().step(raw, last, BASE)
     with patched(cfg.RESOLVER, stop_m=-1.0):
@@ -413,32 +396,10 @@ def sec_forced_checks():
     forced["JOINT_LIMITS"] = r.step(raw, last, BASE)
     with patched(cfg.RESOLVER, accuracy_pos_m=0.0):
         forced["ACCURACY"] = new_resolver().step(raw, last, BASE)
+    _shrink.__exit__(None, None, None)
     for reason, (out, st) in forced.items():
         check(f"{reason}: status HOLD with that reason; the last filtered command comes back",
               st.status == "HOLD" and st.hold_reason == reason and np.array_equal(out, last) and out is not last, f"({st.status} {st.hold_reason})")
-
-
-# ---------------------------------------------------------------- 12. layered resolver, old results; cbf not built
-def sec_layered_old():
-    print("12. layered resolver with elbow_swing_hand_target raw (old results); cbf")
-    with patched(cfg.RESOLVER, mode="layered", elbow_swing_hand_target="raw"):
-        res = new_resolver()
-        last, raw = left_closing(res)
-        out, st = new_resolver().step(raw, last, BASE)
-        check("layered/raw, hand-hand left closing: HAND_SLIDE in 1 round", st.status == "HAND_SLIDE" and st.rounds == 1, f"({st.status} {st.rounds} rounds)")
-        pr, rr = res.kin.hand_pose(state_of(HOME), "right")
-        last_r = ik(res, HOME, "right", np.array([pr[0], -0.034, pr[2]]), rr)
-        raw_r = ik(res, HOME, "right", np.array([pr[0], -0.026, pr[2]]), rr)
-        out_r, st_r = new_resolver().step(raw_r, last_r, BASE)
-        check("layered/raw, right-closing mirror case: HOLD with reason ACCURACY after 10 rounds",
-              st_r.status == "HOLD" and st_r.hold_reason == "ACCURACY" and st_r.rounds == 10, f"({st_r.status} {st_r.hold_reason} {st_r.rounds} rounds)")
-    with patched(cfg.RESOLVER, mode="cbf"):
-        try:
-            new_resolver().step(raw, last, BASE)
-            message = None
-        except NotImplementedError as exc:
-            message = str(exc)
-    check("mode cbf raises NotImplementedError 'CBF resolver not built'", message == "CBF resolver not built", f"({message!r})")
 
 
 def main():
@@ -453,7 +414,6 @@ def main():
     sec_rounds_and_determinism()
     sec_gap_rule_switch()
     sec_forced_checks()
-    sec_layered_old()
     print(f"{RESULTS['ok']} of {RESULTS['run']} checks ok")
     print("PASS" if not FAILS else f"FAIL: {FAILS}")
     return 1 if FAILS else 0

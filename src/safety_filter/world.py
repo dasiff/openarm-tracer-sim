@@ -24,13 +24,15 @@ from src.safety_filter.config import LAB_MAP_BENCH_OPEN, OBJECT_CATALOG
 @dataclass(frozen=True)
 class WorldObject:
     id: str
-    shape: str                 # "box" or "capsule" (a capsule's axis is the rotation's z column)
-    size: tuple                # box: half sizes (3); capsule: (radius, half length of the segment)
+    shape: str                 # "box", "capsule" (its axis is the rotation's z column) or "cylinder" (flat ends, its axis is the z column)
+    size: tuple                # box: half sizes (3); capsule: (radius, half length of the segment); cylinder: (radius, half height)
     centre: tuple              # world, metres
     rot: tuple                 # world rotation, row-major 3x3 (9 numbers)
     graspable: bool = False
     round: bool = False
     fixture: bool = False
+    allowed_contact: bool = False  # Part 2: an allowed-contact surface (OBJECT_CATALOG): a held object may touch it, at the approach ceiling
+    work_surface: bool = False  # Phase D fix 1: a work surface (OBJECT_CATALOG "work_surface", the bench top): a hand's push-stop beyond its margin is PUSH_STOP_BEYOND_M_WORK
     never_touch: bool = False  # SF-65: a never-touch object (e.g. a pet): no exemptions for fingers or held objects, own margin config.NEVER_TOUCH_MARGIN_M
 
     def rot_matrix(self):
@@ -40,6 +42,8 @@ class WorldObject:
         """Radius of a sphere around the centre that contains the object (for the match rule)."""
         if self.shape == "capsule":
             return float(self.size[0] + self.size[1])
+        if self.shape == "cylinder":
+            return float(np.hypot(self.size[0], self.size[1]))   # radius and half height
         return float(np.linalg.norm(self.size))
 
 
@@ -68,7 +72,7 @@ class LabMapSource:
         self.bench_open = doc["bench_open"]
         self._objects = [WorldObject(id=f["name"], shape="box", size=tuple(f["half"]),
                                      centre=tuple(f["center"]), rot=tuple(_rot9(f["quat"])),
-                                     fixture=True)
+                                     fixture=True, work_surface=bool(OBJECT_CATALOG.get(f["name"], {}).get("work_surface", False)))
                          for f in doc["fixtures"]]
 
     def objects(self):
@@ -80,13 +84,19 @@ def catalog_object(entry_id, position, axis=None):
     spec = OBJECT_CATALOG.get(entry_id)
     if spec is None:
         raise KeyError(f"no catalog entry for {entry_id!r}")
-    centre = np.asarray(position, float) + np.array([0.0, 0.0, spec["centre_above_bottom_m"]])
+    if spec.get("entry_at_top"):                      # the entry's position is the centre of the top face: the shape centre is one half height below it
+        centre = np.asarray(position, float) - np.array([0.0, 0.0, spec["half_m"][2]])
+    else:
+        centre = np.asarray(position, float) + np.array([0.0, 0.0, spec["centre_above_bottom_m"]])
     if spec["shape"] == "capsule":
-        size = (spec["radius_m"], spec["half_height_m"])
+        size = (spec["radius_m"], spec["half_height_m"] - spec["radius_m"])   # the segment half length: the cylinder's half height less the radius (see OBJECT_CATALOG)
+    elif spec["shape"] == "cylinder":
+        size = (spec["radius_m"], spec["half_height_m"])     # Phase D fix 4: the true cylinder (radius, half height)
     else:
         size = tuple(spec["half_m"])
     return WorldObject(id=entry_id, shape=spec["shape"], size=tuple(size), centre=tuple(centre),
-                       rot=tuple(np.eye(3).ravel()), graspable=spec["graspable"], round=spec["round"])
+                       rot=tuple(np.eye(3).ravel()), graspable=spec["graspable"], round=spec["round"],
+                       allowed_contact=bool(spec.get("allowed_contact", False)), work_surface=bool(spec.get("work_surface", False)))
 
 
 class WorldModelAdapter:
@@ -101,9 +111,12 @@ class WorldModelAdapter:
 
     def objects(self):
         out = []
-        for e in self.world_model.entries(kind="object"):
+        for e in self.world_model.entries():           # objects, and the catalog's fixtures (the hotplate is a fixture entry of the world model)
+            if e.kind not in ("object", "fixture"):
+                continue
             if e.id not in OBJECT_CATALOG:
-                self.skipped.append(e.id)
+                if e.kind == "object":
+                    self.skipped.append(e.id)
                 continue
             out.append(catalog_object(e.id, e.position))
         return out

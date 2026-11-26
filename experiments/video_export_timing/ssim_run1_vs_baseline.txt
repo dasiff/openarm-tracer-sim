@@ -1,0 +1,81 @@
+  500 frames, 40 s
+  1000 frames, 77 s
+  1500 frames, 114 s
+  2000 frames, 151 s
+  2500 frames, 189 s
+  3000 frames, 226 s
+  3500 frames, 264 s
+{
+ "reference": "experiments/video_export_timing/baseline/moved_full_20261116_031849.mp4",
+ "test": "experiments/video_export_timing/run1_noshadow/moved_full_20261116_050828.mp4",
+ "ref_props": {
+  "width": 1920,
+  "height": 1080,
+  "fps": 30.0,
+  "frames_in_header": 3547
+ },
+ "test_props": {
+  "width": 1920,
+  "height": 1080,
+  "fps": 30.0,
+  "frames_in_header": 3547
+ },
+ "frames_compared": 3547,
+ "frame_count_mismatch": false,
+ "identical_frames": 0,
+ "mean_ssim": 0.858056,
+ "min_ssim": 0.798075,
+ "min_frame": 3409,
+ "lowest_10": [
+  {
+   "frame": 3409,
+   "ssim": 0.79808
+  },
+  {
+   "frame": 3410,
+   "ssim": 0.79812
+  },
+  {
+   "frame": 3408,
+   "ssim": 0.79812
+  },
+  {
+   "frame": 3411,
+   "ssim": 0.79815
+  },
+  {
+   "frame": 3407,
+   "ssim": 0.79821
+  },
+  {
+   "frame": 2800,
+   "ssim": 0.79828
+  },
+  {
+   "frame": 2804,
+   "ssim": 0.79829
+  },
+  {
+   "frame": 3412,
+   "ssim": 0.79829
+  },
+  {
+   "frame": 2682,
+   "ssim": 0.7983
+  },
+  {
+   "frame": 2681,
+   "ssim": 0.7983
+  }
+ ],
+ "frames_below_0_985": 3547,
+ "frames_below_min": 3547,
+ "near_gate": false,
+ "gate": {
+  "min_frame": 0.98,
+  "min_mean": 0.99
+ },
+ "pass": false,
+ "seconds": 267.4
+}
+RESULT FAIL: frames 3547 (count mismatch False), identical 0, min SSIM 0.79807 at frame 3409, mean 0.85806, near gate False

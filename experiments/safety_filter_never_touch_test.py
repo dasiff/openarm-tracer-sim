@@ -33,7 +33,7 @@ palm = next(p for p in placed if p.part == "palm" and p.arm == "left")
 
 def cat_at(shape, gap):
     """A never-touch capsule whose surface is `gap` m from the shape: the cat's centre is moved along +x from the shape's centre (bisection)."""
-    c = (shape.a + shape.b) / 2
+    c = (shape.a + shape.b) / 2 if shape.kind == "capsule" else np.asarray(shape.centre, float)     # a held cylinder has a centre (Phase D fix 4)
     mk = lambda t: WorldObject(id="cat", shape="capsule", size=(0.10, 0.05), centre=tuple(c + np.array([t, 0, 0])), rot=tuple(np.eye(3).ravel()), never_touch=True)  # noqa: E731
     lo, hi = 0.0, 1.0
     for _ in range(60):
@@ -60,8 +60,9 @@ check("palm vs ordinary: margin 0.01 as before", pair_rule(palm, as_placed(ordin
 rep = [r for r in evaluate_pairs([finger], [cat]) if r.b == "cat" or r.a == "cat"]
 check("evaluate_pairs: finger 4 cm from the cat is in margin", len(rep) == 1 and rep[0].in_margin and abs(rep[0].gap - 0.04) < 1e-6, str(rep))
 check("evaluate_pairs: the same finger vs an ordinary object gives no pair", evaluate_pairs([finger], [ordinary]) == [])
-far = cat_at(finger, 0.075)
-check("evaluate_pairs: finger 7.5 cm away is not an active pair (activation 6 cm)", evaluate_pairs([finger], [far]) == [])
+wake = cfg.derived()["worst_stop_dist_m"]                      # Part 2: activation = max(6 cm, the worst stopping distance)
+far = cat_at(finger, max(0.06, wake) + 0.015)
+check("evaluate_pairs: a finger 1.5 cm beyond the (widened) activation distance is not an active pair", evaluate_pairs([finger], [far]) == [])
 mid = cat_at(palm, 0.055)
 rep = evaluate_pairs([palm], [mid])
 check("evaluate_pairs: palm 5.5 cm away is an active pair but not in margin", len(rep) == 1 and not rep[0].in_margin)
@@ -85,7 +86,8 @@ check("held beaker attached", ev == "attach" and held is not None)
 cat_h = cat_at(held, 0.03)
 r_h = pair_rule(held, as_placed(cat_h))
 check("held beaker vs never-touch: checked with margin 0.05", isinstance(r_h, Rule) and r_h.margin == 0.05, str(r_h))
-check("held beaker vs ordinary object: still exempt", isinstance(pair_rule(held, as_placed(replace(cat_h, never_touch=False))), Exempt))
+r_o = pair_rule(held, as_placed(replace(cat_h, never_touch=False)))
+check("held beaker vs ordinary object: checked since Part 2 (held-world margin, not exempt)", isinstance(r_o, Rule) and r_o.kind == "held-world", str(r_o))
 rep = evaluate_pairs([held], [cat_h])
 check("evaluate_pairs: held beaker 3 cm from the cat is in margin", len(rep) == 1 and rep[0].in_margin)
 

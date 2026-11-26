@@ -1,11 +1,13 @@
-"""Stage 2g step 1: freeze the kong_style resolver's behavior on cases where exactly ONE pair needs a push.
+"""Stage 2g step 1: freeze the kong_style resolver's behavior on fixed cases (one or more pairs need a push).
 
-Run BEFORE the one-pair-at-a-time change (and again, to compare, after it): a single pair gives the same result in the old summing
-sweep and in the new sequential sweep, so the saved joint angles and status are the regression check of Stage 2g.
+The saved joint angles and status are the regression check of the one-pair-at-a-time sweep (Stage 2g). A case with one pair gives
+the same result in the old summing sweep and in the sequential sweep. A case with several pairs is frozen as the sweep gives it
+now; every pair that needs a push is recorded in active_pairs (deepest shortfall first), so the fixture says which pairs were
+active. The top-level pair, category, closing, shortfall_at_raw_m describe the deepest of them.
 
 Each case is a fixed pose pair (last filtered command, raw command) plus optional world boxes, no physics. The script checks that
-exactly one pair needs a push at the raw command (shortfall above trigger_m and an arm closing); a case that does not fail
-loudly. Results: data/safety_filter/kong_single_pair_fixtures.json (written through a temporary file), with the case inputs, so
+at least one pair needs a push at the raw command (shortfall above trigger_m and an arm closing); a case with none fails loudly.
+Results: data/safety_filter/kong_single_pair_fixtures.json (written through a temporary file), with the case inputs, so
 the regression test can replay them without this script's helpers.
 
 Usage: python scripts/safety_filter_kong_single_pair_fixtures.py [--out PATH] [--compare]
@@ -61,7 +63,7 @@ def build_cases(res):
     cases.append(dict(name="hand_vs_box_link7", covers="hand contact (link 7) against a world box", last=HOME, raw=turned(0, 0.06256484215523073),
                       world=[box("bx", (0.02678073798699103, 0.18674669244022435, 0.853160878151396))]))
     p, r = res.kin.hand_pose(state_of(HOME), "left")
-    cases.append(dict(name="hand_link7_vs_box_converges", covers="hand contact (link 7) against a world box, converges in one sweep", last=HOME,
+    cases.append(dict(name="hand_link7_vs_box_converges", covers="hand contact (link 7) against a world box; the palm pair is active too, so several sweeps are needed", last=HOME,
                       raw=ik(res, HOME, "left", np.array([0.09085, 0.14763, 0.82237]), r),
                       world=[box("bx", (0.09442531088148365, 0.09588112352127183, 0.838640027026017), half=0.015)]))
     mirror = np.array([-1, -1, -1, 1, -1, -1, -1], dtype=float)
@@ -97,18 +99,20 @@ def run_case(res, c):
     t, need = pairs_needing_push(res, last, raw, world)
     out, st = res.step(raw.copy(), last.copy(), BASE, world_objects=world)
     out = np.asarray(out, float)
-    cat = None
-    if len(need) == 1:
-        key = need[0][0]
+    active = []                                          # every pair that needs a push at the raw command, deepest first (ties by name)
+    for key, shortfall, closing in sorted(need, key=lambda x: (-x[1], "|".join(x[0]))):
+        cat = None
         for sid in key:
             s = t.shape(raw, sid)
             if s is not None and s.arm in ("left", "right"):
                 cat = category_of(s)
+        active.append({"pair": list(key), "shortfall_at_raw_m": float(shortfall), "closing": list(closing), "category": cat})
+    deepest = active[0] if active else {"pair": None, "shortfall_at_raw_m": None, "closing": None, "category": None}
     t2 = _Tick(res, raw, last, BASE, world, None)
     t2.discover(last)
     t2.discover(out)
-    return {"n_pairs_needing_push": len(need), "pair": list(need[0][0]) if need else None, "category": cat,
-            "closing": list(need[0][2]) if need else None, "shortfall_at_raw_m": float(need[0][1]) if need else None,
+    return {"n_pairs_needing_push": len(need), "active_pairs": active, "pair": deepest["pair"], "category": deepest["category"],
+            "closing": deepest["closing"], "shortfall_at_raw_m": deepest["shortfall_at_raw_m"],
             "status": str(getattr(st.status, "name", st.status)), "hold_reason": str(st.hold_reason), "sweeps": int(st.rounds),
             "methods": [str(m) for m in st.methods], "out": out.tolist(), "worst_shortfall_at_out_m": float(t2.worst_value_discover(out))}
 
@@ -122,16 +126,17 @@ def main(argv=None):
     doc = {"tol_rad": TOL_RAD, "cases": []}
     bad = []
     for c in build_cases(res):
-        r = run_case(res, c)
+        r = run_case(new_resolver(), c)      # a fresh resolver per case: the pairs active from an earlier case (the release band) must not carry over, as in the regression test
         rec = {"name": c["name"], "covers": c["covers"], "last": np.asarray(c["last"], float).tolist(),
                "raw": np.asarray(c["raw"], float).tolist(), "world": c["world"], **r}
         doc["cases"].append(rec)
-        print(f"{c['name']}: pairs {r['n_pairs_needing_push']} {r['pair']} {r['category']} short {r['shortfall_at_raw_m']} -> "
+        active = ["|".join(a["pair"]) for a in r["active_pairs"]]
+        print(f"{c['name']}: pairs {r['n_pairs_needing_push']} {active} deepest {r['pair']} {r['category']} short {r['shortfall_at_raw_m']} -> "
               f"{r['status']} {r['hold_reason']} sweeps {r['sweeps']} methods {r['methods']}", flush=True)
-        if r["n_pairs_needing_push"] != 1:
+        if r["n_pairs_needing_push"] < 1:
             bad.append(c["name"])
     if bad:
-        print("NOT single-pair cases:", bad)
+        print("cases with no pair to push:", bad)
         return 2
     out = ROOT / args.out
     if args.compare:

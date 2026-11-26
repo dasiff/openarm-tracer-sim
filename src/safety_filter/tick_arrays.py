@@ -39,10 +39,12 @@ Why the intervals are safe:
 import numpy as np
 
 from src.safety_filter import config as cfg
-from src.safety_filter.geometry import capsule_box, capsule_box_batch, capsule_capsule, capsule_capsule_batch
+from src.safety_filter.geometry import capsule_box, capsule_box_batch, capsule_capsule, capsule_capsule_batch, cylinder_box, cylinder_capsule
+from src.safety_filter.batch_jit import capsule_box_gap_batch, capsule_capsule_gap_batch, pair_gap_at, pair_separation_kernel    # Phase K fix 2 (SF-97) and Phase L fix 2 (SF-100): compiled
 from src.safety_filter.touch import Exempt, pair_rule
 
 SIDE_INDEX = {"left": 0, "right": 1}
+KIND_CODE = {"capsule": 0, "box": 1, "cylinder": 2}   # Phase D fix 4: the kinds of the items in the pair table
 
 
 class PairTable:
@@ -57,7 +59,9 @@ class PairTable:
         self.item_index = {s.id: k for k, s in enumerate(items)}
         self.item_side = np.array([SIDE_INDEX.get(s.arm, -1) for s in items], dtype=np.int64)
         self.is_capsule = np.array([s.kind == "capsule" for s in items], dtype=bool)
-        self.radius = np.array([float(s.r) if s.kind == "capsule" else 0.0 for s in items])
+        self.radius = np.array([float(s.r) if s.kind in ("capsule", "cylinder") else 0.0 for s in items])   # Phase D fix 4: a cylinder's radius too
+        self.kind_code = np.array([KIND_CODE[s.kind] for s in items], dtype=np.int64)
+        self.is_cyl_item = self.kind_code == KIND_CODE["cylinder"]
         self.half = np.array([np.asarray(s.half, float) if s.kind != "capsule" else np.zeros(3) for s in items]).reshape(n, 3)
         I, J, ka, kb, rules, keys = [], [], [], [], [], []
         for i in range(n_robot):
@@ -82,6 +86,8 @@ class PairTable:
         self.release = np.array([r.release for r in rules], dtype=float)
         cap_i, cap_j = self.is_capsule[self.I] if len(I) else np.zeros(0, bool), self.is_capsule[self.J] if len(I) else np.zeros(0, bool)
         self.is_cc = cap_i & cap_j
+        # Phase D fix 4: a pair with a cylinder is exact-only (no batched bound of its own): its lower bound is the boxes' separation, its upper bound the centre distance
+        self.is_cy = (self.is_cyl_item[self.I] | self.is_cyl_item[self.J]) if len(I) else np.zeros(0, bool)
         self.cb_cap = np.where(cap_i, self.I, self.J)               # capsule and box item of a capsule-box pair (unused for capsule pairs)
         self.cb_box = np.where(cap_i, self.J, self.I)
         side_i, side_j = (self.item_side[self.I], self.item_side[self.J]) if len(I) else (np.zeros(0, int), np.zeros(0, int))
@@ -103,14 +109,61 @@ class PoseArrays:
 
 
 def box_separation(tab, P):
-    """Separation of the two axis-aligned boxes of every checked pair at the pose (negative when they overlap): touch.evaluate_pairs' cut."""
+    """Separation of the two axis-aligned boxes of every checked pair at the pose (negative when they overlap): touch.evaluate_pairs' cut.
+    Phase M fix 1 (SF-102): compiled (batch_jit.pair_separation_kernel); _box_separation_numpy is the reference."""
     if P.sep is None:
-        P.sep = np.maximum(P.lo[tab.I] - P.hi[tab.J], P.lo[tab.J] - P.hi[tab.I]).max(axis=1) if len(tab) else np.zeros(0)
+        P.sep = pair_separation_kernel(P.lo, P.hi, np.asarray(tab.I, np.int64), np.asarray(tab.J, np.int64)) if len(tab) else np.zeros(0)
     return P.sep
 
 
+def _box_separation_numpy(tab, P):
+    """The reference of box_separation (numpy)."""
+    return np.maximum(P.lo[tab.I] - P.hi[tab.J], P.lo[tab.J] - P.hi[tab.I]).max(axis=1) if len(tab) else np.zeros(0)
+
+
+def _cylinder_exact(tab, P, p):
+    """The gap of a cylinder pair at the pose (geometry.cylinder_capsule or cylinder_box, the same function the object form uses)."""
+    a, b = tab.ka[p], tab.kb[p]
+    cyl, oth = (a, b) if tab.kind_code[a] == KIND_CODE["cylinder"] else (b, a)
+    rc, hc = float(tab.radius[cyl]), float(tab.half[cyl][2])
+    if tab.kind_code[oth] == KIND_CODE["capsule"]:
+        return float(cylinder_capsule(P.C[cyl], P.R[cyl], rc, hc, P.A[oth], P.B[oth], float(tab.radius[oth])).gap)
+    return float(cylinder_box(P.C[cyl], P.R[cyl], rc, hc, P.C[oth], P.R[oth], tab.half[oth]).gap)
+
+
+def _cylinder_upper(tab, P, p):
+    """An upper bound of the gap of the cylinder pair p: the distance from the cylinder's centre to the other shape (the centre is inside
+    the cylinder, so the cylinder is never farther than its centre; overlapping pairs have a gap of at most 0)."""
+    a, b = tab.ka[p], tab.kb[p]
+    cyl, oth = (a, b) if tab.kind_code[a] == KIND_CODE["cylinder"] else (b, a)
+    c = P.C[cyl]
+    if tab.kind_code[oth] == KIND_CODE["capsule"]:
+        A, B = P.A[oth], P.B[oth]
+        seg = B - A
+        ll = float(seg @ seg)
+        t = 0.0 if ll < 1e-300 else min(max(float((c - A) @ seg) / ll, 0.0), 1.0)
+        return float(np.linalg.norm(c - (A + t * seg))) - float(tab.radius[oth])
+    q = P.R[oth].T @ (c - P.C[oth])
+    sd = float(np.linalg.norm(np.maximum(np.abs(q) - tab.half[oth], 0.0)) + min(np.max(np.abs(q) - tab.half[oth]), 0.0))
+    return max(sd, 0.0)
+
+
 def exact_gap(tab, P, p):
-    """The gap of pair p at the pose: touch.gap_between's number (same function, same argument order)."""
+    """The gap of pair p at the pose: touch.gap_between's number (same function, same argument order). Phase L fix 2 (SF-100): compiled
+    (batch_jit.pair_gap_at, the same contact functions) when cfg.GEOMETRY is compiled; _exact_gap_python is the reference."""
+    if not cfg.GEOMETRY["compiled"]:
+        return _exact_gap_python(tab, P, p)
+    if tab.is_cy[p] or tab.is_cc[p]:
+        a, b = tab.ka[p], tab.kb[p]
+    else:
+        a, b = tab.cb_cap[p], tab.cb_box[p]
+    return float(pair_gap_at(a, b, tab.kind_code, P.A, P.B, P.C, P.R, tab.radius, tab.half))
+
+
+def _exact_gap_python(tab, P, p):
+    """The reference of exact_gap (the Python path of the contact functions)."""
+    if tab.is_cy[p]:
+        return _cylinder_exact(tab, P, p)
     if tab.is_cc[p]:
         a, b = tab.ka[p], tab.kb[p]
         return float(capsule_capsule(P.A[a], P.B[a], float(tab.radius[a]), P.A[b], P.B[b], float(tab.radius[b])).gap)
@@ -128,12 +181,17 @@ def approx_gaps(tab, P, idx):
         cc = need[tab.is_cc[need]]
         if len(cc):
             a, b = tab.ka[cc], tab.kb[cc]
-            g = capsule_capsule_batch(P.A[a], P.B[a], tab.radius[a], P.A[b], P.B[b], tab.radius[b], gap_only=True)
+            g = capsule_capsule_gap_batch(P.A[a], P.B[a], tab.radius[a], P.A[b], P.B[b], tab.radius[b])
             P.glo[cc], P.ghi[cc] = g - cfg.ARRAY_FORM['cc_eps_m'], g + cfg.ARRAY_FORM['cc_eps_m']
-        cb = need[~tab.is_cc[need]]
+        cy = need[tab.is_cy[need]]                  # Phase D fix 4: cylinder pairs: lower bound = the boxes' separation (never above the gap), upper bound = the centre distance
+        if len(cy):
+            sep = box_separation(tab, P)
+            P.glo[cy] = sep[cy]
+            P.ghi[cy] = [_cylinder_upper(tab, P, p) for p in cy]
+        cb = need[~tab.is_cc[need] & ~tab.is_cy[need]]
         if len(cb):
             c, b = tab.cb_cap[cb], tab.cb_box[cb]
-            v = capsule_box_batch(P.A[c], P.B[c], tab.radius[c], P.C[b], P.R[b], tab.half[b], gap_only=True)
+            v = capsule_box_gap_batch(P.A[c], P.B[c], tab.radius[c], P.C[b], P.R[b], tab.half[b])
             length = np.linalg.norm(P.B[c] - P.A[c], axis=1)
             P.glo[cb] = v - cfg.ARRAY_FORM['cb_low_per_m'] * length - cfg.ARRAY_FORM['bound_slack_m']
             P.ghi[cb] = v + cfg.ARRAY_FORM['cb_high_per_m'] * length + cfg.ARRAY_FORM['bound_slack_m']

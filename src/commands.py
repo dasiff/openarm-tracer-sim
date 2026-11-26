@@ -157,4 +157,9 @@ def validate_command(cmd, limits=None):
                 msgs.append(f"gripper[{side!r}] {g:.4f} clipped to [{lo:.3f}, {hi:.3f}]")
                 g = min(max(g, lo), hi)
             out["gripper"][side] = g
+    ho = cmd.get("held_object")                          # Phase C step 7 (David): the object a hand is grasping, by world name; the filter's identity for it
+    if ho is not None:
+        if not isinstance(ho, dict) or any(side not in SIDES or not isinstance(name, str) or not name for side, name in ho.items()):
+            return None, [f"held_object must map arm sides to object names, got {ho!r}"]
+        out["held_object"] = {side: str(name) for side, name in ho.items()}
     return out, msgs

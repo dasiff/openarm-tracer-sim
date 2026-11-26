@@ -1,0 +1,12 @@
+Bench scenario baseline: manual (manual_reference_20261126_4d80d52.csv)
+================================================
+Made from commit: 4d80d521b69103b1293902ead9240c11e8956675 (4d80d52), from a clean worktree (uncommitted edits cannot leak in)
+Date: 2026-11-26
+Command: bash experiments/cc_bench_regen.sh manual (inside it: bash experiments/run_capped.sh <log> env CC_HEADLESS=1 bash experiments/cc_bench_scenarios.sh manual <csv>)
+Settings (copied from experiments/cc_bench_scenarios.sh at 4d80d52, case 'manual'):
+ manual) export CC_BENCH_FRAMES=1248
+   export CC_BENCH_KEYS="12-108:UP,108-228:SPACE,240-336:LEFT,336-456:SPACE,480-624:PAGE_DOWN,648-792:PAGE_UP,816-888:3,936-1008:E,1032-1128:A,1152-1188:8,1200-1248:I"
+   .venv/bin/python experiments/combined_controller.py $CC_EXTRA_ARGS ;;
+Runs: 2 (byte-identical: yes)
+Size: 85 lines (one header and 84 data rows), 23 columns
+SHA-256: 038ef494cd8f2a1a71a289fbbcc7a804268a6b001f5ed00302693f8fef5e024a

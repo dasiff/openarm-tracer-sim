@@ -314,7 +314,7 @@ Default rule: stay faithful to the paper unless a difference is unavoidable or o
 
 ## 9. Build order
 
-Build steps are referred to only as B-numbers. Each step shows the section that describes it. [UPDATED 2026-11-25, David, M339: the navigation and localization module (§13, §13.1) is built before VLA training. M340 (2026-11-25): it is built FIRST, before the repositioning run and the multiple-task work. Its exact place among the other steps is PENDING, David to decide.]
+Build steps are referred to only as B-numbers. Each step shows the section that describes it. [UPDATED 2026-11-25, David, M339: the navigation and localization module (§13, §13.1) is built before VLA training. M340 (2026-11-25): it is built FIRST, before the repositioning run and the multiple-task work. [Resolved 2026-11-26 by M340 and M342: the order is in §13.1 (stage order); the PENDING text is kept as history.] Its exact place among the other steps is PENDING, David to decide.]
 
 - B0: Merge and push. [DONE] (pushed 2026-10-15; baselines regenerated with the battery pack)
 - B1: Robot face (§2). [DONE]
@@ -504,6 +504,7 @@ Not replaced, on purpose: the demo generator and the reachability map use true o
 
 ### 13.1 Robot localization and object finding (design) [DECIDED 2026-11-25, David; design only, nothing built; every number PROVISIONAL (sim placeholder, to be confirmed or tuned); rows M326 to M335]
 
+- **Build stages, in order [DECIDED 2026-11-26, David; M340, M342]:** 1 the lidar (BUILT, M341); 2 the localization map (the lidar-height slice and the distance grid, §13.1 two-maps rule); 3 odometry (M329); 4 the particle filter (M330); 5 self-orientation (M331); 6 driving on the estimated pose; 7 the hotplate tracker (M332); 8 the unknown-object search (GroundingDINO detection plus frontier exploration), after stage 7 and before VLA training.
 - **Overall split [DECIDED, M326]:**
   - Robot position in the room comes from the lidar, wheel odometry and the prebuilt map, through our own particle filter (M330).
   - Object positions come from the eagle camera by classic computer vision (no neural network) for known fixtures, starting with the hotplate (M332).
@@ -566,7 +567,7 @@ Not replaced, on purpose: the demo generator and the reachability map use true o
 - **Open items [PENDING, item 11]:**
   - Lidar model, mount, 2D or 3D, range and rate: to be confirmed with the hardware team (the lidar itself is confirmed, M336).
   - The glass beaker: transparent objects are a known hard case for classic vision and for depth sensors in the real world. The known-surface method works on the sim beaker; the real beaker may need its own treatment.
-  - Exact position of this build in the build order: PENDING, David to decide. The module is built before VLA training (M339, 2026-11-25); §13 and §9 say so, and the old "after VLA" text is marked superseded. M340: built first, before the repositioning run and the multiple-task work.
+  - [Resolved 2026-11-26 by M340 and M342: the build stages are listed at the top of this section; the PENDING text below is kept as history.] Exact position of this build in the build order: PENDING, David to decide. The module is built before VLA training (M339, 2026-11-25); §13 and §9 say so, and the old "after VLA" text is marked superseded. M340: built first, before the repositioning run and the multiple-task work.
 ## 14. Eagle camera specification [REWRITTEN 2026-10-22, David, M153: FIXED CAMERA, NO NECK]
 
 One place for everything that defines what the eagle camera shows, because its image is a policy input (§7.1, base_0_rgb) and the policy only works if the real robot produces the same view by the same rule. Code that step 2 removed (commit 8cd06f5, M167; this list is history): the neck entries of `src/robot_specs.py` (`NECK_SPECS`, `NECK_AUTO_SPECS`; `ORBBEC_*` stays for the wrist cameras), `src/neck.py`, `src/neck_source.py`, `src/neck_framing.py` (`FRAMING_CFG`), and the neck spread and framing slack limits in `STANCE_REQUIREMENTS` (`src/task_config.py`). `src/stance_checks.py` keeps `OcclusionMeter` for the fixed view.

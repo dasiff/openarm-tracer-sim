@@ -250,7 +250,7 @@ class RunRecorder:
         meta (dict): The contents of meta.json, apart from "labels" and "n_ticks", which are added when it is written.
     """
 
-    def __init__(self, run_dir, model, data, loop_cfg, meta_extra, source_hz, steps_per_tick, chunk_ticks=2400, checkpoint_every=150):
+    def __init__(self, run_dir, model, data, loop_cfg, meta_extra, source_hz, steps_per_tick, chunk_ticks=2400, checkpoint_every=150, seed=None):
         """Creates the run directory, saves the initial state and writes the first meta.json.
 
         Args:
@@ -264,6 +264,10 @@ class RunRecorder:
             steps_per_tick (int): Physics steps per control tick.
             chunk_ticks (int): Ticks per chunk file (16 s at 150 Hz). Defaults to 2400.
             checkpoint_every (int): Keep a full state checkpoint every this many ticks (1 s at 150 Hz). Defaults to 150.
+            seed (int or None): The run's seed, written to meta.json as "seed" (the replay rule: each run has its own seed, saved in
+                its record; design plan 13.1, M343). None draws one from the operating system at the start of the run; the control loop
+                passes cfg["run_seed"] when a run is given one. The physics draws no random numbers, so the seed changes nothing in
+                the physics today: a run's own random draws (for example the lidar's noise) must use this seed when they are added.
 
         Raises:
             ValueError: If `meta_extra` has no "model" entry.
@@ -273,6 +277,8 @@ class RunRecorder:
                              '({"kind": "scene", "scene": path} or {"kind": "task", "task_cfg": {...}})')
         self.dir = Path(run_dir)
         (self.dir / "chunks").mkdir(parents=True, exist_ok=True)
+        seed_given = seed is not None
+        self.seed = int(seed) if seed_given else int(np.random.SeedSequence().generate_state(1)[0])
         self.model, self.data = model, data
         self.chunk_ticks, self.checkpoint_every = chunk_ticks, checkpoint_every
         self.buf = new_state_buffer(model)
@@ -287,7 +293,7 @@ class RunRecorder:
             "timestep": model.opt.timestep, "steps_per_tick": steps_per_tick, "source_hz": source_hz,
             "loop_cfg": jsonable(loop_cfg), "mujoco": mujoco.__version__, "platform": platform.platform(),
             "machine": platform.machine(), "python": platform.python_version(), "git": _git_info(),
-            "checkpoint_every": checkpoint_every, "seed": None, "robot_specs": specs_snapshot(), **jsonable(meta_extra or {}),
+            "checkpoint_every": checkpoint_every, "seed": self.seed, "seed_given": seed_given, "robot_specs": specs_snapshot(), **jsonable(meta_extra or {}),
         }
         self._write_meta()
 

@@ -480,7 +480,7 @@ def run_loop(model, data, sources, cfg, viewer=None, logger=None):
         replay["on_start"](model, data)
     elif cfg["record_run"]:
         recorder = RunRecorder(cfg["record_run"], model, data, {**cfg, "claimed_ids": list(cfg["claimed_ids"])}, cfg["record_meta"],
-                               cfg["source_hz"], steps_per_frame)
+                               cfg["source_hz"], steps_per_frame, seed=cfg.get("run_seed"))
 
     # Sources that build things that need the settled robot (the teleop session, the fake operator's clock)
     for src in sources.values():

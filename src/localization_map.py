@@ -44,7 +44,8 @@ ROOT = Path(__file__).resolve().parents[1]
 VERSION = "localization_map_v1"  # changing this string forces a rebuild of every cache
 OUTSIDE, FREE, OCCUPIED = 0, 1, 2
 GEOM_PLANE, GEOM_SPHERE, GEOM_CAPSULE, GEOM_CYLINDER, GEOM_BOX = 0, 2, 3, 5, 6
-EXCLUDED_NAME_PREFIXES = ("fc_slot", "task_beaker", "task_hotplate")  # object slots and task objects, as src/nav_footprint.obstacles_from_model
+TASK_BODY_PREFIXES = ("task_", "pour_ball_")  # bodies a task places or moves: the beakers, the hotplate, the pour balls (src/pour_scene.BALL_PREFIX)
+EXCLUDED_GEOM_PREFIXES = ("fc_slot",)  # object slots, as src/nav_footprint.obstacles_from_model
 _SIGNS = np.array([[a, b, c] for a in (-1.0, 1.0) for b in (-1.0, 1.0) for c in (-1.0, 1.0)])
 
 
@@ -69,21 +70,22 @@ def inside_primitive(kind, size, local):
     return np.linalg.norm(local - np.stack([np.zeros_like(zc), np.zeros_like(zc), zc], axis=1), axis=1) <= size[0]
 
 
-def _has_free_joint_above(model, body):
-    """True when the body, or a body above it, has a free joint: it can move anywhere (the robot's base, a task object such as the beaker)."""
+def _is_task_body(model, body):
+    """True when the body, or a body above it, is a task object (its name starts with one of TASK_BODY_PREFIXES)."""
     b = int(body)
     while b > 0:
-        for j in range(int(model.body_jntadr[b]), int(model.body_jntadr[b]) + int(model.body_jntnum[b])):
-            if int(model.jnt_type[j]) == int(mujoco.mjtJoint.mjJNT_FREE):
-                return True
+        if mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_BODY, b).startswith(TASK_BODY_PREFIXES):
+            return True
         b = int(model.body_parentid[b])
     return False
 
 
 def fixed_geoms(model):
-    """The ids of the fixed scene's geoms the lidar can see: not the robot, not a plane, not a free-moving object or an object slot.
+    """The ids of the fixed scene's geoms the lidar can see: not the robot, not a plane, not a task object or an object slot.
 
-    A body with a hinge or slide joint (a cabinet door, say) is kept: it is fixed to the scene, and the lidar sees it.
+    The scene's furniture (the lab stool, the waste bin, the rolling cart, the fire extinguisher, the cabinet and its doors) is kept:
+    it has free or hinge joints in the model, but no task moves it, and the lidar sees it. Task objects are the bodies named in
+    TASK_BODY_PREFIXES (the beakers, the hotplate, the pour balls).
 
     Args:
         model (mujoco.MjModel): The compiled model.
@@ -97,7 +99,7 @@ def fixed_geoms(model):
         if robot[g] or int(model.geom_type[g]) == GEOM_PLANE:
             continue
         name = mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_GEOM, g) or ""
-        if name.startswith(EXCLUDED_NAME_PREFIXES) or _has_free_joint_above(model, model.geom_bodyid[g]):
+        if name.startswith(EXCLUDED_GEOM_PREFIXES) or _is_task_body(model, model.geom_bodyid[g]):
             continue
         out.append(g)
     return out

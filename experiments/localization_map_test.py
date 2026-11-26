@@ -21,7 +21,6 @@ import sys
 import time
 from pathlib import Path
 
-import mujoco
 import numpy as np
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -30,9 +29,8 @@ sys.path.insert(0, str(ROOT / "experiments"))
 
 import lidar_test as lt  # noqa: E402
 from src import robot_specs  # noqa: E402
-from src.lidar import Lidar, RANGE, SELF_BLOCKED, STATE_NAMES  # noqa: E402
-from src.localization_map import (FREE, OCCUPIED, OUTSIDE, cell_of, fixed_geoms, inside_primitive,  # noqa: E402
-                                  load_or_build_localization_map, predict_ranges)
+from src.lidar import Lidar, RANGE  # noqa: E402
+from src.localization_map import FREE, OCCUPIED, cell_of, fixed_geoms, load_or_build_localization_map, predict_ranges  # noqa: E402
 from src.task_config import TASK_CFG  # noqa: E402
 
 RESULTS = []
@@ -114,7 +112,7 @@ def check_distances(maps, model, data, z, geoms):
           f"worst difference {worst:.4f} m; " + " | ".join(rows))
 
 
-def check_lidar_agreement(maps, sim, lidar_seeded, base_z):
+def check_lidar_agreement(maps, sim, base_z):
     """Check 3: the predicted ranges (from the map) against the stage 1 noise-free scan, at the three poses."""
     m, d = sim.model, sim.data
     total_usable = total_agree = 0
@@ -138,8 +136,6 @@ def check_lidar_agreement(maps, sim, lidar_seeded, base_z):
         for k in order[:3]:
             hit = m.geom(scan.hit_geom[k]).name
             worst_all.append((float(err[k]), label, int(k), float(predicted[k]), float(real[k]), hit))
-        if label == POSES[0][0]:
-            pass
     share = 100.0 * total_agree / max(total_usable, 1)
     worst_all.sort(key=lambda r: -r[0])
     top = "; ".join(f"beam {k} deg at {lab} ({hit}): predicted {p:.4f} m, real {r:.4f} m, off by {e * 1000:.1f} mm"
@@ -195,7 +191,7 @@ def main():
           f"{meta['fixed_geoms']} fixed geoms; source {source} in {build_s:.2f} s", flush=True)
     check_geometry(maps, m, d)
     check_distances(maps, m, d, z, geoms)
-    agreement = check_lidar_agreement(maps, sim, None, base_z)
+    agreement = check_lidar_agreement(maps, sim, base_z)
     check_floor(maps, sim)
     # check 5: the cache
     cache_file = TEST_CACHE / "localization_map.npz"

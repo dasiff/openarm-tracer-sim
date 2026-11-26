@@ -27,6 +27,7 @@ sys.path.insert(0, str(ROOT / "experiments"))
 
 import lidar_test as lt  # noqa: E402
 from src.lidar import Lidar, RANGE, SELF_BLOCKED, TOO_CLOSE  # noqa: E402
+from src.localization_map import inside_primitive  # noqa: E402  (the one exact containment test, shared with the localization map)
 from src.task_beaker_hotplate import load_task  # noqa: E402
 from src.task_config import TASK_CFG  # noqa: E402
 
@@ -36,18 +37,6 @@ EDGE_X = -6.5  # m: a start point outside the room's walls (the walls are at x =
 
 GEOM_SPHERE, GEOM_CAPSULE, GEOM_CYLINDER, GEOM_BOX = 2, 3, 5, 6  # MuJoCo geom type codes for the primitives the scene uses
 SIGNS = np.array([[a, b, c] for a in (-1.0, 1.0) for b in (-1.0, 1.0) for c in (-1.0, 1.0)])
-
-
-def inside_primitive(kind, size, local):
-    """True for the points (rows of local, in the geom's own frame) that lie inside a primitive geom of this kind and size."""
-    if kind == GEOM_BOX:
-        return np.all(np.abs(local) <= size, axis=1)
-    if kind == GEOM_SPHERE:
-        return np.linalg.norm(local, axis=1) <= size[0]
-    if kind == GEOM_CYLINDER:
-        return (np.hypot(local[:, 0], local[:, 1]) <= size[0]) & (np.abs(local[:, 2]) <= size[1])
-    zc = np.clip(local[:, 2], -size[1], size[1])  # capsule: a segment of half length size[1] along z, with radius size[0]
-    return np.linalg.norm(local - np.stack([np.zeros_like(zc), np.zeros_like(zc), zc], axis=1), axis=1) <= size[0]
 
 
 def solid_mask(model, data, robot, z, xs, ys):

@@ -222,6 +222,14 @@ LIDAR_SPECS = {
     "mount_height_above_deck_m": 0.05, # m: the scan plane is this far above the top of the base deck (the top of the chassis mesh, read from the model). Placeholder. [row M328]
 }
 
+# The localization map (navigation stage 2; src/localization_map.py; design plan 13.1, two-maps rule). One horizontal slice of the fixed scene at the
+# lidar's scan plane height (LIDAR_SPECS, read from the model: not typed in). The planner grid (src/nav_grid.py, 5 cm) is a different map and is unchanged.
+LOCALIZATION_MAP_SPECS = {
+    "cell_m": 0.02,                        # m: the edge of one cell of the localization map, 2 cm: finer than the lidar's 2 cm range noise, so the map adds no error of its own; every lookup uses this resolution. PROVISIONAL. [row M345]
+    "margin_m": 0.2,                       # m: the map covers the outside faces of the four walls plus this much on every side (room for the particle guesses and for beams that run past the walls). PROVISIONAL. [row M345]
+    "cache_dir": "data/localization_map",  # folder under the project root for the cached grids (git-ignored data); rebuilt by itself when its staleness key changes. [row M345]
+}
+
 # All camera poses are PLACEHOLDERS until mounting info arrives.
 # - The eagle cam is confirmed robot mounted, fixed (no neck); its mount is EAGLE_MOUNT (placeholder).
 # - pos / look_at / up are in the parent body's frame.
